@@ -334,7 +334,7 @@ var FinalOutput = Step{
 				return StepResult{Error: fmt.Errorf("failed to get main IP: %w", err)}
 			}
 			mainIP := strings.TrimSpace(string(mainIPOutput))
-			joinCommand := fmt.Sprintf("export FIRST_NODE=false; export JOIN_TOKEN=%s; export SERVER_IP=%s; sudo bloom\n", joinToken, mainIP)
+			joinCommand := fmt.Sprintf("export FIRST_NODE=false; export JOIN_TOKEN=%s; export SERVER_IP=%s; sudo ./bloom\n", joinToken, mainIP)
 			file, err := os.Create("additional_node_command.txt")
 			if err != nil {
 				LogMessage(Error, fmt.Sprintf("Failed to create additional_node_command.txt: %v", err))

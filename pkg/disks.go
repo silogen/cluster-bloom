@@ -212,6 +212,14 @@ func GetUnmountedPhysicalDisks() ([]string, error) {
 		if strings.Contains(string(mountOut), "/") {
 			continue
 		}
+		lvmCheck := exec.Command("lsblk", "-no", "NAME", devPath)
+		lvmOut, err := lvmCheck.Output()
+		if err != nil {
+			continue
+		}
+		if strings.Contains(string(lvmOut), "ExtStorage-ExtStorageLV") {
+			continue
+		}
 		if strings.HasPrefix(name, "sd") {
 			udevCmd := exec.Command("udevadm", "info", "--query=property", "--name", devPath)
 			udevOut, err := udevCmd.Output()
@@ -231,6 +239,7 @@ func GetUnmountedPhysicalDisks() ([]string, error) {
 	}
 	return result, nil
 }
+
 func MountDrives(drives []string) error {
 	usedMountPoints := make(map[string]bool)
 	i := 0
