@@ -126,20 +126,22 @@ func rootSteps() {
 	preK8Ssteps := []pkg.Step{
 		pkg.CheckUbuntuStep,
 		pkg.InstallDependentPackagesStep,
+		pkg.UninstallRKE2Step,
+		pkg.CleanDisksStep,
 		pkg.OpenPortsStep,
+		pkg.MountDrivesStep,
 		pkg.InstallK8SToolsStep,
 		pkg.InotifyInstancesStep,
 		pkg.SetupAndCheckRocmStep,
 	}
 	k8Ssteps := []pkg.Step{
 		pkg.SetupRKE2Step,
-		pkg.CleanDisksStep,
-		pkg.MountDrivesStep,
 		pkg.GenerateLonghornDiskStringStep,
 	}
 	postK8Ssteps := []pkg.Step{
 		pkg.SetupLonghornStep,
 		pkg.SetupKubeConfig,
+		pkg.FinalOutput,
 	}
 	pkg.RunStepsWithUI(append(append(preK8Ssteps, k8Ssteps...), postK8Ssteps...))
 }

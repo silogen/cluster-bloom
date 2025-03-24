@@ -22,27 +22,25 @@ import (
 	"github.com/spf13/viper"
 )
 
-var demoCmd = &cobra.Command{
-	Use:   "demo-ui",
-	Short: "Silly demo to show UI",
-	Long:  "Silly demo to show UI",
+var testCmd = &cobra.Command{
+	Use:   "test",
+	Short: "Test a node to check readiness for cluster use",
+	Long:  `Runs through steps to validate all settings and prerequisite SW are setup correctly`,
 	Run: func(cmd *cobra.Command, args []string) {
-		pkg.LogMessage(pkg.Info, "Config value for 'demo': "+viper.GetString("demo"))
-		pkg.LogMessage(pkg.Debug, "Starting package installation")
-		demoSteps()
+		pkg.LogMessage(pkg.Info, "Config value for 'test': "+viper.GetString("test"))
+		pkg.LogMessage(pkg.Debug, "Starting node testing")
+		testSteps()
 	},
 }
 
 func init() {
-	rootCmd.AddCommand(demoCmd)
+	rootCmd.AddCommand(testCmd)
 }
 
-func demoSteps() {
+func testSteps() {
 	steps := []pkg.Step{
 		pkg.DemoCheckUbuntuStep,
-		pkg.DemoPackagesStep,
-		pkg.DemoFirewallStep,
-		pkg.DemoMinioStep,
+		pkg.MountDrivesStep,
 		pkg.DemoDashboardStep,
 	}
 

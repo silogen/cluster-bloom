@@ -19,7 +19,6 @@ package pkg
 import (
 	"fmt"
 	"io/fs"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -73,19 +72,15 @@ func installK8sTools() error {
 		}
 	}
 
-	fmt.Println("Kubernetes tools installed successfully.")
+	LogMessage(Info, "Kubernetes tools installed successfully.")
 	return nil
 }
 
 func setupLonghorn() error {
 	targetDir := "/var/lib/rancher/rke2/server/manifests"
-
-	// Ensure the target directory exists
 	if err := os.MkdirAll(targetDir, 0755); err != nil {
 		return fmt.Errorf("failed to create target directory %s: %w", targetDir, err)
 	}
-
-	// Walk through the embedded files and copy them to the target directory
 	err := fs.WalkDir(templateFiles, "templates", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -96,7 +91,7 @@ func setupLonghorn() error {
 				return fmt.Errorf("failed to read file %s: %w", path, err)
 			}
 			targetPath := filepath.Join(targetDir, filepath.Base(path))
-			if err := ioutil.WriteFile(targetPath, content, 0644); err != nil {
+			if err := os.WriteFile(targetPath, content, 0644); err != nil {
 				return fmt.Errorf("failed to write file %s: %w", targetPath, err)
 			}
 			LogMessage(Info, fmt.Sprintf("Copied %s to %s", path, targetPath))

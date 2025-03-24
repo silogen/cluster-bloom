@@ -2,36 +2,39 @@ package pkg
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/spf13/viper"
 )
 
 func CleanDisks() error {
 	cmd := exec.Command("mount")
 	output, err := cmd.Output()
 	if err != nil {
-		return fmt.Errorf("mount command failed")
+		return fmt.Errorf("mount command failed: %w", err)
 	}
 
 	scanner := bufio.NewScanner(strings.NewReader(string(output)))
 	for scanner.Scan() {
 		fields := strings.Fields(scanner.Text())
 		if len(fields) > 2 && strings.Contains(fields[2], "kubernetes.io/csi/driver.longhorn.io") {
-			if err := exec.Command("sudo", "umount", "-lf", fields[2]).Run(); err != nil {
+			_, err := runCommand("sudo", "umount", "-lf", fields[2])
+			if err != nil {
 				LogMessage(Warn, fmt.Sprintf("Failed to unmount %s", fields[2]))
 			} else {
 				LogMessage(Info, fmt.Sprintf("Unmounted %s", fields[2]))
 			}
-
 		}
 	}
 
 	cmd = exec.Command("lsblk", "-o", "NAME,MOUNTPOINT")
 	output, err = cmd.Output()
 	if err != nil {
-		return fmt.Errorf("lsblk command failed")
+		return fmt.Errorf("lsblk command failed: %w", err)
 	}
 
 	scanner = bufio.NewScanner(strings.NewReader(string(output)))
@@ -39,7 +42,8 @@ func CleanDisks() error {
 		fields := strings.Fields(scanner.Text())
 		if len(fields) > 1 && strings.Contains(fields[1], "kubernetes.io/csi/driver.longhorn.io") {
 			dev := "/dev/" + fields[0]
-			if err := exec.Command("sudo", "wipefs", "-a", dev).Run(); err != nil {
+			_, err := runCommand("sudo", "wipefs", "-a", dev)
+			if err != nil {
 				LogMessage(Warn, fmt.Sprintf("Failed to wipe %s", dev))
 			} else {
 				LogMessage(Info, fmt.Sprintf("Wiped %s", dev))
@@ -47,12 +51,15 @@ func CleanDisks() error {
 		}
 	}
 
-	exec.Command("sudo", "rm", "-rf", "/var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/*").Run()
+	_, err = runCommand("sudo", "rm", "-rf", "/var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/*")
+	if err != nil {
+		LogMessage(Warn, fmt.Sprintf("Failed to remove longhorn plugins directory: %v", err))
+	}
 
 	cmd = exec.Command("lsblk", "-nd", "-o", "NAME,TYPE,MOUNTPOINT")
 	output, err = cmd.Output()
 	if err != nil {
-		return fmt.Errorf("lsblk command failed")
+		return fmt.Errorf("lsblk command failed: %w", err)
 	}
 
 	scanner = bufio.NewScanner(strings.NewReader(string(output)))
@@ -69,84 +76,6 @@ func CleanDisks() error {
 		}
 	}
 	LogMessage(Info, "Disk cleanup completed.")
-	return nil
-}
-
-func MountAndPersistNVMeDrives() error {
-	cmd := exec.Command("sh", "-c", "lsblk -nd -o NAME | grep nvme")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		LogMessage(Error, fmt.Sprintf("Failed to list NVMe drives: %v", err))
-		return fmt.Errorf("failed to list NVMe drives: %w", err)
-	}
-
-	availableDisks := strings.Fields(string(output))
-	if len(availableDisks) == 0 {
-		LogMessage(Info, "No NVMe drives found.")
-		return nil
-	}
-
-	fmt.Println("The following NVMe drives will be mounted:")
-	for _, disk := range availableDisks {
-		fmt.Printf("/dev/%s\n", disk)
-	}
-	fmt.Print("Do you want to continue? (yes/no): ")
-	var response string
-	fmt.Scanln(&response)
-	if strings.ToLower(response) != "yes" {
-		LogMessage(Info, "Mounting aborted by user.")
-		return nil
-	}
-
-	for i, disk := range availableDisks {
-		mountPoint := fmt.Sprintf("/mnt/disk%d", i+1)
-		if err := runCommand("sudo", "mkdir", "-p", mountPoint); err != nil {
-			LogMessage(Error, fmt.Sprintf("Failed to create mount point %s: %v", mountPoint, err))
-			return fmt.Errorf("failed to create mount point %s: %w", mountPoint, err)
-		}
-		if err := runCommand("sudo", "chmod", "755", mountPoint); err != nil {
-			LogMessage(Error, fmt.Sprintf("Failed to set permissions on mount point %s: %v", mountPoint, err))
-			return fmt.Errorf("failed to set permissions on mount point %s: %w", mountPoint, err)
-		}
-		if err := runCommand("sudo", "mkfs.ext4", "-F", fmt.Sprintf("/dev/%s", disk)); err != nil {
-			LogMessage(Error, fmt.Sprintf("Failed to format /dev/%s: %v", disk, err))
-			return fmt.Errorf("failed to format /dev/%s: %w", disk, err)
-		}
-		if err := runCommand("sudo", "mount", fmt.Sprintf("/dev/%s", disk), mountPoint); err != nil {
-			LogMessage(Error, fmt.Sprintf("Failed to mount /dev/%s at %s: %v", disk, mountPoint, err))
-			return fmt.Errorf("failed to mount /dev/%s at %s: %w", disk, mountPoint, err)
-		}
-		LogMessage(Info, fmt.Sprintf("Mounted /dev/%s at %s", disk, mountPoint))
-
-		uuidCmd := exec.Command("blkid", "-s", "UUID", "-o", "value", fmt.Sprintf("/dev/%s", disk))
-		uuidOutput, err := uuidCmd.Output()
-		if err != nil {
-			LogMessage(Error, fmt.Sprintf("Failed to get UUID for /dev/%s: %v", disk, err))
-			return fmt.Errorf("failed to get UUID for /dev/%s: %w", disk, err)
-		}
-		uuid := strings.TrimSpace(string(uuidOutput))
-		fstabEntry := fmt.Sprintf("UUID=%s %s ext4 defaults,nofail 0 2\n", uuid, mountPoint)
-
-		fstabFile, err := os.OpenFile("/etc/fstab", os.O_APPEND|os.O_WRONLY, 0644)
-		if err != nil {
-			LogMessage(Error, fmt.Sprintf("Failed to open /etc/fstab: %v", err))
-			return fmt.Errorf("failed to open /etc/fstab: %w", err)
-		}
-		defer fstabFile.Close()
-
-		if _, err := fstabFile.WriteString(fstabEntry); err != nil {
-			LogMessage(Error, fmt.Sprintf("Failed to write to /etc/fstab: %v", err))
-			return fmt.Errorf("failed to write to /etc/fstab: %w", err)
-		}
-		LogMessage(Info, fmt.Sprintf("Added /dev/%s to /etc/fstab", disk))
-	}
-
-	if err := runCommand("sudo", "mount", "-a"); err != nil {
-		LogMessage(Error, fmt.Sprintf("Failed to remount filesystems: %v", err))
-		return fmt.Errorf("failed to remount filesystems: %w", err)
-	}
-
-	LogMessage(Info, "Mounted and persisted NVMe drives successfully.")
 	return nil
 }
 
@@ -183,7 +112,254 @@ func GenerateLonghornDiskString() (string, error) {
 		jsonBuilder.WriteString(fmt.Sprintf("{\\\"path\\\":\\\"%s\\\",\\\"allowScheduling\\\":true},", disk))
 	}
 	jsonString := strings.TrimRight(jsonBuilder.String(), ",") + "]"
+	if viper.GetBool("FIRST_NODE") {
+		hostname, err := os.Hostname()
+		if err != nil {
+			LogMessage(Error, fmt.Sprintf("Failed to get hostname: %v", err))
+			return "", fmt.Errorf("failed to get hostname: %w", err)
+		}
+		patchCmd := exec.Command(
+			"kubectl", "patch", "node",
+			hostname,
+			"--kubeconfig=/etc/rancher/rke2/rke2.yaml",
+			"--type=merge",
+			"-p", fmt.Sprintf(`{"metadata": {"labels": {"node.longhorn.io/create-default-disk": "config", "node.longhorn.io/instance-manager": "true"}, "annotations": {"node.longhorn.io/default-disks-config": "%s"}}}`, jsonString),
+		)
+		patchOutput, patchErr := patchCmd.CombinedOutput()
+		if patchErr != nil {
+			LogMessage(Error, fmt.Sprintf("Failed to patch node with Longhorn disk configuration: %v", patchErr))
+			LogMessage(Error, fmt.Sprintf("kubectl patch output: %s", string(patchOutput)))
+			return "", fmt.Errorf("failed to patch node with Longhorn disk configuration: %w", patchErr)
+		}
+		LogMessage(Info, fmt.Sprintf("Successfully patched node with Longhorn disk configuration: %s", string(patchOutput)))
 
+	} else {
+		hostname, err := os.Hostname()
+		if err != nil {
+			LogMessage(Error, fmt.Sprintf("Failed to get hostname: %v", err))
+			return "", fmt.Errorf("failed to get hostname: %w", err)
+		}
+
+		scriptContent := fmt.Sprintf(`kubectl patch node %s \
+--type=json \
+-p '{"metadata": {"labels": {"node.longhorn.io/create-default-disk": "config", "node.longhorn.io/instance-manager": "true"}, "annotations": {"node.longhorn.io/default-disks-config": "%s"}}}'
+`, hostname, jsonString)
+
+		file, err := os.Create("longhorn_drive_setup.txt")
+		if err != nil {
+			LogMessage(Error, fmt.Sprintf("Failed to create longhorn_drive_setup.txt: %v", err))
+			return "", fmt.Errorf("failed to create longhorn_drive_setup.txt: %w", err)
+		}
+		defer file.Close()
+		_, err = file.WriteString(scriptContent)
+		if err != nil {
+			LogMessage(Error, fmt.Sprintf("Failed to write to longhorn_drive_setup.txt: %v", err))
+			return "", fmt.Errorf("failed to write to longhorn_drive_setup.txt: %w", err)
+		}
+		if err := file.Chmod(0755); err != nil {
+			LogMessage(Error, fmt.Sprintf("Failed to set executable permissions on longhorn_drive_setup.txt: %v", err))
+			return "", fmt.Errorf("failed to set executable permissions on longhorn_drive_setup.txt: %w", err)
+		}
+	}
 	LogMessage(Info, "Generated Longhorn disk configuration string.")
 	return jsonString, nil
+}
+
+func isVirtualDisk(udevOut []byte) bool {
+	virtualMarkers := []string{
+		"ID_VENDOR=QEMU",
+		"ID_VENDOR=Virtio",
+		"ID_VENDOR=VMware",
+		"ID_VENDOR=Virtual",
+		"ID_VENDOR=Microsoft",
+		"ID_MODEL=VIRTUAL-DISK",
+		"SCSI_MODEL=VIRTUAL-DISK",
+	}
+
+	for _, marker := range virtualMarkers {
+		if bytes.Contains(udevOut, []byte(marker)) {
+			return true
+		}
+	}
+	return false
+}
+
+func GetUnmountedPhysicalDisks() ([]string, error) {
+	var result []string
+
+	lsblkCmd := exec.Command("lsblk", "-dn", "-o", "NAME,TYPE")
+	out, err := lsblkCmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("lsblk failed: %w", err)
+	}
+
+	scanner := bufio.NewScanner(bytes.NewReader(out))
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) != 2 || fields[1] != "disk" {
+			continue
+		}
+		name := fields[0]
+		if !strings.HasPrefix(name, "nvme") && !strings.HasPrefix(name, "sd") {
+			continue
+		}
+		devPath := "/dev/" + name
+		mountCheck := exec.Command("lsblk", "-no", "MOUNTPOINT", devPath)
+		mountOut, err := mountCheck.Output()
+		if err != nil {
+			continue
+		}
+		if strings.Contains(string(mountOut), "/") {
+			continue
+		}
+		if strings.HasPrefix(name, "sd") {
+			udevCmd := exec.Command("udevadm", "info", "--query=property", "--name", devPath)
+			udevOut, err := udevCmd.Output()
+			if err != nil {
+				continue
+			}
+			if isVirtualDisk(udevOut) {
+				continue
+			}
+		}
+
+		result = append(result, devPath)
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("scanner error: %w", err)
+	}
+	return result, nil
+}
+func MountDrives(drives []string) error {
+	usedMountPoints := make(map[string]bool)
+	i := 0
+	cmd := exec.Command("sh", "-c", "mount | awk '/\\/mnt\\/disk[0-9]+/ {print $3}'")
+	output, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to list existing mount points: %w", err)
+	}
+	existingMountPoints := strings.Fields(string(output))
+	for _, mountPoint := range existingMountPoints {
+		usedMountPoints[mountPoint] = true
+	}
+	fstabContent, err := os.ReadFile("/etc/fstab")
+	if err != nil {
+		return fmt.Errorf("failed to read /etc/fstab: %w", err)
+	}
+
+	for _, drive := range drives {
+		mountPoint := fmt.Sprintf("/mnt/disk%d", i)
+		for usedMountPoints[mountPoint] || strings.Contains(string(fstabContent), mountPoint) {
+			i++
+			mountPoint = fmt.Sprintf("/mnt/disk%d", i)
+		}
+		usedMountPoints[mountPoint] = true
+
+		if err := os.MkdirAll(mountPoint, 0755); err != nil {
+			return fmt.Errorf("failed to create mount point %s: %w", mountPoint, err)
+		}
+
+		cmd := exec.Command("lsblk", "-f", drive)
+		output, err := cmd.Output()
+		if err != nil {
+			return fmt.Errorf("failed to check filesystem type for %s: %w", drive, err)
+		}
+		if strings.Contains(string(output), "ext4") {
+			LogMessage(Info, fmt.Sprintf("Disk %s is already formatted as ext4. Skipping format.", drive))
+		} else {
+			cmd = exec.Command("lsblk", "-no", "PARTTYPE", drive)
+			output, err = cmd.Output()
+			if err != nil {
+				return fmt.Errorf("failed to check partition type for %s: %w", drive, err)
+			}
+			if strings.TrimSpace(string(output)) != "" {
+				LogMessage(Info, fmt.Sprintf("Disk %s has existing partitions. Removing partitions...", drive))
+				cmd = exec.Command("sudo", "wipefs", "-a", drive)
+				if err := cmd.Run(); err != nil {
+					return fmt.Errorf("failed to wipe partitions on %s: %w", drive, err)
+				}
+			}
+
+			LogMessage(Info, fmt.Sprintf("Disk %s is not partitioned. Formatting with ext4...", drive))
+			cmd = exec.Command("mkfs.ext4", "-F", "-F", drive)
+			if err := cmd.Run(); err != nil {
+				return fmt.Errorf("failed to format %s: %w", drive, err)
+			}
+		}
+
+		cmd = exec.Command("mount", drive, mountPoint)
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("failed to mount %s at %s: %w", drive, mountPoint, err)
+		}
+
+		LogMessage(Info, fmt.Sprintf("Mounted %s at %s", drive, mountPoint))
+		i++
+	}
+	return nil
+}
+
+func PersistMountedDisks() error {
+	cmd := exec.Command("sh", "-c", "mount | awk '/\\/mnt\\/disk[0-9]+/ {print $1, $3}'")
+	output, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to list mounted disks: %w", err)
+	}
+
+	mountedDisks := strings.TrimSpace(string(output))
+	if mountedDisks == "" {
+		return nil
+	}
+
+	fstabFile := "/etc/fstab"
+	backupFile := "/etc/fstab.bak"
+	if err := exec.Command("sudo", "cp", fstabFile, backupFile).Run(); err != nil {
+		return fmt.Errorf("failed to backup fstab file: %w", err)
+	}
+
+	scanner := bufio.NewScanner(strings.NewReader(mountedDisks))
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) != 2 {
+			continue
+		}
+		device, mountPoint := fields[0], fields[1]
+
+		// Get the UUID of the device
+		cmd := exec.Command("blkid", "-s", "UUID", "-o", "value", device)
+		uuidOutput, err := cmd.Output()
+		if err != nil {
+			LogMessage(Info, fmt.Sprintf("Could not retrieve UUID for %s. Skipping...", device))
+			continue
+		}
+		uuid := strings.TrimSpace(string(uuidOutput))
+		if uuid == "" {
+			LogMessage(Info, fmt.Sprintf("Could not retrieve UUID for %s. Skipping...", device))
+			continue
+		}
+		fstabContent, err := os.ReadFile(fstabFile)
+		if err != nil {
+			return fmt.Errorf("failed to read fstab file: %w", err)
+		}
+		if strings.Contains(string(fstabContent), fmt.Sprintf("UUID=%s", uuid)) {
+			LogMessage(Debug, fmt.Sprintf("%s is already in /etc/fstab.", mountPoint))
+			continue
+		}
+		entry := fmt.Sprintf("UUID=%s %s ext4 defaults,nofail 0 2\n", uuid, mountPoint)
+		cmd = exec.Command("sudo", "tee", "-a", fstabFile)
+		cmd.Stdin = strings.NewReader(entry)
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("failed to add entry to fstab: %w", err)
+		}
+		LogMessage(Debug, fmt.Sprintf("Added %s to /etc/fstab.", mountPoint))
+	}
+
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("scanner error: %w", err)
+	}
+	if err := exec.Command("sudo", "mount", "-a").Run(); err != nil {
+		return fmt.Errorf("failed to remount filesystems: %w", err)
+	}
+
+	return nil
 }

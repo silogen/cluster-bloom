@@ -23,7 +23,6 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/rivo/tview"
 	"github.com/spf13/viper"
 )
 
@@ -33,186 +32,329 @@ var templateFiles embed.FS
 var CheckUbuntuStep = Step{
 	Name:        "Check Ubuntu Version",
 	Description: "Verify running on supported Ubuntu version",
-	Action: func() error {
+	Action: func() StepResult {
 		if !IsRunningOnSupportedUbuntu() {
-			return fmt.Errorf("this tool requires Ubuntu with one of these versions: %s",
-				strings.Join(SupportedUbuntuVersions, ", "))
+			return StepResult{
+				Error: fmt.Errorf("this tool requires Ubuntu with one of these versions: %s",
+					strings.Join(SupportedUbuntuVersions, ", ")),
+			}
 		}
-		return nil
+		return StepResult{Error: nil}
 	},
 }
+
 var InstallDependentPackagesStep = Step{
 	Name:        "Install Dependent Packages",
 	Description: "Ensure jq, nfs-common, and open-iscsi are installed",
-	Action: func() error {
+	Action: func() StepResult {
 		err := InstallDependentPackages()
 		if err != nil {
-			return fmt.Errorf("setup of packages failed : %s",
-				err.Error())
+			return StepResult{
+				Error: fmt.Errorf("setup of packages failed: %s", err.Error()),
+			}
 		}
-		return nil
+		return StepResult{Error: nil}
 	},
 }
+
 var OpenPortsStep = Step{
 	Name:        "Open Ports",
 	Description: "Ensure needed ports are open in iptables",
-	Action: func() error {
+	Action: func() StepResult {
 		if !OpenPorts() {
-			return fmt.Errorf("opening ports failed")
+			return StepResult{
+				Error: fmt.Errorf("opening ports failed"),
+			}
 		}
-		return nil
+		return StepResult{Error: nil}
 	},
 }
+
 var InstallK8SToolsStep = Step{
 	Name:        "Install Kubernetes tools",
 	Description: "Install kubectl and k9s",
-	Action: func() error {
+	Action: func() StepResult {
 		err := installK8sTools()
 		if err != nil {
-			return fmt.Errorf("setup of tools failed : %s",
-				err.Error())
+			return StepResult{
+				Error: fmt.Errorf("setup of tools failed: %s", err.Error()),
+			}
 		}
-		return nil
+		return StepResult{Error: nil}
 	},
 }
+
 var InotifyInstancesStep = Step{
 	Name:        "Verify inotify instances",
 	Description: "Verify, or update, inotify instances",
-	Action: func() error {
+	Action: func() StepResult {
 		if !VerifyInotifyInstances() {
-			return fmt.Errorf("setup of inotify failed")
+			return StepResult{
+				Error: fmt.Errorf("setup of inotify failed"),
+			}
 		}
-		return nil
+		return StepResult{Error: nil}
 	},
 }
+
 var SetupAndCheckRocmStep = Step{
 	Name:        "Setup and Check ROCm",
 	Description: "Verify, setup, and check ROCm devices",
-	Action: func() error {
+	Action: func() StepResult {
 		if viper.GetBool("GPU_NODE") {
 			if !CheckAndInstallROCM() {
-				return fmt.Errorf("setup of ROCm failed")
+				return StepResult{
+					Error: fmt.Errorf("setup of ROCm failed"),
+				}
 			}
 			cmd := exec.Command("sh", "-c", `rocm-smi -i --json | jq -r '.[] | .["Device Name"]' | sort | uniq -c`)
 			output, err := cmd.CombinedOutput()
 			if err != nil {
 				LogMessage(Error, "Failed to execute rocm-smi: "+err.Error())
-				return fmt.Errorf("failed to execute rocm-smi: %w", err)
+				return StepResult{
+					Error: fmt.Errorf("failed to execute rocm-smi: %w", err),
+				}
 			}
 			LogMessage(Info, "ROCm Devices:\n"+string(output))
-
-			return nil
-		} else {
-			return nil
 		}
+		return StepResult{Error: nil}
 	},
 }
+
 var SetupRKE2Step = Step{
 	Name:        "Setup RKE2",
 	Description: "Setup RKE2 server and configure necessary modules",
-	Action: func() error {
+	Action: func() StepResult {
+		var err error
 		if viper.GetBool("FIRST_NODE") {
-			return SetupFirstRKE2()
+			err = SetupFirstRKE2()
 		} else {
-			return SetupRKE2Additional()
+			err = SetupRKE2Additional()
 		}
+		if err != nil {
+			return StepResult{Error: err}
+		}
+		return StepResult{Error: nil}
 	},
 }
+
 var CleanDisksStep = Step{
 	Name:        "Clean disks",
 	Description: "remove any previous longhorn temp drives",
-	Action: func() error {
-		return CleanDisks()
+	Action: func() StepResult {
+		err := CleanDisks()
+		if err != nil {
+			return StepResult{Error: err}
+		}
+		return StepResult{Error: nil}
 	},
 }
+
 var MountDrivesStep = Step{
-	Name:        "Mount drives",
-	Description: "mount any empty nvme drives",
-	Action: func() error {
-		return MountAndPersistNVMeDrives()
+	Name:        "Check Unmounted Disks",
+	Description: "Identify unmounted physical disks",
+	Action: func() StepResult {
+		disks, err := GetUnmountedPhysicalDisks()
+		if err != nil {
+			return StepResult{
+				Error: fmt.Errorf("failed to get unmounted disks: %v", err),
+			}
+		}
+		if len(disks) == 0 {
+			LogMessage(Info, "No unmounted physical disks found")
+			return StepResult{Error: nil}
+		}
+		cmd := exec.Command("sh", "-c", "lsblk |grep nvme")
+		output, err := cmd.Output()
+		if err != nil {
+			return StepResult{
+				Error: fmt.Errorf("failed to get disk info: %v", err),
+			}
+		}
+		diskinfo := string(output)
+		options := make([]string, len(disks))
+		for i, disk := range disks {
+			options[i] = disk
+		}
+
+		result, err := ShowOptionsScreen(
+			"Unmounted Disks",
+			"Select disks to format and mount\n\n"+diskinfo,
+			options,
+			options,
+		)
+		if err != nil {
+			return StepResult{
+				Error: fmt.Errorf("error selecting disks: %v", err),
+			}
+		}
+
+		if result.Canceled {
+			return StepResult{
+				Error: fmt.Errorf("disk selection canceled"),
+			}
+		}
+		LogMessage(Info, fmt.Sprintf("Selected disks: %v", result.Selected))
+		mountError := MountDrives(result.Selected)
+		if mountError != nil {
+			return StepResult{
+				Error: fmt.Errorf("error mounting disks: %v", mountError),
+			}
+		}
+		persistError := PersistMountedDisks()
+		if persistError != nil {
+			return StepResult{
+				Error: fmt.Errorf("error persisting mounted disks: %v", persistError),
+			}
+		}
+		LogMessage(Info, fmt.Sprintf("Selected disks: %v", result.Selected))
+		return StepResult{Error: nil}
+	},
+}
+var UninstallRKE2Step = Step{
+	Name:        "Uninstall RKE2",
+	Description: "Execute the RKE2 uninstall script if it exists",
+	Action: func() StepResult {
+		LogMessage(Info, "Uninstalling RKE2, which takes a couple minutes.")
+		cmd := exec.Command("/usr/local/bin/rke2-uninstall.sh")
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			LogMessage(Info, fmt.Sprintf("RKE2 uninstall script output: %s", string(output)))
+			LogMessage(Info, fmt.Sprintf("RKE2 uninstall script encountered and ignored an error: %v", err))
+			return StepResult{Error: nil}
+		}
+		LogMessage(Info, fmt.Sprintf("RKE2 uninstall script output: %s", string(output)))
+		LogMessage(Info, "RKE2 uninstall script executed successfully.")
+		return StepResult{Error: nil}
 	},
 }
 var GenerateLonghornDiskStringStep = Step{
 	Name:        "Generate Longhorn Disk String",
 	Description: "Generate Longhorn disk configuration string for NVMe drives",
-	Action: func() error {
+	Action: func() StepResult {
 		jsonString, err := GenerateLonghornDiskString()
 		if err != nil {
-			return err
+			return StepResult{Error: err}
 		}
 		if jsonString != "" {
 			LogMessage(Info, fmt.Sprintf("Longhorn disk configuration string: %s", jsonString))
 		} else {
 			LogMessage(Info, "No Longhorn disk configuration string generated.")
 		}
-		return nil
-		// TODO apply the disk string!
+		return StepResult{Error: nil}
 	},
 }
 
 var SetupLonghornStep = Step{
 	Name:        "Setup Longhorn",
 	Description: "Copy Longhorn YAML files to the RKE2 manifests directory",
-	Action: func() error {
-		return setupLonghorn()
+	Action: func() StepResult {
+		err := setupLonghorn()
+		if err != nil {
+			return StepResult{Error: err}
+		}
+		return StepResult{Error: nil}
 	},
 }
 
 var SetupKubeConfig = Step{
-	Name:        "Setup KubeConfit",
+	Name:        "Setup KubeConfig",
 	Description: "Setup and configure KubeConfig, and additional cluster setup command",
-	Action: func() error {
+	Action: func() StepResult {
 		cmd := exec.Command("sh", "-c", "ip route get 1.1.1.1 | awk '{print $7; exit}'")
 		output, err := cmd.Output()
 		if err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to get main IP: %v", err))
-			return fmt.Errorf("failed to get main IP: %w", err)
+			return StepResult{Error: fmt.Errorf("failed to get main IP: %w", err)}
 		}
 		mainIP := strings.TrimSpace(string(output))
 
 		sedCmd := fmt.Sprintf("sudo sed -i 's/127\\.0\\.0\\.1/%s/g' /etc/rancher/rke2/rke2.yaml", mainIP)
 		if err := exec.Command("sh", "-c", sedCmd).Run(); err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to update RKE2 config file: %v", err))
-			return fmt.Errorf("failed to update RKE2 config file: %w", err)
+			return StepResult{Error: fmt.Errorf("failed to update RKE2 config file: %w", err)}
 		}
 
 		if err := os.MkdirAll(os.ExpandEnv("$HOME/.kube"), 0755); err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to create .kube directory: %v", err))
-			return fmt.Errorf("failed to create .kube directory: %w", err)
+			return StepResult{Error: fmt.Errorf("failed to create .kube directory: %w", err)}
 		}
 
 		sedCmd = fmt.Sprintf("sudo sed 's/127\\.0\\.0\\.1/%s/g' /etc/rancher/rke2/rke2.yaml | tee $HOME/.kube/config", mainIP)
 		if err := exec.Command("sh", "-c", sedCmd).Run(); err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to update KUBECONFIG file: %v", err))
-			return fmt.Errorf("failed to update KUBECONFIG file: %w", err)
+			return StepResult{Error: fmt.Errorf("failed to update KUBECONFIG file: %w", err)}
 		}
 
 		if err := exec.Command("chmod", "600", os.ExpandEnv("$HOME/.kube/config")).Run(); err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to set permissions on KUBECONFIG file: %v", err))
-			return fmt.Errorf("failed to set permissions on KUBECONFIG file: %w", err)
+			return StepResult{Error: fmt.Errorf("failed to set permissions on KUBECONFIG file: %w", err)}
 		}
-		tokenCmd := exec.Command("sh", "-c", "cat /var/lib/rancher/rke2/server/node-token")
-		tokenOutput, err := tokenCmd.Output()
-		if err != nil {
-			LogMessage(Error, fmt.Sprintf("Failed to get join token: %v", err))
-			return fmt.Errorf("failed to get join token: %w", err)
+		userHomeDir := os.Getenv("SUDO_USER")
+		if userHomeDir == "" {
+			userHomeDir = os.Getenv("HOME")
+		} else {
+			userHomeDir = fmt.Sprintf("/home/%s", userHomeDir)
 		}
-		joinToken := strings.TrimSpace(string(tokenOutput))
-		// TODO this is totally wrong but placeholder for now
-		joinCommand := fmt.Sprintf("export JOIN_TOKEN=%s; export SERVER_IP=%s; curl https://silogen.github.io/cluster-forge/deploy.sh | sudo bash", joinToken, mainIP)
-		LogMessage(Info, "To setup additional nodes to join the cluster, run the following:")
-		LogMessage(Info, joinCommand)
-
-		app := tview.NewApplication()
-		modal := tview.NewModal().
-			SetText(fmt.Sprintf("To setup additional nodes to join the cluster, run the following:\n\n%s", joinCommand)).
-			AddButtons([]string{"OK"})
-
-		if err := app.SetRoot(modal, true).Run(); err != nil {
-			LogMessage(Error, fmt.Sprintf("Failed to display modal dialog: %v", err))
-			return fmt.Errorf("failed to display modal dialog: %w", err)
+		if err := os.MkdirAll(fmt.Sprintf("%s/.kube", userHomeDir), 0755); err != nil {
+			LogMessage(Error, fmt.Sprintf("Failed to create .kube directory for non-sudo user: %v", err))
+			return StepResult{Error: fmt.Errorf("failed to create .kube directory for non-sudo user: %w", err)}
+		}
+		cpCmd := fmt.Sprintf("sudo cp $HOME/.kube/config %s/.kube/config", userHomeDir)
+		if err := exec.Command("sh", "-c", cpCmd).Run(); err != nil {
+			LogMessage(Error, fmt.Sprintf("Failed to copy KUBECONFIG file to non-sudo user's home directory: %v", err))
+			return StepResult{Error: fmt.Errorf("failed to copy KUBECONFIG file to non-sudo user's home directory: %w", err)}
 		}
 
-		return nil
+		if err := exec.Command("sudo", "chown", fmt.Sprintf("%s:%s", os.Getenv("SUDO_USER"), os.Getenv("SUDO_USER")), fmt.Sprintf("%s/.kube/config", userHomeDir)).Run(); err != nil {
+			LogMessage(Error, fmt.Sprintf("Failed to change ownership of KUBECONFIG file: %v", err))
+			return StepResult{Error: fmt.Errorf("failed to change ownership of KUBECONFIG file: %w", err)}
+		}
+
+		return StepResult{Error: nil}
+	},
+}
+var FinalOutput = Step{
+	Name:        "Output",
+	Description: "Generate output after installation",
+	Action: func() StepResult {
+		if viper.GetBool("FIRST_NODE") {
+			tokenCmd := exec.Command("sh", "-c", "cat /var/lib/rancher/rke2/server/node-token")
+			tokenOutput, err := tokenCmd.Output()
+			if err != nil {
+				LogMessage(Error, fmt.Sprintf("Failed to get join token: %v", err))
+				return StepResult{Error: fmt.Errorf("failed to get join token: %w", err)}
+			}
+			joinToken := strings.TrimSpace(string(tokenOutput))
+
+			mainIPCmd := exec.Command("sh", "-c", "ip route get 1.1.1.1 | awk '{print $7; exit}'")
+			mainIPOutput, err := mainIPCmd.Output()
+			if err != nil {
+				LogMessage(Error, fmt.Sprintf("Failed to get main IP: %v", err))
+				return StepResult{Error: fmt.Errorf("failed to get main IP: %w", err)}
+			}
+			mainIP := strings.TrimSpace(string(mainIPOutput))
+			joinCommand := fmt.Sprintf("export FIRST_NODE=false; export JOIN_TOKEN=%s; export SERVER_IP=%s; sudo bloom\n", joinToken, mainIP)
+			file, err := os.Create("additional_node_command.txt")
+			if err != nil {
+				LogMessage(Error, fmt.Sprintf("Failed to create additional_node_command.txt: %v", err))
+				return StepResult{Error: fmt.Errorf("failed to create additional_node_command.txt: %w", err)}
+			}
+			defer file.Close()
+
+			_, err = file.WriteString(joinCommand)
+			if err != nil {
+				LogMessage(Error, fmt.Sprintf("Failed to write to additional_node_command.txt: %v", err))
+				return StepResult{Error: fmt.Errorf("failed to write to additional_node_command.txt: %w", err)}
+			}
+
+			LogMessage(Info, "To setup additional nodes to join the cluster, run the command in additional_node_command.txt")
+			return StepResult{Message: "To setup additional nodes to join the cluster, run the command in additional_node_command.txt"}
+		} else {
+			message := "The content of longhorn_drive_setup.txt must be run in order to mount drives properly. " +
+				"This can be done in the control node, which was installed first, or with a valid kubeconfig for the cluster."
+			LogMessage(Info, message)
+			return StepResult{Message: message}
+		}
 	},
 }

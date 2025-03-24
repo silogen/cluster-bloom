@@ -74,17 +74,17 @@ func OpenPorts() bool {
 		cmd := exec.Command("sudo", "iptables", "-A", "INPUT", "-p", protocol, "-m", "state", "--state", "NEW", "-m", protocol, "--dport", port, "-j", "ACCEPT")
 		if err := cmd.Run(); err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to open port %s/%s: %v", port, protocol, err))
-			return true
+			return false
 		}
 		LogMessage(Debug, fmt.Sprintf("Opened port %s/%s", port, protocol))
 	}
 	if err := exec.Command("sudo", "iptables-save").Run(); err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to save iptables rules: %v", err))
-		return true
+		return false
 	}
 
 	LogMessage(Debug, "All iptables rules have been added and saved.")
-	return false
+	return true
 }
 
 const (
