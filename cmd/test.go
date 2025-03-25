@@ -40,7 +40,8 @@ func init() {
 func testSteps() {
 	steps := []pkg.Step{
 		pkg.DemoCheckUbuntuStep,
-		pkg.MountDrivesStep,
+		pkg.SelectDrivesStep,
+		pkg.MountSelectedDrivesStep,
 		pkg.DemoDashboardStep,
 	}
 

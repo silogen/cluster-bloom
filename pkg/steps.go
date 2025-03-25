@@ -150,9 +150,9 @@ var CleanDisksStep = Step{
 	},
 }
 
-var MountDrivesStep = Step{
-	Name:        "Check Unmounted Disks",
-	Description: "Identify unmounted physical disks",
+var SelectDrivesStep = Step{
+	Name:        "Select Unmounted Disks",
+	Description: "Identify and select unmounted physical disks",
 	Action: func() StepResult {
 		disks, err := GetUnmountedPhysicalDisks()
 		if err != nil {
@@ -179,7 +179,7 @@ var MountDrivesStep = Step{
 
 		result, err := ShowOptionsScreen(
 			"Unmounted Disks",
-			"Select disks to format and mount\n\n"+diskinfo,
+			"Select disks to format and mount\n\n"+diskinfo+"\n\nThe suggested drives are pre-selected, arrow keys to navigate, spacebar to select, enter to confirm\n\nd when done, q to quit",
 			options,
 			options,
 		)
@@ -195,7 +195,25 @@ var MountDrivesStep = Step{
 			}
 		}
 		LogMessage(Info, fmt.Sprintf("Selected disks: %v", result.Selected))
-		mountError := MountDrives(result.Selected)
+
+		// Store the selected disks for the next step
+		viper.Set("selected_disks", result.Selected)
+
+		return StepResult{Message: fmt.Sprintf("Selected disks: %v", result.Selected)}
+	},
+}
+
+var MountSelectedDrivesStep = Step{
+	Name:        "Mount Selected Disks",
+	Description: "Mount the selected physical disks",
+	Action: func() StepResult {
+		selectedDisks := viper.GetStringSlice("selected_disks")
+		if len(selectedDisks) == 0 {
+			LogMessage(Info, "No disks selected for mounting")
+			return StepResult{Error: nil}
+		}
+
+		mountError := MountDrives(selectedDisks)
 		if mountError != nil {
 			return StepResult{
 				Error: fmt.Errorf("error mounting disks: %v", mountError),
@@ -207,10 +225,11 @@ var MountDrivesStep = Step{
 				Error: fmt.Errorf("error persisting mounted disks: %v", persistError),
 			}
 		}
-		LogMessage(Info, fmt.Sprintf("Selected disks: %v", result.Selected))
+		LogMessage(Info, fmt.Sprintf("Mounted and persisted disks: %v", selectedDisks))
 		return StepResult{Error: nil}
 	},
 }
+
 var UninstallRKE2Step = Step{
 	Name:        "Uninstall RKE2",
 	Description: "Execute the RKE2 uninstall script if it exists",
@@ -334,7 +353,7 @@ var FinalOutput = Step{
 				return StepResult{Error: fmt.Errorf("failed to get main IP: %w", err)}
 			}
 			mainIP := strings.TrimSpace(string(mainIPOutput))
-			joinCommand := fmt.Sprintf("export FIRST_NODE=false; export JOIN_TOKEN=%s; export SERVER_IP=%s; sudo ./bloom\n", joinToken, mainIP)
+			oneLineScript := fmt.Sprintf("echo 'FIRST_NODE: false\\nJOIN_TOKEN: %s\\nSERVER_IP: %s' > bloom.yaml && sudo ./bloom --config bloom.yaml", joinToken, mainIP)
 			file, err := os.Create("additional_node_command.txt")
 			if err != nil {
 				LogMessage(Error, fmt.Sprintf("Failed to create additional_node_command.txt: %v", err))
@@ -342,14 +361,14 @@ var FinalOutput = Step{
 			}
 			defer file.Close()
 
-			_, err = file.WriteString(joinCommand)
+			_, err = file.WriteString(oneLineScript)
 			if err != nil {
 				LogMessage(Error, fmt.Sprintf("Failed to write to additional_node_command.txt: %v", err))
 				return StepResult{Error: fmt.Errorf("failed to write to additional_node_command.txt: %w", err)}
 			}
 
-			LogMessage(Info, "To setup additional nodes to join the cluster, run the command in additional_node_command.txt")
-			return StepResult{Message: "To setup additional nodes to join the cluster, run the command in additional_node_command.txt"}
+			LogMessage(Info, "To setup additional nodes to join the cluster, copy and run the command from additional_node_command.txt")
+			return StepResult{Message: "To setup additional nodes to join the cluster, copy and run the command from additional_node_command.txt"}
 		} else {
 			message := "The content of longhorn_drive_setup.txt must be run in order to mount drives properly. " +
 				"This can be done in the control node, which was installed first, or with a valid kubeconfig for the cluster."
