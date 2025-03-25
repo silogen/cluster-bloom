@@ -212,6 +212,11 @@ func GetUnmountedPhysicalDisks() ([]string, error) {
 		if strings.Contains(string(mountOut), "/") {
 			continue
 		}
+		partCheck := exec.Command("lsblk", "-no", "PARTTYPE", devPath)
+		partOut, err := partCheck.Output()
+		if err == nil && strings.TrimSpace(string(partOut)) != "" {
+			continue
+		}
 		lvmCheck := exec.Command("lsblk", "-no", "NAME", devPath)
 		lvmOut, err := lvmCheck.Output()
 		if err != nil {
