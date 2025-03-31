@@ -1,0 +1,57 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: copy-label-to-annotation
+spec:
+  schedule: "*/5 * * * *"
+  successfulJobsHistoryLimit: 0
+  failedJobsHistoryLimit: 1
+  concurrencyPolicy: Replace
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: node-label-annotator
+              image: bitnami/kubectl:latest
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  for node in $(kubectl get nodes -o name); do
+                    longhorn_label=$(kubectl get $node -o jsonpath='{.metadata.labels.silogen\.ai/longhorndisks}')
+                    longhorn_annotation=$(kubectl get $node -o jsonpath='{.metadata.annotations.node\.longhorn\.io/default-disks-config}')
+                    if [ -n "$longhorn_label" ] && [ -z "$longhorn_annotation" ]; then
+                      disks_json=$(echo "$longhorn_label" | awk -v ORS= -Fxxx '{print "["; for (i=1; i<=NF; i++) printf "{\"path\":\"/mnt/"$i"\",\"allowScheduling\":true}" (i==NF ? "" : ","); print "]"}')
+                      kubectl annotate $node node.longhorn.io/default-disks-config="$disks_json"
+                    fi
+                  done
+          restartPolicy: OnFailure
+          serviceAccountName: node-annotator
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: node-annotator
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: node-annotator-role
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: node-annotator-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: node-annotator-role
+subjects:
+  - kind: ServiceAccount
+    name: node-annotator
+    namespace: default

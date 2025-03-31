@@ -79,90 +79,76 @@ func CleanDisks() error {
 	return nil
 }
 
-func GenerateLonghornDiskString() (string, error) {
+var longhornConfigTemplate = `
+node-label:
+  - node.longhorn.io/create-default-disk=config
+  - node.longhorn.io/instance-manager=true
+  - silogen.ai/longhorndisks=%s
+`
+
+func GenerateLonghornDiskString() error {
+	rke2ConfigPath := "/etc/rancher/rke2/config.yaml"
+
+	if viper.IsSet("LONGHORN_DISKS") && viper.GetString("LONGHORN_DISKS") != "" {
+		LogMessage(Info, "Using LONGHORN_DISKS for Longhorn configuration.")
+		disks := strings.Split(viper.GetString("LONGHORN_DISKS"), ",")
+		diskList := strings.Join(disks, "xxx")
+
+		configContent := fmt.Sprintf(longhornConfigTemplate, diskList)
+
+		if err := appendToFile(rke2ConfigPath, configContent); err != nil {
+			return fmt.Errorf("failed to append Longhorn configuration to %s: %w", rke2ConfigPath, err)
+		}
+		LogMessage(Info, "Appended Longhorn disk configuration to RKE2 config.")
+		return nil
+	}
+
 	cmd := exec.Command("sh", "-c", "mount | grep -oP '/mnt/disk\\d+'")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to list mounted disks: %v", err))
-		return "", fmt.Errorf("failed to list mounted disks: %w", err)
+		return fmt.Errorf("failed to list mounted disks: %w", err)
 	}
 
 	disks := strings.Fields(string(output))
 	if len(disks) == 0 {
 		LogMessage(Info, "No /mnt/disk{x} drives found.")
-		return "", nil
+		return nil
 	}
 
 	nvmeDisks := []string{}
 	for _, disk := range disks {
 		cmd := exec.Command("sh", "-c", fmt.Sprintf("lsblk -no NAME,MOUNTPOINT | grep '%s' | grep 'nvme'", disk))
 		if err := cmd.Run(); err == nil {
-			nvmeDisks = append(nvmeDisks, disk)
+			nvmeDisks = append(nvmeDisks, strings.TrimPrefix(disk, "/mnt/"))
 		}
 	}
 
-	if len(nvmeDisks) == 0 {
-		LogMessage(Info, "No NVMe drives found among the mounted disks.")
-		return "", nil
+	if len(nvmeDisks) > 0 {
+		diskList := strings.Join(nvmeDisks, "xxx")
+
+		configContent := fmt.Sprintf(longhornConfigTemplate, diskList)
+
+		if err := appendToFile(rke2ConfigPath, configContent); err != nil {
+			return fmt.Errorf("failed to append Longhorn configuration to %s: %w", rke2ConfigPath, err)
+		}
+		LogMessage(Info, "Appended Longhorn disk configuration to RKE2 config.")
 	}
 
-	var jsonBuilder strings.Builder
-	jsonBuilder.WriteString("[")
-	for _, disk := range nvmeDisks {
-		jsonBuilder.WriteString(fmt.Sprintf("{\\\"path\\\":\\\"%s\\\",\\\"allowScheduling\\\":true},", disk))
+	return nil
+}
+
+func appendToFile(filePath, content string) error {
+	file, err := os.OpenFile(filePath, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open file %s: %w", filePath, err)
 	}
-	jsonString := strings.TrimRight(jsonBuilder.String(), ",") + "]"
-	if viper.GetBool("FIRST_NODE") {
-		hostname, err := os.Hostname()
-		if err != nil {
-			LogMessage(Error, fmt.Sprintf("Failed to get hostname: %v", err))
-			return "", fmt.Errorf("failed to get hostname: %w", err)
-		}
-		patchCmd := exec.Command(
-			"kubectl", "patch", "node",
-			hostname,
-			"--kubeconfig=/etc/rancher/rke2/rke2.yaml",
-			"--type=merge",
-			"-p", fmt.Sprintf(`{"metadata": {"labels": {"node.longhorn.io/create-default-disk": "config", "node.longhorn.io/instance-manager": "true"}, "annotations": {"node.longhorn.io/default-disks-config": "%s"}}}`, jsonString),
-		)
-		patchOutput, patchErr := patchCmd.CombinedOutput()
-		if patchErr != nil {
-			LogMessage(Error, fmt.Sprintf("Failed to patch node with Longhorn disk configuration: %v", patchErr))
-			LogMessage(Error, fmt.Sprintf("kubectl patch output: %s", string(patchOutput)))
-			return "", fmt.Errorf("failed to patch node with Longhorn disk configuration: %w", patchErr)
-		}
-		LogMessage(Info, fmt.Sprintf("Successfully patched node with Longhorn disk configuration: %s", string(patchOutput)))
+	defer file.Close()
 
-	} else {
-		hostname, err := os.Hostname()
-		if err != nil {
-			LogMessage(Error, fmt.Sprintf("Failed to get hostname: %v", err))
-			return "", fmt.Errorf("failed to get hostname: %w", err)
-		}
-
-		scriptContent := fmt.Sprintf(`kubectl patch node %s \
---type=json \
--p '{"metadata": {"labels": {"node.longhorn.io/create-default-disk": "config", "node.longhorn.io/instance-manager": "true"}, "annotations": {"node.longhorn.io/default-disks-config": "%s"}}}'
-`, hostname, jsonString)
-
-		file, err := os.Create("longhorn_drive_setup.txt")
-		if err != nil {
-			LogMessage(Error, fmt.Sprintf("Failed to create longhorn_drive_setup.txt: %v", err))
-			return "", fmt.Errorf("failed to create longhorn_drive_setup.txt: %w", err)
-		}
-		defer file.Close()
-		_, err = file.WriteString(scriptContent)
-		if err != nil {
-			LogMessage(Error, fmt.Sprintf("Failed to write to longhorn_drive_setup.txt: %v", err))
-			return "", fmt.Errorf("failed to write to longhorn_drive_setup.txt: %w", err)
-		}
-		if err := file.Chmod(0755); err != nil {
-			LogMessage(Error, fmt.Sprintf("Failed to set executable permissions on longhorn_drive_setup.txt: %v", err))
-			return "", fmt.Errorf("failed to set executable permissions on longhorn_drive_setup.txt: %w", err)
-		}
+	if _, err := file.WriteString(content); err != nil {
+		return fmt.Errorf("failed to write to file %s: %w", filePath, err)
 	}
-	LogMessage(Info, "Generated Longhorn disk configuration string.")
-	return jsonString, nil
+	return nil
 }
 
 func isVirtualDisk(udevOut []byte) bool {
@@ -185,6 +171,10 @@ func isVirtualDisk(udevOut []byte) bool {
 }
 
 func GetUnmountedPhysicalDisks() ([]string, error) {
+	if viper.IsSet("LONGHORN_DISKS") && viper.GetString("LONGHORN_DISKS") != "" {
+		LogMessage(Info, "Skipping disk check as SKIP_DISK_CHECK is set.")
+		return nil, nil
+	}
 	var result []string
 
 	lsblkCmd := exec.Command("lsblk", "-dn", "-o", "NAME,TYPE")
@@ -212,19 +202,6 @@ func GetUnmountedPhysicalDisks() ([]string, error) {
 		if strings.Contains(string(mountOut), "/") {
 			continue
 		}
-		partCheck := exec.Command("lsblk", "-no", "PARTTYPE", devPath)
-		partOut, err := partCheck.Output()
-		if err == nil && strings.TrimSpace(string(partOut)) != "" {
-			continue
-		}
-		lvmCheck := exec.Command("lsblk", "-no", "NAME", devPath)
-		lvmOut, err := lvmCheck.Output()
-		if err != nil {
-			continue
-		}
-		if strings.Contains(string(lvmOut), "ExtStorage-ExtStorageLV") {
-			continue
-		}
 		if strings.HasPrefix(name, "sd") {
 			udevCmd := exec.Command("udevadm", "info", "--query=property", "--name", devPath)
 			udevOut, err := udevCmd.Output()
@@ -244,8 +221,12 @@ func GetUnmountedPhysicalDisks() ([]string, error) {
 	}
 	return result, nil
 }
-
 func MountDrives(drives []string) error {
+	if viper.IsSet("LONGHORN_DISKS") && viper.GetString("LONGHORN_DISKS") != "" {
+		LogMessage(Info, "Skipping drive mounting as LONGHORN_DISKS is set.")
+		return nil
+	}
+
 	usedMountPoints := make(map[string]bool)
 	i := 0
 	cmd := exec.Command("sh", "-c", "mount | awk '/\\/mnt\\/disk[0-9]+/ {print $3}'")
@@ -314,6 +295,10 @@ func MountDrives(drives []string) error {
 }
 
 func PersistMountedDisks() error {
+	if viper.IsSet("LONGHORN_DISKS") && viper.GetString("LONGHORN_DISKS") != "" {
+		LogMessage(Info, "Skipping drive mounting as LONGHORN_DISKS is set.")
+		return nil
+	}
 	cmd := exec.Command("sh", "-c", "mount | awk '/\\/mnt\\/disk[0-9]+/ {print $1, $3}'")
 	output, err := cmd.Output()
 	if err != nil {
@@ -339,7 +324,6 @@ func PersistMountedDisks() error {
 		}
 		device, mountPoint := fields[0], fields[1]
 
-		// Get the UUID of the device
 		cmd := exec.Command("blkid", "-s", "UUID", "-o", "value", device)
 		uuidOutput, err := cmd.Output()
 		if err != nil {

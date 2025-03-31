@@ -21,10 +21,14 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/user"
 	"strings"
 
 	"github.com/spf13/viper"
 )
+
+//go:embed manifests/*.yaml
+var manifestFiles embed.FS
 
 //go:embed templates/*.yaml
 var templateFiles embed.FS
@@ -251,14 +255,9 @@ var GenerateLonghornDiskStringStep = Step{
 	Name:        "Generate Longhorn Disk String",
 	Description: "Generate Longhorn disk configuration string for NVMe drives",
 	Action: func() StepResult {
-		jsonString, err := GenerateLonghornDiskString()
+		err := GenerateLonghornDiskString()
 		if err != nil {
 			return StepResult{Error: err}
-		}
-		if jsonString != "" {
-			LogMessage(Info, fmt.Sprintf("Longhorn disk configuration string: %s", jsonString))
-		} else {
-			LogMessage(Info, "No Longhorn disk configuration string generated.")
 		}
 		return StepResult{Error: nil}
 	},
@@ -268,7 +267,23 @@ var SetupLonghornStep = Step{
 	Name:        "Setup Longhorn",
 	Description: "Copy Longhorn YAML files to the RKE2 manifests directory",
 	Action: func() StepResult {
-		err := setupLonghorn()
+		if viper.GetBool("FIRST_NODE") {
+			err := setupLonghorn()
+			if err != nil {
+				return StepResult{Error: err}
+			}
+		} else {
+			return StepResult{Error: nil}
+		}
+		return StepResult{Error: nil}
+	},
+}
+var PrepareRKE2Step = Step{
+	Name:        "Prepare for RKE2",
+	Description: "RKE2 preparations",
+	Action: func() StepResult {
+
+		err := PrepareRKE2()
 		if err != nil {
 			return StepResult{Error: err}
 		}
@@ -276,10 +291,37 @@ var SetupLonghornStep = Step{
 	},
 }
 
+var HasSufficientRootPartitionStep = Step{
+	Name:        "Check Root Partition Size",
+	Description: "Check if the root partition size is sufficient",
+	Action: func() StepResult {
+
+		if HasSufficientRootPartition() {
+			return StepResult{Error: nil}
+		}
+		return StepResult{Error: fmt.Errorf("root partition size is less than the recommended 500GB")}
+	},
+}
+
+var NVMEDrivesAvailableStep = Step{
+	Name:        "Check NVMe Drives",
+	Description: "Check if NVMe drives are available",
+	Action: func() StepResult {
+
+		if NVMEDrivesAvailable() {
+			return StepResult{Error: nil}
+		}
+		return StepResult{Error: fmt.Errorf("no NVMe drives available (either unmounted or mounted at /mnt/disk*)")}
+	},
+}
+
 var SetupKubeConfig = Step{
 	Name:        "Setup KubeConfig",
 	Description: "Setup and configure KubeConfig, and additional cluster setup command",
 	Action: func() StepResult {
+		if !viper.GetBool("FIRST_NODE") {
+			return StepResult{Error: nil}
+		}
 		cmd := exec.Command("sh", "-c", "ip route get 1.1.1.1 | awk '{print $7; exit}'")
 		output, err := cmd.Output()
 		if err != nil {
@@ -309,25 +351,30 @@ var SetupKubeConfig = Step{
 			LogMessage(Error, fmt.Sprintf("Failed to set permissions on KUBECONFIG file: %v", err))
 			return StepResult{Error: fmt.Errorf("failed to set permissions on KUBECONFIG file: %w", err)}
 		}
-		userHomeDir := os.Getenv("SUDO_USER")
-		if userHomeDir == "" {
-			userHomeDir = os.Getenv("HOME")
-		} else {
-			userHomeDir = fmt.Sprintf("/home/%s", userHomeDir)
+		currentUser, err := user.Current()
+		if err != nil {
+			LogMessage(Error, fmt.Sprintf("Failed to get current user: %v", err))
+			return StepResult{Error: fmt.Errorf("failed to get current user: %w", err)}
+		}
+		userHomeDir := currentUser.HomeDir
+		if os.Getenv("SUDO_USER") != "" {
+			sudoUser, err := user.Lookup(os.Getenv("SUDO_USER"))
+			if err != nil {
+				LogMessage(Error, fmt.Sprintf("Failed to lookup sudo user: %v", err))
+			} else {
+				userHomeDir = sudoUser.HomeDir
+			}
 		}
 		if err := os.MkdirAll(fmt.Sprintf("%s/.kube", userHomeDir), 0755); err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to create .kube directory for non-sudo user: %v", err))
-			return StepResult{Error: fmt.Errorf("failed to create .kube directory for non-sudo user: %w", err)}
 		}
 		cpCmd := fmt.Sprintf("sudo cp $HOME/.kube/config %s/.kube/config", userHomeDir)
 		if err := exec.Command("sh", "-c", cpCmd).Run(); err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to copy KUBECONFIG file to non-sudo user's home directory: %v", err))
-			return StepResult{Error: fmt.Errorf("failed to copy KUBECONFIG file to non-sudo user's home directory: %w", err)}
 		}
 
 		if err := exec.Command("sudo", "chown", fmt.Sprintf("%s:%s", os.Getenv("SUDO_USER"), os.Getenv("SUDO_USER")), fmt.Sprintf("%s/.kube/config", userHomeDir)).Run(); err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to change ownership of KUBECONFIG file: %v", err))
-			return StepResult{Error: fmt.Errorf("failed to change ownership of KUBECONFIG file: %w", err)}
 		}
 
 		return StepResult{Error: nil}
@@ -353,7 +400,7 @@ var FinalOutput = Step{
 				return StepResult{Error: fmt.Errorf("failed to get main IP: %w", err)}
 			}
 			mainIP := strings.TrimSpace(string(mainIPOutput))
-			oneLineScript := fmt.Sprintf("echo 'FIRST_NODE: false\\nJOIN_TOKEN: %s\\nSERVER_IP: %s' > bloom.yaml && sudo ./bloom --config bloom.yaml", joinToken, mainIP)
+			oneLineScript := fmt.Sprintf("echo -e 'FIRST_NODE: false\\nJOIN_TOKEN: %s\\nSERVER_IP: %s' > bloom.yaml && sudo ./bloom --config bloom.yaml", joinToken, mainIP)
 			file, err := os.Create("additional_node_command.txt")
 			if err != nil {
 				LogMessage(Error, fmt.Sprintf("Failed to create additional_node_command.txt: %v", err))

@@ -9,16 +9,103 @@ import (
 	"github.com/spf13/viper"
 )
 
-func SetupFirstRKE2() error {
+var rke2ConfigContent = `
+cluster-cidr: 10.242.0.0/16
+service-cidr: 10.243.0.0/16
+
+disable: rke2-ingress-nginx
+audit-log-path: "/var/lib/rancher/rke2/server/logs/kube-apiserver-audit.log"
+audit-log-maxage: 30
+audit-log-maxbackup: 10
+audit-log-maxsize: 100
+audit-policy-file: "/etc/rancher/rke2/audit-policy.yaml"
+`
+
+var oidcConfigTemplate = `
+kube-apiserver-arg:
+  - "--oidc-issuer-url=%s"
+  - "--oidc-client-id=rke-clusters"
+  - "--oidc-username-claim=preferred_username"
+  - "--oidc-groups-claim=groups"
+  - "--oidc-ca-file=/etc/rancher/rke2/oidc-ca.crt"
+  - "--oidc-username-prefix=oidc"
+  - "--oidc-groups-prefix=oidc"
+`
+
+func FetchAndSaveOIDCCertificate(url string) error {
+	cmd := exec.Command("sh", "-c", fmt.Sprintf("openssl s_client -showcerts -connect %s:443 </dev/null | sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p'", url))
+	output, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to fetch certificate from %s: %v", url, err)
+	}
+	if err := os.WriteFile("/etc/rancher/rke2/oidc-ca.crt", output, 0644); err != nil {
+		return fmt.Errorf("failed to write certificate: %v", err)
+	}
+	return nil
+}
+
+func PrepareRKE2() error {
 	commands := []struct {
 		command string
 		args    []string
 	}{
 		{"modprobe", []string{"iscsi_tcp"}},
 		{"modprobe", []string{"dm_mod"}},
-		{"sh", []string{"-c", "/usr/local/bin/rke2-uninstall.sh || true"}},
 		{"mkdir", []string{"-p", "/etc/rancher/rke2"}},
 		{"chmod", []string{"0755", "/etc/rancher/rke2"}},
+	}
+
+	for _, cmd := range commands {
+		_, err := runCommand(cmd.command, cmd.args...)
+		if err != nil {
+			LogMessage(Error, fmt.Sprintf("Failed to execute command '%s %v': %v", cmd.command, cmd.args, err))
+			return fmt.Errorf("failed to execute command '%s %v': %w", cmd.command, cmd.args, err)
+		}
+		LogMessage(Info, fmt.Sprintf("Successfully executed command: %s %v", cmd.command, cmd.args))
+	}
+	err := setupAudit()
+	if err != nil {
+		LogMessage(Error, fmt.Sprintf("Failed to setup audit: %v", err))
+		return fmt.Errorf("failed to setup audit policy: %w", err)
+	}
+	rke2ConfigPath := "/etc/rancher/rke2/config.yaml"
+	if err := os.WriteFile(rke2ConfigPath, []byte(rke2ConfigContent), 0644); err != nil {
+		LogMessage(Error, fmt.Sprintf("Failed to write to %s: %v", rke2ConfigPath, err))
+		return err
+	}
+	certPath := "/etc/rancher/rke2/oidc-ca.crt"
+	if _, err := os.Stat(certPath); err == nil {
+		if err := os.Remove(certPath); err != nil {
+			return fmt.Errorf("failed to remove existing certificate at %s: %v", certPath, err)
+		}
+		LogMessage(Info, fmt.Sprintf("Removed existing certificate at %s", certPath))
+	}
+	oidcURL := viper.GetString("OIDC_URL")
+	if oidcURL != "" {
+		if err := FetchAndSaveOIDCCertificate(oidcURL); err != nil {
+			LogMessage(Error, fmt.Sprintf("Failed to fetch and save OIDC certificate: %v", err))
+		}
+		LogMessage(Info, fmt.Sprintf("Fetched and saved OIDC certificate from %s", oidcURL))
+		configContent := fmt.Sprintf(oidcConfigTemplate, oidcURL)
+
+		file, err := os.OpenFile(rke2ConfigPath, os.O_APPEND|os.O_WRONLY, 0644)
+		if err != nil {
+			return fmt.Errorf("failed to open %s for appending: %v", rke2ConfigPath, err)
+		}
+		defer file.Close()
+
+		if _, err := file.WriteString(configContent); err != nil {
+			return fmt.Errorf("failed to append to %s: %v", rke2ConfigPath, err)
+		}
+	}
+	return nil
+}
+
+func SetupFirstRKE2() error {
+	commands := []struct {
+		command string
+		args    []string
+	}{
 		{"sh", []string{"-c", "curl -sfL https://get.rke2.io | sh -"}},
 		{"systemctl", []string{"enable", "rke2-server.service"}},
 	}
@@ -74,23 +161,25 @@ func SetupRKE2Additional() error {
 		return fmt.Errorf("JOIN_TOKEN configuration item is not set")
 	}
 	rke2ConfigPath := "/etc/rancher/rke2/config.yaml"
-	if err := os.MkdirAll("/etc/rancher/rke2", 0755); err != nil {
-		LogMessage(Error, fmt.Sprintf("Failed to create directory /etc/rancher/rke2: %v", err))
+
+	configContent := fmt.Sprintf("\nserver: https://%s:9345\ntoken: %s\n", serverIP, joinToken)
+	file, err := os.OpenFile(rke2ConfigPath, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		LogMessage(Error, fmt.Sprintf("Failed to open %s for appending: %v", rke2ConfigPath, err))
+		return err
+	}
+	defer file.Close()
+
+	if _, err := file.WriteString(configContent); err != nil {
+		LogMessage(Error, fmt.Sprintf("Failed to append to %s: %v", rke2ConfigPath, err))
 		return err
 	}
 
-	configContent := fmt.Sprintf("server: https://%s:9345\ntoken: %s\n", serverIP, joinToken)
-	if err := os.WriteFile(rke2ConfigPath, []byte(configContent), 0644); err != nil {
-		LogMessage(Error, fmt.Sprintf("Failed to write to %s: %v", rke2ConfigPath, err))
-		return err
-	}
+	LogMessage(Info, fmt.Sprintf("Appended configuration to %s", rke2ConfigPath))
 	commands := []struct {
 		command string
 		args    []string
 	}{
-		{"modprobe", []string{"iscsi_tcp"}},
-		{"modprobe", []string{"dm_mod"}},
-		{"sh", []string{"-c", "/usr/local/bin/rke2-uninstall.sh || true"}},
 		{"sh", []string{"-c", "curl -sfL https://get.rke2.io | INSTALL_RKE2_TYPE=agent sh -"}},
 		{"systemctl", []string{"enable", "rke2-agent.service"}},
 	}
