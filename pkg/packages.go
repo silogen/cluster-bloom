@@ -81,12 +81,12 @@ func setupLonghorn() error {
 	if err := os.MkdirAll(targetDir, 0755); err != nil {
 		return fmt.Errorf("failed to create target directory %s: %w", targetDir, err)
 	}
-	err := fs.WalkDir(templateFiles, "templates", func(path string, d fs.DirEntry, err error) error {
+	err := fs.WalkDir(manifestFiles, "manifests", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if !d.IsDir() && filepath.Ext(path) == ".yaml" {
-			content, err := templateFiles.ReadFile(path)
+			content, err := manifestFiles.ReadFile(path)
 			if err != nil {
 				return fmt.Errorf("failed to read file %s: %w", path, err)
 			}
@@ -103,5 +103,28 @@ func setupLonghorn() error {
 	}
 
 	LogMessage(Info, "Longhorn setup completed successfully")
+	return nil
+}
+
+func setupAudit() error {
+	sourceFile := "templates/audit-policy.yaml"
+	targetDir := "/etc/rancher/rke2"
+	targetPath := filepath.Join(targetDir, filepath.Base(sourceFile))
+
+	if err := os.MkdirAll(targetDir, 0755); err != nil {
+		return fmt.Errorf("failed to create target directory %s: %w", targetDir, err)
+	}
+
+	content, err := templateFiles.ReadFile(sourceFile)
+	if err != nil {
+		return fmt.Errorf("failed to read file %s: %w", sourceFile, err)
+	}
+
+	if err := os.WriteFile(targetPath, content, 0644); err != nil {
+		return fmt.Errorf("failed to write file %s: %w", targetPath, err)
+	}
+
+	LogMessage(Info, fmt.Sprintf("Copied %s to %s", sourceFile, targetPath))
+	LogMessage(Info, "Audit policy setup completed successfully")
 	return nil
 }

@@ -17,6 +17,7 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -30,9 +31,22 @@ var rootCmd = &cobra.Command{
 	Use:   "bloom",
 	Short: "Cluster-Bloom creates a cluster",
 	Long: `
-Cluster-Bloom installs and configures a kubernetes cluster.
-It installs rocm, and other needed settings to prepare a (primarily AMD GPU) node to be part of a kubernets cluster,
-and ready to be deployed with Cluster-Forge.`,
+Cluster-Bloom installs and configures a Kubernetes cluster.
+It installs ROCm and other needed settings to prepare a (primarily AMD GPU) node to be part of a Kubernetes cluster,
+and ready to be deployed with Cluster-Forge.
+
+Available Configuration Variables:
+  - FIRST_NODE: Set to true if this is the first node in the cluster (default: true).
+  - GPU_NODE: Set to true if this node has GPUs (default: true).
+  - OIDC_URL: The URL of the OIDC provider (default: "").
+  - SERVER_IP: The IP address of the RKE2 server (required for additional nodes).
+  - JOIN_TOKEN: The token used to join additional nodes to the cluster (required for additional nodes).
+  - SKIP_DISK_CHECK: Set to true to skip disk-related operations (default: false).
+  - LONGHORN_DISKS: Comma-separated list of disk paths to use for Longhorn (default: "").
+
+Usage:
+  Use the --config flag to specify a configuration file, or set the above variables in the environment or a Viper-compatible config file.
+`,
 	Run: func(cmd *cobra.Command, args []string) {
 		log.Debug("Starting package installation")
 		rootSteps()
@@ -49,6 +63,7 @@ func init() {
 	cobra.OnInitialize(initConfig)
 
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is ./config.yaml)")
+	rootCmd.AddCommand(helpCmd)
 }
 
 func initConfig() {
@@ -69,6 +84,9 @@ func initConfig() {
 
 	viper.SetDefault("FIRST_NODE", true)
 	viper.SetDefault("GPU_NODE", true)
+	viper.SetDefault("OIDC_URL", "")
+	viper.SetDefault("SKIP_DISK_CHECK", false)
+	viper.SetDefault("LONGHORN_DISKS", "")
 
 	viper.AutomaticEnv()
 	if err := viper.ReadInConfig(); err == nil {
@@ -125,19 +143,22 @@ func logConfigValues() {
 func rootSteps() {
 	preK8Ssteps := []pkg.Step{
 		pkg.CheckUbuntuStep,
+		pkg.HasSufficientRootPartitionStep,
+		pkg.NVMEDrivesAvailableStep,
 		pkg.InstallDependentPackagesStep,
 		pkg.UninstallRKE2Step,
 		pkg.CleanDisksStep,
-		pkg.OpenPortsStep,
 		pkg.SelectDrivesStep,
 		pkg.MountSelectedDrivesStep,
+		pkg.PrepareRKE2Step,
+		pkg.GenerateLonghornDiskStringStep,
 		pkg.InstallK8SToolsStep,
 		pkg.InotifyInstancesStep,
 		pkg.SetupAndCheckRocmStep,
+		pkg.OpenPortsStep,
 	}
 	k8Ssteps := []pkg.Step{
 		pkg.SetupRKE2Step,
-		pkg.GenerateLonghornDiskStringStep,
 	}
 	postK8Ssteps := []pkg.Step{
 		pkg.SetupLonghornStep,
@@ -145,4 +166,30 @@ func rootSteps() {
 		pkg.FinalOutput,
 	}
 	pkg.RunStepsWithUI(append(append(preK8Ssteps, k8Ssteps...), postK8Ssteps...))
+}
+
+func displayHelp() {
+	helpContent := `
+Cluster-Bloom Help:
+
+Available Configuration Variables:
+  - FIRST_NODE: Set to true if this is the first node in the cluster (default: true).
+  - GPU_NODE: Set to true if this node has GPUs (default: true).
+  - OIDC_URL: The URL of the OIDC provider (default: "").
+  - SERVER_IP: The IP address of the RKE2 server (required for additional nodes).
+  - JOIN_TOKEN: The token used to join additional nodes to the cluster (required for additional nodes).
+  - SKIP_DISK_CHECK: Set to true to skip disk-related operations (default: false).
+
+Usage:
+  Use the --config flag to specify a configuration file, or set the above variables in the environment or a Viper-compatible config file.
+`
+	fmt.Println(helpContent)
+}
+
+var helpCmd = &cobra.Command{
+	Use:   "help",
+	Short: "Display help information",
+	Run: func(cmd *cobra.Command, args []string) {
+		displayHelp()
+	},
 }

@@ -180,7 +180,7 @@ func RunStepsWithUI(steps []Step) error {
 			if finalErr != nil {
 				fmt.Fprintf(statusBar, "[red]Execution failed: %v[white]", finalErr)
 			} else {
-				fmt.Fprintf(statusBar, "[green]All steps completed successfully![white]")
+				fmt.Fprintf(statusBar, "[green]All steps completed.[white]")
 			}
 		})
 
