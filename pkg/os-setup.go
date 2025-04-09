@@ -260,7 +260,6 @@ func NVMEDrivesAvailable() bool {
 }
 
 func CreateMetalLBConfig() error {
-	// Find the main default IP of the host
 	cmd := exec.Command("sh", "-c", "ip route get 1 | awk '{print $7; exit}'")
 	output, err := cmd.Output()
 	if err != nil {
@@ -271,7 +270,6 @@ func CreateMetalLBConfig() error {
 		return fmt.Errorf("default IP address could not be determined")
 	}
 
-	// Define the MetalLB configuration content
 	metallbConfig := fmt.Sprintf(`apiVersion: metallb.io/v1beta1
 kind: IPAddressPool
 metadata:
@@ -287,8 +285,6 @@ metadata:
   name: my-l2-advertisement
   namespace: metallb-system
 `, defaultIP)
-
-	// Write the configuration to the specified file
 	manifestPath := "/var/lib/rancher/rke2/server/manifests/metallb.yaml"
 	if err := os.WriteFile(manifestPath, []byte(metallbConfig), 0644); err != nil {
 		return fmt.Errorf("failed to write MetalLB configuration to %s: %v", manifestPath, err)

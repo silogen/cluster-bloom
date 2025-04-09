@@ -43,6 +43,7 @@ Available Configuration Variables:
   - JOIN_TOKEN: The token used to join additional nodes to the cluster (required for additional nodes).
   - SKIP_DISK_CHECK: Set to true to skip disk-related operations (default: false).
   - LONGHORN_DISKS: Comma-separated list of disk paths to use for Longhorn (default: "").
+  - ONEPASS_CONNECT_TOKEN: The token used for 1Password Connect integration (default: "").
 
 Usage:
   Use the --config flag to specify a configuration file, or set the above variables in the environment or a Viper-compatible config file.
@@ -87,6 +88,7 @@ func initConfig() {
 	viper.SetDefault("OIDC_URL", "")
 	viper.SetDefault("SKIP_DISK_CHECK", false)
 	viper.SetDefault("LONGHORN_DISKS", "")
+	viper.SetDefault("ONEPASS_CONNECT_TOKEN", "")
 
 	viper.AutomaticEnv()
 	if err := viper.ReadInConfig(); err == nil {
@@ -163,8 +165,14 @@ func rootSteps() {
 	postK8Ssteps := []pkg.Step{
 		pkg.SetupLonghornStep,
 		pkg.SetupKubeConfig,
-		pkg.FinalOutput,
 	}
+
+	if viper.IsSet("ONEPASS_CONNECT_TOKEN") && viper.GetString("ONEPASS_CONNECT_TOKEN") != "" {
+		postK8Ssteps = append(postK8Ssteps, pkg.SetupOnePasswordSecretStep)
+	}
+
+	postK8Ssteps = append(postK8Ssteps, pkg.FinalOutput)
+
 	pkg.RunStepsWithUI(append(append(preK8Ssteps, k8Ssteps...), postK8Ssteps...))
 }
 
@@ -179,6 +187,8 @@ Available Configuration Variables:
   - SERVER_IP: The IP address of the RKE2 server (required for additional nodes).
   - JOIN_TOKEN: The token used to join additional nodes to the cluster (required for additional nodes).
   - SKIP_DISK_CHECK: Set to true to skip disk-related operations (default: false).
+  - LONGHORN_DISKS: Comma-separated list of disk paths to use for Longhorn (default: "").
+  - ONEPASS_CONNECT_TOKEN: The token used for 1Password Connect integration (default: "").
 
 Usage:
   Use the --config flag to specify a configuration file, or set the above variables in the environment or a Viper-compatible config file.
