@@ -297,3 +297,21 @@ metadata:
 	LogMessage(Info, fmt.Sprintf("MetalLB configuration written to %s with IP %s", manifestPath, defaultIP))
 	return nil
 }
+
+// GetUserHomeDirViaShell gets a user's home directory using shell tilde expansion
+func GetUserHomeDirViaShell(username string) (string, error) {
+	// Use shell's tilde expansion to get the home directory
+	cmd := exec.Command("sh", "-c", fmt.Sprintf("eval echo ~%s", username))
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get home directory for user %s: %w", username, err)
+	}
+
+	homeDir := strings.TrimSpace(string(output))
+	// Check if the expansion was successful (if it wasn't, the shell would just echo back ~username)
+	if homeDir == fmt.Sprintf("~%s", username) {
+		return "", fmt.Errorf("user %s not found or home directory not available", username)
+	}
+
+	return homeDir, nil
+}
