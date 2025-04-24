@@ -171,6 +171,20 @@ var CleanDisksStep = Step{
 	},
 }
 
+var SetupMultipathStep = Step{
+	Name:        "Setup Multipath",
+	Description: "Configure multipath to blacklist standard devices",
+	Action: func() StepResult {
+		err := setupMultipath()
+		if err != nil {
+			return StepResult{
+				Error: fmt.Errorf("multipath setup failed: %w", err),
+			}
+		}
+		return StepResult{Error: nil}
+	},
+}
+
 var SelectDrivesStep = Step{
 	Name:        "Select Unmounted Disks",
 	Description: "Identify and select unmounted physical disks",
