@@ -319,12 +319,12 @@ func GetUserHomeDirViaShell(username string) (string, error) {
 func setupMultipath() error {
 	configFile := "/etc/multipath.conf"
 	blacklistEntry := `devnode "^sd[a-z0-9]+"`
-
+	configContent := "blacklist {\n    devnode \"^sd[a-z0-9]+\"\n}\n"
 	// Check if the configuration file exists
 	_, err := os.Stat(configFile)
 	if os.IsNotExist(err) {
 		LogMessage(Info, "Creating default multipath configuration file...")
-		configContent := "blacklist {\n    devnode \"^sd[a-z0-9]+\"\n}\n"
+
 		err = os.WriteFile(configFile, []byte(configContent), 0644)
 		if err != nil {
 			return fmt.Errorf("failed to create multipath.conf: %w", err)
@@ -337,15 +337,20 @@ func setupMultipath() error {
 		if err != nil {
 			return fmt.Errorf("failed to read multipath.conf: %w", err)
 		}
-
+		newConfigData := ""
 		if !strings.Contains(string(configData), blacklistEntry) {
 			LogMessage(Info, "Adding blacklist entry to multipath.conf...")
-			// TODO this regex might need more if we have a complicated set of entries
-			newConfigData := strings.Replace(
-				string(configData),
-				"blacklist {",
-				"blacklist {\n    "+blacklistEntry,
-				1)
+			// Replace this with more robust regex if the file structure varies significantly
+			if strings.Contains(string(configData), "blacklist {") {
+				newConfigData = strings.Replace(
+					string(configData),
+					"blacklist {",
+					"blacklist {\n    "+blacklistEntry,
+					1)
+			} else {
+				// if no blacklistEntry still, add it
+				newConfigData = string(configData) + configContent
+			}
 
 			err = os.WriteFile(configFile, []byte(newConfigData), 0644)
 			if err != nil {

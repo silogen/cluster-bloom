@@ -148,6 +148,7 @@ func rootSteps() {
 		pkg.InstallDependentPackagesStep,
 		pkg.UninstallRKE2Step,
 		pkg.CleanDisksStep,
+		pkg.SetupMultipathStep,
 		pkg.SelectDrivesStep,
 		pkg.MountSelectedDrivesStep,
 		pkg.PrepareRKE2Step,
