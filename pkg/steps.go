@@ -424,3 +424,11 @@ var FinalOutput = Step{
 		}
 	},
 }
+
+var SetRenderGroupStep = Step{
+	Name:        "Set Render Group",
+	Description: "Make video the group of /dev/dri/renderD*",
+	Action: func() StepResult {
+		return StepResult{Error: exec.Command("/bin/sh", "-c", "sudo chgrp video /dev/dri/renderD*").Run()}
+	},
+}
