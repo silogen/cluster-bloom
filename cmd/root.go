@@ -150,6 +150,7 @@ func rootSteps() {
 		pkg.InstallDependentPackagesStep,
 		pkg.UninstallRKE2Step,
 		pkg.CleanDisksStep,
+		pkg.SetupMultipathStep,
 		pkg.SelectDrivesStep,
 		pkg.MountSelectedDrivesStep,
 		pkg.PrepareRKE2Step,
@@ -158,6 +159,7 @@ func rootSteps() {
 		pkg.InotifyInstancesStep,
 		pkg.SetupAndCheckRocmStep,
 		pkg.OpenPortsStep,
+		pkg.SetRenderGroupStep,
 	}
 	k8Ssteps := []pkg.Step{
 		pkg.SetupRKE2Step,
