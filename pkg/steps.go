@@ -185,6 +185,20 @@ var SetupMultipathStep = Step{
 	},
 }
 
+var UpdateModprobeStep = Step{
+	Name:        "Update Modprobe",
+	Description: "Update Modprobe to unblacklist amdgpu",
+	Action: func() StepResult {
+		err := updateModprobe()
+		if err != nil {
+			return StepResult{
+				Error: fmt.Errorf("update Modprobe failed: %w", err),
+			}
+		}
+		return StepResult{Error: nil}
+	},
+}
+
 var SelectDrivesStep = Step{
 	Name:        "Select Unmounted Disks",
 	Description: "Identify and select unmounted physical disks",
@@ -409,6 +423,14 @@ var SetupKubeConfig = Step{
 
 		if err := exec.Command("sudo", "chown", fmt.Sprintf("%s:%s", os.Getenv("SUDO_USER"), os.Getenv("SUDO_USER")), fmt.Sprintf("%s/.kube/config", userHomeDir)).Run(); err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to change ownership of KUBECONFIG file: %v", err))
+		}
+
+		// check if k9s in the path first, otherwise add it
+		if _, err := exec.LookPath("k9s"); err != nil {
+			pathCmd := fmt.Sprintf("echo 'export PATH=$PATH:/snap/k9s/current/bin' >> %s/.bashrc", userHomeDir)
+			if err = exec.Command("sh", "-c", pathCmd).Run(); err != nil {
+				LogMessage(Error, fmt.Sprintf("Failed to update PATH: %v", err))
+			}
 		}
 
 		return StepResult{Error: nil}
