@@ -358,11 +358,14 @@ var SetupKubeConfig = Step{
 		}
 		userHomeDir := currentUser.HomeDir
 		if os.Getenv("SUDO_USER") != "" {
-			sudoUser, err := user.Lookup(os.Getenv("SUDO_USER"))
+			sudoUserName := os.Getenv("SUDO_USER")
+			LogMessage(Debug, fmt.Sprintf("Attempting to get sudo user home directory: %s", sudoUserName))
+			homedir, err := GetUserHomeDirViaShell(sudoUserName)
 			if err != nil {
-				LogMessage(Error, fmt.Sprintf("Failed to lookup sudo user: %v", err))
+				LogMessage(Error, fmt.Sprintf("Failed to get home directory for sudo user '%s': %v. Using current user's home directory instead.", sudoUserName, err))
+				// Continue with currentUser.HomeDir as fallback
 			} else {
-				userHomeDir = sudoUser.HomeDir
+				userHomeDir = homedir
 			}
 		}
 		if err := os.MkdirAll(fmt.Sprintf("%s/.kube", userHomeDir), 0755); err != nil {
