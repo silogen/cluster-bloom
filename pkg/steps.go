@@ -22,6 +22,7 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -119,6 +120,22 @@ var SetupAndCheckRocmStep = Step{
 					Error: fmt.Errorf("failed to execute rocm-smi: %w", err),
 				}
 			}
+			// Check if the first characters are an integer
+			lines := strings.Split(string(output), "\n")
+			for _, line := range lines {
+				if len(line) > 0 {
+					parts := strings.Fields(line)
+					if len(parts) > 0 {
+						if _, err := strconv.Atoi(parts[0]); err != nil {
+							LogMessage(Error, "rocm-smi did not return any GPUs: "+string(output))
+							return StepResult{
+								Error: fmt.Errorf("rocm-smi did not return any GPUs: %s", string(output)),
+							}
+						}
+					}
+				}
+			}
+			// Log the output of rocm-smi
 			LogMessage(Info, "ROCm Devices:\n"+string(output))
 		}
 		return StepResult{Error: nil}
@@ -149,6 +166,20 @@ var CleanDisksStep = Step{
 		err := CleanDisks()
 		if err != nil {
 			return StepResult{Error: err}
+		}
+		return StepResult{Error: nil}
+	},
+}
+
+var SetupMultipathStep = Step{
+	Name:        "Setup Multipath",
+	Description: "Configure multipath to blacklist standard devices",
+	Action: func() StepResult {
+		err := setupMultipath()
+		if err != nil {
+			return StepResult{
+				Error: fmt.Errorf("multipath setup failed: %w", err),
+			}
 		}
 		return StepResult{Error: nil}
 	},

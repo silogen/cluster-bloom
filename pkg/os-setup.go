@@ -315,3 +315,66 @@ func GetUserHomeDirViaShell(username string) (string, error) {
 
 	return homeDir, nil
 }
+
+func setupMultipath() error {
+	configFile := "/etc/multipath.conf"
+	blacklistEntry := `devnode "^sd[a-z0-9]+"`
+	configContent := "blacklist {\n    devnode \"^sd[a-z0-9]+\"\n}\n"
+	// Check if the configuration file exists
+	_, err := os.Stat(configFile)
+	if os.IsNotExist(err) {
+		LogMessage(Info, "Creating default multipath configuration file...")
+
+		err = os.WriteFile(configFile, []byte(configContent), 0644)
+		if err != nil {
+			return fmt.Errorf("failed to create multipath.conf: %w", err)
+		}
+	} else if err != nil {
+		return fmt.Errorf("failed to check if multipath.conf exists: %w", err)
+	} else {
+		// File exists, check if the blacklist entry is already there
+		configData, err := os.ReadFile(configFile)
+		if err != nil {
+			return fmt.Errorf("failed to read multipath.conf: %w", err)
+		}
+		newConfigData := ""
+		if !strings.Contains(string(configData), blacklistEntry) {
+			LogMessage(Info, "Adding blacklist entry to multipath.conf...")
+			// Replace this with more robust regex if the file structure varies significantly
+			if strings.Contains(string(configData), "blacklist {") {
+				newConfigData = strings.Replace(
+					string(configData),
+					"blacklist {",
+					"blacklist {\n    "+blacklistEntry,
+					1)
+			} else {
+				// if no blacklistEntry still, add it
+				newConfigData = string(configData) + configContent
+			}
+
+			err = os.WriteFile(configFile, []byte(newConfigData), 0644)
+			if err != nil {
+				return fmt.Errorf("failed to update multipath.conf: %w", err)
+			}
+
+			// Restart multipath service
+			LogMessage(Info, "Restarting multipathd.service...")
+			_, err = runCommand("systemctl", "restart", "multipathd.service")
+			if err != nil {
+				return fmt.Errorf("failed to restart multipathd service: %w", err)
+			}
+
+			// Verify configuration
+			LogMessage(Info, "Verifying multipath configuration...")
+			output, err := runCommand("multipath", "-t")
+			if err != nil {
+				LogMessage(Warn, fmt.Sprintf("Multipath verification returned: %s", output))
+				return fmt.Errorf("multipath configuration verification failed: %w", err)
+			}
+		} else {
+			LogMessage(Info, "Blacklist entry already present in multipath.conf")
+		}
+	}
+
+	return nil
+}
