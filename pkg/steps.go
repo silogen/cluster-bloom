@@ -427,6 +427,17 @@ var SetupOnePasswordSecretStep = Step{
 	},
 }
 
+var SetupClusterForgeStep = Step{
+	Name:        "Setup Cluster Forge",
+	Description: "Setup and configure Cluster Forge",
+	Action: func() StepResult {
+		err := SetupClusterForge()
+		if err != nil {
+			return StepResult{Error: fmt.Errorf("failed to setup Cluster Forge: %v", err)}
+		}
+		return StepResult{Error: nil}
+	},
+}
 var FinalOutput = Step{
 	Name:        "Output",
 	Description: "Generate output after installation",
