@@ -28,7 +28,9 @@ import (
 	"github.com/spf13/viper"
 )
 
-//go:embed manifests/*.yaml
+var rke2ManifestDirectory = "/var/lib/rancher/rke2/server/manifests"
+
+//go:embed manifests/*/*.yaml
 var manifestFiles embed.FS
 
 //go:embed templates/*.yaml
@@ -294,12 +296,28 @@ var GenerateLonghornDiskStringStep = Step{
 	},
 }
 
-var SetupLonghornStep = Step{
-	Name:        "Setup Longhorn",
-	Description: "Copy Longhorn YAML files to the RKE2 manifests directory",
+var SetupManifestsStep = Step{
+	Name:        "Setup Longhorn And MetalLB manifests",
+	Description: "Copy Longhorn and MetalLB YAML files to the RKE2 manifests directory",
 	Action: func() StepResult {
 		if viper.GetBool("FIRST_NODE") {
-			err := setupLonghorn()
+			err := setupManifests()
+			if err != nil {
+				return StepResult{Error: err}
+			}
+		} else {
+			return StepResult{Error: nil}
+		}
+		return StepResult{Error: nil}
+	},
+}
+
+var CreateMetalLBConfigStep = Step{
+	Name:        "Setup AddressPool for MetalLB",
+	Description: "Create IPAddressPool and L2Advertisement resources for MetalLB",
+	Action: func() StepResult {
+		if viper.GetBool("FIRST_NODE") {
+			err := CreateMetalLBConfig()
 			if err != nil {
 				return StepResult{Error: err}
 			}
