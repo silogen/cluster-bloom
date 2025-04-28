@@ -425,11 +425,24 @@ var SetupKubeConfig = Step{
 			LogMessage(Error, fmt.Sprintf("Failed to change ownership of KUBECONFIG file: %v", err))
 		}
 
-		// check if k9s in the path first, otherwise add it
-		if _, err := exec.LookPath("k9s"); err != nil {
-			pathCmd := fmt.Sprintf("echo 'export PATH=$PATH:/snap/k9s/current/bin' >> %s/.bashrc", userHomeDir)
-			if err = exec.Command("sh", "-c", pathCmd).Run(); err != nil {
-				LogMessage(Error, fmt.Sprintf("Failed to update PATH: %v", err))
+		// Store the path to k9s in a variable
+		k9sPath := "/snap/k9s/current/bin"
+
+		// Check if k9s path is already in bashrc
+		bashrcPath := fmt.Sprintf("%s/.bashrc", userHomeDir)
+		bashrcContent, err := os.ReadFile(bashrcPath)
+		if err != nil {
+			LogMessage(Error, fmt.Sprintf("Failed to read .bashrc: %v", err))
+		} else {
+			// Check if k9s path already exists in .bashrc
+			if !strings.Contains(string(bashrcContent), k9sPath) {
+				// Add k9s path to .bashrc if not found
+				pathCmd := fmt.Sprintf("echo 'export PATH=$PATH:%s' >> %s", k9sPath, bashrcPath)
+				if err = exec.Command("sh", "-c", pathCmd).Run(); err != nil {
+					LogMessage(Error, fmt.Sprintf("Failed to update PATH: %v", err))
+				} else {
+					LogMessage(Info, fmt.Sprintf("Path in .bashrc updated to contain %s", string(k9sPath)))
+				}
 			}
 		}
 
