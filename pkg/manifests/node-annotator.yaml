@@ -14,6 +14,13 @@ spec:
           containers:
             - name: node-label-annotator
               image: bitnami/kubectl:latest
+              resources:
+                requests:
+                  memory: "32Mi"
+                  cpu: "10m"
+                limits:
+                  memory: "128Mi"
+                  cpu: "500m"
               command:
                 - /bin/sh
                 - -c
