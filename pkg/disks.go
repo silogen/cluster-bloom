@@ -102,6 +102,10 @@ node-label:
 `
 
 func GenerateLonghornDiskString() error {
+	if viper.IsSet("SKIP_DISK_CHECK") && viper.GetString("SKIP_DISK_CHECK") != "" {
+		LogMessage(Info, "Skipping GenerateLonghornDiskString as SKIP_DISK_CHECK is set.")
+		return nil
+	}
 	rke2ConfigPath := "/etc/rancher/rke2/config.yaml"
 
 	if viper.IsSet("LONGHORN_DISKS") && viper.GetString("LONGHORN_DISKS") != "" {
@@ -186,7 +190,7 @@ func isVirtualDisk(udevOut []byte) bool {
 }
 
 func GetUnmountedPhysicalDisks() ([]string, error) {
-	if viper.IsSet("LONGHORN_DISKS") && viper.GetString("LONGHORN_DISKS") != "" {
+	if viper.IsSet("SKIP_DISK_CHECK") && viper.GetString("SKIP_DISK_CHECK") != "" {
 		LogMessage(Info, "Skipping disk check as SKIP_DISK_CHECK is set.")
 		return nil, nil
 	}
@@ -239,6 +243,10 @@ func GetUnmountedPhysicalDisks() ([]string, error) {
 func MountDrives(drives []string) error {
 	if viper.IsSet("LONGHORN_DISKS") && viper.GetString("LONGHORN_DISKS") != "" {
 		LogMessage(Info, "Skipping drive mounting as LONGHORN_DISKS is set.")
+		return nil
+	}
+	if viper.IsSet("SKIP_DISK_CHECK") && viper.GetBool("SKIP_DISK_CHECK") {
+		LogMessage(Info, "Skipping drive mounting as SKIP_DISK_CHECK is set.")
 		return nil
 	}
 
@@ -312,6 +320,10 @@ func MountDrives(drives []string) error {
 func PersistMountedDisks() error {
 	if viper.IsSet("LONGHORN_DISKS") && viper.GetString("LONGHORN_DISKS") != "" {
 		LogMessage(Info, "Skipping drive mounting as LONGHORN_DISKS is set.")
+		return nil
+	}
+	if viper.IsSet("SKIP_DISK_CHECK") && viper.GetBool("SKIP_DISK_CHECK") {
+		LogMessage(Info, "Skipping drive mounting as SKIP_DISK_CHECK is set.")
 		return nil
 	}
 	cmd := exec.Command("sh", "-c", "mount | awk '/\\/mnt\\/disk[0-9]+/ {print $1, $3}'")

@@ -67,7 +67,7 @@ func CheckAndInstallROCM() bool {
 	}
 
 	debFile := "amdgpu-install_6.3.60302-1_all.deb"
-	url := "https://repo.radeon.com/amdgpu-install/6.3.2/" + ubuntuCodename + "/jammy/" + debFile
+	url := "https://repo.radeon.com/amdgpu-install/6.3.2/ubuntu/" + ubuntuCodename + "/" + debFile
 	_, err = runCommand("wget", url)
 	if err != nil {
 		LogMessage(Error, "Failed to download amdgpu-install: "+err.Error())

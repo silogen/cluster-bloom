@@ -172,10 +172,6 @@ func VerifyInotifyInstances() bool {
 }
 
 func HasSufficientRootPartition() bool {
-	if viper.IsSet("SKIP_DISK_CHECK") && viper.GetBool("SKIP_DISK_CHECK") {
-		LogMessage(Info, "Skipping NVME drive check as SKIP_DISK_CHECK is set.")
-		return true
-	}
 	cmd := exec.Command("df", "-BG", "/")
 	output, err := cmd.Output()
 	if err != nil {
@@ -207,7 +203,10 @@ func HasSufficientRootPartition() bool {
 }
 
 func NVMEDrivesAvailable() bool {
-
+	if viper.IsSet("SKIP_DISK_CHECK") && viper.GetBool("SKIP_DISK_CHECK") {
+		LogMessage(Info, "Skipping NVME drive check as SKIP_DISK_CHECK is set.")
+		return true
+	}
 	cmd := exec.Command("sh", "-c", "lsblk -o NAME,TYPE | grep nvme | grep disk | awk '{print $1}'")
 	output, err := cmd.Output()
 	if err != nil {
