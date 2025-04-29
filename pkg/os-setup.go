@@ -374,3 +374,15 @@ func setupMultipath() error {
 
 	return nil
 }
+
+func updateModprobe() error {
+	cmd := exec.Command("sh", "-c", "sudo sed -i '/^blacklist amdgpu/s/^/# /' /etc/modprobe.d/*.conf")
+	output, err := cmd.Output()
+	if err != nil {
+		LogMessage(Warn, fmt.Sprintf("Modprobe configuration returned: %s", output))
+		return fmt.Errorf("failed to configure Modprobe: %w", err)
+	} else {
+		LogMessage(Info, "")
+	}
+	return nil
+}
