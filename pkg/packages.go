@@ -194,3 +194,33 @@ func SetupOnePasswordSecret() error {
 	LogMessage(Info, fmt.Sprintf("Secret %s created successfully in namespace %s", secretName, namespace))
 	return nil
 }
+
+func SetupClusterForge() error {
+	cmd := exec.Command("wget", "https://github.com/silogen/cluster-forge/releases/download/deploy/deploy-release.tar.gz")
+	output, err := cmd.Output()
+	if err != nil {
+		LogMessage(Error, fmt.Sprintf("Failed to download ClusterForge: %v", err))
+		return err
+	} else {
+		LogMessage(Info, fmt.Sprintf("Successfully downloaded ClusterForge"))
+	}
+
+	cmd = exec.Command("tar", "-xzvf", "deploy-release.tar.gz")
+	output, err = cmd.Output()
+	if err != nil {
+		LogMessage(Error, fmt.Sprintf("Failed to unzip deploy-release.tar.gz: %v", err))
+		return err
+	} else {
+		LogMessage(Info, fmt.Sprintf("Successfully unzipped deploy-release.tar.gz"))
+	}
+
+	cmd = exec.Command("sudo", "bash", "core/deploy.sh")
+	output, err = cmd.Output()
+	if err != nil {
+		LogMessage(Error, fmt.Sprintf("Failed to install ClusterForge: %v", err))
+		return err
+	} else {
+		LogMessage(Info, fmt.Sprintf("ClusterForge deployment output: %s", output))
+	}
+	return nil
+}

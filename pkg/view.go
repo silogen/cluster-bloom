@@ -185,7 +185,7 @@ func RunStepsWithUI(steps []Step) error {
 		})
 
 		app.QueueUpdateDraw(func() {
-			modalText := "Execution completed."
+			modalText := "Execution completed. Restart your session to enable k9s."
 			if finalErr != nil {
 				modalText = fmt.Sprintf("Execution failed: %v", finalErr)
 			}

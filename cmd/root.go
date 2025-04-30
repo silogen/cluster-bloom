@@ -151,6 +151,7 @@ func rootSteps() {
 		pkg.UninstallRKE2Step,
 		pkg.CleanDisksStep,
 		pkg.SetupMultipathStep,
+		pkg.UpdateModprobeStep,
 		pkg.SelectDrivesStep,
 		pkg.MountSelectedDrivesStep,
 		pkg.PrepareRKE2Step,
@@ -168,6 +169,7 @@ func rootSteps() {
 		pkg.SetupManifestsStep,
 		pkg.CreateMetalLBConfigStep,
 		pkg.SetupKubeConfig,
+		pkg.SetupClusterForgeStep,
 	}
 
 	if viper.IsSet("ONEPASS_CONNECT_TOKEN") && viper.GetString("ONEPASS_CONNECT_TOKEN") != "" {
