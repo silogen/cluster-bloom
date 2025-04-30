@@ -72,16 +72,22 @@ func CheckAndInstallROCM() bool {
 	if err != nil {
 		LogMessage(Error, "Failed to download amdgpu-install: "+err.Error())
 		return false
+	} else {
+		LogMessage(Info, "Successfully downloaded amdgpu-install")
 	}
-	_, err = runCommand("sudo", "apt", "install", "./"+debFile)
+	_, err = runCommand("sudo", "apt", "install", "-y", "./"+debFile)
 	if err != nil {
 		LogMessage(Error, "Failed to install amdgpu-install package: "+err.Error())
 		return false
+	} else {
+		LogMessage(Info, "Successfully installed amdgpu-install package")
 	}
-	_, err = runCommand("sudo", "amdgpu-install", "--usecase=rocm,dkms")
+	_, err = runCommand("sudo", "amdgpu-install", "--usecase=rocm,dkms", "--yes")
 	if err != nil {
 		LogMessage(Error, "Failed to install ROCm: "+err.Error())
 		return false
+	} else {
+		LogMessage(Info, "Successfully installed ROCm")
 	}
 
 	printROCMVersion()
