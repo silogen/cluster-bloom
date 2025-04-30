@@ -84,8 +84,8 @@ func installK8sTools() error {
 	return nil
 }
 
-func setupLonghorn() error {
-	targetDir := "/var/lib/rancher/rke2/server/manifests"
+func setupManifests() error {
+	targetDir := rke2ManifestDirectory
 	if err := os.MkdirAll(targetDir, 0755); err != nil {
 		return fmt.Errorf("failed to create target directory %s: %w", targetDir, err)
 	}
