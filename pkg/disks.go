@@ -102,10 +102,6 @@ node-label:
 `
 
 func GenerateLonghornDiskString() error {
-	if viper.IsSet("SKIP_DISK_CHECK") && viper.GetString("SKIP_DISK_CHECK") != "" {
-		LogMessage(Info, "Skipping GenerateLonghornDiskString as SKIP_DISK_CHECK is set.")
-		return nil
-	}
 	rke2ConfigPath := "/etc/rancher/rke2/config.yaml"
 
 	if viper.IsSet("LONGHORN_DISKS") && viper.GetString("LONGHORN_DISKS") != "" {
@@ -121,7 +117,10 @@ func GenerateLonghornDiskString() error {
 		LogMessage(Info, "Appended Longhorn disk configuration to RKE2 config.")
 		return nil
 	}
-
+	if viper.IsSet("SKIP_DISK_CHECK") && viper.GetString("SKIP_DISK_CHECK") != "" {
+		LogMessage(Info, "Skipping GenerateLonghornDiskString as SKIP_DISK_CHECK is set.")
+		return nil
+	}
 	cmd := exec.Command("sh", "-c", "mount | grep -oP '/mnt/disk\\d+'")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
