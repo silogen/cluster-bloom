@@ -166,7 +166,8 @@ func rootSteps() {
 		pkg.SetupRKE2Step,
 	}
 	postK8Ssteps := []pkg.Step{
-		pkg.SetupLonghornStep,
+		pkg.SetupManifestsStep,
+		pkg.CreateMetalLBConfigStep,
 		pkg.SetupKubeConfig,
 		pkg.SetupClusterForgeStep,
 	}

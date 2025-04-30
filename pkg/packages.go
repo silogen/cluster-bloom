@@ -84,12 +84,8 @@ func installK8sTools() error {
 	return nil
 }
 
-func setupLonghorn() error {
-	if viper.IsSet("SKIP_DISK_CHECK") && viper.GetBool("SKIP_DISK_CHECK") {
-		LogMessage(Info, "Skipping longhorn setup as SKIP_DISK_CHECK is set.")
-		return nil
-	}
-	targetDir := "/var/lib/rancher/rke2/server/manifests"
+func setupManifests() error {
+	targetDir := rke2ManifestDirectory
 	if err := os.MkdirAll(targetDir, 0755); err != nil {
 		return fmt.Errorf("failed to create target directory %s: %w", targetDir, err)
 	}

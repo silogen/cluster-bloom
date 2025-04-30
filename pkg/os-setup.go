@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"strconv"
 	"strings"
 
@@ -272,7 +273,7 @@ func CreateMetalLBConfig() error {
 	metallbConfig := fmt.Sprintf(`apiVersion: metallb.io/v1beta1
 kind: IPAddressPool
 metadata:
-  name: my-ip-pool
+  name: cluster-bloom-ip-pool
   namespace: metallb-system
 spec:
   addresses:
@@ -281,10 +282,10 @@ spec:
 apiVersion: metallb.io/v1beta1
 kind: L2Advertisement
 metadata:
-  name: my-l2-advertisement
+  name: cluster-bloom-l2-advertisement
   namespace: metallb-system
 `, defaultIP)
-	manifestPath := "/var/lib/rancher/rke2/server/manifests/metallb.yaml"
+	manifestPath := path.Join(rke2ManifestDirectory, "metallb_address.yaml")
 	if err := os.WriteFile(manifestPath, []byte(metallbConfig), 0644); err != nil {
 		return fmt.Errorf("failed to write MetalLB configuration to %s: %v", manifestPath, err)
 	}
