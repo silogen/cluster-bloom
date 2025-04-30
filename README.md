@@ -90,7 +90,7 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | OIDC_URL | The URL of the OIDC provider | "" |
 | SERVER_IP | The IP address of the RKE2 server (required for additional nodes) | |
 | JOIN_TOKEN | The token used to join additional nodes to the cluster | |
-| SKIP_DISK_CHECK | Set to true to skip disk-related operations | "" |
+| SKIP_DISK_CHECK | Set to true to skip disk-related operations | false |
 | LONGHORN_DISKS | Comma-separated list of disk paths to use for Longhorn | "" |
 | ONEPASS_CONNECT_TOKEN | The token used for 1Password Connect integration | "" |
 
@@ -242,7 +242,7 @@ Create a YAML configuration file (e.g., `bloom.yaml`):
 ```yaml
 FIRST_NODE: true
 GPU_NODE: true
-SKIP_DISK_CHECK: false
+SKIP_DISK_CHECK: true
 ```
 
 Then run with:
