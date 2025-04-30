@@ -89,6 +89,8 @@ func initConfig() {
 	viper.SetDefault("SKIP_DISK_CHECK", false)
 	viper.SetDefault("LONGHORN_DISKS", "")
 	viper.SetDefault("ONEPASS_CONNECT_TOKEN", "")
+	viper.SetDefault("CLUSTERFORGE_RELEASE_URL", "https://github.com/silogen/cluster-forge/releases/download/deploy/deploy-release.tar.gz")
+	viper.SetDefault("CLUSTERFORGE_RELEASE", "core")
 
 	viper.AutomaticEnv()
 	if err := viper.ReadInConfig(); err == nil {
@@ -194,6 +196,7 @@ Available Configuration Variables:
   - SKIP_DISK_CHECK: Set to true to skip disk-related operations (default: false).
   - LONGHORN_DISKS: Comma-separated list of disk paths to use for Longhorn (default: "").
   - ONEPASS_CONNECT_TOKEN: The token used for 1Password Connect integration (default: "").
+  - CLUSTERFORGE_RELEASE: The version of Cluster-Forge to install (default: "https://github.com/silogen/cluster-forge/releases/download/deploy/deploy-release.tar.gz"). Pass the URL for a specific release, or 'none' to not install ClusterForge.
 
 Usage:
   Use the --config flag to specify a configuration file, or set the above variables in the environment or a Viper-compatible config file.
