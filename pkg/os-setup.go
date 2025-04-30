@@ -204,7 +204,7 @@ func HasSufficientRootPartition() bool {
 }
 
 func NVMEDrivesAvailable() bool {
-	if viper.IsSet("SKIP_DISK_CHECK") && viper.GetBool("SKIP_DISK_CHECK") {
+	if viper.IsSet("SKIP_DISK_CHECK") {
 		LogMessage(Info, "Skipping NVME drive check as SKIP_DISK_CHECK is set.")
 		return true
 	}
