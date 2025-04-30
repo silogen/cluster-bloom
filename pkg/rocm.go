@@ -49,11 +49,6 @@ func CheckAndInstallROCM() bool {
 		LogMessage(Error, "Error getting kernel version: "+err.Error())
 		return false
 	}
-	_, err = exec.Command("modprobe", "amdgpu").Output()
-	if err != nil {
-		LogMessage(Error, "Error loading modprobe amdgpu: "+err.Error())
-		return false
-	}
 	kernelVersion := strings.TrimSpace(string(unameR))
 	_, err = runCommand("sudo", "apt", "install", "linux-headers-"+kernelVersion, "linux-modules-extra-"+kernelVersion)
 	if err != nil {
@@ -88,6 +83,11 @@ func CheckAndInstallROCM() bool {
 		return false
 	} else {
 		LogMessage(Info, "Successfully installed ROCm")
+	}
+	_, err = exec.Command("modprobe", "amdgpu").Output()
+	if err != nil {
+		LogMessage(Error, "Error loading modprobe amdgpu: "+err.Error())
+		return false
 	}
 
 	printROCMVersion()
