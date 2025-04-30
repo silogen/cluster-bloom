@@ -89,8 +89,7 @@ func initConfig() {
 	viper.SetDefault("SKIP_DISK_CHECK", false)
 	viper.SetDefault("LONGHORN_DISKS", "")
 	viper.SetDefault("ONEPASS_CONNECT_TOKEN", "")
-	viper.SetDefault("CLUSTERFORGE_RELEASE_URL", "https://github.com/silogen/cluster-forge/releases/download/deploy/deploy-release.tar.gz")
-	viper.SetDefault("CLUSTERFORGE_RELEASE", "core")
+	viper.SetDefault("CLUSTERFORGE_RELEASE", "https://github.com/silogen/cluster-forge/releases/download/deploy/deploy-release.tar.gz")
 
 	viper.AutomaticEnv()
 	if err := viper.ReadInConfig(); err == nil {

@@ -219,7 +219,7 @@ func SetupClusterForge() error {
 		LogMessage(Info, fmt.Sprintf("Successfully unzipped clusterforge.tar.gz"))
 	}
 
-	cmd = exec.Command("sudo", "bash", "core/deploy.sh")
+	cmd = exec.Command("sudo", "bash", "clusterforge/deploy.sh")
 	output, err = cmd.Output()
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to install ClusterForge: %v", err))
