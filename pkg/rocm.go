@@ -49,11 +49,6 @@ func CheckAndInstallROCM() bool {
 		LogMessage(Error, "Error getting kernel version: "+err.Error())
 		return false
 	}
-	_, err = exec.Command("modprobe", "amdgpu").Output()
-	if err != nil {
-		LogMessage(Error, "Error loading modprobe amdgpu: "+err.Error())
-		return false
-	}
 	kernelVersion := strings.TrimSpace(string(unameR))
 	_, err = runCommand("sudo", "apt", "install", "linux-headers-"+kernelVersion, "linux-modules-extra-"+kernelVersion)
 	if err != nil {
@@ -67,20 +62,31 @@ func CheckAndInstallROCM() bool {
 	}
 
 	debFile := "amdgpu-install_6.3.60302-1_all.deb"
-	url := "https://repo.radeon.com/amdgpu-install/6.3.2/" + ubuntuCodename + "/jammy/" + debFile
+	url := "https://repo.radeon.com/amdgpu-install/6.3.2/ubuntu/" + ubuntuCodename + "/" + debFile
 	_, err = runCommand("wget", url)
 	if err != nil {
 		LogMessage(Error, "Failed to download amdgpu-install: "+err.Error())
 		return false
+	} else {
+		LogMessage(Info, "Successfully downloaded amdgpu-install")
 	}
-	_, err = runCommand("sudo", "apt", "install", "./"+debFile)
+	_, err = runCommand("sudo", "apt", "install", "-y", "./"+debFile)
 	if err != nil {
 		LogMessage(Error, "Failed to install amdgpu-install package: "+err.Error())
 		return false
+	} else {
+		LogMessage(Info, "Successfully installed amdgpu-install package")
 	}
-	_, err = runCommand("sudo", "amdgpu-install", "--usecase=rocm,dkms")
+	_, err = runCommand("sudo", "amdgpu-install", "--usecase=rocm,dkms", "--yes")
 	if err != nil {
 		LogMessage(Error, "Failed to install ROCm: "+err.Error())
+		return false
+	} else {
+		LogMessage(Info, "Successfully installed ROCm")
+	}
+	_, err = exec.Command("modprobe", "amdgpu").Output()
+	if err != nil {
+		LogMessage(Error, "Error loading modprobe amdgpu: "+err.Error())
 		return false
 	}
 
