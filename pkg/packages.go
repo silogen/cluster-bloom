@@ -196,7 +196,12 @@ func SetupOnePasswordSecret() error {
 }
 
 func SetupClusterForge() error {
-	cmd := exec.Command("wget", "https://github.com/silogen/cluster-forge/releases/download/deploy/deploy-release.tar.gz")
+	url := viper.GetString("CLUSTERFORGE_RELEASE")
+	if url == "none" {
+		LogMessage(Info, "Not installing ClusterForge as CLUSTERFORGE_RELEASE is set to none")
+		return nil
+	}
+	cmd := exec.Command("wget", url, "-O", "clusterforge.tar.gz")
 	output, err := cmd.Output()
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to download ClusterForge: %v", err))
@@ -205,16 +210,16 @@ func SetupClusterForge() error {
 		LogMessage(Info, fmt.Sprintf("Successfully downloaded ClusterForge"))
 	}
 
-	cmd = exec.Command("tar", "-xzvf", "deploy-release.tar.gz")
+	cmd = exec.Command("tar", "-xzvf", "clusterforge.tar.gz")
 	output, err = cmd.Output()
 	if err != nil {
-		LogMessage(Error, fmt.Sprintf("Failed to unzip deploy-release.tar.gz: %v", err))
+		LogMessage(Error, fmt.Sprintf("Failed to unzip clusterforge.tar.gz: %v", err))
 		return err
 	} else {
-		LogMessage(Info, fmt.Sprintf("Successfully unzipped deploy-release.tar.gz"))
+		LogMessage(Info, fmt.Sprintf("Successfully unzipped clusterforge.tar.gz"))
 	}
 
-	cmd = exec.Command("sudo", "bash", "core/deploy.sh")
+	cmd = exec.Command("sudo", "bash", "clusterforge/deploy.sh")
 	output, err = cmd.Output()
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to install ClusterForge: %v", err))
