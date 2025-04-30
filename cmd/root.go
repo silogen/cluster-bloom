@@ -86,7 +86,7 @@ func initConfig() {
 	viper.SetDefault("FIRST_NODE", true)
 	viper.SetDefault("GPU_NODE", true)
 	viper.SetDefault("OIDC_URL", "")
-	viper.SetDefault("SKIP_DISK_CHECK", false)
+	viper.SetDefault("SKIP_DISK_CHECK", "")
 	viper.SetDefault("LONGHORN_DISKS", "")
 	viper.SetDefault("ONEPASS_CONNECT_TOKEN", "")
 
