@@ -30,7 +30,8 @@ import (
 
 var SupportedUbuntuVersions = []string{"20.04", "22.04", "24.04"}
 var ports = []string{
-	"22;tcp", "80;tcp", "443;tcp", "2376;tcp", "2379;tcp", "2380;tcp", "6443;tcp",
+	//"22;tcp", Ignoring ssh because it will always be required anyhow.
+	"80;tcp", "443;tcp", "2376;tcp", "2379;tcp", "2380;tcp", "6443;tcp",
 	"8472;udp", "9099;tcp", "9345;tcp", "10250;tcp", "10254;tcp", "30000:32767;tcp", "30000:32767;udp",
 }
 
@@ -84,7 +85,7 @@ func CheckPortsBeforeOpening() error {
 		// Handle port ranges poorly
 		if strings.Contains(port, ":") {
 			// For ranges, we can't easily check with lsof, so just log the info
-			LogMessage(Debug, fmt.Sprintf("Would configure port range %s (%s) in actual run", port, protocol))
+			LogMessage(Info, fmt.Sprintf("Would configure port range %s (%s) in actual run", port, protocol))
 			continue
 		}
 
@@ -96,17 +97,17 @@ func CheckPortsBeforeOpening() error {
 
 		if err := portCmd.Run(); err != nil {
 			// lsof returns non-zero if no processes are using the port
-			LogMessage(Debug, fmt.Sprintf("Port %s (%s) is not currently in use", port, protocol))
+			LogMessage(Info, fmt.Sprintf("Port %s (%s) is not currently in use", port, protocol))
 		} else {
 			portsInUse = true
 			if portOutput.String() != "" {
-				LogMessage(Debug, fmt.Sprintf("Port %s (%s) status:\n%s", port, protocol, portOutput.String()))
+				LogMessage(Info, fmt.Sprintf("Port %s (%s) status:\n%s", port, protocol, portOutput.String()))
 			}
 		}
 	}
 
 	if portsInUse {
-		stepErr = error(fmt.Errorf("Ports are in use"))
+		LogMessage(Warn, "WARNING: Some Ports are in use, see bloom.log")
 	}
 
 	LogMessage(Info, "Proof completed - no changes made to iptables")
@@ -435,6 +436,14 @@ func updateModprobe() error {
 	if err != nil {
 		LogMessage(Warn, fmt.Sprintf("Modprobe configuration returned: %s", output))
 		return fmt.Errorf("failed to configure Modprobe: %w", err)
+	} else {
+		LogMessage(Info, "")
+	}
+	cmd = exec.Command("modprobe", "amdgpu")
+	output, err = cmd.Output()
+	if err != nil {
+		LogMessage(Warn, fmt.Sprintf("Modprobe amdgpu returned: %s", output))
+		return fmt.Errorf("failed to modprobe amdgpu: %w", err)
 	} else {
 		LogMessage(Info, "")
 	}
