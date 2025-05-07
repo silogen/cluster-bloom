@@ -29,6 +29,11 @@ import (
 )
 
 var SupportedUbuntuVersions = []string{"20.04", "22.04", "24.04"}
+var ports = []string{
+	//"22;tcp", Ignoring ssh because it will always be required anyhow.
+	"80;tcp", "443;tcp", "2376;tcp", "2379;tcp", "2380;tcp", "6443;tcp",
+	"8472;udp", "9099;tcp", "9345;tcp", "10250;tcp", "10254;tcp", "30000:32767;tcp", "30000:32767;udp",
+}
 
 func IsRunningOnSupportedUbuntu() bool {
 	osReleaseContent, err := os.ReadFile("/etc/os-release")
@@ -65,21 +70,71 @@ func IsRunningOnSupportedUbuntu() bool {
 	return false
 }
 
-func OpenPorts() bool {
-	ports := []string{
-		"22;tcp", "80;tcp", "443;tcp", "2376;tcp", "2379;tcp", "2380;tcp", "6443;tcp",
-		"8472;udp", "9099;tcp", "9345;tcp", "10250;tcp", "10254;tcp", "30000:32767;tcp", "30000:32767;udp",
+func CheckPortsBeforeOpening() error {
+	// In dry-run mode, just output port status with lsof
+	LogMessage(Info, "Proof mode: checking port status with lsof...")
+
+	var portsInUse bool = false
+	var stepErr error
+
+	// Check each port specifically
+	for _, entry := range ports {
+		parts := strings.Split(entry, ";")
+		port, protocol := parts[0], parts[1]
+
+		// Handle port ranges poorly
+		if strings.Contains(port, ":") {
+			// For ranges, we can't easily check with lsof, so just log the info
+			LogMessage(Info, fmt.Sprintf("Would configure port range %s (%s) in actual run", port, protocol))
+			continue
+		}
+
+		// For specific ports, check with lsof
+		portCmd := exec.Command("lsof", "-i", fmt.Sprintf("%s:%s", strings.ToUpper(protocol), port))
+		var portOutput bytes.Buffer
+		portCmd.Stdout = &portOutput
+		portCmd.Stderr = &portOutput
+
+		if err := portCmd.Run(); err != nil {
+			// lsof returns non-zero if no processes are using the port
+			LogMessage(Info, fmt.Sprintf("Port %s (%s) is not currently in use", port, protocol))
+		} else {
+			portsInUse = true
+			if portOutput.String() != "" {
+				LogMessage(Info, fmt.Sprintf("Port %s (%s) status:\n%s", port, protocol, portOutput.String()))
+			}
+		}
 	}
+
+	if portsInUse {
+		LogMessage(Warn, "WARNING: Some Ports are in use, see bloom.log")
+	}
+
+	LogMessage(Info, "Proof completed - no changes made to iptables")
+	return stepErr
+}
+
+func OpenPorts() bool {
 
 	for _, entry := range ports {
 		parts := strings.Split(entry, ";")
 		port, protocol := parts[0], parts[1]
+
+		// Check if rule exists first to avoid duplicates
+		checkCmd := exec.Command("sudo", "iptables", "-C", "INPUT", "-p", protocol, "-m", "state", "--state", "NEW", "-m", protocol, "--dport", port, "-j", "ACCEPT")
+		if checkCmd.Run() == nil {
+			// Rule already exists
+			LogMessage(Info, fmt.Sprintf("Rule for %s/%s already exists", port, protocol))
+			continue
+		}
+
+		// Add the rule
 		cmd := exec.Command("sudo", "iptables", "-A", "INPUT", "-p", protocol, "-m", "state", "--state", "NEW", "-m", protocol, "--dport", port, "-j", "ACCEPT")
 		if err := cmd.Run(); err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to open port %s/%s: %v", port, protocol, err))
 			return false
 		}
-		LogMessage(Debug, fmt.Sprintf("Opened port %s/%s", port, protocol))
+		LogMessage(Info, fmt.Sprintf("Opened port %s/%s", port, protocol))
 	}
 	if err := exec.Command("sudo", "iptables-save").Run(); err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to save iptables rules: %v", err))
@@ -381,6 +436,14 @@ func updateModprobe() error {
 	if err != nil {
 		LogMessage(Warn, fmt.Sprintf("Modprobe configuration returned: %s", output))
 		return fmt.Errorf("failed to configure Modprobe: %w", err)
+	} else {
+		LogMessage(Info, "")
+	}
+	cmd = exec.Command("modprobe", "amdgpu")
+	output, err = cmd.Output()
+	if err != nil {
+		LogMessage(Warn, fmt.Sprintf("Modprobe amdgpu returned: %s", output))
+		return fmt.Errorf("failed to modprobe amdgpu: %w", err)
 	} else {
 		LogMessage(Info, "")
 	}

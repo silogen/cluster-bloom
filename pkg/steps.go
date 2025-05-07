@@ -77,6 +77,20 @@ var OpenPortsStep = Step{
 	},
 }
 
+var CheckPortsBeforeOpeningStep = Step{
+	Name:        "Checking Ports",
+	Description: "Ensure needed ports are not in use",
+	Action: func() StepResult {
+		err := CheckPortsBeforeOpening()
+		if err != nil {
+			return StepResult{
+				Error: fmt.Errorf("Checking ports failed: %s", err.Error()),
+			}
+		}
+		return StepResult{Error: nil}
+	},
+}
+
 var InstallK8SToolsStep = Step{
 	Name:        "Install Kubernetes tools",
 	Description: "Install kubectl and k9s",
