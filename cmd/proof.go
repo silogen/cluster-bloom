@@ -47,7 +47,7 @@ func proofSteps() {
 			Description: "Verify running on supported Ubuntu version",
 			Action: func() pkg.StepResult {
 				pkg.LogMessage(pkg.Info, "Checking supported Ubuntu version")
-				if pkg.IsRunningOnSupportedUbuntu() {
+				if !pkg.IsRunningOnSupportedUbuntu() {
 					return pkg.StepResult{
 						Error: fmt.Errorf("Checking supported Ubuntu version failed"),
 					}
