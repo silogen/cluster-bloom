@@ -47,10 +47,9 @@ func proofSteps() {
 			Description: "Verify running on supported Ubuntu version",
 			Action: func() pkg.StepResult {
 				pkg.LogMessage(pkg.Info, "Checking supported Ubuntu version")
-				err := pkg.CheckUbuntuStep()
-				if err != nil {
+				if pkg.IsRunningOnSupportedUbuntu() {
 					return pkg.StepResult{
-						Error: fmt.Errorf("Checking Ports Before Opening Failed: %s", err.Error()),
+						Error: fmt.Errorf("Checking supported Ubuntu version failed"),
 					}
 				}
 				return pkg.StepResult{Error: nil}
