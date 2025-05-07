@@ -77,6 +77,19 @@ var OpenPortsStep = Step{
 	},
 }
 
+var CheckPortsBeforeOpeningStep = Step{
+	Name:        "Open Ports",
+	Description: "Ensure needed ports are open in iptables",
+	Action: func() StepResult {
+		if !CheckPortsBeforeOpening() {
+			return StepResult{
+				Error: fmt.Errorf("opChecking ports failed"),
+			}
+		}
+		return StepResult{Error: nil}
+	},
+}
+
 var InstallK8SToolsStep = Step{
 	Name:        "Install Kubernetes tools",
 	Description: "Install kubectl and k9s",

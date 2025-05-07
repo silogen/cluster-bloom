@@ -17,6 +17,7 @@
 package cmd
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/silogen/cluster-bloom/pkg"
@@ -64,8 +65,13 @@ func proofSteps() {
 			Name:        "Configure Firewall",
 			Description: "Open required ports",
 			Action: func() pkg.StepResult {
-				pkg.LogMessage(pkg.Info, "simulating work")
-				time.Sleep(2 * time.Second)
+				pkg.LogMessage(pkg.Info, "Proofing posts")
+				err := pkg.CheckPortsBeforeOpening()
+				if err != nil {
+					return pkg.StepResult{
+						Error: fmt.Errorf("Checking Ports Before Opening Failed: %s", err.Error()),
+					}
+				}
 				return pkg.StepResult{Error: nil}
 			},
 		},
