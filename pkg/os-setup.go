@@ -124,7 +124,7 @@ func OpenPorts() bool {
 		checkCmd := exec.Command("sudo", "iptables", "-C", "INPUT", "-p", protocol, "-m", "state", "--state", "NEW", "-m", protocol, "--dport", port, "-j", "ACCEPT")
 		if checkCmd.Run() == nil {
 			// Rule already exists
-			LogMessage(Debug, fmt.Sprintf("Rule for %s/%s already exists", port, protocol))
+			LogMessage(Info, fmt.Sprintf("Rule for %s/%s already exists", port, protocol))
 			continue
 		}
 
@@ -134,7 +134,7 @@ func OpenPorts() bool {
 			LogMessage(Error, fmt.Sprintf("Failed to open port %s/%s: %v", port, protocol, err))
 			return false
 		}
-		LogMessage(Debug, fmt.Sprintf("Opened port %s/%s", port, protocol))
+		LogMessage(Info, fmt.Sprintf("Opened port %s/%s", port, protocol))
 	}
 	if err := exec.Command("sudo", "iptables-save").Run(); err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to save iptables rules: %v", err))
