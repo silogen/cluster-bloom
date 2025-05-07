@@ -69,9 +69,12 @@ func IsRunningOnSupportedUbuntu() bool {
 	return false
 }
 
-func CheckPortsBeforeOpening() bool {
+func CheckPortsBeforeOpening() error {
 	// In dry-run mode, just output port status with lsof
 	LogMessage(Info, "Proof mode: checking port status with lsof...")
+
+	var portsInUse bool = false
+	var stepErr error
 
 	// Check each port specifically
 	for _, entry := range ports {
@@ -94,13 +97,20 @@ func CheckPortsBeforeOpening() bool {
 		if err := portCmd.Run(); err != nil {
 			// lsof returns non-zero if no processes are using the port
 			LogMessage(Debug, fmt.Sprintf("Port %s (%s) is not currently in use", port, protocol))
-		} else if portOutput.String() != "" {
-			LogMessage(Debug, fmt.Sprintf("Port %s (%s) status:\n%s", port, protocol, portOutput.String()))
+		} else {
+			portsInUse = true
+			if portOutput.String() != "" {
+				LogMessage(Debug, fmt.Sprintf("Port %s (%s) status:\n%s", port, protocol, portOutput.String()))
+			}
 		}
 	}
 
+	if portsInUse {
+		stepErr = error(fmt.Errorf("Ports are in use"))
+	}
+
 	LogMessage(Info, "Proof completed - no changes made to iptables")
-	return true
+	return stepErr
 }
 
 func OpenPorts() bool {

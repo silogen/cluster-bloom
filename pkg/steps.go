@@ -78,12 +78,13 @@ var OpenPortsStep = Step{
 }
 
 var CheckPortsBeforeOpeningStep = Step{
-	Name:        "Open Ports",
-	Description: "Ensure needed ports are open in iptables",
+	Name:        "Checking Ports",
+	Description: "Ensure needed ports are not in use",
 	Action: func() StepResult {
-		if !CheckPortsBeforeOpening() {
+		err := CheckPortsBeforeOpening()
+		if err != nil {
 			return StepResult{
-				Error: fmt.Errorf("opChecking ports failed"),
+				Error: fmt.Errorf("Checking ports failed: %s", err.Error()),
 			}
 		}
 		return StepResult{Error: nil}
