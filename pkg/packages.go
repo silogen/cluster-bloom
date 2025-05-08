@@ -23,7 +23,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-
+	"strings"
 	"github.com/spf13/viper"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -31,6 +31,48 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
+
+func CheckPackageInstallConnections() error {
+	cmd := exec.Command("apt-get", "update")
+	cmd.Env = os.Environ()
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("Failed to verify apt-get connection: %w\nOutput: %s", err, output)
+	}
+
+	cmd = exec.Command("snap", "info", "core")
+	cmd.Env = os.Environ()
+	output, err = cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("Failed to verify snap connection: %w\nOutput: %s", err, output)
+	}
+
+	osRelease, err := exec.Command("sh", "-c", "grep VERSION_CODENAME /etc/os-release | cut -d= -f2").Output()
+	if err != nil {
+		return fmt.Errorf("Error getting Ubuntu codename: %w", err.Error())
+	}
+	ubuntuCodename := strings.TrimSpace(string(osRelease))
+
+	clusterForgeUrl := viper.GetString("CLUSTERFORGE_RELEASE")
+	rocmUrl :=  viper.GetString("ROCM_BASE_URL") + ubuntuCodename + "/" + viper.GetString("ROCM_DEB_PACKAGE")
+	rke2Url := viper.GetString("RKE2_INSTALLATION_URL")
+
+	var otherRepositories = []string{clusterForgeUrl, rocmUrl, rke2Url}
+	for _, url := range otherRepositories {
+		LogMessage(Info, url)
+
+		cmd = exec.Command("wget", "--spider", url)
+		cmd.Env = os.Environ()
+		output, err = cmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("Failed to verify download from repository: %w\nOutput: %s", err, output)
+		}	
+	}
+
+
+	LogMessage(Debug, "Package installation connections are available")
+	return nil
+}
 
 func InstallDependentPackages() error {
 	packagesToInstall := []string{

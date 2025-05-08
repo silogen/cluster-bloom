@@ -91,7 +91,9 @@ func initConfig() {
 	viper.SetDefault("LONGHORN_DISKS", "")
 	viper.SetDefault("ONEPASS_CONNECT_TOKEN", "")
 	viper.SetDefault("CLUSTERFORGE_RELEASE", "https://github.com/silogen/cluster-forge/releases/download/deploy/deploy-release.tar.gz")
-
+	viper.SetDefault("ROCM_BASE_URL", "https://repo.radeon.com/amdgpu-install/6.3.2/ubuntu/")
+	viper.SetDefault("ROCM_DEB_PACKAGE", "amdgpu-install_6.3.60302-1_all.deb")
+	viper.SetDefault("RKE2_INSTALLATION_URL", "https://get.rke2.io")
 	viper.AutomaticEnv()
 	if err := viper.ReadInConfig(); err == nil {
 		log.Infof("Using config file: %s", viper.ConfigFileUsed())
