@@ -121,7 +121,7 @@ func SetupFirstRKE2() error {
 		command string
 		args    []string
 	}{
-		{"sh", []string{"-c", "curl -sfL https://get.rke2.io | sh -"}},
+		{"sh", []string{"-c", "curl -sfL "+viper.GetString("RKE2_INSTALLATION_URL")+" | sh -"}},
 		{"systemctl", []string{"enable", "rke2-server.service"}},
 	}
 
@@ -195,7 +195,7 @@ func SetupRKE2Additional() error {
 		command string
 		args    []string
 	}{
-		{"sh", []string{"-c", "curl -sfL https://get.rke2.io | INSTALL_RKE2_TYPE=agent sh -"}},
+		{"sh", []string{"-c", "curl -sfL "+viper.GetString("RKE2_INSTALLATION_URL")+" | INSTALL_RKE2_TYPE=agent sh -"}},
 		{"systemctl", []string{"enable", "rke2-agent.service"}},
 	}
 	for _, cmd := range commands {

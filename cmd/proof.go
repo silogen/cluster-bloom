@@ -56,11 +56,16 @@ func proofSteps() {
 			},
 		},
 		{
-			Name:        "Install Packages",
-			Description: "Install required packages",
+			Name:        "Verify Packages installation connections",
+			Description: "Verify Packages installation connections are available",
 			Action: func() pkg.StepResult {
-				pkg.LogMessage(pkg.Info, "simulating work")
-				time.Sleep(2 * time.Second)
+				pkg.LogMessage(pkg.Info, "Checking connectivity for package installations")
+				err := pkg.CheckPackageInstallConnections()
+				if err != nil {
+					return pkg.StepResult {
+						Error: fmt.Errorf("Checking package installation connections failed: %s", err.Error()),
+					}
+				}
 				return pkg.StepResult{Error: nil}
 			},
 		},
