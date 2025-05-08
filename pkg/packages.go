@@ -59,8 +59,6 @@ func CheckPackageInstallConnections() error {
 
 	var otherRepositories = []string{clusterForgeUrl, rocmUrl, rke2Url}
 	for _, url := range otherRepositories {
-		LogMessage(Info, url)
-
 		cmd = exec.Command("wget", "--spider", url)
 		cmd.Env = os.Environ()
 		output, err = cmd.CombinedOutput()

@@ -70,6 +70,25 @@ func proofSteps() {
 			},
 		},
 		{
+			Name:        "Check the availability of GPU (if on GPU node)",
+			Description: "Check the availability of GPU (if on GPU node)",
+			Action: func() pkg.StepResult {
+				if !viper.GetBool("GPU_NODE") {
+					pkg.LogMessage(pkg.Info, "Not checking the availability of GPU (not a GPU node)")
+					return pkg.StepResult{Error: nil}
+				}
+				pkg.LogMessage(pkg.Info, "Check the availability of GPU on the node")
+
+				err := pkg.CheckGPUAvailability()
+				if err != nil {
+					return pkg.StepResult{
+						Error: fmt.Errorf("Checking GPU availability Failed: %s", err.Error()),
+					}
+				}
+				return pkg.StepResult{Error: nil}
+			},
+		},
+		{
 			Name:        "Configure Firewall",
 			Description: "Open required ports",
 			Action: func() pkg.StepResult {
