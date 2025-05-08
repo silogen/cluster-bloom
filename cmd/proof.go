@@ -18,8 +18,6 @@ package cmd
 
 import (
 	"fmt"
-	"time"
-
 	"github.com/silogen/cluster-bloom/pkg"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -92,7 +90,7 @@ func proofSteps() {
 			Name:        "Configure Firewall",
 			Description: "Open required ports",
 			Action: func() pkg.StepResult {
-				pkg.LogMessage(pkg.Info, "Proofing posts")
+				pkg.LogMessage(pkg.Info, "Proofing firewall and ports")
 				err := pkg.CheckPortsBeforeOpening()
 				if err != nil {
 					return pkg.StepResult{
@@ -103,11 +101,16 @@ func proofSteps() {
 			},
 		},
 		{
-			Name:        "Verify Configuration",
-			Description: "Verify inotify instances",
+			Name:        "Verify Inotify Configuration",
+			Description: "Verify max Inotify instances are set correctly",
 			Action: func() pkg.StepResult {
-				pkg.LogMessage(pkg.Info, "simulating work")
-				time.Sleep(2 * time.Second)
+				pkg.LogMessage(pkg.Info, "Proofing inotify configuration")
+				err := pkg.CheckInotifyConfig()
+				if err != nil {
+					return pkg.StepResult{
+						Error: fmt.Errorf("Checking Inotify configuration failed: %s", err.Error()),
+					}
+				}
 				return pkg.StepResult{Error: nil}
 			},
 		},
