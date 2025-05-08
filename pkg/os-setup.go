@@ -170,6 +170,21 @@ func setInotifyValue(value int) error {
 	return cmd.Run()
 }
 
+func CheckInotifyConfig() error {
+	currentValue, err := getCurrentInotifyValue()
+	if err != nil {
+		return fmt.Errorf("Failed to get current inotify instances: " + err.Error())
+	}
+
+	if currentValue <= targetValue {
+		LogMessage(Warn, fmt.Sprintf("WARNING: Current inotify instances (%d) is less than or equal to requirement (%d)", currentValue, targetValue))
+	} else {
+		LogMessage(Info, fmt.Sprintf("Current inotify instances (%d) is greater than or equal to requirement (%d)", currentValue, targetValue))
+	}
+
+	return nil
+}
+
 func updateSysctlConf(value int) error {
 	data, err := os.ReadFile(sysctlFile)
 	if err != nil {
