@@ -21,9 +21,28 @@ import (
 	"io"
 	"os/exec"
 	"strings"
-
+	"github.com/spf13/viper"
 	log "github.com/sirupsen/logrus"
 )
+
+func CheckGPUAvailability() error {
+	LogMessage(Info, "Running lsmod to check for amdgpu module")
+
+	output, err := exec.Command("sh", "-c", "lsmod").CombinedOutput()
+
+	if err != nil {
+		return fmt.Errorf("Failed to run lsmod: "+err.Error())
+	} 
+
+	// grep will give an error if the module is not found, but we want to check the output
+	output, err = exec.Command("sh", "-c", "lsmod | grep '^amdgpu'").CombinedOutput()	
+	if len(output) == 0 {
+		LogMessage(Warn, "The amdgpu module is not loaded")
+	} else {
+		LogMessage(Info, "Result of lsmod: "+string(output))
+	}
+	return nil
+}
 
 func CheckAndInstallROCM() bool {
 	_, err := exec.LookPath("rocm-smi")
@@ -61,8 +80,8 @@ func CheckAndInstallROCM() bool {
 		return false
 	}
 
-	debFile := "amdgpu-install_6.3.60302-1_all.deb"
-	url := "https://repo.radeon.com/amdgpu-install/6.3.2/ubuntu/" + ubuntuCodename + "/" + debFile
+	debFile := viper.GetString("ROCM_DEB_PACKAGE")
+	url := viper.GetString("ROCM_BASE_URL") + ubuntuCodename + "/" + debFile
 	_, err = runCommand("wget", url)
 	if err != nil {
 		LogMessage(Error, "Failed to download amdgpu-install: "+err.Error())
