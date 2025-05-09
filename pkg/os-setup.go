@@ -228,6 +228,10 @@ func VerifyInotifyInstances() bool {
 }
 
 func HasSufficientRootPartition() bool {
+	if !viper.GetBool("GPU_NODE") {
+		LogMessage(Info, "Skipping root partition check for CPU node.")
+		return true
+	}
 	cmd := exec.Command("df", "-BG", "/")
 	output, err := cmd.Output()
 	if err != nil {
