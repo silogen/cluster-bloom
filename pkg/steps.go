@@ -554,6 +554,9 @@ var SetRenderGroupStep = Step{
 	Name:        "Set Render Group",
 	Description: "Make video the group of /dev/dri/renderD*",
 	Action: func() StepResult {
+		if !viper.GetBool("GPU_NODE") {
+			return StepResult{Message: "Skip Set Render Group for non-GPU node"}
+		}
 		return StepResult{Error: exec.Command("/bin/sh", "-c", "sudo chgrp video /dev/dri/renderD*").Run()}
 	},
 }
