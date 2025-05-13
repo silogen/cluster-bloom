@@ -25,6 +25,7 @@ import (
 )
 
 var rke2ConfigContent = `
+cni: cilium
 cluster-cidr: 10.242.0.0/16
 service-cidr: 10.243.0.0/16
 
@@ -121,7 +122,7 @@ func SetupFirstRKE2() error {
 		command string
 		args    []string
 	}{
-		{"sh", []string{"-c", "curl -sfL "+viper.GetString("RKE2_INSTALLATION_URL")+" | sh -"}},
+		{"sh", []string{"-c", "curl -sfL " + viper.GetString("RKE2_INSTALLATION_URL") + " | sh -"}},
 		{"systemctl", []string{"enable", "rke2-server.service"}},
 	}
 
@@ -195,7 +196,7 @@ func SetupRKE2Additional() error {
 		command string
 		args    []string
 	}{
-		{"sh", []string{"-c", "curl -sfL "+viper.GetString("RKE2_INSTALLATION_URL")+" | INSTALL_RKE2_TYPE=agent sh -"}},
+		{"sh", []string{"-c", "curl -sfL " + viper.GetString("RKE2_INSTALLATION_URL") + " | INSTALL_RKE2_TYPE=agent sh -"}},
 		{"systemctl", []string{"enable", "rke2-agent.service"}},
 	}
 	for _, cmd := range commands {
