@@ -101,16 +101,19 @@ node-label:
   - silogen.ai/longhorndisks=%s
 `
 
+func ParseLonghornDiskConfig() string {
+	disks := strings.Split(viper.GetString("LONGHORN_DISKS"), ",")
+	diskList := strings.Join(disks, "xxx")
+	return diskList
+}
+
 func GenerateLonghornDiskString() error {
 	rke2ConfigPath := "/etc/rancher/rke2/config.yaml"
 
 	if viper.IsSet("LONGHORN_DISKS") && viper.GetString("LONGHORN_DISKS") != "" {
 		LogMessage(Info, "Using LONGHORN_DISKS for Longhorn configuration.")
-		disks := strings.Split(viper.GetString("LONGHORN_DISKS"), ",")
-		diskList := strings.Join(disks, "xxx")
-
+		diskList := ParseLonghornDiskConfig()
 		configContent := fmt.Sprintf(longhornConfigTemplate, diskList)
-
 		if err := appendToFile(rke2ConfigPath, configContent); err != nil {
 			return fmt.Errorf("failed to append Longhorn configuration to %s: %w", rke2ConfigPath, err)
 		}
