@@ -115,6 +115,13 @@ func initConfig() {
 		}
 	}
 
+	if viper.IsSet("LONGHORN_DISKS") && viper.GetString("LONGHORN_DISKS") != "" {
+		longhornDiskString := pkg.ParseLonghornDiskConfig()
+		if len(longhornDiskString) > 63 {
+			log.Fatalf("Too many disks, %s is longer than 63", pkg.ParseLonghornDiskConfig())
+		}
+	}
+
 	log.SetFormatter(&log.TextFormatter{
 		FullTimestamp: true,
 	})
