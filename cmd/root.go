@@ -45,6 +45,7 @@ Available Configuration Variables:
   - LONGHORN_DISKS: Comma-separated list of disk paths to use for Longhorn (default: "").
   - ONEPASS_CONNECT_TOKEN: The token used for 1Password Connect integration (default: "").
   - CLUSTERFORGE_RELEASE: The version of Cluster-Forge to install (default: "https://github.com/silogen/cluster-forge/releases/download/deploy/deploy-release.tar.gz"). Pass the URL for a specific release, or 'none' to not install ClusterForge.
+  - DISABLED_STEPS: Comma-separated list of steps to skip. Example "SetupLonghornStep,SetupMetallbStep" (default: "").
 
 Usage:
   Use the --config flag to specify a configuration file, or set the above variables in the environment or a Viper-compatible config file.
@@ -177,7 +178,8 @@ func rootSteps() {
 		pkg.SetupRKE2Step,
 	}
 	postK8Ssteps := []pkg.Step{
-		pkg.SetupManifestsStep,
+		pkg.SetupLonghornStep,
+		pkg.SetupMetallbStep,
 		pkg.CreateMetalLBConfigStep,
 		pkg.SetupKubeConfig,
 		pkg.SetupClusterForgeStep,
@@ -206,6 +208,7 @@ Available Configuration Variables:
   - LONGHORN_DISKS: Comma-separated list of disk paths to use for Longhorn (default: "").
   - ONEPASS_CONNECT_TOKEN: The token used for 1Password Connect integration (default: "").
   - CLUSTERFORGE_RELEASE: The version of Cluster-Forge to install (default: "https://github.com/silogen/cluster-forge/releases/download/deploy/deploy-release.tar.gz"). Pass the URL for a specific release, or 'none' to not install ClusterForge.
+  - DISABLED_STEPS: Comma-separated list of steps to skip. Example "SetupLonghornStep,SetupMetallbStep" (default: "").
 
 Usage:
   Use the --config flag to specify a configuration file, or set the above variables in the environment or a Viper-compatible config file.

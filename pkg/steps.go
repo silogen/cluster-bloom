@@ -37,6 +37,7 @@ var manifestFiles embed.FS
 var templateFiles embed.FS
 
 var CheckUbuntuStep = Step{
+	Id:          "CheckUbuntuStep",
 	Name:        "Check Ubuntu Version",
 	Description: "Verify running on supported Ubuntu version",
 	Action: func() StepResult {
@@ -51,6 +52,7 @@ var CheckUbuntuStep = Step{
 }
 
 var InstallDependentPackagesStep = Step{
+	Id:          "InstallDependentPackagesStep",
 	Name:        "Install Dependent Packages",
 	Description: "Ensure jq, nfs-common, and open-iscsi are installed",
 	Action: func() StepResult {
@@ -65,6 +67,7 @@ var InstallDependentPackagesStep = Step{
 }
 
 var OpenPortsStep = Step{
+	Id:          "OpenPortsStep",
 	Name:        "Open Ports",
 	Description: "Ensure needed ports are open in iptables",
 	Action: func() StepResult {
@@ -78,6 +81,7 @@ var OpenPortsStep = Step{
 }
 
 var CheckPortsBeforeOpeningStep = Step{
+	Id:          "CheckPortsBeforeOpeningStep",
 	Name:        "Checking Ports",
 	Description: "Ensure needed ports are not in use",
 	Action: func() StepResult {
@@ -92,6 +96,7 @@ var CheckPortsBeforeOpeningStep = Step{
 }
 
 var InstallK8SToolsStep = Step{
+	Id:          "InstallK8SToolsStep",
 	Name:        "Install Kubernetes tools",
 	Description: "Install kubectl and k9s",
 	Action: func() StepResult {
@@ -106,6 +111,7 @@ var InstallK8SToolsStep = Step{
 }
 
 var InotifyInstancesStep = Step{
+	Id:          "InotifyInstancesStep",
 	Name:        "Verify inotify instances",
 	Description: "Verify, or update, inotify instances",
 	Action: func() StepResult {
@@ -119,6 +125,7 @@ var InotifyInstancesStep = Step{
 }
 
 var SetupAndCheckRocmStep = Step{
+	Id:          "SetupAndCheckRocmStep",
 	Name:        "Setup and Check ROCm",
 	Description: "Verify, setup, and check ROCm devices",
 	Action: func() StepResult {
@@ -159,6 +166,7 @@ var SetupAndCheckRocmStep = Step{
 }
 
 var SetupRKE2Step = Step{
+	Id:          "SetupRKE2Step",
 	Name:        "Setup RKE2",
 	Description: "Setup RKE2 server and configure necessary modules",
 	Action: func() StepResult {
@@ -176,6 +184,7 @@ var SetupRKE2Step = Step{
 }
 
 var CleanDisksStep = Step{
+	Id:          "CleanDisksStep",
 	Name:        "Clean disks",
 	Description: "remove any previous longhorn temp drives",
 	Action: func() StepResult {
@@ -188,6 +197,7 @@ var CleanDisksStep = Step{
 }
 
 var SetupMultipathStep = Step{
+	Id:          "SetupMultipathStep",
 	Name:        "Setup Multipath",
 	Description: "Configure multipath to blacklist standard devices",
 	Action: func() StepResult {
@@ -202,6 +212,7 @@ var SetupMultipathStep = Step{
 }
 
 var UpdateModprobeStep = Step{
+	Id:          "UpdateModprobeStep",
 	Name:        "Update Modprobe",
 	Description: "Update Modprobe to unblacklist amdgpu",
 	Action: func() StepResult {
@@ -216,6 +227,7 @@ var UpdateModprobeStep = Step{
 }
 
 var SelectDrivesStep = Step{
+	Id:          "SelectDrivesStep",
 	Name:        "Select Unmounted Disks",
 	Description: "Identify and select unmounted physical disks",
 	Action: func() StepResult {
@@ -269,6 +281,7 @@ var SelectDrivesStep = Step{
 }
 
 var MountSelectedDrivesStep = Step{
+	Id:          "MountSelectedDrivesStep",
 	Name:        "Mount Selected Disks",
 	Description: "Mount the selected physical disks",
 	Action: func() StepResult {
@@ -296,6 +309,7 @@ var MountSelectedDrivesStep = Step{
 }
 
 var UninstallRKE2Step = Step{
+	Id:          "UninstallRKE2Step",
 	Name:        "Uninstall RKE2",
 	Description: "Execute the RKE2 uninstall script if it exists",
 	Action: func() StepResult {
@@ -313,6 +327,7 @@ var UninstallRKE2Step = Step{
 	},
 }
 var GenerateLonghornDiskStringStep = Step{
+	Id:          "GenerateLonghornDiskStringStep",
 	Name:        "Generate Longhorn Disk String",
 	Description: "Generate Longhorn disk configuration string for NVMe drives",
 	Action: func() StepResult {
@@ -324,12 +339,30 @@ var GenerateLonghornDiskStringStep = Step{
 	},
 }
 
-var SetupManifestsStep = Step{
-	Name:        "Setup Longhorn And MetalLB manifests",
-	Description: "Copy Longhorn and MetalLB YAML files to the RKE2 manifests directory",
+var SetupMetallbStep = Step{
+	Id:          "SetupMetallbStep",
+	Name:        "Setup MetalLB manifests",
+	Description: "Copy MetalLB YAML files to the RKE2 manifests directory",
 	Action: func() StepResult {
 		if viper.GetBool("FIRST_NODE") {
-			err := setupManifests()
+			err := setupManifests("metallb")
+			if err != nil {
+				return StepResult{Error: err}
+			}
+		} else {
+			return StepResult{Error: nil}
+		}
+		return StepResult{Error: nil}
+	},
+}
+
+var SetupLonghornStep = Step{
+	Id:          "SetupLonghornStep",
+	Name:        "Setup Longhorn manifests",
+	Description: "Copy Longhorn YAML files to the RKE2 manifests directory",
+	Action: func() StepResult {
+		if viper.GetBool("FIRST_NODE") {
+			err := setupManifests("longhorn")
 			if err != nil {
 				return StepResult{Error: err}
 			}
@@ -341,6 +374,7 @@ var SetupManifestsStep = Step{
 }
 
 var CreateMetalLBConfigStep = Step{
+	Id:          "CreateMetalLBConfigStep",
 	Name:        "Setup AddressPool for MetalLB",
 	Description: "Create IPAddressPool and L2Advertisement resources for MetalLB",
 	Action: func() StepResult {
@@ -356,6 +390,7 @@ var CreateMetalLBConfigStep = Step{
 	},
 }
 var PrepareRKE2Step = Step{
+	Id:          "PrepareRKE2Step",
 	Name:        "Prepare for RKE2",
 	Description: "RKE2 preparations",
 	Action: func() StepResult {
@@ -369,6 +404,7 @@ var PrepareRKE2Step = Step{
 }
 
 var HasSufficientRootPartitionStep = Step{
+	Id:          "HasSufficientRootPartitionStep",
 	Name:        "Check Root Partition Size",
 	Description: "Check if the root partition size is sufficient",
 	Action: func() StepResult {
@@ -381,6 +417,7 @@ var HasSufficientRootPartitionStep = Step{
 }
 
 var NVMEDrivesAvailableStep = Step{
+	Id:          "NVMEDrivesAvailableStep",
 	Name:        "Check NVMe Drives",
 	Description: "Check if NVMe drives are available",
 	Action: func() StepResult {
@@ -393,6 +430,7 @@ var NVMEDrivesAvailableStep = Step{
 }
 
 var SetupKubeConfig = Step{
+	Id:          "SetupKubeConfig",
 	Name:        "Setup KubeConfig",
 	Description: "Setup and configure KubeConfig, and additional cluster setup command",
 	Action: func() StepResult {
@@ -483,6 +521,7 @@ var SetupKubeConfig = Step{
 }
 
 var SetupOnePasswordSecretStep = Step{
+	Id:          "SetupOnePasswordSecretStep",
 	Name:        "Setup 1Password Secret",
 	Description: "Setup and configure connect server secrets for 1Password",
 	Action: func() StepResult {
@@ -495,6 +534,7 @@ var SetupOnePasswordSecretStep = Step{
 }
 
 var SetupClusterForgeStep = Step{
+	Id:          "SetupClusterForgeStep",
 	Name:        "Setup Cluster Forge",
 	Description: "Setup and configure Cluster Forge",
 	Action: func() StepResult {
@@ -506,6 +546,7 @@ var SetupClusterForgeStep = Step{
 	},
 }
 var FinalOutput = Step{
+	Id:          "FinalOutput",
 	Name:        "Output",
 	Description: "Generate output after installation",
 	Action: func() StepResult {
@@ -551,6 +592,7 @@ var FinalOutput = Step{
 }
 
 var SetRenderGroupStep = Step{
+	Id:          "SetRenderGroupStep",
 	Name:        "Set Render Group",
 	Description: "Make video the group of /dev/dri/renderD*",
 	Action: func() StepResult {
