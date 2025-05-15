@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -32,6 +33,7 @@ import (
 )
 
 type Step struct {
+	Id          string
 	Name        string
 	Description string
 	Action      func() StepResult
@@ -88,7 +90,19 @@ func showMessageModal(app *tview.Application, message string, flex *tview.Flex) 
 }
 
 func RunStepsWithUI(steps []Step) error {
+	var enabledSteps []Step
+	if viper.IsSet("DISABLED_STEPS") && viper.GetString("DISABLED_STEPS") != "" {
+		disabledSteps := strings.Split(viper.GetString("DISABLED_STEPS"), ",")
+		for _, step := range steps {
+			if !slices.Contains(disabledSteps, step.Id) {
+				enabledSteps = append(enabledSteps, step)
+			}
+		}
 
+		fmt.Println(disabledSteps)
+	} else {
+		enabledSteps = steps
+	}
 	var logView *tview.TextView
 	app := tview.NewApplication()
 	list := tview.NewList()
@@ -113,10 +127,9 @@ func RunStepsWithUI(steps []Step) error {
 		SetBorder(true).
 		SetTitle("Status")
 
-	for i, step := range steps {
+	for i, step := range enabledSteps {
 		list.AddItem(fmt.Sprintf("[ ] %s", step.Name), step.Description, rune('1'+i), nil)
 	}
-
 	flex := tview.NewFlex().
 		SetDirection(tview.FlexRow).
 		AddItem(list, 0, 1, true).
@@ -140,7 +153,7 @@ func RunStepsWithUI(steps []Step) error {
 	go func() {
 		var shouldBreak bool
 
-		for i, step := range steps {
+		for i, step := range enabledSteps {
 			app.QueueUpdateDraw(func() {
 				statusBar.Clear()
 				fmt.Fprintf(statusBar, "[yellow]Running: %s[white]", step.Name)
@@ -227,9 +240,9 @@ func RunStepsWithUI(steps []Step) error {
 	fmt.Println("\n=== Cluster Bloom Execution Summary ===")
 	fmt.Println()
 
-	for i, step := range steps {
+	for i, step := range enabledSteps {
 		status := "[ ]"
-		if i < len(steps) {
+		if i < len(enabledSteps) {
 			mainText, _ := list.GetItemText(i)
 			if mainText != "" {
 				if strings.Contains(mainText, "✓") {

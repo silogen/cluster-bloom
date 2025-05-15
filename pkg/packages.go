@@ -24,6 +24,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
 	"github.com/spf13/viper"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -54,7 +55,7 @@ func CheckPackageInstallConnections() error {
 	ubuntuCodename := strings.TrimSpace(string(osRelease))
 
 	clusterForgeUrl := viper.GetString("CLUSTERFORGE_RELEASE")
-	rocmUrl :=  viper.GetString("ROCM_BASE_URL") + ubuntuCodename + "/" + viper.GetString("ROCM_DEB_PACKAGE")
+	rocmUrl := viper.GetString("ROCM_BASE_URL") + ubuntuCodename + "/" + viper.GetString("ROCM_DEB_PACKAGE")
 	rke2Url := viper.GetString("RKE2_INSTALLATION_URL")
 
 	var otherRepositories = []string{clusterForgeUrl, rocmUrl, rke2Url}
@@ -64,9 +65,8 @@ func CheckPackageInstallConnections() error {
 		output, err = cmd.CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("Failed to verify download from repository: %w\nOutput: %s", err, output)
-		}	
+		}
 	}
-
 
 	LogMessage(Debug, "Package installation connections are available")
 	return nil
@@ -124,12 +124,12 @@ func installK8sTools() error {
 	return nil
 }
 
-func setupManifests() error {
+func setupManifests(folder string) error {
 	targetDir := rke2ManifestDirectory
 	if err := os.MkdirAll(targetDir, 0755); err != nil {
 		return fmt.Errorf("failed to create target directory %s: %w", targetDir, err)
 	}
-	err := fs.WalkDir(manifestFiles, "manifests", func(path string, d fs.DirEntry, err error) error {
+	err := fs.WalkDir(manifestFiles, filepath.Join("manifests", folder), func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
