@@ -538,9 +538,13 @@ var SetupClusterForgeStep = Step{
 	Name:        "Setup Cluster Forge",
 	Description: "Setup and configure Cluster Forge",
 	Action: func() StepResult {
-		err := SetupClusterForge()
-		if err != nil {
-			return StepResult{Error: fmt.Errorf("failed to setup Cluster Forge: %v", err)}
+		if viper.GetBool("FIRST_NODE") {
+			err := SetupClusterForge()
+			if err != nil {
+				return StepResult{Error: fmt.Errorf("failed to setup Cluster Forge: %v", err)}
+			}
+		} else {
+			LogMessage(Info, "Skipped for additional node")
 		}
 		return StepResult{Error: nil}
 	},
