@@ -403,16 +403,16 @@ var PrepareRKE2Step = Step{
 	},
 }
 
-var HasSufficientRootPartitionStep = Step{
-	Id:          "HasSufficientRootPartitionStep",
-	Name:        "Check Root Partition Size",
-	Description: "Check if the root partition size is sufficient",
+var HasSufficientRancherPartitionStep = Step{
+	Id:          "HasSufficientRancherPartitionStep",
+	Name:        "Check /var/lib/rancher Partition Size",
+	Description: "Check if the /var/lib/rancher partition size is sufficient",
 	Action: func() StepResult {
 
-		if HasSufficientRootPartition() {
+		if HasSufficientRancherPartition() {
 			return StepResult{Error: nil}
 		}
-		return StepResult{Error: fmt.Errorf("root partition size is less than the recommended 500GB")}
+		return StepResult{Error: fmt.Errorf("/var/lib/rancher partition size is less than the recommended 500GB")}
 	},
 }
 
