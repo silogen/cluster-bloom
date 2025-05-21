@@ -157,7 +157,7 @@ func logConfigValues() {
 func rootSteps() {
 	preK8Ssteps := []pkg.Step{
 		pkg.CheckUbuntuStep,
-		pkg.HasSufficientRootPartitionStep,
+		pkg.HasSufficientRancherPartitionStep,
 		pkg.NVMEDrivesAvailableStep,
 		pkg.InstallDependentPackagesStep,
 		pkg.UninstallRKE2Step,

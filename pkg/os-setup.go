@@ -227,15 +227,15 @@ func VerifyInotifyInstances() bool {
 	}
 }
 
-func HasSufficientRootPartition() bool {
+func HasSufficientRancherPartition() bool {
 	if !viper.GetBool("GPU_NODE") {
-		LogMessage(Info, "Skipping root partition check for CPU node.")
+		LogMessage(Info, "Skipping /var/lib/rancher partition check for CPU node.")
 		return true
 	}
-	cmd := exec.Command("df", "-BG", "/")
+	cmd := exec.Command("df", "-BG", "/var/lib/rancher")
 	output, err := cmd.Output()
 	if err != nil {
-		LogMessage(Error, fmt.Sprintf("Failed to get root partition size: %v", err))
+		LogMessage(Error, fmt.Sprintf("Failed to get /var/lib/rancher partition size: %v", err))
 		return false
 	}
 	lines := strings.Split(string(output), "\n")
@@ -251,14 +251,14 @@ func HasSufficientRootPartition() bool {
 	sizeStr := strings.TrimSuffix(fields[1], "G")
 	size, err := strconv.ParseFloat(sizeStr, 64)
 	if err != nil {
-		LogMessage(Error, fmt.Sprintf("Failed to parse root partition size: %v", err))
+		LogMessage(Error, fmt.Sprintf("Failed to parse /var/lib/rancher partition size: %v", err))
 		return false
 	}
 	if size >= 500 {
-		LogMessage(Info, fmt.Sprintf("Root partition size (%.1fGB) is sufficient", size))
+		LogMessage(Info, fmt.Sprintf("/var/lib/rancher partition size (%.1fGB) is sufficient", size))
 		return true
 	}
-	LogMessage(Warn, fmt.Sprintf("Root partition size (%.1fGB) is less than the recommended 500GB", size))
+	LogMessage(Warn, fmt.Sprintf("/var/lib/rancher partition size (%.1fGB) is less than the recommended 500GB", size))
 	return false
 }
 
