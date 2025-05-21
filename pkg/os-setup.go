@@ -344,7 +344,7 @@ metadata:
   name: cluster-bloom-l2-advertisement
   namespace: metallb-system
 `, defaultIP)
-	manifestPath := path.Join(rke2ManifestDirectory, "metallb_address.yaml")
+	manifestPath := path.Join(rke2ManifestDirectory, "metallb-address.yaml")
 	if err := os.WriteFile(manifestPath, []byte(metallbConfig), 0644); err != nil {
 		return fmt.Errorf("failed to write MetalLB configuration to %s: %v", manifestPath, err)
 	}
