@@ -94,6 +94,9 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | LONGHORN_DISKS | Comma-separated list of disk paths to use for Longhorn | "" |
 | ONEPASS_CONNECT_TOKEN | The token used for 1Password Connect integration | "" |
 | CLUSTERFORGE_RELEASE | The version of Cluster-Forge to install. Pass the URL for a specific release, or 'none' to not install ClusterForge. | "https://github.com/silogen/cluster-forge/releases/download/deploy/deploy-release.tar.gz" |
+| DISABLED_STEPS | Comma-separated list of steps to skip. Example "SetupLonghornStep,SetupMetallbStep" | "" |
+| ENABLED_STEPS | Comma-separated list of steps to perform. If empty, perform all. Example "SetupLonghornStep,SetupMetallbStep" | "" |
+| SELECTED_DISKS | Comma-separated list of disk devices. Example "/dev/sdb,/dev/sdc" | "" |
 
 ### Using a Configuration File
 
