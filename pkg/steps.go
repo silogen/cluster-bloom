@@ -231,6 +231,12 @@ var SelectDrivesStep = Step{
 	Name:        "Select Unmounted Disks",
 	Description: "Identify and select unmounted physical disks",
 	Action: func() StepResult {
+		if viper.IsSet("SELECTED_DISKS") {
+			disks := strings.Split(viper.GetString("SELECTED_DISKS"), ",")
+			LogMessage(Info, fmt.Sprintf("Selected disks: %v", disks))
+			viper.Set("selected_disks", disks)
+			return StepResult{Message: fmt.Sprintf("Selected disks: %v", disks)}
+		}
 		disks, err := GetUnmountedPhysicalDisks()
 		if err != nil {
 			return StepResult{
@@ -241,7 +247,7 @@ var SelectDrivesStep = Step{
 			LogMessage(Info, "No unmounted physical disks found")
 			return StepResult{Error: nil}
 		}
-		cmd := exec.Command("sh", "-c", "lsblk |grep nvme")
+		cmd := exec.Command("sh", "-c", "lsblk |awk '/nvme/ {print $0}'")
 		output, err := cmd.Output()
 		if err != nil {
 			return StepResult{
@@ -421,6 +427,10 @@ var NVMEDrivesAvailableStep = Step{
 	Name:        "Check NVMe Drives",
 	Description: "Check if NVMe drives are available",
 	Action: func() StepResult {
+		if !viper.GetBool("GPU_NODE") {
+			LogMessage(Info, "Skipped for non-GPU node")
+			return StepResult{Error: nil}
+		}
 
 		if NVMEDrivesAvailable() {
 			return StepResult{Error: nil}

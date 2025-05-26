@@ -90,18 +90,27 @@ func showMessageModal(app *tview.Application, message string, flex *tview.Flex) 
 }
 
 func RunStepsWithUI(steps []Step) error {
+	var nonDisabledSteps []Step
 	var enabledSteps []Step
 	if viper.IsSet("DISABLED_STEPS") && viper.GetString("DISABLED_STEPS") != "" {
-		disabledSteps := strings.Split(viper.GetString("DISABLED_STEPS"), ",")
+		disabledStepNames := strings.Split(viper.GetString("DISABLED_STEPS"), ",")
 		for _, step := range steps {
-			if !slices.Contains(disabledSteps, step.Id) {
+			if !slices.Contains(disabledStepNames, step.Id) {
+				nonDisabledSteps = append(nonDisabledSteps, step)
+			}
+		}
+	} else {
+		nonDisabledSteps = steps
+	}
+	if viper.IsSet("ENABLED_STEPS") && viper.GetString("ENABLED_STEPS") != "" {
+		enabledStepNames := strings.Split(viper.GetString("ENABLED_STEPS"), ",")
+		for _, step := range nonDisabledSteps {
+			if slices.Contains(enabledStepNames, step.Id) {
 				enabledSteps = append(enabledSteps, step)
 			}
 		}
-
-		fmt.Println(disabledSteps)
 	} else {
-		enabledSteps = steps
+		enabledSteps = nonDisabledSteps
 	}
 	var logView *tview.TextView
 	app := tview.NewApplication()
@@ -196,6 +205,16 @@ func RunStepsWithUI(steps []Step) error {
 				fmt.Fprintf(statusBar, "[green]All steps completed.[white]")
 			}
 		})
+		responseChan := make(chan bool, 1)
+		timeoutChan := make(chan bool, 1)
+
+		go func() {
+			time.Sleep(3 * time.Second)
+			select {
+			case timeoutChan <- true:
+			default:
+			}
+		}()
 
 		app.QueueUpdateDraw(func() {
 			modalText := "Execution completed. Restart your session to enable k9s."
@@ -206,14 +225,22 @@ func RunStepsWithUI(steps []Step) error {
 				SetText(modalText).
 				AddButtons([]string{"OK"}).
 				SetDoneFunc(func(buttonIndex int, buttonLabel string) {
-					app.SetRoot(flex, true)
-					done <- true
+					select {
+					case responseChan <- true:
+					default:
+					}
 				})
 			pages := tview.NewPages().
 				AddPage("background", flex, true, true).
 				AddPage("modal", modal, true, true)
 			app.SetRoot(pages, true)
 		})
+		select {
+		case <-responseChan:
+		case <-timeoutChan:
+		}
+		app.SetRoot(flex, true)
+		done <- true
 	}()
 
 	app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
@@ -269,6 +296,7 @@ func RunStepsWithUI(steps []Step) error {
 		fmt.Printf("Execution failed: %v\n", finalErr)
 		return finalErr
 	} else {
+		fmt.Println("Execution completed. Restart your session to enable k9s.")
 		fmt.Println("All steps completed successfully!")
 	}
 
