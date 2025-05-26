@@ -136,17 +136,22 @@ func GenerateLonghornDiskString() error {
 		LogMessage(Info, "No /mnt/disk{x} drives found.")
 		return nil
 	}
-
-	nvmeDisks := []string{}
-	for _, disk := range disks {
-		cmd := exec.Command("sh", "-c", fmt.Sprintf("lsblk -no NAME,MOUNTPOINT | grep '%s' | grep 'nvme'", disk))
-		if err := cmd.Run(); err == nil {
-			nvmeDisks = append(nvmeDisks, strings.TrimPrefix(disk, "/mnt/"))
+	diskNames := []string{}
+	if viper.GetBool("GPU_NODE") {
+		for _, disk := range disks {
+			cmd := exec.Command("sh", "-c", fmt.Sprintf("lsblk -no NAME,MOUNTPOINT | grep '%s' | grep 'nvme'", disk))
+			if err := cmd.Run(); err == nil {
+				diskNames = append(diskNames, strings.TrimPrefix(disk, "/mnt/"))
+			}
+		}
+	} else {
+		for _, disk := range disks {
+			diskNames = append(diskNames, strings.TrimPrefix(disk, "/mnt/"))
 		}
 	}
 
-	if len(nvmeDisks) > 0 {
-		diskList := strings.Join(nvmeDisks, "xxx")
+	if len(diskNames) > 0 {
+		diskList := strings.Join(diskNames, "xxx")
 
 		configContent := fmt.Sprintf(longhornConfigTemplate, diskList)
 
@@ -155,7 +160,6 @@ func GenerateLonghornDiskString() error {
 		}
 		LogMessage(Info, "Appended Longhorn disk configuration to RKE2 config.")
 	}
-
 	return nil
 }
 
