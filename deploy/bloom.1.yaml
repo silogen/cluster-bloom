@@ -1,0 +1,12 @@
+SKIP_DISK_CHECK: false
+CLUSTERFORGE_RELEASE: https://github.com/silogen/cluster-forge/releases/download/20250519-core/release-core-20250519.tar.gz
+GPU_NODE: false
+# ENABLED_STEPS: SelectDrivesStep
+DISABLED_STEPS: SetupLonghornStep,SetupMetallbStep
+SELECTED_DISKS: /dev/sdb
+longhorn_disks: ""
+oidc_url: ""
+onepass_connect_token: ""
+rke2_installation_url: https://get.rke2.io
+rocm_base_url: https://repo.radeon.com/amdgpu-install/6.3.2/ubuntu/
+rocm_deb_package: amdgpu-install_6.3.60302-1_all.deb

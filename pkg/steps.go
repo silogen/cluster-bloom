@@ -231,7 +231,7 @@ var SelectDrivesStep = Step{
 	Name:        "Select Unmounted Disks",
 	Description: "Identify and select unmounted physical disks",
 	Action: func() StepResult {
-		if viper.IsSet("SELECTED_DISKS") {
+		if viper.IsSet("SELECTED_DISKS") && viper.GetString("SELECTED_DISKS") != "" {
 			disks := strings.Split(viper.GetString("SELECTED_DISKS"), ",")
 			LogMessage(Info, fmt.Sprintf("Selected disks: %v", disks))
 			viper.Set("selected_disks", disks)

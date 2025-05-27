@@ -109,7 +109,6 @@ func ParseLonghornDiskConfig() string {
 
 func GenerateLonghornDiskString() error {
 	rke2ConfigPath := "/etc/rancher/rke2/config.yaml"
-
 	if viper.IsSet("LONGHORN_DISKS") && viper.GetString("LONGHORN_DISKS") != "" {
 		LogMessage(Info, "Using LONGHORN_DISKS for Longhorn configuration.")
 		diskList := ParseLonghornDiskConfig()
@@ -124,6 +123,12 @@ func GenerateLonghornDiskString() error {
 		LogMessage(Info, "Skipping GenerateLonghornDiskString as SKIP_DISK_CHECK is set.")
 		return nil
 	}
+	selectedDisks := viper.GetStringSlice("selected_disks")
+	if len(selectedDisks) == 0 {
+		LogMessage(Info, "No disks selected for mounting, skipping")
+		return nil
+	}
+
 	cmd := exec.Command("sh", "-c", "mount | grep -oP '/mnt/disk\\d+'")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
