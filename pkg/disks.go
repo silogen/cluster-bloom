@@ -278,18 +278,7 @@ func MountDrives(drives []string) error {
 	}
 
 	for _, drive := range drives {
-		mountPoint := fmt.Sprintf("/mnt/disk%d", i)
-		for usedMountPoints[mountPoint] || strings.Contains(string(fstabContent), mountPoint) {
-			i++
-			mountPoint = fmt.Sprintf("/mnt/disk%d", i)
-		}
-		usedMountPoints[mountPoint] = true
-
-		if err := os.MkdirAll(mountPoint, 0755); err != nil {
-			return fmt.Errorf("failed to create mount point %s: %w", mountPoint, err)
-		}
-
-		cmd := exec.Command("lsblk", "-f", drive)
+		cmd = exec.Command("lsblk", "-f", drive)
 		output, err := cmd.Output()
 		if err != nil {
 			return fmt.Errorf("failed to check filesystem type for %s: %w", drive, err)
@@ -315,6 +304,31 @@ func MountDrives(drives []string) error {
 			if err := cmd.Run(); err != nil {
 				return fmt.Errorf("failed to format %s: %w", drive, err)
 			}
+		}
+		cmd = exec.Command("blkid", "-s", "UUID", "-o", "value", drive)
+		uuidOutput, err := cmd.Output()
+		uuid := ""
+		if err == nil {
+			uuid = strings.TrimSpace(string(uuidOutput))
+		}
+		if uuid != "" && strings.Contains(string(fstabContent), fmt.Sprintf("UUID=%s", uuid)) {
+			LogMessage(Info, fmt.Sprintf("%s is in /etc/fstab, automounting.", drive))
+			cmd := exec.Command("mount", "-a", drive)
+			_, err := cmd.Output()
+			if err != nil {
+				return fmt.Errorf("failed to automount %s: %w", drive, err)
+			}
+			continue
+		}
+		mountPoint := fmt.Sprintf("/mnt/disk%d", i)
+		for usedMountPoints[mountPoint] || strings.Contains(string(fstabContent), mountPoint) {
+			i++
+			mountPoint = fmt.Sprintf("/mnt/disk%d", i)
+		}
+		usedMountPoints[mountPoint] = true
+
+		if err := os.MkdirAll(mountPoint, 0755); err != nil {
+			return fmt.Errorf("failed to create mount point %s: %w", mountPoint, err)
 		}
 
 		cmd = exec.Command("mount", drive, mountPoint)
