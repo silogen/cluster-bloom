@@ -97,6 +97,9 @@ func initConfig() {
 	viper.SetDefault("ROCM_BASE_URL", "https://repo.radeon.com/amdgpu-install/6.3.2/ubuntu/")
 	viper.SetDefault("ROCM_DEB_PACKAGE", "amdgpu-install_6.3.60302-1_all.deb")
 	viper.SetDefault("RKE2_INSTALLATION_URL", "https://get.rke2.io")
+	viper.SetDefault("DISABLED_STEPS", "")
+	viper.SetDefault("ENABLED_STEPS", "")
+	viper.SetDefault("SELECTED_DISKS", "")
 	viper.AutomaticEnv()
 	if err := viper.ReadInConfig(); err == nil {
 		log.Infof("Using config file: %s", viper.ConfigFileUsed())

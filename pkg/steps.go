@@ -231,11 +231,16 @@ var SelectDrivesStep = Step{
 	Name:        "Select Unmounted Disks",
 	Description: "Identify and select unmounted physical disks",
 	Action: func() StepResult {
-		if viper.IsSet("SELECTED_DISKS") {
+		if viper.IsSet("SELECTED_DISKS") && viper.GetString("SELECTED_DISKS") != "" {
 			disks := strings.Split(viper.GetString("SELECTED_DISKS"), ",")
 			LogMessage(Info, fmt.Sprintf("Selected disks: %v", disks))
+			for _, disk := range disks {
+				cmd := exec.Command("umount", "-Av", disk)
+				output, _ := cmd.CombinedOutput()
+				LogMessage(Info, fmt.Sprintf("unmounted disk %s: %s", disk, string(output)))
+			}
 			viper.Set("selected_disks", disks)
-			return StepResult{Message: fmt.Sprintf("Selected disks: %v", disks)}
+			return StepResult{Error: nil}
 		}
 		disks, err := GetUnmountedPhysicalDisks()
 		if err != nil {
@@ -319,9 +324,17 @@ var UninstallRKE2Step = Step{
 	Name:        "Uninstall RKE2",
 	Description: "Execute the RKE2 uninstall script if it exists",
 	Action: func() StepResult {
-		LogMessage(Info, "Uninstalling RKE2, which takes a couple minutes.")
-		cmd := exec.Command("/usr/local/bin/rke2-uninstall.sh")
+		LogMessage(Info, "Unmounting and cleaning pvcs")
+		cmd := exec.Command("sh", "-c", "sudo umount -lf /dev/longhorn/pvc*")
 		output, err := cmd.CombinedOutput()
+		// Need to umount twice to get all mounts. -A is finicky for some reason
+		cmd = exec.Command("sh", "-c", "sudo umount -lf /dev/longhorn/pvc*")
+		output, err = cmd.CombinedOutput()
+		cmd = exec.Command("sh", "-c", "sudo rm -rf /dev/longhorn/pvc-*")
+		output, err = cmd.CombinedOutput()
+		LogMessage(Info, "Uninstalling RKE2, which takes a couple minutes.")
+		cmd = exec.Command("/usr/local/bin/rke2-uninstall.sh")
+		output, err = cmd.CombinedOutput()
 		if err != nil {
 			LogMessage(Info, fmt.Sprintf("RKE2 uninstall script output: %s", string(output)))
 			LogMessage(Info, fmt.Sprintf("RKE2 uninstall script encountered and ignored an error: %v", err))
