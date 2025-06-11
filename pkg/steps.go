@@ -618,19 +618,6 @@ var FinalOutput = Step{
 	},
 }
 
-var SetRenderGroupStep = Step{
-	Id:          "SetRenderGroupStep",
-	Name:        "Set Render Group",
-	Description: "Make video the group of /dev/dri/renderD*",
-	Action: func() StepResult {
-		if !viper.GetBool("GPU_NODE") {
-			LogMessage(Info, "Skipped for non-GPU node")
-			return StepResult{Error: nil}
-		}
-		return StepResult{Error: exec.Command("/bin/sh", "-c", "sudo chgrp video /dev/dri/renderD*").Run()}
-	},
-}
-
 var UpdateUdevRulesStep = Step{
 	Id:          "UpdateUdevRulesStep",
 	Name:        "Update Udev Rules",
