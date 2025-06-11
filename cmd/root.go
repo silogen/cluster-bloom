@@ -174,7 +174,7 @@ func rootSteps() {
 		pkg.InotifyInstancesStep,
 		pkg.SetupAndCheckRocmStep,
 		pkg.OpenPortsStep,
-		pkg.SetRenderGroupStep,
+		pkg.UpdateUdevRulesStep,
 	}
 	k8Ssteps := []pkg.Step{
 		pkg.SetupRKE2Step,

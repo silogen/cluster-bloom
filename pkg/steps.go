@@ -617,3 +617,44 @@ var SetRenderGroupStep = Step{
 		return StepResult{Error: exec.Command("/bin/sh", "-c", "sudo chgrp video /dev/dri/renderD*").Run()}
 	},
 }
+
+var UpdateUdevRulesStep = Step{
+	Id:          "UpdateUdevRulesStep",
+	Name:        "Update Udev Rules",
+	Description: "Update AMD device-specific udev rules",
+	Action: func() StepResult {
+		if !viper.GetBool("GPU_NODE") {
+			LogMessage(Info, "Skipped for non-GPU node")
+			return StepResult{Error: nil}
+		}
+
+		var fileName = "/etc/udev/rules.d/70-amdgpu.rules"
+
+		var fileContent = strings.Join([]string{
+			"KERNEL==\"kfd\", MODE=\"0666\"",
+			"SUBSYSTEM==\"drm\", KERNEL==\"renderD*\", MODE=\"0666\"",
+		}, "\n")
+
+		cmd := exec.Command("sudo", "tee", fileName)
+		cmd.Stdin = strings.NewReader(fileContent)
+		err := cmd.Run()
+		if err != nil {
+			LogMessage(Error, fmt.Sprintf("Failed to write to file: %v", err))
+			return StepResult{Error: fmt.Errorf("Failed to write to file: %v", err)}
+		}
+
+		err = exec.Command("sudo", "udevadm", "control", "--reload-rules").Run()
+		if err != nil {
+			LogMessage(Error, fmt.Sprintf("Failed to reload udev rules: %v", err))
+			return StepResult{Error: fmt.Errorf("Failed to reload udev rules: %v", err)}
+		}
+
+		err = exec.Command("sudo", "udevadm", "trigger").Run()
+		if err != nil {
+			LogMessage(Error, fmt.Sprintf("Failed to trigger udev: %v", err))
+			return StepResult{Error: fmt.Errorf("Failed to trigger udev: %v", err)}
+		}
+
+		return StepResult{Error: nil}
+	},
+}
