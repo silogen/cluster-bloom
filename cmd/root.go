@@ -165,6 +165,7 @@ func rootSteps() {
 		pkg.HasSufficientRancherPartitionStep,
 		pkg.NVMEDrivesAvailableStep,
 		pkg.InstallDependentPackagesStep,
+		pkg.CleanLonghornMountsStep,
 		pkg.UninstallRKE2Step,
 		pkg.CleanDisksStep,
 		pkg.SetupMultipathStep,
