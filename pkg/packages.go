@@ -50,7 +50,7 @@ func CheckPackageInstallConnections() error {
 
 	osRelease, err := exec.Command("sh", "-c", "grep VERSION_CODENAME /etc/os-release | cut -d= -f2").Output()
 	if err != nil {
-		return fmt.Errorf("Error getting Ubuntu codename: %w", err.Error())
+		return fmt.Errorf("Error getting Ubuntu codename: %w", err)
 	}
 	ubuntuCodename := strings.TrimSpace(string(osRelease))
 
@@ -247,7 +247,7 @@ func SetupClusterForge() error {
 		LogMessage(Error, fmt.Sprintf("Failed to download ClusterForge: %v", err))
 		return err
 	} else {
-		LogMessage(Info, fmt.Sprintf("Successfully downloaded ClusterForge"))
+		LogMessage(Info, "Successfully downloaded ClusterForge")
 	}
 
 	cmd = exec.Command("tar", "-xzvf", "clusterforge.tar.gz")
@@ -256,7 +256,7 @@ func SetupClusterForge() error {
 		LogMessage(Error, fmt.Sprintf("Failed to unzip clusterforge.tar.gz: %v", err))
 		return err
 	} else {
-		LogMessage(Info, fmt.Sprintf("Successfully unzipped clusterforge.tar.gz"))
+		LogMessage(Info, "Successfully unzipped clusterforge.tar.gz")
 	}
 
 	cmd = exec.Command("sudo", "bash", "clusterforge/deploy.sh")

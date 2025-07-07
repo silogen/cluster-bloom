@@ -319,32 +319,6 @@ var MountSelectedDrivesStep = Step{
 	},
 }
 
-var UninstallRKE2Step = Step{
-	Id:          "UninstallRKE2Step",
-	Name:        "Uninstall RKE2",
-	Description: "Execute the RKE2 uninstall script if it exists",
-	Action: func() StepResult {
-		LogMessage(Info, "Unmounting and cleaning pvcs")
-		cmd := exec.Command("sh", "-c", "sudo umount -lf /dev/longhorn/pvc*")
-		output, err := cmd.CombinedOutput()
-		// Need to umount twice to get all mounts. -A is finicky for some reason
-		cmd = exec.Command("sh", "-c", "sudo umount -lf /dev/longhorn/pvc*")
-		output, err = cmd.CombinedOutput()
-		cmd = exec.Command("sh", "-c", "sudo rm -rf /dev/longhorn/pvc-*")
-		output, err = cmd.CombinedOutput()
-		LogMessage(Info, "Uninstalling RKE2, which takes a couple minutes.")
-		cmd = exec.Command("/usr/local/bin/rke2-uninstall.sh")
-		output, err = cmd.CombinedOutput()
-		if err != nil {
-			LogMessage(Info, fmt.Sprintf("RKE2 uninstall script output: %s", string(output)))
-			LogMessage(Info, fmt.Sprintf("RKE2 uninstall script encountered and ignored an error: %v", err))
-			return StepResult{Error: nil}
-		}
-		LogMessage(Info, fmt.Sprintf("RKE2 uninstall script output: %s", string(output)))
-		LogMessage(Info, "RKE2 uninstall script executed successfully.")
-		return StepResult{Error: nil}
-	},
-}
 var GenerateLonghornDiskStringStep = Step{
 	Id:          "GenerateLonghornDiskStringStep",
 	Name:        "Generate Longhorn Disk String",
@@ -655,6 +629,61 @@ var UpdateUdevRulesStep = Step{
 			return StepResult{Error: fmt.Errorf("Failed to trigger udev: %v", err)}
 		}
 
+		return StepResult{Error: nil}
+	},
+}
+
+var CleanLonghornMountsStep = Step{
+	Id:          "CleanLonghornMountsStep",
+	Name:        "Clean Longhorn Mounts",
+	Description: "Clean up Longhorn PVCs and mounts before RKE2 uninstall",
+	Action: func() StepResult {
+		LogMessage(Info, "Cleaning Longhorn mounts and PVCs")
+
+		// Stop Longhorn services first if they exist
+		cmd := exec.Command("sh", "-c", "sudo systemctl stop longhorn-* 2>/dev/null || true")
+		cmd.CombinedOutput()
+
+		// Unmount all Longhorn PVCs (multiple attempts)
+		for i := 0; i < 3; i++ {
+			cmd = exec.Command("sh", "-c", "sudo umount -lf /dev/longhorn/pvc* 2>/dev/null || true")
+			cmd.CombinedOutput()
+			cmd = exec.Command("sh", "-c", "sudo umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/pvc-*/mount 2>/dev/null || true")
+			cmd.CombinedOutput()
+		}
+
+		// Force kill any processes using Longhorn mounts
+		cmd = exec.Command("sh", "-c", "sudo fuser -km /dev/longhorn/ 2>/dev/null || true")
+		cmd.CombinedOutput()
+
+		// Clean up device files
+		cmd = exec.Command("sh", "-c", "sudo rm -rf /dev/longhorn/pvc-* 2>/dev/null || true")
+		cmd.CombinedOutput()
+
+		// Clean up kubelet CSI mounts
+		cmd = exec.Command("sh", "-c", "sudo rm -rf /var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/* 2>/dev/null || true")
+		cmd.CombinedOutput()
+
+		LogMessage(Info, "Longhorn cleanup completed")
+		return StepResult{Error: nil}
+	},
+}
+
+var UninstallRKE2Step = Step{
+	Id:          "UninstallRKE2Step",
+	Name:        "Uninstall RKE2",
+	Description: "Execute the RKE2 uninstall script if it exists",
+	Action: func() StepResult {
+		LogMessage(Info, "Uninstalling RKE2, which takes a couple minutes.")
+		cmd := exec.Command("/usr/local/bin/rke2-uninstall.sh")
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			LogMessage(Info, fmt.Sprintf("RKE2 uninstall script output: %s", string(output)))
+			LogMessage(Info, fmt.Sprintf("RKE2 uninstall script encountered and ignored an error: %v", err))
+			return StepResult{Error: nil}
+		}
+		LogMessage(Info, fmt.Sprintf("RKE2 uninstall script output: %s", string(output)))
+		LogMessage(Info, "RKE2 uninstall script executed successfully.")
 		return StepResult{Error: nil}
 	},
 }
