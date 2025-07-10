@@ -644,11 +644,35 @@ var CleanLonghornMountsStep = Step{
 		cmd := exec.Command("sh", "-c", "sudo systemctl stop longhorn-* 2>/dev/null || true")
 		cmd.CombinedOutput()
 
-		// Unmount all Longhorn PVCs (multiple attempts)
+		// Find and unmount all Longhorn-related mounts
 		for i := 0; i < 3; i++ {
+			// Unmount Longhorn device files
 			cmd = exec.Command("sh", "-c", "sudo umount -lf /dev/longhorn/pvc* 2>/dev/null || true")
 			cmd.CombinedOutput()
-			cmd = exec.Command("sh", "-c", "sudo umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/pvc-*/mount 2>/dev/null || true")
+
+			// Find /mnt/disk* mount points that contain longhorn-disk.cfg and unmount them
+			cmd = exec.Command("sh", "-c", `
+				for mount_point in /mnt/disk*; do
+					if [ -d "$mount_point" ] && find "$mount_point" -name "longhorn-disk.cfg" 2>/dev/null | grep -q .; then
+						echo "Found longhorn-disk.cfg in $mount_point, unmounting..."
+						sudo umount -lf "$mount_point" 2>/dev/null || true
+					fi
+				done
+			`)
+			cmd.CombinedOutput()
+
+			// Find and unmount CSI volume mounts
+			cmd = exec.Command("sh", "-c", "sudo umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/pvc-* 2>/dev/null || true")
+			cmd.CombinedOutput()
+			cmd = exec.Command("sh", "-c", "sudo umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/*/mount 2>/dev/null || true")
+			cmd.CombinedOutput()
+
+			// Find and unmount CSI plugin mounts
+			cmd = exec.Command("sh", "-c", "mount | grep 'driver.longhorn.io' | awk '{print $3}' | xargs -r sudo umount -lf 2>/dev/null || true")
+			cmd.CombinedOutput()
+
+			// Find and unmount any remaining kubelet plugin mounts
+			cmd = exec.Command("sh", "-c", "sudo umount -Af /var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/* 2>/dev/null || true")
 			cmd.CombinedOutput()
 		}
 
