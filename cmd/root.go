@@ -21,10 +21,11 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/silogen/cluster-bloom/pkg"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+
+	"github.com/silogen/cluster-bloom/pkg"
 )
 
 var rootCmd = &cobra.Command{
