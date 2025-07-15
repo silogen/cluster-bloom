@@ -37,6 +37,7 @@ and ready to be deployed with Cluster-Forge.
 
 Available Configuration Variables:
   - FIRST_NODE: Set to true if this is the first node in the cluster (default: true).
+  - CONTROL_PLANE: Set to true if this node should be a control plane node (default: false, only applies when FIRST_NODE is false).
   - GPU_NODE: Set to true if this node has GPUs (default: true).
   - OIDC_URL: The URL of the OIDC provider (default: "").
   - SERVER_IP: The IP address of the RKE2 server (required for additional nodes).
@@ -88,6 +89,7 @@ func initConfig() {
 	}
 
 	viper.SetDefault("FIRST_NODE", true)
+	viper.SetDefault("CONTROL_PLANE", false)
 	viper.SetDefault("GPU_NODE", true)
 	viper.SetDefault("OIDC_URL", "")
 	viper.SetDefault("SKIP_DISK_CHECK", "false")
@@ -206,6 +208,7 @@ Cluster-Bloom Help:
 
 Available Configuration Variables:
   - FIRST_NODE: Set to true if this is the first node in the cluster (default: true).
+  - CONTROL_PLANE: Set to true if this node should be a control plane node (default: false, only applies when FIRST_NODE is false).
   - GPU_NODE: Set to true if this node has GPUs (default: true).
   - OIDC_URL: The URL of the OIDC provider (default: "").
   - SERVER_IP: The IP address of the RKE2 server (required for additional nodes).

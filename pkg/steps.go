@@ -173,6 +173,8 @@ var SetupRKE2Step = Step{
 		var err error
 		if viper.GetBool("FIRST_NODE") {
 			err = SetupFirstRKE2()
+		} else if viper.GetBool("CONTROL_PLANE") {
+			err = SetupRKE2ControlPlane()
 		} else {
 			err = SetupRKE2Additional()
 		}
