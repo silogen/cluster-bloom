@@ -19,8 +19,6 @@ package cmd
 import (
 	"bufio"
 	"fmt"
-	"net"
-	"net/url"
 	"os"
 	"regexp"
 	"strconv"
@@ -30,55 +28,17 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-// Validation functions
-func validateBool(input string) error {
-	lower := strings.ToLower(strings.TrimSpace(input))
-	validValues := []string{"true", "false", "t", "f", "yes", "no", "y", "n", "1", "0"}
-	for _, v := range validValues {
-		if lower == v {
-			return nil
-		}
-	}
-	return fmt.Errorf("invalid boolean value. Please enter: true/false, yes/no, y/n, or 1/0")
+// Wrapper functions to match ConfigOption validator signature
+func validateURLWrapper(input string) error {
+	return validateURL(input, "URL")
 }
 
-func validateIP(input string) error {
-	if input == "" {
-		return fmt.Errorf("IP address is required")
-	}
-	ip := net.ParseIP(input)
-	if ip == nil {
-		return fmt.Errorf("invalid IP address format. Please enter a valid IPv4 or IPv6 address")
-	}
-	return nil
+func validateTokenWrapper(input string) error {
+	return validateToken(input, "TOKEN")
 }
 
-func validateURL(input string) error {
-	if input == "" {
-		return nil // URLs are optional
-	}
-	u, err := url.Parse(input)
-	if err != nil {
-		return fmt.Errorf("invalid URL format: %v", err)
-	}
-	if u.Scheme == "" || u.Host == "" {
-		return fmt.Errorf("URL must include scheme (http/https) and host")
-	}
-	return nil
-}
-
-func validateToken(input string) error {
-	if input == "" {
-		return fmt.Errorf("token is required")
-	}
-	// Basic validation - no spaces, reasonable length
-	if strings.Contains(input, " ") {
-		return fmt.Errorf("token cannot contain spaces")
-	}
-	if len(input) < 6 {
-		return fmt.Errorf("token seems too short (minimum 6 characters)")
-	}
-	return nil
+func validateIPWrapper(input string) error {
+	return validateIPAddress(input, "IP_ADDRESS")
 }
 
 func validateDiskList(input string) error {
@@ -105,7 +65,7 @@ func validateStepsList(input string) error {
 	if input == "" {
 		return nil // Step lists are optional
 	}
-	
+
 	// Valid step IDs from the codebase
 	validSteps := []string{
 		"CheckUbuntuStep", "InstallDependentPackagesStep", "OpenPortsStep",
@@ -119,7 +79,7 @@ func validateStepsList(input string) error {
 		"SetupClusterForgeStep", "UpdateUdevRulesStep", "CleanLonghornMountsStep",
 		"UninstallRKE2Step", "SetupKubeConfig", "FinalOutput",
 	}
-	
+
 	steps := strings.Split(input, ",")
 	for _, step := range steps {
 		step = strings.TrimSpace(step)
@@ -145,7 +105,7 @@ func validateClusterForgeRelease(input string) error {
 		return nil // Special value to skip installation
 	}
 	// Must be a valid URL
-	return validateURL(input)
+	return validateURL(input, "CLUSTERFORGE_RELEASE")
 }
 
 type ConfigOption struct {
@@ -153,7 +113,7 @@ type ConfigOption struct {
 	Description string
 	Default     interface{}
 	Required    bool
-	Conditional string // Condition when this option is relevant
+	Conditional string             // Condition when this option is relevant
 	Validator   func(string) error // Validation function
 }
 
@@ -178,7 +138,7 @@ var configOptions = []ConfigOption{
 		Default:     "",
 		Required:    false,
 		Conditional: "FIRST_NODE=false",
-		Validator:   validateIP,
+		Validator:   validateIPWrapper,
 	},
 	{
 		Key:         "JOIN_TOKEN",
@@ -186,14 +146,14 @@ var configOptions = []ConfigOption{
 		Default:     "",
 		Required:    false,
 		Conditional: "FIRST_NODE=false",
-		Validator:   validateToken,
+		Validator:   validateTokenWrapper,
 	},
 	{
 		Key:         "OIDC_URL",
 		Description: "URL of the OIDC provider for authentication. Leave empty to skip OIDC configuration.",
 		Default:     "",
 		Required:    false,
-		Validator:   validateURL,
+		Validator:   validateURLWrapper,
 	},
 	{
 		Key:         "SKIP_DISK_CHECK",
@@ -315,7 +275,7 @@ func runWizard() {
 	fmt.Printf("\nConfiguration saved to: %s\n\n", filename)
 	fmt.Println("To use this configuration, run:")
 	fmt.Printf("  sudo ./bloom --config %s\n\n", filename)
-	
+
 	// Show generated config
 	fmt.Println("Generated configuration:")
 	fmt.Println("─────────────────────────")
@@ -330,22 +290,22 @@ func shouldAskConditional(config map[string]interface{}, condition string) bool 
 
 	key := parts[0]
 	expectedValue := parts[1]
-	
+
 	if actualValue, exists := config[key]; exists {
 		return fmt.Sprintf("%v", actualValue) == expectedValue
 	}
-	
+
 	return false
 }
 
 func askForOption(reader *bufio.Reader, option ConfigOption) interface{} {
 	fmt.Printf("\n%s:\n", strings.ToUpper(option.Key))
 	fmt.Printf("  %s\n", option.Description)
-	
+
 	if option.Conditional != "" {
 		fmt.Printf("  (Relevant when: %s)\n", option.Conditional)
 	}
-	
+
 	for {
 		defaultStr := formatDefault(option.Default)
 		if option.Default == "" {
@@ -362,7 +322,7 @@ func askForOption(reader *bufio.Reader, option ConfigOption) interface{} {
 		}
 
 		input = strings.TrimSpace(input)
-		
+
 		// Use default if empty
 		if input == "" {
 			if option.Default == "" {

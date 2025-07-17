@@ -19,12 +19,9 @@ package cmd
 import (
 	"bufio"
 	"fmt"
-	"net"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -73,173 +70,18 @@ func Execute() {
 
 var cfgFile string
 
-// validateURL validates that a string is a proper URL with http/https scheme
-func validateURL(urlStr, paramName string) error {
-	if urlStr == "" {
-		return nil // Empty URLs are allowed for optional parameters
-	}
-
-	// Handle special case for CLUSTERFORGE_RELEASE
-	if paramName == "CLUSTERFORGE_RELEASE" && strings.ToLower(urlStr) == "none" {
-		return nil
-	}
-
-	parsedURL, err := url.Parse(urlStr)
-	if err != nil {
-		return fmt.Errorf("invalid URL format for %s: %v", paramName, err)
-	}
-
-	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
-		return fmt.Errorf("invalid URL scheme for %s: must be http or https, got %s", paramName, parsedURL.Scheme)
-	}
-
-	if parsedURL.Host == "" {
-		return fmt.Errorf("invalid URL for %s: missing host", paramName)
-	}
-
-	return nil
-}
-
 // validateAllURLs validates all URL-type configuration parameters
 func validateAllURLs() error {
 	urlParams := map[string]string{
 		"OIDC_URL":              viper.GetString("OIDC_URL"),
 		"CLUSTERFORGE_RELEASE":  viper.GetString("CLUSTERFORGE_RELEASE"),
-		"ROCM_BASE_URL":        viper.GetString("ROCM_BASE_URL"),
+		"ROCM_BASE_URL":         viper.GetString("ROCM_BASE_URL"),
 		"RKE2_INSTALLATION_URL": viper.GetString("RKE2_INSTALLATION_URL"),
 	}
 
 	for paramName, urlValue := range urlParams {
 		if err := validateURL(urlValue, paramName); err != nil {
 			return err
-		}
-	}
-
-	return nil
-}
-
-// validateIPAddress validates that a string is a valid IPv4 or IPv6 address
-func validateIPAddress(ipStr, paramName string) error {
-	if ipStr == "" {
-		return nil // Empty IPs are allowed for optional parameters
-	}
-
-	ip := net.ParseIP(ipStr)
-	if ip == nil {
-		return fmt.Errorf("invalid IP address for %s: %s", paramName, ipStr)
-	}
-
-	// Check for disallowed IP addresses
-	if ip.IsLoopback() {
-		return fmt.Errorf("loopback IP address not allowed for %s: %s", paramName, ipStr)
-	}
-
-	if ip.IsUnspecified() {
-		return fmt.Errorf("unspecified IP address (0.0.0.0 or ::) not allowed for %s: %s", paramName, ipStr)
-	}
-
-	// For SERVER_IP, we want to allow private/internal IPs since clusters often use internal networks
-	// We only reject clearly invalid addresses like loopback and unspecified
-	return nil
-}
-
-// validateAllIPs validates all IP address configuration parameters
-func validateAllIPs() error {
-	// Only validate SERVER_IP if it's required (when FIRST_NODE is false)
-	if !viper.GetBool("FIRST_NODE") {
-		serverIP := viper.GetString("SERVER_IP")
-		if err := validateIPAddress(serverIP, "SERVER_IP"); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// validateToken validates token format based on the token type
-func validateToken(token, paramName string) error {
-	if token == "" {
-		return nil // Empty tokens are allowed for optional parameters
-	}
-
-	switch paramName {
-	case "JOIN_TOKEN":
-		return validateJoinToken(token)
-	case "ONEPASS_CONNECT_TOKEN":
-		return validateOnePasswordToken(token)
-	default:
-		return fmt.Errorf("unknown token type: %s", paramName)
-	}
-}
-
-// validateJoinToken validates RKE2/K3s join token format
-func validateJoinToken(token string) error {
-	// RKE2/K3s tokens are typically:
-	// - Base64-encoded or hex strings
-	// - Usually 64+ characters long
-	// - Contain alphanumeric characters, +, /, =
-	
-	// Empty tokens are handled by validateToken function
-	if token == "" {
-		return nil
-	}
-	
-	if len(token) < 32 {
-		return fmt.Errorf("JOIN_TOKEN is too short (minimum 32 characters), got %d characters", len(token))
-	}
-
-	if len(token) > 512 {
-		return fmt.Errorf("JOIN_TOKEN is too long (maximum 512 characters), got %d characters", len(token))
-	}
-
-	// Allow base64 characters, hex characters, and common separators including colons
-	validTokenPattern := regexp.MustCompile(`^[a-zA-Z0-9+/=_.:-]+$`)
-	if !validTokenPattern.MatchString(token) {
-		return fmt.Errorf("JOIN_TOKEN contains invalid characters (only alphanumeric, +, /, =, _, ., :, - allowed)")
-	}
-
-	return nil
-}
-
-// validateOnePasswordToken validates 1Password Connect token format
-func validateOnePasswordToken(token string) error {
-	// 1Password Connect tokens are typically:
-	// - JWT format (header.payload.signature) or
-	// - Base64-encoded strings
-	// - Usually quite long (100+ characters)
-	
-	// Empty tokens are handled by validateToken function
-	if token == "" {
-		return nil
-	}
-	
-	if len(token) < 50 {
-		return fmt.Errorf("ONEPASS_CONNECT_TOKEN is too short (minimum 50 characters), got %d characters", len(token))
-	}
-
-	if len(token) > 2048 {
-		return fmt.Errorf("ONEPASS_CONNECT_TOKEN is too long (maximum 2048 characters), got %d characters", len(token))
-	}
-
-	// Check if it's a JWT format (three parts separated by dots)
-	parts := strings.Split(token, ".")
-	if len(parts) == 3 {
-		// JWT format validation
-		for i, part := range parts {
-			if part == "" {
-				return fmt.Errorf("ONEPASS_CONNECT_TOKEN JWT format invalid: part %d is empty", i+1)
-			}
-			// Each part should be base64-like
-			jwtPartPattern := regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
-			if !jwtPartPattern.MatchString(part) {
-				return fmt.Errorf("ONEPASS_CONNECT_TOKEN JWT part %d contains invalid characters", i+1)
-			}
-		}
-	} else {
-		// Regular token format validation
-		validTokenPattern := regexp.MustCompile(`^[a-zA-Z0-9+/=_.-]+$`)
-		if !validTokenPattern.MatchString(token) {
-			return fmt.Errorf("ONEPASS_CONNECT_TOKEN contains invalid characters (only alphanumeric, +, /, =, _, ., - allowed)")
 		}
 	}
 
@@ -322,7 +164,7 @@ func validateStepNames(stepNames, paramName string) error {
 		}
 
 		if !valid {
-			return fmt.Errorf("invalid step name '%s' in %s. Valid step names are: %s", 
+			return fmt.Errorf("invalid step name '%s' in %s. Valid step names are: %s",
 				step, paramName, strings.Join(validStepIDs, ", "))
 		}
 	}
@@ -357,7 +199,7 @@ func validateConfigurationConflicts() error {
 	if !viper.GetBool("FIRST_NODE") {
 		serverIP := viper.GetString("SERVER_IP")
 		joinToken := viper.GetString("JOIN_TOKEN")
-		
+
 		if serverIP == "" {
 			return fmt.Errorf("when FIRST_NODE=false, SERVER_IP must be provided")
 		}
@@ -373,7 +215,7 @@ func validateConfigurationConflicts() error {
 		if rocmBaseURL == "" {
 			log.Warnf("GPU_NODE=true but ROCM_BASE_URL is empty - ROCm installation may fail")
 		}
-		
+
 		// Check if SetupAndCheckRocmStep is disabled when GPU_NODE=true
 		disabledSteps := viper.GetString("DISABLED_STEPS")
 		if strings.Contains(disabledSteps, "SetupAndCheckRocmStep") {
@@ -385,11 +227,11 @@ func validateConfigurationConflicts() error {
 	skipDiskCheck := viper.GetBool("SKIP_DISK_CHECK")
 	longhornDisks := viper.GetString("LONGHORN_DISKS")
 	selectedDisks := viper.GetString("SELECTED_DISKS")
-	
+
 	if skipDiskCheck && (longhornDisks != "" || selectedDisks != "") {
 		log.Warnf("SKIP_DISK_CHECK=true but disk parameters are set (LONGHORN_DISKS or SELECTED_DISKS) - disk operations will be skipped")
 	}
-	
+
 	if !skipDiskCheck && longhornDisks == "" && selectedDisks == "" {
 		log.Warnf("SKIP_DISK_CHECK=false but no disk parameters specified - automatic disk detection will be used")
 	}
@@ -397,24 +239,24 @@ func validateConfigurationConflicts() error {
 	// Check for conflicting step configurations
 	disabledSteps := viper.GetString("DISABLED_STEPS")
 	enabledSteps := viper.GetString("ENABLED_STEPS")
-	
+
 	if disabledSteps != "" && enabledSteps != "" {
 		// Parse both lists and check for overlaps
 		disabled := strings.Split(disabledSteps, ",")
 		enabled := strings.Split(enabledSteps, ",")
-		
+
 		for _, disabledStep := range disabled {
 			disabledStep = strings.TrimSpace(disabledStep)
 			if disabledStep == "" {
 				continue
 			}
-			
+
 			for _, enabledStep := range enabled {
 				enabledStep = strings.TrimSpace(enabledStep)
 				if enabledStep == "" {
 					continue
 				}
-				
+
 				if disabledStep == enabledStep {
 					return fmt.Errorf("step '%s' is both enabled and disabled - this is conflicting", disabledStep)
 				}
@@ -426,7 +268,7 @@ func validateConfigurationConflicts() error {
 	if strings.Contains(disabledSteps, "CheckUbuntuStep") {
 		log.Warnf("CheckUbuntuStep is disabled - system compatibility may not be verified")
 	}
-	
+
 	if strings.Contains(disabledSteps, "SetupRKE2Step") {
 		log.Warnf("SetupRKE2Step is disabled - Kubernetes cluster will not be set up")
 	}
@@ -590,7 +432,7 @@ func validateUbuntuVersion() error {
 	}
 
 	if !supported {
-		log.Warnf("Ubuntu version %s may not be fully supported. Supported versions: %s", 
+		log.Warnf("Ubuntu version %s may not be fully supported. Supported versions: %s",
 			versionID, strings.Join(supportedVersions, ", "))
 	}
 
@@ -601,7 +443,7 @@ func validateUbuntuVersion() error {
 func validateKernelModules() {
 	// Check for required kernel modules (non-fatal, just warnings)
 	requiredModules := []string{
-		"overlay",     // Required for container runtimes
+		"overlay",      // Required for container runtimes
 		"br_netfilter", // Required for Kubernetes networking
 	}
 
@@ -614,7 +456,7 @@ func validateKernelModules() {
 	// Check for GPU-related modules if GPU_NODE is true
 	if viper.GetBool("GPU_NODE") {
 		gpuModules := []string{
-			"amdgpu",     // AMD GPU driver
+			"amdgpu", // AMD GPU driver
 		}
 
 		for _, module := range gpuModules {
@@ -716,9 +558,12 @@ func initConfig() {
 		log.Fatalf("Configuration validation failed: %v", err)
 	}
 
-	// Validate IP address parameters
-	if err := validateAllIPs(); err != nil {
-		log.Fatalf("Configuration validation failed: %v", err)
+	// Validate IP address parameters (SERVER_IP if required)
+	if !viper.GetBool("FIRST_NODE") {
+		serverIP := viper.GetString("SERVER_IP")
+		if err := validateIPAddress(serverIP, "SERVER_IP"); err != nil {
+			log.Fatalf("Configuration validation failed: %v", err)
+		}
 	}
 
 	// Validate token parameters
