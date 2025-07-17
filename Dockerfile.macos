@@ -1,0 +1,20 @@
+FROM golang:1.24
+
+# Copy enterprise certificate from macOS host
+COPY enterprise-ca.pem /usr/local/share/ca-certificates/enterprise-ca.crt
+
+# Update certificate store
+RUN update-ca-certificates
+
+# Configure Go environment
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+ENV GOPROXY=https://proxy.golang.org,direct
+ENV GOSUMDB=sum.golang.org
+
+WORKDIR /app
+
+# Cache dependencies
+COPY go.mod go.sum ./
+RUN go mod download
+
+CMD ["go", "test", "./cmd", "-v"]

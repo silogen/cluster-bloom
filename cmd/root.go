@@ -17,9 +17,17 @@
 package cmd
 
 import (
+	"bufio"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
+	"syscall"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -64,6 +72,580 @@ func Execute() {
 }
 
 var cfgFile string
+
+// validateURL validates that a string is a proper URL with http/https scheme
+func validateURL(urlStr, paramName string) error {
+	if urlStr == "" {
+		return nil // Empty URLs are allowed for optional parameters
+	}
+
+	// Handle special case for CLUSTERFORGE_RELEASE
+	if paramName == "CLUSTERFORGE_RELEASE" && strings.ToLower(urlStr) == "none" {
+		return nil
+	}
+
+	parsedURL, err := url.Parse(urlStr)
+	if err != nil {
+		return fmt.Errorf("invalid URL format for %s: %v", paramName, err)
+	}
+
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+		return fmt.Errorf("invalid URL scheme for %s: must be http or https, got %s", paramName, parsedURL.Scheme)
+	}
+
+	if parsedURL.Host == "" {
+		return fmt.Errorf("invalid URL for %s: missing host", paramName)
+	}
+
+	return nil
+}
+
+// validateAllURLs validates all URL-type configuration parameters
+func validateAllURLs() error {
+	urlParams := map[string]string{
+		"OIDC_URL":              viper.GetString("OIDC_URL"),
+		"CLUSTERFORGE_RELEASE":  viper.GetString("CLUSTERFORGE_RELEASE"),
+		"ROCM_BASE_URL":        viper.GetString("ROCM_BASE_URL"),
+		"RKE2_INSTALLATION_URL": viper.GetString("RKE2_INSTALLATION_URL"),
+	}
+
+	for paramName, urlValue := range urlParams {
+		if err := validateURL(urlValue, paramName); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// validateIPAddress validates that a string is a valid IPv4 or IPv6 address
+func validateIPAddress(ipStr, paramName string) error {
+	if ipStr == "" {
+		return nil // Empty IPs are allowed for optional parameters
+	}
+
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return fmt.Errorf("invalid IP address for %s: %s", paramName, ipStr)
+	}
+
+	// Check for disallowed IP addresses
+	if ip.IsLoopback() {
+		return fmt.Errorf("loopback IP address not allowed for %s: %s", paramName, ipStr)
+	}
+
+	if ip.IsUnspecified() {
+		return fmt.Errorf("unspecified IP address (0.0.0.0 or ::) not allowed for %s: %s", paramName, ipStr)
+	}
+
+	// For SERVER_IP, we want to allow private/internal IPs since clusters often use internal networks
+	// We only reject clearly invalid addresses like loopback and unspecified
+	return nil
+}
+
+// validateAllIPs validates all IP address configuration parameters
+func validateAllIPs() error {
+	// Only validate SERVER_IP if it's required (when FIRST_NODE is false)
+	if !viper.GetBool("FIRST_NODE") {
+		serverIP := viper.GetString("SERVER_IP")
+		if err := validateIPAddress(serverIP, "SERVER_IP"); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// validateToken validates token format based on the token type
+func validateToken(token, paramName string) error {
+	if token == "" {
+		return nil // Empty tokens are allowed for optional parameters
+	}
+
+	switch paramName {
+	case "JOIN_TOKEN":
+		return validateJoinToken(token)
+	case "ONEPASS_CONNECT_TOKEN":
+		return validateOnePasswordToken(token)
+	default:
+		return fmt.Errorf("unknown token type: %s", paramName)
+	}
+}
+
+// validateJoinToken validates RKE2/K3s join token format
+func validateJoinToken(token string) error {
+	// RKE2/K3s tokens are typically:
+	// - Base64-encoded or hex strings
+	// - Usually 64+ characters long
+	// - Contain alphanumeric characters, +, /, =
+	
+	// Empty tokens are handled by validateToken function
+	if token == "" {
+		return nil
+	}
+	
+	if len(token) < 32 {
+		return fmt.Errorf("JOIN_TOKEN is too short (minimum 32 characters), got %d characters", len(token))
+	}
+
+	if len(token) > 512 {
+		return fmt.Errorf("JOIN_TOKEN is too long (maximum 512 characters), got %d characters", len(token))
+	}
+
+	// Allow base64 characters, hex characters, and common separators including colons
+	validTokenPattern := regexp.MustCompile(`^[a-zA-Z0-9+/=_.:-]+$`)
+	if !validTokenPattern.MatchString(token) {
+		return fmt.Errorf("JOIN_TOKEN contains invalid characters (only alphanumeric, +, /, =, _, ., :, - allowed)")
+	}
+
+	return nil
+}
+
+// validateOnePasswordToken validates 1Password Connect token format
+func validateOnePasswordToken(token string) error {
+	// 1Password Connect tokens are typically:
+	// - JWT format (header.payload.signature) or
+	// - Base64-encoded strings
+	// - Usually quite long (100+ characters)
+	
+	// Empty tokens are handled by validateToken function
+	if token == "" {
+		return nil
+	}
+	
+	if len(token) < 50 {
+		return fmt.Errorf("ONEPASS_CONNECT_TOKEN is too short (minimum 50 characters), got %d characters", len(token))
+	}
+
+	if len(token) > 2048 {
+		return fmt.Errorf("ONEPASS_CONNECT_TOKEN is too long (maximum 2048 characters), got %d characters", len(token))
+	}
+
+	// Check if it's a JWT format (three parts separated by dots)
+	parts := strings.Split(token, ".")
+	if len(parts) == 3 {
+		// JWT format validation
+		for i, part := range parts {
+			if part == "" {
+				return fmt.Errorf("ONEPASS_CONNECT_TOKEN JWT format invalid: part %d is empty", i+1)
+			}
+			// Each part should be base64-like
+			jwtPartPattern := regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+			if !jwtPartPattern.MatchString(part) {
+				return fmt.Errorf("ONEPASS_CONNECT_TOKEN JWT part %d contains invalid characters", i+1)
+			}
+		}
+	} else {
+		// Regular token format validation
+		validTokenPattern := regexp.MustCompile(`^[a-zA-Z0-9+/=_.-]+$`)
+		if !validTokenPattern.MatchString(token) {
+			return fmt.Errorf("ONEPASS_CONNECT_TOKEN contains invalid characters (only alphanumeric, +, /, =, _, ., - allowed)")
+		}
+	}
+
+	return nil
+}
+
+// validateAllTokens validates all token configuration parameters
+func validateAllTokens() error {
+	// Validate JOIN_TOKEN if it's required (when FIRST_NODE is false)
+	if !viper.GetBool("FIRST_NODE") {
+		joinToken := viper.GetString("JOIN_TOKEN")
+		if err := validateToken(joinToken, "JOIN_TOKEN"); err != nil {
+			return err
+		}
+	}
+
+	// Validate ONEPASS_CONNECT_TOKEN if it's set
+	if viper.IsSet("ONEPASS_CONNECT_TOKEN") && viper.GetString("ONEPASS_CONNECT_TOKEN") != "" {
+		onepassToken := viper.GetString("ONEPASS_CONNECT_TOKEN")
+		if err := validateToken(onepassToken, "ONEPASS_CONNECT_TOKEN"); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// validStepIDs contains all valid step identifiers
+var validStepIDs = []string{
+	"CheckUbuntuStep",
+	"InstallDependentPackagesStep",
+	"OpenPortsStep",
+	"CheckPortsBeforeOpeningStep",
+	"InstallK8SToolsStep",
+	"InotifyInstancesStep",
+	"SetupAndCheckRocmStep",
+	"SetupRKE2Step",
+	"CleanDisksStep",
+	"SetupMultipathStep",
+	"UpdateModprobeStep",
+	"SelectDrivesStep",
+	"MountSelectedDrivesStep",
+	"GenerateLonghornDiskStringStep",
+	"SetupMetallbStep",
+	"SetupLonghornStep",
+	"CreateMetalLBConfigStep",
+	"PrepareRKE2Step",
+	"HasSufficientRancherPartitionStep",
+	"NVMEDrivesAvailableStep",
+	"SetupKubeConfig",
+	"SetupOnePasswordSecretStep",
+	"SetupClusterForgeStep",
+	"FinalOutput",
+	"UpdateUdevRulesStep",
+	"CleanLonghornMountsStep",
+	"UninstallRKE2Step",
+}
+
+// validateStepNames validates that step names in DISABLED_STEPS and ENABLED_STEPS are valid
+func validateStepNames(stepNames, paramName string) error {
+	if stepNames == "" {
+		return nil // Empty step lists are allowed
+	}
+
+	// Split comma-separated list and validate each step name
+	steps := strings.Split(stepNames, ",")
+	for _, step := range steps {
+		step = strings.TrimSpace(step)
+		if step == "" {
+			continue // Skip empty entries
+		}
+
+		// Check if step name is valid
+		valid := false
+		for _, validStep := range validStepIDs {
+			if step == validStep {
+				valid = true
+				break
+			}
+		}
+
+		if !valid {
+			return fmt.Errorf("invalid step name '%s' in %s. Valid step names are: %s", 
+				step, paramName, strings.Join(validStepIDs, ", "))
+		}
+	}
+
+	return nil
+}
+
+// validateAllStepNames validates all step name configuration parameters
+func validateAllStepNames() error {
+	// Validate DISABLED_STEPS
+	if viper.IsSet("DISABLED_STEPS") {
+		disabledSteps := viper.GetString("DISABLED_STEPS")
+		if err := validateStepNames(disabledSteps, "DISABLED_STEPS"); err != nil {
+			return err
+		}
+	}
+
+	// Validate ENABLED_STEPS
+	if viper.IsSet("ENABLED_STEPS") {
+		enabledSteps := viper.GetString("ENABLED_STEPS")
+		if err := validateStepNames(enabledSteps, "ENABLED_STEPS"); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// validateConfigurationConflicts detects and warns about conflicting configuration combinations
+func validateConfigurationConflicts() error {
+	// Check FIRST_NODE=false requires SERVER_IP and JOIN_TOKEN
+	if !viper.GetBool("FIRST_NODE") {
+		serverIP := viper.GetString("SERVER_IP")
+		joinToken := viper.GetString("JOIN_TOKEN")
+		
+		if serverIP == "" {
+			return fmt.Errorf("when FIRST_NODE=false, SERVER_IP must be provided")
+		}
+		if joinToken == "" {
+			return fmt.Errorf("when FIRST_NODE=false, JOIN_TOKEN must be provided")
+		}
+	}
+
+	// Check GPU_NODE vs ROCm requirements
+	if viper.GetBool("GPU_NODE") {
+		// If GPU_NODE is true, we expect ROCm-related configurations to be valid
+		rocmBaseURL := viper.GetString("ROCM_BASE_URL")
+		if rocmBaseURL == "" {
+			log.Warnf("GPU_NODE=true but ROCM_BASE_URL is empty - ROCm installation may fail")
+		}
+		
+		// Check if SetupAndCheckRocmStep is disabled when GPU_NODE=true
+		disabledSteps := viper.GetString("DISABLED_STEPS")
+		if strings.Contains(disabledSteps, "SetupAndCheckRocmStep") {
+			log.Warnf("GPU_NODE=true but SetupAndCheckRocmStep is disabled - GPU functionality may not work")
+		}
+	}
+
+	// Check SKIP_DISK_CHECK consistency with disk-related parameters
+	skipDiskCheck := viper.GetBool("SKIP_DISK_CHECK")
+	longhornDisks := viper.GetString("LONGHORN_DISKS")
+	selectedDisks := viper.GetString("SELECTED_DISKS")
+	
+	if skipDiskCheck && (longhornDisks != "" || selectedDisks != "") {
+		log.Warnf("SKIP_DISK_CHECK=true but disk parameters are set (LONGHORN_DISKS or SELECTED_DISKS) - disk operations will be skipped")
+	}
+	
+	if !skipDiskCheck && longhornDisks == "" && selectedDisks == "" {
+		log.Warnf("SKIP_DISK_CHECK=false but no disk parameters specified - automatic disk detection will be used")
+	}
+
+	// Check for conflicting step configurations
+	disabledSteps := viper.GetString("DISABLED_STEPS")
+	enabledSteps := viper.GetString("ENABLED_STEPS")
+	
+	if disabledSteps != "" && enabledSteps != "" {
+		// Parse both lists and check for overlaps
+		disabled := strings.Split(disabledSteps, ",")
+		enabled := strings.Split(enabledSteps, ",")
+		
+		for _, disabledStep := range disabled {
+			disabledStep = strings.TrimSpace(disabledStep)
+			if disabledStep == "" {
+				continue
+			}
+			
+			for _, enabledStep := range enabled {
+				enabledStep = strings.TrimSpace(enabledStep)
+				if enabledStep == "" {
+					continue
+				}
+				
+				if disabledStep == enabledStep {
+					return fmt.Errorf("step '%s' is both enabled and disabled - this is conflicting", disabledStep)
+				}
+			}
+		}
+	}
+
+	// Check for essential steps being disabled
+	if strings.Contains(disabledSteps, "CheckUbuntuStep") {
+		log.Warnf("CheckUbuntuStep is disabled - system compatibility may not be verified")
+	}
+	
+	if strings.Contains(disabledSteps, "SetupRKE2Step") {
+		log.Warnf("SetupRKE2Step is disabled - Kubernetes cluster will not be set up")
+	}
+
+	return nil
+}
+
+// validateResourceRequirements validates system resource requirements and compatibility
+func validateResourceRequirements() error {
+	// Validate partition sizes and disk space
+	if err := validateDiskSpace(); err != nil {
+		return err
+	}
+
+	// Validate memory and CPU requirements
+	if err := validateSystemResources(); err != nil {
+		return err
+	}
+
+	// Validate Ubuntu version compatibility
+	if err := validateUbuntuVersion(); err != nil {
+		return err
+	}
+
+	// Validate required kernel modules and drivers (non-fatal warnings)
+	validateKernelModules()
+
+	return nil
+}
+
+// validateDiskSpace checks partition sizes and available disk space
+func validateDiskSpace() error {
+	// Check root partition size (minimum 20GB recommended for Kubernetes)
+	var stat syscall.Statfs_t
+	if err := syscall.Statfs("/", &stat); err != nil {
+		log.Warnf("Could not check root partition size: %v", err)
+		return nil // Non-fatal
+	}
+
+	// Calculate available space in GB
+	availableGB := float64(stat.Bavail*uint64(stat.Bsize)) / (1024 * 1024 * 1024)
+	totalGB := float64(stat.Blocks*uint64(stat.Bsize)) / (1024 * 1024 * 1024)
+
+	if totalGB < 20 {
+		log.Warnf("Root partition size is %.1fGB, recommended minimum is 20GB for Kubernetes", totalGB)
+	}
+
+	if availableGB < 10 {
+		return fmt.Errorf("insufficient disk space: %.1fGB available, minimum 10GB required", availableGB)
+	}
+
+	// Check /var partition if it exists separately
+	if err := syscall.Statfs("/var", &stat); err == nil {
+		varAvailableGB := float64(stat.Bavail*uint64(stat.Bsize)) / (1024 * 1024 * 1024)
+		if varAvailableGB < 5 {
+			log.Warnf("/var partition has only %.1fGB available, recommend at least 5GB for container images", varAvailableGB)
+		}
+	}
+
+	return nil
+}
+
+// validateSystemResources checks memory and CPU requirements
+func validateSystemResources() error {
+	// Check memory requirements (minimum 4GB for Kubernetes)
+	memInfo, err := os.Open("/proc/meminfo")
+	if err != nil {
+		log.Warnf("Could not read memory information: %v", err)
+		return nil // Non-fatal
+	}
+	defer memInfo.Close()
+
+	scanner := bufio.NewScanner(memInfo)
+	var totalMemKB int64
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "MemTotal:") {
+			fields := strings.Fields(line)
+			if len(fields) >= 2 {
+				if mem, err := strconv.ParseInt(fields[1], 10, 64); err == nil {
+					totalMemKB = mem
+					break
+				}
+			}
+		}
+	}
+
+	if totalMemKB > 0 {
+		totalMemGB := float64(totalMemKB) / (1024 * 1024)
+		if totalMemGB < 4 {
+			return fmt.Errorf("insufficient memory: %.1fGB available, minimum 4GB required for Kubernetes", totalMemGB)
+		}
+		if totalMemGB < 8 {
+			log.Warnf("Memory is %.1fGB, recommend at least 8GB for optimal performance", totalMemGB)
+		}
+	}
+
+	// Check CPU count (minimum 2 cores for Kubernetes)
+	cpuInfo, err := os.Open("/proc/cpuinfo")
+	if err != nil {
+		log.Warnf("Could not read CPU information: %v", err)
+		return nil // Non-fatal
+	}
+	defer cpuInfo.Close()
+
+	cpuCount := 0
+	scanner = bufio.NewScanner(cpuInfo)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "processor") {
+			cpuCount++
+		}
+	}
+
+	if cpuCount < 2 {
+		return fmt.Errorf("insufficient CPU cores: %d available, minimum 2 cores required for Kubernetes", cpuCount)
+	}
+	if cpuCount < 4 {
+		log.Warnf("CPU has %d cores, recommend at least 4 cores for optimal performance", cpuCount)
+	}
+
+	return nil
+}
+
+// validateUbuntuVersion checks Ubuntu version compatibility
+func validateUbuntuVersion() error {
+	// Read /etc/os-release for Ubuntu version information
+	osRelease, err := os.Open("/etc/os-release")
+	if err != nil {
+		log.Warnf("Could not read OS release information: %v", err)
+		return nil // Non-fatal, might not be Ubuntu
+	}
+	defer osRelease.Close()
+
+	scanner := bufio.NewScanner(osRelease)
+	var distroID, versionID string
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "ID=") {
+			distroID = strings.Trim(strings.TrimPrefix(line, "ID="), "\"")
+		}
+		if strings.HasPrefix(line, "VERSION_ID=") {
+			versionID = strings.Trim(strings.TrimPrefix(line, "VERSION_ID="), "\"")
+		}
+	}
+
+	// Check if it's Ubuntu
+	if distroID != "ubuntu" {
+		log.Warnf("Not running on Ubuntu (detected: %s) - some features may not work as expected", distroID)
+		return nil
+	}
+
+	// Validate Ubuntu version (support 20.04, 22.04, 24.04)
+	supportedVersions := []string{"20.04", "22.04", "24.04"}
+	supported := false
+	for _, version := range supportedVersions {
+		if versionID == version {
+			supported = true
+			break
+		}
+	}
+
+	if !supported {
+		log.Warnf("Ubuntu version %s may not be fully supported. Supported versions: %s", 
+			versionID, strings.Join(supportedVersions, ", "))
+	}
+
+	return nil
+}
+
+// validateKernelModules checks for required kernel modules and drivers
+func validateKernelModules() {
+	// Check for required kernel modules (non-fatal, just warnings)
+	requiredModules := []string{
+		"overlay",     // Required for container runtimes
+		"br_netfilter", // Required for Kubernetes networking
+	}
+
+	for _, module := range requiredModules {
+		if !isModuleLoaded(module) && !isModuleAvailable(module) {
+			log.Warnf("Kernel module '%s' is not loaded and may not be available - this could cause issues", module)
+		}
+	}
+
+	// Check for GPU-related modules if GPU_NODE is true
+	if viper.GetBool("GPU_NODE") {
+		gpuModules := []string{
+			"amdgpu",     // AMD GPU driver
+		}
+
+		for _, module := range gpuModules {
+			if !isModuleLoaded(module) && !isModuleAvailable(module) {
+				log.Warnf("GPU module '%s' is not loaded - GPU functionality may not work", module)
+			}
+		}
+	}
+
+	// Check if Docker/containerd can use overlay2 storage driver
+	if !isModuleLoaded("overlay") {
+		log.Warnf("Overlay filesystem module not loaded - container runtime may fall back to less efficient storage driver")
+	}
+}
+
+// isModuleLoaded checks if a kernel module is currently loaded
+func isModuleLoaded(moduleName string) bool {
+	cmd := exec.Command("lsmod")
+	output, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(output), moduleName)
+}
+
+// isModuleAvailable checks if a kernel module is available to load
+func isModuleAvailable(moduleName string) bool {
+	cmd := exec.Command("modinfo", moduleName)
+	err := cmd.Run()
+	return err == nil
+}
 
 func init() {
 	cobra.OnInitialize(initConfig)
@@ -127,6 +709,36 @@ func initConfig() {
 		if len(longhornDiskString) > 63 {
 			log.Fatalf("Too many disks, %s is longer than 63", pkg.ParseLonghornDiskConfig())
 		}
+	}
+
+	// Validate URL parameters
+	if err := validateAllURLs(); err != nil {
+		log.Fatalf("Configuration validation failed: %v", err)
+	}
+
+	// Validate IP address parameters
+	if err := validateAllIPs(); err != nil {
+		log.Fatalf("Configuration validation failed: %v", err)
+	}
+
+	// Validate token parameters
+	if err := validateAllTokens(); err != nil {
+		log.Fatalf("Configuration validation failed: %v", err)
+	}
+
+	// Validate step name parameters
+	if err := validateAllStepNames(); err != nil {
+		log.Fatalf("Configuration validation failed: %v", err)
+	}
+
+	// Validate configuration conflicts
+	if err := validateConfigurationConflicts(); err != nil {
+		log.Fatalf("Configuration validation failed: %v", err)
+	}
+
+	// Validate system resource requirements
+	if err := validateResourceRequirements(); err != nil {
+		log.Fatalf("System requirements validation failed: %v", err)
 	}
 
 	log.SetFormatter(&log.TextFormatter{
