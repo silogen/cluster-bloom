@@ -215,3 +215,52 @@ func SetupRKE2Additional() error {
 
 	return nil
 }
+
+func SetupRKE2ControlPlane() error {
+	serverIP := viper.GetString("SERVER_IP")
+	if serverIP == "" {
+		return fmt.Errorf("SERVER_IP configuration item is not set")
+	}
+	joinToken := viper.GetString("JOIN_TOKEN")
+	if joinToken == "" {
+		return fmt.Errorf("JOIN_TOKEN configuration item is not set")
+	}
+	rke2ConfigPath := "/etc/rancher/rke2/config.yaml"
+
+	configContent := fmt.Sprintf("\nserver: https://%s:9345\ntoken: %s\n", serverIP, joinToken)
+	file, err := os.OpenFile(rke2ConfigPath, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		LogMessage(Error, fmt.Sprintf("Failed to open %s for appending: %v", rke2ConfigPath, err))
+		return err
+	}
+	defer file.Close()
+
+	if _, err := file.WriteString(configContent); err != nil {
+		LogMessage(Error, fmt.Sprintf("Failed to append to %s: %v", rke2ConfigPath, err))
+		return err
+	}
+
+	LogMessage(Info, fmt.Sprintf("Appended configuration to %s", rke2ConfigPath))
+	commands := []struct {
+		command string
+		args    []string
+	}{
+		{"sh", []string{"-c", "curl -sfL " + viper.GetString("RKE2_INSTALLATION_URL") + " | INSTALL_RKE2_TYPE=server sh -"}},
+		{"systemctl", []string{"enable", "rke2-server.service"}},
+	}
+	for _, cmd := range commands {
+		_, err := runCommand(cmd.command, cmd.args...)
+		if err != nil {
+			LogMessage(Error, fmt.Sprintf("Failed to execute command '%s %v': %v", cmd.command, cmd.args, err))
+			return fmt.Errorf("failed to execute command '%s %v': %w", cmd.command, cmd.args, err)
+		}
+		LogMessage(Info, fmt.Sprintf("Successfully executed command: %s %v", cmd.command, cmd.args))
+	}
+
+	if err := startServiceWithTimeout("rke2-server", 2*time.Minute); err != nil {
+		LogMessage(Error, fmt.Sprintf("Failed to start rke2-server service: %v", err))
+		return err
+	}
+
+	return nil
+}
