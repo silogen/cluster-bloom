@@ -127,6 +127,14 @@ var configOptions = []ConfigOption{
 		Validator:   validateBool,
 	},
 	{
+		Key:         "CONTROL_PLANE",
+		Description: "Should this node be a control plane node? Set to true for control plane nodes when FIRST_NODE is false.",
+		Default:     false,
+		Required:    false,
+		Conditional: "FIRST_NODE=false",
+		Validator:   validateBool,
+	},
+	{
 		Key:         "GPU_NODE",
 		Description: "Does this node have GPUs? Set to false for CPU-only nodes. When true, ROCm will be installed and configured.",
 		Default:     true,
