@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -129,6 +130,10 @@ func setupManifests(folder string) error {
 	if err := os.MkdirAll(targetDir, 0755); err != nil {
 		return fmt.Errorf("failed to create target directory %s: %w", targetDir, err)
 	}
+
+	logger := logrus.New()
+	imagePinner := NewImagePinner(logger)
+
 	err := fs.WalkDir(manifestFiles, filepath.Join("manifests", folder), func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -138,11 +143,19 @@ func setupManifests(folder string) error {
 			if err != nil {
 				return fmt.Errorf("failed to read file %s: %w", path, err)
 			}
+
+			LogMessage(Info, fmt.Sprintf("Processing manifest %s for image pinning", path))
+			processedContent, err := imagePinner.ProcessManifestFile(path, content)
+			if err != nil {
+				LogMessage(Warn, fmt.Sprintf("Failed to pin images in %s: %v", path, err))
+				processedContent = content
+			}
+
 			targetPath := filepath.Join(targetDir, filepath.Base(path))
-			if err := os.WriteFile(targetPath, content, 0644); err != nil {
+			if err := os.WriteFile(targetPath, processedContent, 0644); err != nil {
 				return fmt.Errorf("failed to write file %s: %w", targetPath, err)
 			}
-			LogMessage(Info, fmt.Sprintf("Copied %s to %s", path, targetPath))
+			LogMessage(Info, fmt.Sprintf("Copied %s to %s with image pinning", path, targetPath))
 		}
 		return nil
 	})
@@ -150,7 +163,7 @@ func setupManifests(folder string) error {
 		return fmt.Errorf("failed to copy template files: %w", err)
 	}
 
-	LogMessage(Info, "Longhorn setup completed successfully")
+	LogMessage(Info, "Manifest setup completed successfully with image pinning")
 	return nil
 }
 
