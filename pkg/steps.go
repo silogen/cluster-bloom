@@ -22,6 +22,7 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -450,18 +451,48 @@ var SetupKubeConfig = Step{
 			return StepResult{Error: fmt.Errorf("failed to update RKE2 config file: %w", err)}
 		}
 
-		if err := os.MkdirAll(os.ExpandEnv("$HOME/.kube"), 0755); err != nil {
+		// Get the actual user's home directory, not root's
+		userHome := os.Getenv("HOME")
+		if userHome == "" {
+			if user := os.Getenv("SUDO_USER"); user != "" {
+				userHome = "/home/" + user
+			} else {
+				userHome = os.ExpandEnv("$HOME")
+			}
+		}
+		
+		kubeDir := filepath.Join(userHome, ".kube")
+		if err := os.MkdirAll(kubeDir, 0755); err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to create .kube directory: %v", err))
 			return StepResult{Error: fmt.Errorf("failed to create .kube directory: %w", err)}
 		}
-
-		sedCmd = fmt.Sprintf("sudo sed 's/127\\.0\\.0\\.1/%s/g' /etc/rancher/rke2/rke2.yaml | tee $HOME/.kube/config", mainIP)
+		
+		// Change ownership of .kube directory to the actual user if running with sudo
+		if sudoUser := os.Getenv("SUDO_USER"); sudoUser != "" {
+			chownCmd := fmt.Sprintf("sudo chown %s:%s %s", sudoUser, sudoUser, kubeDir)
+			if err := exec.Command("sh", "-c", chownCmd).Run(); err != nil {
+				LogMessage(Error, fmt.Sprintf("Failed to change ownership of .kube directory: %v", err))
+				return StepResult{Error: fmt.Errorf("failed to change ownership of .kube directory: %w", err)}
+			}
+		}
+		
+		kubeconfigPath := filepath.Join(userHome, ".kube", "config")
+		sedCmd = fmt.Sprintf("sudo sed 's/127\\.0\\.0\\.1/%s/g' /etc/rancher/rke2/rke2.yaml > %s", mainIP, kubeconfigPath)
 		if err := exec.Command("sh", "-c", sedCmd).Run(); err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to update KUBECONFIG file: %v", err))
 			return StepResult{Error: fmt.Errorf("failed to update KUBECONFIG file: %w", err)}
 		}
+		
+		// Change ownership to the actual user if running with sudo
+		if sudoUser := os.Getenv("SUDO_USER"); sudoUser != "" {
+			chownCmd := fmt.Sprintf("sudo chown %s:%s %s", sudoUser, sudoUser, kubeconfigPath)
+			if err := exec.Command("sh", "-c", chownCmd).Run(); err != nil {
+				LogMessage(Error, fmt.Sprintf("Failed to change ownership of KUBECONFIG file: %v", err))
+				return StepResult{Error: fmt.Errorf("failed to change ownership of KUBECONFIG file: %w", err)}
+			}
+		}
 
-		if err := exec.Command("chmod", "600", os.ExpandEnv("$HOME/.kube/config")).Run(); err != nil {
+		if err := exec.Command("chmod", "600", kubeconfigPath).Run(); err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to set permissions on KUBECONFIG file: %v", err))
 			return StepResult{Error: fmt.Errorf("failed to set permissions on KUBECONFIG file: %w", err)}
 		}
