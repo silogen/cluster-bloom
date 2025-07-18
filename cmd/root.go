@@ -41,6 +41,8 @@ Cluster-Bloom installs and configures a Kubernetes cluster.
 It installs ROCm and other needed settings to prepare a (primarily AMD GPU) node to be part of a Kubernetes cluster,
 and ready to be deployed with Cluster-Forge.
 
+Running without arguments will start the interactive configuration wizard.
+
 Available Configuration Variables:
   - FIRST_NODE: Set to true if this is the first node in the cluster (default: true).
   - CONTROL_PLANE: Set to true if this node should be a control plane node (default: false, only applies when FIRST_NODE is false).
@@ -60,6 +62,12 @@ Usage:
   Use the --config flag to specify a configuration file, or set the above variables in the environment or a Viper-compatible config file.
 `,
 	Run: func(cmd *cobra.Command, args []string) {
+		// If no arguments and no config file specified, run wizard
+		if len(args) == 0 && cfgFile == "" {
+			runWizard()
+			return
+		}
+		
 		log.Debug("Starting package installation")
 		rootSteps()
 	},
