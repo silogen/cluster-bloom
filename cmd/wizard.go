@@ -20,6 +20,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
@@ -273,13 +274,52 @@ func runWizard() {
 	fmt.Println("║                    Configuration Complete!                    ║")
 	fmt.Println("╚════════════════════════════════════════════════════════════════╝")
 	fmt.Printf("\nConfiguration saved to: %s\n\n", filename)
-	fmt.Println("To use this configuration, run:")
-	fmt.Printf("  sudo ./bloom --config %s\n\n", filename)
 
 	// Show generated config
 	fmt.Println("Generated configuration:")
 	fmt.Println("─────────────────────────")
 	fmt.Println(string(yamlData))
+	fmt.Println()
+
+	// Ask if user wants to run bloom now
+	fmt.Print("Would you like to run bloom with this configuration now? (y/n): ")
+	input, err := reader.ReadString('\n')
+	if err != nil {
+		fmt.Printf("Error reading input: %v\n", err)
+		return
+	}
+
+	input = strings.ToLower(strings.TrimSpace(input))
+	if input == "y" || input == "yes" {
+		fmt.Println("\nRunning bloom with the generated configuration...")
+		fmt.Printf("Command: sudo ./bloom --config %s\n\n", filename)
+		
+		// Execute bloom with the generated config
+		err := runBloomWithConfig(filename)
+		if err != nil {
+			fmt.Printf("Error running bloom: %v\n", err)
+			os.Exit(1)
+		}
+	} else {
+		fmt.Println("\nTo use this configuration later, run:")
+		fmt.Printf("  sudo ./bloom --config %s\n\n", filename)
+	}
+}
+
+func runBloomWithConfig(configFile string) error {
+	// Check if the bloom executable exists
+	bloomPath := "./bloom"
+	if _, err := os.Stat(bloomPath); os.IsNotExist(err) {
+		return fmt.Errorf("bloom executable not found at %s", bloomPath)
+	}
+
+	// Execute bloom with the config file
+	cmd := exec.Command("sudo", bloomPath, "--config", configFile)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+
+	return cmd.Run()
 }
 
 func shouldAskConditional(config map[string]interface{}, condition string) bool {
