@@ -1,0 +1,11 @@
+# Task ID: 8
+# Title: Implement Automated Cluster Scaling and Workload-Based Autoscaling
+# Status: pending
+# Dependencies: 4, 7
+# Priority: low
+# Description: Develop automated cluster scaling capabilities, including node addition/removal automation and workload-based scaling decisions, to ensure efficient resource utilization and high availability.
+# Details:
+Integrate the Kubernetes Cluster Autoscaler to automatically add or remove nodes based on pending pods and resource requirements. Configure the autoscaler to monitor unschedulable pods and trigger node provisioning or termination as needed, ensuring it operates within defined constraints (e.g., min/max node counts). Support integration with major cloud providers' auto scaling groups (such as AWS Auto Scaling Groups, Azure VMSS, or GCP Managed Instance Groups) for seamless node management. Implement configuration options for scan intervals, scale-up/down thresholds, and node group selection. In addition, enable workload-based autoscaling by deploying and configuring Horizontal Pod Autoscaler (HPA) and, where appropriate, Vertical Pod Autoscaler (VPA) for key workloads. Provide CLI or UI controls to manage autoscaler settings and monitor scaling events. Ensure all pods have appropriate resource requests and limits defined to facilitate accurate scaling decisions. Document best practices for combining cluster autoscaling with HPA/VPA and provide example manifests for common scenarios.
+
+# Test Strategy:
+1. Deploy a test cluster with the Cluster Autoscaler enabled and configure node group constraints. 2. Simulate increased workload by deploying pods with resource requests exceeding current cluster capacity and verify that new nodes are automatically provisioned and registered. 3. Reduce workload and confirm that idle nodes are automatically removed. 4. Deploy workloads with HPA and VPA enabled, generate load to trigger scaling, and verify that pods scale horizontally and/or vertically as expected. 5. Test edge cases such as exceeding maximum node limits, node failures, and misconfigured resource requests to ensure robust error handling and logging. 6. Review autoscaler logs and cluster state to confirm correct scaling decisions and event recording.

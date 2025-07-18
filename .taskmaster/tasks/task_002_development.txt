@@ -1,0 +1,11 @@
+# Task ID: 2
+# Title: Implement Cluster State Backup and Recovery Functionality
+# Status: deferred
+# Dependencies: 1
+# Priority: medium
+# Description: Develop backup and recovery capabilities for the cluster state, including commands to backup etcd data, configuration files, and restore the cluster from backups.
+# Details:
+Implement CLI commands to perform full and incremental backups of etcd using etcdctl (e.g., 'etcdctl snapshot save'), ensuring all necessary certificates and keys are handled securely. Store snapshots and configuration files (such as manifests and cluster configs) in a designated backup directory or remote object storage (e.g., S3). Provide commands to list, verify ('etcdctl snapshot status'), and manage backup files. For recovery, implement a restore command that stops relevant services, restores etcd from a selected snapshot ('etcdctl snapshot restore'), updates data directory ownership, and modifies manifests to point to the restored data directory. Ensure the process supports both disaster recovery and routine restores, and document all operational steps and required permissions. Consider atomicity and error handling to prevent partial restores or data loss.
+
+# Test Strategy:
+1. Create a test cluster and perform a backup using the implemented command; verify the snapshot and configuration files are correctly saved and integrity-checked. 2. Simulate cluster failure by deleting etcd data, then use the restore command to recover from the backup. 3. Confirm the cluster state, resources, and configurations are fully restored and functional. 4. Test edge cases such as missing or corrupted backup files, permission errors, and partial restores. 5. Automate tests to run in CI, ensuring backup and restore commands work reliably across supported environments.

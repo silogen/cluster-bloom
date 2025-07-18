@@ -1,0 +1,11 @@
+# Task ID: 1
+# Title: Implement Comprehensive Unit Tests for All Exported Functions in pkg/
+# Status: done
+# Dependencies: None
+# Priority: high
+# Description: Create and implement thorough unit tests for all exported functions in the pkg/steps.go, pkg/disks.go, pkg/rke2.go, pkg/rocm.go, and pkg/view.go files.
+# Details:
+For each Go source file in the pkg/ directory (steps.go, disks.go, rke2.go, rocm.go, view.go), create a corresponding _test.go file in the same package if it does not already exist. For every exported function, write unit tests following Go conventions: each test function should be named TestFunctionName and accept *testing.T as a parameter. Use table-driven tests to cover a variety of input scenarios and edge cases. Where functions interact with external dependencies or side effects, define interfaces and use mocking frameworks (such as mockery or gomock) to simulate those dependencies, ensuring tests remain isolated and deterministic. Leverage subtests with t.Run for complex functions to organize related test cases. Ensure all tests are clear, maintainable, and verify observable behavior rather than internal implementation details. Follow Go best practices for test organization and naming conventions[1][2][4].
+
+# Test Strategy:
+Run `go test ./pkg/...` to execute all tests and ensure 100% coverage of exported functions. Use the `-cover` flag to verify code coverage metrics. Review test output to confirm all tests pass and that edge cases are handled. For functions with external dependencies, verify that mocks are used and that tests do not rely on real external systems. Manually inspect test cases to ensure they cover normal, boundary, and error conditions. Optionally, use static analysis tools to check for untested code paths and maintain test quality.
