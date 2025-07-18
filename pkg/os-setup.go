@@ -282,6 +282,10 @@ func NVMEDrivesAvailable() bool {
 		LogMessage(Info, "Skipping NVME drive check as SKIP_DISK_CHECK is set.")
 		return true
 	}
+	if viper.GetString("SELECTED_DISKS") != "" {
+		LogMessage(Info, "Skipping NVME drive check as SELECTED_DISKS is set.")
+		return true
+	}
 	cmd := exec.Command("sh", "-c", "lsblk -o NAME,TYPE | grep nvme | grep disk | awk '{print $1}'")
 	output, err := cmd.Output()
 	if err != nil {
