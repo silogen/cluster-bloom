@@ -108,6 +108,7 @@ The validation system runs in `initConfig()` in the following order:
 - When `SKIP_DISK_CHECK=true` but disk parameters are set
 - When `SKIP_DISK_CHECK=false` but no disk parameters specified
 - **Warning**: `"SKIP_DISK_CHECK=true but disk parameters are set - disk operations will be skipped"`
+- **Note**: `SELECTED_DISKS` also skips NVME drive availability checks
 
 #### Step Conflicts
 - Same step cannot be both enabled and disabled

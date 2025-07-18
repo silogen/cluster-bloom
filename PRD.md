@@ -105,7 +105,7 @@ The system executes a sequential pipeline of installation steps:
 - `ONEPASS_CONNECT_TOKEN`: 1Password integration
 - `CLUSTERFORGE_RELEASE`: ClusterForge version specification
 - `DISABLED_STEPS`/`ENABLED_STEPS`: Step execution control
-- `SELECTED_DISKS`: Pre-selected disk devices
+- `SELECTED_DISKS`: Pre-selected disk devices (also skips NVME drive checks)
 
 #### Configuration Sources (Priority Order)
 1. Command-line flags
