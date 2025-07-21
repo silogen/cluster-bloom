@@ -581,7 +581,7 @@ var CreateBloomConfigMapStep = Step{
 		// If TLS is configured, add a reference to the secret
 		if viper.GetString("TLS_CERT") != "" && viper.GetString("TLS_KEY") != "" {
 			bloomConfig["tls_secret_name"] = "cluster-tls"
-			bloomConfig["tls_secret_namespace"] = "default"
+			bloomConfig["tls_secret_namespace"] = "kgateway-system"
 		}
 
 		// If a bloom.yaml file was used, read its content
@@ -716,13 +716,41 @@ data:
 				return StepResult{Error: fmt.Errorf("TLS key file not found: %s", tlsKeyPath)}
 			}
 
+			// Create kgateway-system namespace
+			namespaceYAML := `apiVersion: v1
+kind: Namespace
+metadata:
+  name: kgateway-system
+`
+			tmpNsFile, err := os.CreateTemp("", "kgateway-namespace-*.yaml")
+			if err != nil {
+				LogMessage(Error, fmt.Sprintf("Failed to create temporary namespace file: %v", err))
+				return StepResult{Error: fmt.Errorf("failed to create temporary namespace file: %w", err)}
+			}
+			defer os.Remove(tmpNsFile.Name())
+
+			if _, err := tmpNsFile.WriteString(namespaceYAML); err != nil {
+				LogMessage(Error, fmt.Sprintf("Failed to write namespace YAML: %v", err))
+				return StepResult{Error: fmt.Errorf("failed to write namespace YAML: %w", err)}
+			}
+			tmpNsFile.Close()
+
+			// Apply the namespace
+			cmd := exec.Command("/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "apply", "-f", tmpNsFile.Name())
+			output, err := cmd.CombinedOutput()
+			if err != nil {
+				LogMessage(Error, fmt.Sprintf("Failed to create kgateway-system namespace: %v, output: %s", err, string(output)))
+				return StepResult{Error: fmt.Errorf("failed to create kgateway-system namespace: %w", err)}
+			}
+			LogMessage(Info, "Successfully created kgateway-system namespace")
+
 			// Create TLS secret using kubectl
-			cmd := exec.Command("/var/lib/rancher/rke2/bin/kubectl", 
+			cmd = exec.Command("/var/lib/rancher/rke2/bin/kubectl", 
 				"--kubeconfig", "/etc/rancher/rke2/rke2.yaml",
 				"create", "secret", "tls", "cluster-tls",
 				"--cert", tlsCertPath,
 				"--key", tlsKeyPath,
-				"-n", "default",
+				"-n", "kgateway-system",
 				"--dry-run=client", "-o", "yaml")
 			
 			secretYAML, err := cmd.Output()
