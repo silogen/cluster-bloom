@@ -696,26 +696,7 @@ data:
 
 		// Handle TLS certificates
 		if !useCertManager {
-			tlsCertPath := viper.GetString("TLS_CERT")
-			tlsKeyPath := viper.GetString("TLS_KEY")
-
-			if tlsCertPath == "" || tlsKeyPath == "" {
-				LogMessage(Info, "Domain configured but no TLS certificate provided and cert-manager not enabled")
-				return StepResult{Message: "Domain ConfigMap created but no TLS configuration applied"}
-			}
-
-			// Verify certificate and key files exist
-			if _, err := os.Stat(tlsCertPath); os.IsNotExist(err) {
-				LogMessage(Error, fmt.Sprintf("TLS certificate file not found: %s", tlsCertPath))
-				return StepResult{Error: fmt.Errorf("TLS certificate file not found: %s", tlsCertPath)}
-			}
-
-			if _, err := os.Stat(tlsKeyPath); os.IsNotExist(err) {
-				LogMessage(Error, fmt.Sprintf("TLS key file not found: %s", tlsKeyPath))
-				return StepResult{Error: fmt.Errorf("TLS key file not found: %s", tlsKeyPath)}
-			}
-
-			// Create kgateway-system namespace
+			// Create kgateway-system namespace first
 			namespaceYAML := `apiVersion: v1
 kind: Namespace
 metadata:
@@ -743,19 +724,51 @@ metadata:
 			}
 			LogMessage(Info, "Successfully created kgateway-system namespace")
 
-			// Create TLS secret using kubectl
-			cmd = exec.Command("/var/lib/rancher/rke2/bin/kubectl",
-				"--kubeconfig", "/etc/rancher/rke2/rke2.yaml",
-				"create", "secret", "tls", "cluster-tls",
-				"--cert", tlsCertPath,
-				"--key", tlsKeyPath,
-				"-n", "kgateway-system",
-				"--dry-run=client", "-o", "yaml")
+			tlsCertPath := viper.GetString("TLS_CERT")
+			tlsKeyPath := viper.GetString("TLS_KEY")
 
-			secretYAML, err := cmd.Output()
-			if err != nil {
-				LogMessage(Error, fmt.Sprintf("Failed to generate TLS secret: %v", err))
-				return StepResult{Error: fmt.Errorf("failed to generate TLS secret: %w", err)}
+			var secretYAML []byte
+			
+			if tlsCertPath != "" && tlsKeyPath != "" {
+				// Verify certificate and key files exist
+				if _, err := os.Stat(tlsCertPath); os.IsNotExist(err) {
+					LogMessage(Error, fmt.Sprintf("TLS certificate file not found: %s", tlsCertPath))
+					return StepResult{Error: fmt.Errorf("TLS certificate file not found: %s", tlsCertPath)}
+				}
+
+				if _, err := os.Stat(tlsKeyPath); os.IsNotExist(err) {
+					LogMessage(Error, fmt.Sprintf("TLS key file not found: %s", tlsKeyPath))
+					return StepResult{Error: fmt.Errorf("TLS key file not found: %s", tlsKeyPath)}
+				}
+
+				// Create TLS secret using provided certificate files
+				cmd = exec.Command("/var/lib/rancher/rke2/bin/kubectl",
+					"--kubeconfig", "/etc/rancher/rke2/rke2.yaml",
+					"create", "secret", "tls", "cluster-tls",
+					"--cert", tlsCertPath,
+					"--key", tlsKeyPath,
+					"-n", "kgateway-system",
+					"--dry-run=client", "-o", "yaml")
+
+				secretYAML, err = cmd.Output()
+				if err != nil {
+					LogMessage(Error, fmt.Sprintf("Failed to generate TLS secret: %v", err))
+					return StepResult{Error: fmt.Errorf("failed to generate TLS secret: %w", err)}
+				}
+				LogMessage(Info, "Creating TLS secret with provided certificate files")
+			} else {
+				// Create TLS secret with placeholder data
+				LogMessage(Info, "No TLS certificate provided, creating TLS secret with placeholder data")
+				secretYAML = []byte(`apiVersion: v1
+kind: Secret
+metadata:
+  name: cluster-tls
+  namespace: kgateway-system
+type: kubernetes.io/tls
+data:
+  tls.crt: bm90IGEgY2VydA==
+  tls.key: bm90IGEgY2VydA==
+`)
 			}
 
 			// Apply the secret

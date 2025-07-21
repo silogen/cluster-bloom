@@ -212,6 +212,6 @@ func TestSetupKubeConfig(t *testing.T) {
 
 func TestFinalOutput(t *testing.T) {
 	viper.Set("FIRST_NODE", false)
-	result := FinalOutput.Action()
+	_ = FinalOutput.Action()
 	// Result depends on system state
 }
