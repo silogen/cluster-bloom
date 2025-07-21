@@ -112,7 +112,7 @@ func validateClusterForgeRelease(input string) error {
 
 func validateDomain(input string) error {
 	if input == "" {
-		return nil // Domain is optional
+		return fmt.Errorf("domain is required")
 	}
 	// Basic domain validation - must contain at least one dot and valid characters
 	domainRegex := regexp.MustCompile(`^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$`)
@@ -241,7 +241,7 @@ var configOptions = []ConfigOption{
 		Key:         "DOMAIN",
 		Description: "Domain name for the cluster (e.g., cluster.example.com). Used for ingress configuration.",
 		Default:     "",
-		Required:    false,
+		Required:    true,
 		Validator:   validateDomain,
 	},
 	{
@@ -314,6 +314,18 @@ func runWizard() {
 		value := askForOption(reader, option)
 		if value != nil {
 			config[option.Key] = value
+		}
+	}
+
+	// Validate TLS configuration
+	if useCertManager, exists := config["USE_CERT_MANAGER"]; exists && !useCertManager.(bool) {
+		tlsCert, hasCert := config["TLS_CERT"]
+		tlsKey, hasKey := config["TLS_KEY"]
+		
+		if !hasCert || tlsCert == nil || tlsCert == "" || !hasKey || tlsKey == nil || tlsKey == "" {
+			fmt.Println("\n❌ Error: When USE_CERT_MANAGER is false, both TLS_CERT and TLS_KEY must be provided")
+			fmt.Println("Please run the wizard again and provide TLS certificate files.")
+			os.Exit(1)
 		}
 	}
 
@@ -427,6 +439,11 @@ func askForOption(reader *bufio.Reader, option ConfigOption) interface{} {
 
 		// Use default if empty
 		if input == "" {
+			if option.Required && (option.Default == nil || option.Default == "" || option.Default == false) {
+				fmt.Printf("  ❌ Error: This field is required\n")
+				fmt.Println("  Please try again.")
+				continue
+			}
 			if option.Default == "" {
 				return nil // Don't include empty strings in config
 			}

@@ -649,10 +649,6 @@ var CreateDomainConfigStep = Step{
 		}
 
 		domain := viper.GetString("DOMAIN")
-		if domain == "" {
-			LogMessage(Info, "No domain configured, skipping domain configuration")
-			return StepResult{Error: nil}
-		}
 
 		// Wait for the cluster to be ready
 		LogMessage(Info, "Waiting for cluster to be ready...")

@@ -57,9 +57,9 @@ Available Configuration Variables:
   - DISABLED_STEPS: Comma-separated list of steps to skip. Example "SetupLonghornStep,SetupMetallbStep" (default: "").
   - ENABLED_STEPS: Comma-separated list of steps to perform. If empty, perform all. Example "SetupLonghornStep,SetupMetallbStep" (default: "").
   - SELECTED_DISKS: Comma-separated list of disk devices. Example "/dev/sdb,/dev/sdc" (default: "").
-  - DOMAIN: The domain name for the cluster (e.g., "cluster.example.com") (default: "").
-  - TLS_CERT: Path to TLS certificate file for ingress (default: "").
-  - TLS_KEY: Path to TLS private key file for ingress (default: "").
+  - DOMAIN: The domain name for the cluster (e.g., "cluster.example.com") (required).
+  - TLS_CERT: Path to TLS certificate file for ingress (required if USE_CERT_MANAGER is false).
+  - TLS_KEY: Path to TLS private key file for ingress (required if USE_CERT_MANAGER is false).
   - USE_CERT_MANAGER: Use cert-manager with Let's Encrypt for automatic TLS certificates (default: false).
 
 Usage:
@@ -550,9 +550,9 @@ func initConfig() {
 		log.Infof("Using config file: %s", viper.ConfigFileUsed())
 	}
 
-	requiredConfigs := []string{"FIRST_NODE", "GPU_NODE"}
+	requiredConfigs := []string{"FIRST_NODE", "GPU_NODE", "DOMAIN"}
 	for _, config := range requiredConfigs {
-		if !viper.IsSet(config) {
+		if !viper.IsSet(config) || viper.GetString(config) == "" {
 			log.Fatalf("Required configuration item '%s' is not set", config)
 		}
 	}
@@ -563,6 +563,24 @@ func initConfig() {
 			if !viper.IsSet(config) {
 				log.Fatalf("Required configuration item '%s' is not set", config)
 			}
+		}
+	}
+
+	// Validate TLS configuration when USE_CERT_MANAGER is false
+	if !viper.GetBool("USE_CERT_MANAGER") {
+		tlsCert := viper.GetString("TLS_CERT")
+		tlsKey := viper.GetString("TLS_KEY")
+		
+		if tlsCert == "" || tlsKey == "" {
+			log.Fatalf("When USE_CERT_MANAGER is false, both TLS_CERT and TLS_KEY must be provided")
+		}
+		
+		// Verify the files exist
+		if _, err := os.Stat(tlsCert); os.IsNotExist(err) {
+			log.Fatalf("TLS_CERT file does not exist: %s", tlsCert)
+		}
+		if _, err := os.Stat(tlsKey); os.IsNotExist(err) {
+			log.Fatalf("TLS_KEY file does not exist: %s", tlsKey)
 		}
 	}
 
@@ -698,9 +716,9 @@ Available Configuration Variables:
   - DISABLED_STEPS: Comma-separated list of steps to skip. Example "SetupLonghornStep,SetupMetallbStep" (default: "").
   - ENABLED_STEPS: Comma-separated list of steps to perform. If empty, perform all. Example "SetupLonghornStep,SetupMetallbStep" (default: "").
   - SELECTED_DISKS: Comma-separated list of disk devices. Example "/dev/sdb,/dev/sdc" (default: "").
-  - DOMAIN: The domain name for the cluster (e.g., "cluster.example.com") (default: "").
-  - TLS_CERT: Path to TLS certificate file for ingress (default: "").
-  - TLS_KEY: Path to TLS private key file for ingress (default: "").
+  - DOMAIN: The domain name for the cluster (e.g., "cluster.example.com") (required).
+  - TLS_CERT: Path to TLS certificate file for ingress (required if USE_CERT_MANAGER is false).
+  - TLS_KEY: Path to TLS private key file for ingress (required if USE_CERT_MANAGER is false).
   - USE_CERT_MANAGER: Use cert-manager with Let's Encrypt for automatic TLS certificates (default: false).
 
 Usage:
