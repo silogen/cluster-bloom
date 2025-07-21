@@ -41,7 +41,8 @@ Cluster-Bloom installs and configures a Kubernetes cluster.
 It installs ROCm and other needed settings to prepare a (primarily AMD GPU) node to be part of a Kubernetes cluster,
 and ready to be deployed with Cluster-Forge.
 
-Running without arguments will start the interactive configuration wizard.
+By default, running without arguments will start the interactive configuration wizard.
+Use --config to specify a configuration file and skip the wizard.
 
 Available Configuration Variables:
   - FIRST_NODE: Set to true if this is the first node in the cluster (default: true).
@@ -57,13 +58,17 @@ Available Configuration Variables:
   - DISABLED_STEPS: Comma-separated list of steps to skip. Example "SetupLonghornStep,SetupMetallbStep" (default: "").
   - ENABLED_STEPS: Comma-separated list of steps to perform. If empty, perform all. Example "SetupLonghornStep,SetupMetallbStep" (default: "").
   - SELECTED_DISKS: Comma-separated list of disk devices. Example "/dev/sdb,/dev/sdc" (default: "").
+  - DOMAIN: The domain name for the cluster (e.g., "cluster.example.com") (required).
+  - TLS_CERT: Path to TLS certificate file for ingress (required if USE_CERT_MANAGER is false).
+  - TLS_KEY: Path to TLS private key file for ingress (required if USE_CERT_MANAGER is false).
+  - USE_CERT_MANAGER: Use cert-manager with Let's Encrypt for automatic TLS certificates (default: false).
 
 Usage:
   Use the --config flag to specify a configuration file, or set the above variables in the environment or a Viper-compatible config file.
 `,
 	Run: func(cmd *cobra.Command, args []string) {
-		// If no arguments and no config file specified, run wizard
-		if len(args) == 0 && cfgFile == "" {
+		// Run wizard by default if no config file is specified
+		if cfgFile == "" {
 			runWizard()
 			return
 		}
@@ -141,6 +146,8 @@ var validStepIDs = []string{
 	"HasSufficientRancherPartitionStep",
 	"NVMEDrivesAvailableStep",
 	"SetupKubeConfig",
+	"CreateBloomConfigMapStep",
+	"CreateDomainConfigStep",
 	"SetupOnePasswordSecretStep",
 	"SetupClusterForgeStep",
 	"FinalOutput",
@@ -506,6 +513,11 @@ func init() {
 }
 
 func initConfig() {
+	// Skip validation if running wizard or no config file specified
+	if (len(os.Args) > 1 && os.Args[1] == "wizard") || cfgFile == "" {
+		return
+	}
+
 	if cfgFile != "" {
 		if _, err := os.Stat(cfgFile); os.IsNotExist(err) {
 			log.Fatalf("Config file does not exist: %s", cfgFile)
@@ -535,14 +547,18 @@ func initConfig() {
 	viper.SetDefault("DISABLED_STEPS", "")
 	viper.SetDefault("ENABLED_STEPS", "")
 	viper.SetDefault("SELECTED_DISKS", "")
+	viper.SetDefault("DOMAIN", "")
+	viper.SetDefault("TLS_CERT", "")
+	viper.SetDefault("TLS_KEY", "")
+	viper.SetDefault("USE_CERT_MANAGER", false)
 	viper.AutomaticEnv()
 	if err := viper.ReadInConfig(); err == nil {
 		log.Infof("Using config file: %s", viper.ConfigFileUsed())
 	}
 
-	requiredConfigs := []string{"FIRST_NODE", "GPU_NODE"}
+	requiredConfigs := []string{"FIRST_NODE", "GPU_NODE", "DOMAIN"}
 	for _, config := range requiredConfigs {
-		if !viper.IsSet(config) {
+		if !viper.IsSet(config) || viper.GetString(config) == "" {
 			log.Fatalf("Required configuration item '%s' is not set", config)
 		}
 	}
@@ -553,6 +569,24 @@ func initConfig() {
 			if !viper.IsSet(config) {
 				log.Fatalf("Required configuration item '%s' is not set", config)
 			}
+		}
+	}
+
+	// Validate TLS configuration when USE_CERT_MANAGER is false
+	if !viper.GetBool("USE_CERT_MANAGER") {
+		tlsCert := viper.GetString("TLS_CERT")
+		tlsKey := viper.GetString("TLS_KEY")
+		
+		if tlsCert == "" || tlsKey == "" {
+			log.Fatalf("When USE_CERT_MANAGER is false, both TLS_CERT and TLS_KEY must be provided")
+		}
+		
+		// Verify the files exist
+		if _, err := os.Stat(tlsCert); os.IsNotExist(err) {
+			log.Fatalf("TLS_CERT file does not exist: %s", tlsCert)
+		}
+		if _, err := os.Stat(tlsKey); os.IsNotExist(err) {
+			log.Fatalf("TLS_KEY file does not exist: %s", tlsKey)
 		}
 	}
 
@@ -656,6 +690,8 @@ func rootSteps() {
 		pkg.SetupMetallbStep,
 		pkg.CreateMetalLBConfigStep,
 		pkg.SetupKubeConfig,
+		pkg.CreateDomainConfigStep,
+		pkg.CreateBloomConfigMapStep,
 		pkg.SetupClusterForgeStep,
 	}
 
@@ -686,6 +722,10 @@ Available Configuration Variables:
   - DISABLED_STEPS: Comma-separated list of steps to skip. Example "SetupLonghornStep,SetupMetallbStep" (default: "").
   - ENABLED_STEPS: Comma-separated list of steps to perform. If empty, perform all. Example "SetupLonghornStep,SetupMetallbStep" (default: "").
   - SELECTED_DISKS: Comma-separated list of disk devices. Example "/dev/sdb,/dev/sdc" (default: "").
+  - DOMAIN: The domain name for the cluster (e.g., "cluster.example.com") (required).
+  - TLS_CERT: Path to TLS certificate file for ingress (required if USE_CERT_MANAGER is false).
+  - TLS_KEY: Path to TLS private key file for ingress (required if USE_CERT_MANAGER is false).
+  - USE_CERT_MANAGER: Use cert-manager with Let's Encrypt for automatic TLS certificates (default: false).
 
 Usage:
   Use the --config flag to specify a configuration file, or set the above variables in the environment or a Viper-compatible config file.

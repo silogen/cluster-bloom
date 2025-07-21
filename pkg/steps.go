@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/viper"
 )
@@ -547,6 +548,240 @@ var SetupKubeConfig = Step{
 		}
 
 		return StepResult{Error: nil}
+	},
+}
+
+var CreateBloomConfigMapStep = Step{
+	Id:          "CreateBloomConfigMapStep",
+	Name:        "Create Bloom ConfigMap",
+	Description: "Create a ConfigMap with bloom configuration in the default namespace",
+	Action: func() StepResult {
+		if !viper.GetBool("FIRST_NODE") {
+			LogMessage(Info, "Skipped for additional node")
+			return StepResult{Error: nil}
+		}
+
+		// Wait for the cluster to be ready
+		LogMessage(Info, "Waiting for cluster to be ready...")
+		time.Sleep(10 * time.Second)
+
+		// Create bloom configuration data
+		bloomConfig := make(map[string]string)
+		
+		// Add all viper configuration values to the ConfigMap, excluding sensitive data
+		for _, key := range viper.AllKeys() {
+			// Skip TLS certificate and key content
+			if key == "tls_cert" || key == "tls_key" {
+				continue
+			}
+			value := viper.GetString(key)
+			bloomConfig[key] = value
+		}
+		
+		// If TLS is configured, add a reference to the secret
+		if viper.GetString("TLS_CERT") != "" && viper.GetString("TLS_KEY") != "" {
+			bloomConfig["tls_secret_name"] = "cluster-tls"
+			bloomConfig["tls_secret_namespace"] = "kgateway-system"
+		}
+
+		// If a bloom.yaml file was used, read its content
+		configFile := viper.ConfigFileUsed()
+		if configFile != "" {
+			content, err := os.ReadFile(configFile)
+			if err == nil {
+				bloomConfig["bloom.yaml"] = string(content)
+			} else {
+				LogMessage(Info, fmt.Sprintf("Could not read config file %s: %v", configFile, err))
+			}
+		}
+
+		// Create ConfigMap YAML
+		configMapYAML := `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bloom
+  namespace: default
+data:
+`
+		// Add each configuration item
+		for key, value := range bloomConfig {
+			// Escape any special characters in the value
+			escapedValue := strings.ReplaceAll(value, "\n", "\\n")
+			escapedValue = strings.ReplaceAll(escapedValue, "\"", "\\\"")
+			configMapYAML += fmt.Sprintf("  %s: \"%s\"\n", key, escapedValue)
+		}
+
+		// Write to temporary file
+		tmpFile, err := os.CreateTemp("", "bloom-configmap-*.yaml")
+		if err != nil {
+			LogMessage(Error, fmt.Sprintf("Failed to create temporary file: %v", err))
+			return StepResult{Error: fmt.Errorf("failed to create temporary file: %w", err)}
+		}
+		defer os.Remove(tmpFile.Name())
+
+		if _, err := tmpFile.WriteString(configMapYAML); err != nil {
+			LogMessage(Error, fmt.Sprintf("Failed to write ConfigMap YAML: %v", err))
+			return StepResult{Error: fmt.Errorf("failed to write ConfigMap YAML: %w", err)}
+		}
+		tmpFile.Close()
+
+		// Apply the ConfigMap using kubectl
+		cmd := exec.Command("/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "apply", "-f", tmpFile.Name())
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			LogMessage(Error, fmt.Sprintf("Failed to create ConfigMap: %v, output: %s", err, string(output)))
+			return StepResult{Error: fmt.Errorf("failed to create ConfigMap: %w", err)}
+		}
+
+		LogMessage(Info, "Successfully created bloom ConfigMap in default namespace")
+		return StepResult{Message: "Bloom ConfigMap created successfully"}
+	},
+}
+
+var CreateDomainConfigStep = Step{
+	Id:          "CreateDomainConfigStep",
+	Name:        "Create Domain Configuration",
+	Description: "Create domain ConfigMap and TLS secret for ingress configuration",
+	Action: func() StepResult {
+		if !viper.GetBool("FIRST_NODE") {
+			LogMessage(Info, "Skipped for additional node")
+			return StepResult{Error: nil}
+		}
+
+		domain := viper.GetString("DOMAIN")
+
+		// Wait for the cluster to be ready
+		LogMessage(Info, "Waiting for cluster to be ready...")
+		time.Sleep(5 * time.Second)
+
+		// Create domain ConfigMap
+		useCertManager := viper.GetBool("USE_CERT_MANAGER")
+		
+		configMapYAML := fmt.Sprintf(`apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-domain
+  namespace: default
+data:
+  domain: "%s"
+  use-cert-manager: "%t"
+`, domain, useCertManager)
+
+		// Write ConfigMap to temporary file and apply
+		tmpFile, err := os.CreateTemp("", "domain-configmap-*.yaml")
+		if err != nil {
+			LogMessage(Error, fmt.Sprintf("Failed to create temporary file: %v", err))
+			return StepResult{Error: fmt.Errorf("failed to create temporary file: %w", err)}
+		}
+		defer os.Remove(tmpFile.Name())
+
+		if _, err := tmpFile.WriteString(configMapYAML); err != nil {
+			LogMessage(Error, fmt.Sprintf("Failed to write domain ConfigMap: %v", err))
+			return StepResult{Error: fmt.Errorf("failed to write domain ConfigMap: %w", err)}
+		}
+		tmpFile.Close()
+
+		// Apply the ConfigMap
+		cmd := exec.Command("/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "apply", "-f", tmpFile.Name())
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			LogMessage(Error, fmt.Sprintf("Failed to create domain ConfigMap: %v, output: %s", err, string(output)))
+			return StepResult{Error: fmt.Errorf("failed to create domain ConfigMap: %w", err)}
+		}
+
+		LogMessage(Info, "Successfully created domain ConfigMap")
+
+		// Handle TLS certificates
+		if !useCertManager {
+			tlsCertPath := viper.GetString("TLS_CERT")
+			tlsKeyPath := viper.GetString("TLS_KEY")
+
+			if tlsCertPath == "" || tlsKeyPath == "" {
+				LogMessage(Info, "Domain configured but no TLS certificate provided and cert-manager not enabled")
+				return StepResult{Message: "Domain ConfigMap created but no TLS configuration applied"}
+			}
+
+			// Verify certificate and key files exist
+			if _, err := os.Stat(tlsCertPath); os.IsNotExist(err) {
+				LogMessage(Error, fmt.Sprintf("TLS certificate file not found: %s", tlsCertPath))
+				return StepResult{Error: fmt.Errorf("TLS certificate file not found: %s", tlsCertPath)}
+			}
+
+			if _, err := os.Stat(tlsKeyPath); os.IsNotExist(err) {
+				LogMessage(Error, fmt.Sprintf("TLS key file not found: %s", tlsKeyPath))
+				return StepResult{Error: fmt.Errorf("TLS key file not found: %s", tlsKeyPath)}
+			}
+
+			// Create kgateway-system namespace
+			namespaceYAML := `apiVersion: v1
+kind: Namespace
+metadata:
+  name: kgateway-system
+`
+			tmpNsFile, err := os.CreateTemp("", "kgateway-namespace-*.yaml")
+			if err != nil {
+				LogMessage(Error, fmt.Sprintf("Failed to create temporary namespace file: %v", err))
+				return StepResult{Error: fmt.Errorf("failed to create temporary namespace file: %w", err)}
+			}
+			defer os.Remove(tmpNsFile.Name())
+
+			if _, err := tmpNsFile.WriteString(namespaceYAML); err != nil {
+				LogMessage(Error, fmt.Sprintf("Failed to write namespace YAML: %v", err))
+				return StepResult{Error: fmt.Errorf("failed to write namespace YAML: %w", err)}
+			}
+			tmpNsFile.Close()
+
+			// Apply the namespace
+			cmd := exec.Command("/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "apply", "-f", tmpNsFile.Name())
+			output, err := cmd.CombinedOutput()
+			if err != nil {
+				LogMessage(Error, fmt.Sprintf("Failed to create kgateway-system namespace: %v, output: %s", err, string(output)))
+				return StepResult{Error: fmt.Errorf("failed to create kgateway-system namespace: %w", err)}
+			}
+			LogMessage(Info, "Successfully created kgateway-system namespace")
+
+			// Create TLS secret using kubectl
+			cmd = exec.Command("/var/lib/rancher/rke2/bin/kubectl", 
+				"--kubeconfig", "/etc/rancher/rke2/rke2.yaml",
+				"create", "secret", "tls", "cluster-tls",
+				"--cert", tlsCertPath,
+				"--key", tlsKeyPath,
+				"-n", "kgateway-system",
+				"--dry-run=client", "-o", "yaml")
+			
+			secretYAML, err := cmd.Output()
+			if err != nil {
+				LogMessage(Error, fmt.Sprintf("Failed to generate TLS secret: %v", err))
+				return StepResult{Error: fmt.Errorf("failed to generate TLS secret: %w", err)}
+			}
+
+			// Apply the secret
+			tmpSecretFile, err := os.CreateTemp("", "tls-secret-*.yaml")
+			if err != nil {
+				LogMessage(Error, fmt.Sprintf("Failed to create temporary secret file: %v", err))
+				return StepResult{Error: fmt.Errorf("failed to create temporary secret file: %w", err)}
+			}
+			defer os.Remove(tmpSecretFile.Name())
+
+			if _, err := tmpSecretFile.Write(secretYAML); err != nil {
+				LogMessage(Error, fmt.Sprintf("Failed to write TLS secret: %v", err))
+				return StepResult{Error: fmt.Errorf("failed to write TLS secret: %w", err)}
+			}
+			tmpSecretFile.Close()
+
+			cmd = exec.Command("/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "apply", "-f", tmpSecretFile.Name())
+			output, err = cmd.CombinedOutput()
+			if err != nil {
+				LogMessage(Error, fmt.Sprintf("Failed to create TLS secret: %v, output: %s", err, string(output)))
+				return StepResult{Error: fmt.Errorf("failed to create TLS secret: %w", err)}
+			}
+
+			LogMessage(Info, "Successfully created TLS secret")
+			return StepResult{Message: "Domain ConfigMap and TLS secret created successfully"}
+		} else {
+			LogMessage(Info, "Cert-manager will be used for TLS certificates")
+			return StepResult{Message: "Domain ConfigMap created, cert-manager will handle TLS"}
+		}
 	},
 }
 
