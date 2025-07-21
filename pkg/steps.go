@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/viper"
 )
@@ -547,6 +548,83 @@ var SetupKubeConfig = Step{
 		}
 
 		return StepResult{Error: nil}
+	},
+}
+
+var CreateBloomConfigMapStep = Step{
+	Id:          "CreateBloomConfigMapStep",
+	Name:        "Create Bloom ConfigMap",
+	Description: "Create a ConfigMap with bloom configuration in the default namespace",
+	Action: func() StepResult {
+		if !viper.GetBool("FIRST_NODE") {
+			LogMessage(Info, "Skipped for additional node")
+			return StepResult{Error: nil}
+		}
+
+		// Wait for the cluster to be ready
+		LogMessage(Info, "Waiting for cluster to be ready...")
+		time.Sleep(10 * time.Second)
+
+		// Create bloom configuration data
+		bloomConfig := make(map[string]string)
+		
+		// Add all viper configuration values to the ConfigMap
+		for _, key := range viper.AllKeys() {
+			value := viper.GetString(key)
+			bloomConfig[key] = value
+		}
+
+		// If a bloom.yaml file was used, read its content
+		configFile := viper.ConfigFileUsed()
+		if configFile != "" {
+			content, err := os.ReadFile(configFile)
+			if err == nil {
+				bloomConfig["bloom.yaml"] = string(content)
+			} else {
+				LogMessage(Info, fmt.Sprintf("Could not read config file %s: %v", configFile, err))
+			}
+		}
+
+		// Create ConfigMap YAML
+		configMapYAML := `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bloom
+  namespace: default
+data:
+`
+		// Add each configuration item
+		for key, value := range bloomConfig {
+			// Escape any special characters in the value
+			escapedValue := strings.ReplaceAll(value, "\n", "\\n")
+			escapedValue = strings.ReplaceAll(escapedValue, "\"", "\\\"")
+			configMapYAML += fmt.Sprintf("  %s: \"%s\"\n", key, escapedValue)
+		}
+
+		// Write to temporary file
+		tmpFile, err := os.CreateTemp("", "bloom-configmap-*.yaml")
+		if err != nil {
+			LogMessage(Error, fmt.Sprintf("Failed to create temporary file: %v", err))
+			return StepResult{Error: fmt.Errorf("failed to create temporary file: %w", err)}
+		}
+		defer os.Remove(tmpFile.Name())
+
+		if _, err := tmpFile.WriteString(configMapYAML); err != nil {
+			LogMessage(Error, fmt.Sprintf("Failed to write ConfigMap YAML: %v", err))
+			return StepResult{Error: fmt.Errorf("failed to write ConfigMap YAML: %w", err)}
+		}
+		tmpFile.Close()
+
+		// Apply the ConfigMap using kubectl
+		cmd := exec.Command("/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "apply", "-f", tmpFile.Name())
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			LogMessage(Error, fmt.Sprintf("Failed to create ConfigMap: %v, output: %s", err, string(output)))
+			return StepResult{Error: fmt.Errorf("failed to create ConfigMap: %w", err)}
+		}
+
+		LogMessage(Info, "Successfully created bloom ConfigMap in default namespace")
+		return StepResult{Message: "Bloom ConfigMap created successfully"}
 	},
 }
 

@@ -141,6 +141,7 @@ var validStepIDs = []string{
 	"HasSufficientRancherPartitionStep",
 	"NVMEDrivesAvailableStep",
 	"SetupKubeConfig",
+	"CreateBloomConfigMapStep",
 	"SetupOnePasswordSecretStep",
 	"SetupClusterForgeStep",
 	"FinalOutput",
@@ -656,6 +657,7 @@ func rootSteps() {
 		pkg.SetupMetallbStep,
 		pkg.CreateMetalLBConfigStep,
 		pkg.SetupKubeConfig,
+		pkg.CreateBloomConfigMapStep,
 		pkg.SetupClusterForgeStep,
 	}
 
