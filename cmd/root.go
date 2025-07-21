@@ -666,8 +666,8 @@ func rootSteps() {
 		pkg.SetupMetallbStep,
 		pkg.CreateMetalLBConfigStep,
 		pkg.SetupKubeConfig,
-		pkg.CreateBloomConfigMapStep,
 		pkg.CreateDomainConfigStep,
+		pkg.CreateBloomConfigMapStep,
 		pkg.SetupClusterForgeStep,
 	}
 

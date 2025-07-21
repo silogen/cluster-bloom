@@ -568,10 +568,20 @@ var CreateBloomConfigMapStep = Step{
 		// Create bloom configuration data
 		bloomConfig := make(map[string]string)
 		
-		// Add all viper configuration values to the ConfigMap
+		// Add all viper configuration values to the ConfigMap, excluding sensitive data
 		for _, key := range viper.AllKeys() {
+			// Skip TLS certificate and key content
+			if key == "tls_cert" || key == "tls_key" {
+				continue
+			}
 			value := viper.GetString(key)
 			bloomConfig[key] = value
+		}
+		
+		// If TLS is configured, add a reference to the secret
+		if viper.GetString("TLS_CERT") != "" && viper.GetString("TLS_KEY") != "" {
+			bloomConfig["tls_secret_name"] = "cluster-tls"
+			bloomConfig["tls_secret_namespace"] = "default"
 		}
 
 		// If a bloom.yaml file was used, read its content
