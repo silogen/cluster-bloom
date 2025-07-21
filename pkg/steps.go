@@ -13,7 +13,6 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
 **/
-
 package pkg
 
 import (
@@ -461,13 +460,13 @@ var SetupKubeConfig = Step{
 				userHome = os.ExpandEnv("$HOME")
 			}
 		}
-		
+
 		kubeDir := filepath.Join(userHome, ".kube")
 		if err := os.MkdirAll(kubeDir, 0755); err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to create .kube directory: %v", err))
 			return StepResult{Error: fmt.Errorf("failed to create .kube directory: %w", err)}
 		}
-		
+
 		// Change ownership of .kube directory to the actual user if running with sudo
 		if sudoUser := os.Getenv("SUDO_USER"); sudoUser != "" {
 			chownCmd := fmt.Sprintf("sudo chown %s:%s %s", sudoUser, sudoUser, kubeDir)
@@ -476,14 +475,14 @@ var SetupKubeConfig = Step{
 				return StepResult{Error: fmt.Errorf("failed to change ownership of .kube directory: %w", err)}
 			}
 		}
-		
+
 		kubeconfigPath := filepath.Join(userHome, ".kube", "config")
 		sedCmd = fmt.Sprintf("sudo sed 's/127\\.0\\.0\\.1/%s/g' /etc/rancher/rke2/rke2.yaml > %s", mainIP, kubeconfigPath)
 		if err := exec.Command("sh", "-c", sedCmd).Run(); err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to update KUBECONFIG file: %v", err))
 			return StepResult{Error: fmt.Errorf("failed to update KUBECONFIG file: %w", err)}
 		}
-		
+
 		// Change ownership to the actual user if running with sudo
 		if sudoUser := os.Getenv("SUDO_USER"); sudoUser != "" {
 			chownCmd := fmt.Sprintf("sudo chown %s:%s %s", sudoUser, sudoUser, kubeconfigPath)
@@ -565,37 +564,41 @@ var CreateBloomConfigMapStep = Step{
 		LogMessage(Info, "Waiting for cluster to be ready...")
 		time.Sleep(10 * time.Second)
 
-		// Create bloom configuration data
 		bloomConfig := make(map[string]string)
-		
-		// Add all viper configuration values to the ConfigMap, excluding sensitive data
-		for _, key := range viper.AllKeys() {
-			// Skip TLS certificate and key content
-			if key == "tls_cert" || key == "tls_key" {
-				continue
+
+		configFile := viper.ConfigFileUsed()
+		if configFile != "" {
+			content, err := os.ReadFile(configFile)
+			if err == nil {
+
+				lines := strings.Split(string(content), "\n")
+				for _, line := range lines {
+					line = strings.TrimSpace(line)
+					if line == "" || strings.HasPrefix(line, "#") {
+						continue
+					}
+					parts := strings.SplitN(line, ":", 2)
+					if len(parts) == 2 {
+						key := strings.TrimSpace(parts[0])
+
+						viperValue := viper.GetString(key)
+						if viperValue != "" {
+							bloomConfig[key] = viperValue
+						}
+					}
+				}
+			} else {
+				LogMessage(Info, fmt.Sprintf("Could not read config file %s: %v", configFile, err))
 			}
-			value := viper.GetString(key)
-			bloomConfig[key] = value
+		} else {
+			LogMessage(Info, "No bloom.yaml config file found, skipping ConfigMap creation")
 		}
-		
-		// If TLS is configured, add a reference to the secret
+
 		if viper.GetString("TLS_CERT") != "" && viper.GetString("TLS_KEY") != "" {
 			bloomConfig["tls_secret_name"] = "cluster-tls"
 			bloomConfig["tls_secret_namespace"] = "kgateway-system"
 		}
 
-		// If a bloom.yaml file was used, read its content
-		configFile := viper.ConfigFileUsed()
-		if configFile != "" {
-			content, err := os.ReadFile(configFile)
-			if err == nil {
-				bloomConfig["bloom.yaml"] = string(content)
-			} else {
-				LogMessage(Info, fmt.Sprintf("Could not read config file %s: %v", configFile, err))
-			}
-		}
-
-		// Create ConfigMap YAML
 		configMapYAML := `apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -656,7 +659,7 @@ var CreateDomainConfigStep = Step{
 
 		// Create domain ConfigMap
 		useCertManager := viper.GetBool("USE_CERT_MANAGER")
-		
+
 		configMapYAML := fmt.Sprintf(`apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -741,14 +744,14 @@ metadata:
 			LogMessage(Info, "Successfully created kgateway-system namespace")
 
 			// Create TLS secret using kubectl
-			cmd = exec.Command("/var/lib/rancher/rke2/bin/kubectl", 
+			cmd = exec.Command("/var/lib/rancher/rke2/bin/kubectl",
 				"--kubeconfig", "/etc/rancher/rke2/rke2.yaml",
 				"create", "secret", "tls", "cluster-tls",
 				"--cert", tlsCertPath,
 				"--key", tlsKeyPath,
 				"-n", "kgateway-system",
 				"--dry-run=client", "-o", "yaml")
-			
+
 			secretYAML, err := cmd.Output()
 			if err != nil {
 				LogMessage(Error, fmt.Sprintf("Failed to generate TLS secret: %v", err))
