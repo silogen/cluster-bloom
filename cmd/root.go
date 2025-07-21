@@ -512,6 +512,11 @@ func init() {
 }
 
 func initConfig() {
+	// Skip validation if running wizard
+	if len(os.Args) > 1 && os.Args[1] == "wizard" {
+		return
+	}
+
 	if cfgFile != "" {
 		if _, err := os.Stat(cfgFile); os.IsNotExist(err) {
 			log.Fatalf("Config file does not exist: %s", cfgFile)
