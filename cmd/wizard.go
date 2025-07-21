@@ -78,7 +78,8 @@ func validateStepsList(input string) error {
 		"PrepareRKE2Step", "HasSufficientRancherPartitionStep",
 		"NVMEDrivesAvailableStep", "SetupOnePasswordSecretStep",
 		"SetupClusterForgeStep", "UpdateUdevRulesStep", "CleanLonghornMountsStep",
-		"UninstallRKE2Step", "SetupKubeConfig", "FinalOutput",
+		"UninstallRKE2Step", "SetupKubeConfig", "CreateBloomConfigMapStep", 
+		"CreateDomainConfigStep", "FinalOutput",
 	}
 
 	steps := strings.Split(input, ",")
@@ -107,6 +108,29 @@ func validateClusterForgeRelease(input string) error {
 	}
 	// Must be a valid URL
 	return validateURL(input, "CLUSTERFORGE_RELEASE")
+}
+
+func validateDomain(input string) error {
+	if input == "" {
+		return nil // Domain is optional
+	}
+	// Basic domain validation - must contain at least one dot and valid characters
+	domainRegex := regexp.MustCompile(`^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$`)
+	if !domainRegex.MatchString(input) {
+		return fmt.Errorf("invalid domain format: '%s'. Expected format: example.com or subdomain.example.com", input)
+	}
+	return nil
+}
+
+func validateFilePath(input string) error {
+	if input == "" {
+		return nil // File path is optional
+	}
+	// Check if file exists
+	if _, err := os.Stat(input); os.IsNotExist(err) {
+		return fmt.Errorf("file does not exist: %s", input)
+	}
+	return nil
 }
 
 type ConfigOption struct {
@@ -212,6 +236,36 @@ var configOptions = []ConfigOption{
 		Default:     "",
 		Required:    false,
 		Validator:   validateStepsList,
+	},
+	{
+		Key:         "DOMAIN",
+		Description: "Domain name for the cluster (e.g., cluster.example.com). Used for ingress configuration.",
+		Default:     "",
+		Required:    false,
+		Validator:   validateDomain,
+	},
+	{
+		Key:         "USE_CERT_MANAGER",
+		Description: "Use cert-manager with Let's Encrypt for automatic TLS certificates. Set to false to provide your own certificates.",
+		Default:     false,
+		Required:    false,
+		Validator:   validateBool,
+	},
+	{
+		Key:         "TLS_CERT",
+		Description: "Path to TLS certificate file for ingress (PEM format). Required if USE_CERT_MANAGER is false and DOMAIN is set.",
+		Default:     "",
+		Required:    false,
+		Conditional: "USE_CERT_MANAGER=false",
+		Validator:   validateFilePath,
+	},
+	{
+		Key:         "TLS_KEY",
+		Description: "Path to TLS private key file for ingress (PEM format). Required if USE_CERT_MANAGER is false and DOMAIN is set.",
+		Default:     "",
+		Required:    false,
+		Conditional: "USE_CERT_MANAGER=false",
+		Validator:   validateFilePath,
 	},
 }
 

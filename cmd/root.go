@@ -57,6 +57,10 @@ Available Configuration Variables:
   - DISABLED_STEPS: Comma-separated list of steps to skip. Example "SetupLonghornStep,SetupMetallbStep" (default: "").
   - ENABLED_STEPS: Comma-separated list of steps to perform. If empty, perform all. Example "SetupLonghornStep,SetupMetallbStep" (default: "").
   - SELECTED_DISKS: Comma-separated list of disk devices. Example "/dev/sdb,/dev/sdc" (default: "").
+  - DOMAIN: The domain name for the cluster (e.g., "cluster.example.com") (default: "").
+  - TLS_CERT: Path to TLS certificate file for ingress (default: "").
+  - TLS_KEY: Path to TLS private key file for ingress (default: "").
+  - USE_CERT_MANAGER: Use cert-manager with Let's Encrypt for automatic TLS certificates (default: false).
 
 Usage:
   Use the --config flag to specify a configuration file, or set the above variables in the environment or a Viper-compatible config file.
@@ -142,6 +146,7 @@ var validStepIDs = []string{
 	"NVMEDrivesAvailableStep",
 	"SetupKubeConfig",
 	"CreateBloomConfigMapStep",
+	"CreateDomainConfigStep",
 	"SetupOnePasswordSecretStep",
 	"SetupClusterForgeStep",
 	"FinalOutput",
@@ -536,6 +541,10 @@ func initConfig() {
 	viper.SetDefault("DISABLED_STEPS", "")
 	viper.SetDefault("ENABLED_STEPS", "")
 	viper.SetDefault("SELECTED_DISKS", "")
+	viper.SetDefault("DOMAIN", "")
+	viper.SetDefault("TLS_CERT", "")
+	viper.SetDefault("TLS_KEY", "")
+	viper.SetDefault("USE_CERT_MANAGER", false)
 	viper.AutomaticEnv()
 	if err := viper.ReadInConfig(); err == nil {
 		log.Infof("Using config file: %s", viper.ConfigFileUsed())
@@ -658,6 +667,7 @@ func rootSteps() {
 		pkg.CreateMetalLBConfigStep,
 		pkg.SetupKubeConfig,
 		pkg.CreateBloomConfigMapStep,
+		pkg.CreateDomainConfigStep,
 		pkg.SetupClusterForgeStep,
 	}
 
@@ -688,6 +698,10 @@ Available Configuration Variables:
   - DISABLED_STEPS: Comma-separated list of steps to skip. Example "SetupLonghornStep,SetupMetallbStep" (default: "").
   - ENABLED_STEPS: Comma-separated list of steps to perform. If empty, perform all. Example "SetupLonghornStep,SetupMetallbStep" (default: "").
   - SELECTED_DISKS: Comma-separated list of disk devices. Example "/dev/sdb,/dev/sdc" (default: "").
+  - DOMAIN: The domain name for the cluster (e.g., "cluster.example.com") (default: "").
+  - TLS_CERT: Path to TLS certificate file for ingress (default: "").
+  - TLS_KEY: Path to TLS private key file for ingress (default: "").
+  - USE_CERT_MANAGER: Use cert-manager with Let's Encrypt for automatic TLS certificates (default: false).
 
 Usage:
   Use the --config flag to specify a configuration file, or set the above variables in the environment or a Viper-compatible config file.
