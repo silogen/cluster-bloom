@@ -27,6 +27,7 @@ import (
 )
 
 func CleanDisks() error {
+	LogMessage(Info, "Disks cleanup started.")
 	cmd := exec.Command("mount")
 	output, err := cmd.Output()
 	if err != nil {
@@ -142,18 +143,19 @@ func GenerateLonghornDiskString() error {
 		return nil
 	}
 	diskNames := []string{}
-	if viper.GetBool("GPU_NODE") {
-		for _, disk := range disks {
-			cmd := exec.Command("sh", "-c", fmt.Sprintf("lsblk -no NAME,MOUNTPOINT | grep '%s' | grep 'nvme'", disk))
-			if err := cmd.Run(); err == nil {
-				diskNames = append(diskNames, strings.TrimPrefix(disk, "/mnt/"))
-			}
-		}
-	} else {
-		for _, disk := range disks {
-			diskNames = append(diskNames, strings.TrimPrefix(disk, "/mnt/"))
-		}
+	// # Check if GPU_NODE is set or no disks are selected
+	// if viper.GetBool("GPU_NODE") || !selectedDisks {
+	// 	for _, disk := range disks {
+	// 		cmd := exec.Command("sh", "-c", fmt.Sprintf("lsblk -no NAME,MOUNTPOINT | grep '%s' | grep 'nvme'", disk))
+	// 		if err := cmd.Run(); err == nil {
+	// 			diskNames = append(diskNames, strings.TrimPrefix(disk, "/mnt/"))
+	// 		}
+	// 	}
+	// } else {
+	for _, disk := range disks {
+		diskNames = append(diskNames, strings.TrimPrefix(disk, "/mnt/"))
 	}
+	// }
 
 	if len(diskNames) > 0 {
 		diskList := strings.Join(diskNames, "xxx")
