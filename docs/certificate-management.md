@@ -80,6 +80,10 @@ The cluster setup wizard (`bloom wizard`) guides you through certificate configu
    - `generate`: Auto-generate self-signed certificate
 3. Validate certificate files (if using existing)
 
+
+**Note:** When using `CERT_OPTION=generate`, you do NOT need to provide `TLS_CERT` or `TLS_KEY` values. The system will automatically generate and configure the certificates during setup.
+
+
 ### Manual Configuration
 
 Set the following environment variables before running `bloom up`:

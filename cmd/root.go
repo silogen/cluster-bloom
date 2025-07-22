@@ -59,9 +59,10 @@ Available Configuration Variables:
   - ENABLED_STEPS: Comma-separated list of steps to perform. If empty, perform all. Example "SetupLonghornStep,SetupMetallbStep" (default: "").
   - SELECTED_DISKS: Comma-separated list of disk devices. Example "/dev/sdb,/dev/sdc" (default: "").
   - DOMAIN: The domain name for the cluster (e.g., "cluster.example.com") (required).
-  - TLS_CERT: Path to TLS certificate file for ingress (required if USE_CERT_MANAGER is false).
-  - TLS_KEY: Path to TLS private key file for ingress (required if USE_CERT_MANAGER is false).
   - USE_CERT_MANAGER: Use cert-manager with Let's Encrypt for automatic TLS certificates (default: false).
+  - CERT_OPTION: Certificate option when USE_CERT_MANAGER is false. Choose 'existing' or 'generate' (default: "").
+  - TLS_CERT: Path to TLS certificate file for ingress (required if CERT_OPTION is 'existing').
+  - TLS_KEY: Path to TLS private key file for ingress (required if CERT_OPTION is 'existing').
 
 Usage:
   Use the --config flag to specify a configuration file, or set the above variables in the environment or a Viper-compatible config file.
@@ -551,6 +552,7 @@ func initConfig() {
 	viper.SetDefault("TLS_CERT", "")
 	viper.SetDefault("TLS_KEY", "")
 	viper.SetDefault("USE_CERT_MANAGER", false)
+	viper.SetDefault("CERT_OPTION", "")
 	viper.AutomaticEnv()
 	if err := viper.ReadInConfig(); err == nil {
 		log.Infof("Using config file: %s", viper.ConfigFileUsed())
@@ -577,19 +579,31 @@ func initConfig() {
 	// Validate TLS configuration on FIRST_NODE when USE_CERT_MANAGER is false
 	if viper.GetBool("FIRST_NODE") {
 		if !viper.GetBool("USE_CERT_MANAGER") {
-			tlsCert := viper.GetString("TLS_CERT")
-			tlsKey := viper.GetString("TLS_KEY")
+			certOption := viper.GetString("CERT_OPTION")
+			
+			// Only validate TLS_CERT and TLS_KEY if using existing certificates
+			if certOption == "existing" {
+				tlsCert := viper.GetString("TLS_CERT")
+				tlsKey := viper.GetString("TLS_KEY")
 
-			if tlsCert == "" || tlsKey == "" {
-				log.Fatalf("When USE_CERT_MANAGER is false, both TLS_CERT and TLS_KEY must be provided")
-			}
+				if tlsCert == "" || tlsKey == "" {
+					log.Fatalf("When CERT_OPTION is 'existing', both TLS_CERT and TLS_KEY must be provided")
+				}
 
-			// Verify the files exist
-			if _, err := os.Stat(tlsCert); os.IsNotExist(err) {
-				log.Fatalf("TLS_CERT file does not exist: %s", tlsCert)
-			}
-			if _, err := os.Stat(tlsKey); os.IsNotExist(err) {
-				log.Fatalf("TLS_KEY file does not exist: %s", tlsKey)
+				// Verify the files exist
+				if _, err := os.Stat(tlsCert); os.IsNotExist(err) {
+					log.Fatalf("TLS_CERT file does not exist: %s", tlsCert)
+				}
+				if _, err := os.Stat(tlsKey); os.IsNotExist(err) {
+					log.Fatalf("TLS_KEY file does not exist: %s", tlsKey)
+				}
+			} else if certOption == "generate" {
+				// No validation needed for generate option - certificates will be created automatically
+				log.Println("Self-signed certificates will be generated during setup")
+			} else if certOption != "" {
+				log.Fatalf("Invalid CERT_OPTION value: %s. Must be 'existing' or 'generate'", certOption)
+			} else {
+				log.Fatalf("When USE_CERT_MANAGER is false, CERT_OPTION must be set to either 'existing' or 'generate'")
 			}
 		}
 	}
@@ -727,9 +741,10 @@ Available Configuration Variables:
   - ENABLED_STEPS: Comma-separated list of steps to perform. If empty, perform all. Example "SetupLonghornStep,SetupMetallbStep" (default: "").
   - SELECTED_DISKS: Comma-separated list of disk devices. Example "/dev/sdb,/dev/sdc" (default: "").
   - DOMAIN: The domain name for the cluster (e.g., "cluster.example.com") (required).
-  - TLS_CERT: Path to TLS certificate file for ingress (required if USE_CERT_MANAGER is false).
-  - TLS_KEY: Path to TLS private key file for ingress (required if USE_CERT_MANAGER is false).
   - USE_CERT_MANAGER: Use cert-manager with Let's Encrypt for automatic TLS certificates (default: false).
+  - CERT_OPTION: Certificate option when USE_CERT_MANAGER is false. Choose 'existing' or 'generate' (default: "").
+  - TLS_CERT: Path to TLS certificate file for ingress (required if CERT_OPTION is 'existing').
+  - TLS_KEY: Path to TLS private key file for ingress (required if CERT_OPTION is 'existing').
 
 Usage:
   Use the --config flag to specify a configuration file, or set the above variables in the environment or a Viper-compatible config file.
