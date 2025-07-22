@@ -696,23 +696,55 @@ data:
 
 		// Handle TLS certificates
 		if !useCertManager {
+			certOption := viper.GetString("CERT_OPTION")
 			tlsCertPath := viper.GetString("TLS_CERT")
 			tlsKeyPath := viper.GetString("TLS_KEY")
 
-			if tlsCertPath == "" || tlsKeyPath == "" {
-				LogMessage(Info, "Domain configured but no TLS certificate provided and cert-manager not enabled")
+			// Handle certificate generation or use existing
+			if certOption == "generate" {
+				LogMessage(Info, "Generating self-signed certificate for domain: " + domain)
+				
+				// Create temporary directory for certificate files
+				tempDir, err := os.MkdirTemp("", "bloom-tls-*")
+				if err != nil {
+					LogMessage(Error, fmt.Sprintf("Failed to create temp directory: %v", err))
+					return StepResult{Error: fmt.Errorf("failed to create temp directory: %w", err)}
+				}
+				defer os.RemoveAll(tempDir)
+				
+				tlsCertPath = filepath.Join(tempDir, "tls.crt")
+				tlsKeyPath = filepath.Join(tempDir, "tls.key")
+				
+				// Generate self-signed certificate using openssl
+				cmd := exec.Command("openssl", "req", "-x509", "-nodes", "-days", "365", "-newkey", "rsa:2048",
+					"-keyout", tlsKeyPath,
+					"-out", tlsCertPath,
+					"-subj", fmt.Sprintf("/CN=%s", domain),
+					"-addext", fmt.Sprintf("subjectAltName=DNS:%s,DNS:*.%s", domain, domain))
+				
+				output, err := cmd.CombinedOutput()
+				if err != nil {
+					LogMessage(Error, fmt.Sprintf("Failed to generate self-signed certificate: %v, output: %s", err, string(output)))
+					return StepResult{Error: fmt.Errorf("failed to generate self-signed certificate: %w", err)}
+				}
+				LogMessage(Info, "Successfully generated self-signed certificate")
+			} else if certOption == "existing" {
+				// Verify certificate and key files exist
+				if tlsCertPath == "" || tlsKeyPath == "" {
+					LogMessage(Error, "CERT_OPTION is 'existing' but TLS_CERT or TLS_KEY not provided")
+					return StepResult{Error: fmt.Errorf("TLS certificate files not provided")}
+				}
+				if _, err := os.Stat(tlsCertPath); os.IsNotExist(err) {
+					LogMessage(Error, fmt.Sprintf("TLS certificate file not found: %s", tlsCertPath))
+					return StepResult{Error: fmt.Errorf("TLS certificate file not found: %s", tlsCertPath)}
+				}
+				if _, err := os.Stat(tlsKeyPath); os.IsNotExist(err) {
+					LogMessage(Error, fmt.Sprintf("TLS key file not found: %s", tlsKeyPath))
+					return StepResult{Error: fmt.Errorf("TLS key file not found: %s", tlsKeyPath)}
+				}
+			} else {
+				LogMessage(Info, "Domain configured but no certificate option specified")
 				return StepResult{Message: "Domain ConfigMap created but no TLS configuration applied"}
-			}
-
-			// Verify certificate and key files exist
-			if _, err := os.Stat(tlsCertPath); os.IsNotExist(err) {
-				LogMessage(Error, fmt.Sprintf("TLS certificate file not found: %s", tlsCertPath))
-				return StepResult{Error: fmt.Errorf("TLS certificate file not found: %s", tlsCertPath)}
-			}
-
-			if _, err := os.Stat(tlsKeyPath); os.IsNotExist(err) {
-				LogMessage(Error, fmt.Sprintf("TLS key file not found: %s", tlsKeyPath))
-				return StepResult{Error: fmt.Errorf("TLS key file not found: %s", tlsKeyPath)}
 			}
 
 			// Create kgateway-system namespace

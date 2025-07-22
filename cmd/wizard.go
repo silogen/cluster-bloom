@@ -133,6 +133,17 @@ func validateFilePath(input string) error {
 	return nil
 }
 
+func validateCertOption(input string) error {
+	if input == "" {
+		return fmt.Errorf("certificate option is required when USE_CERT_MANAGER is false")
+	}
+	lower := strings.ToLower(strings.TrimSpace(input))
+	if lower != "existing" && lower != "generate" {
+		return fmt.Errorf("invalid option: must be 'existing' or 'generate'")
+	}
+	return nil
+}
+
 type ConfigOption struct {
 	Key         string
 	Description string
@@ -252,19 +263,27 @@ var configOptions = []ConfigOption{
 		Validator:   validateBool,
 	},
 	{
-		Key:         "TLS_CERT",
-		Description: "Path to TLS certificate file for ingress (PEM format). Required if USE_CERT_MANAGER is false and DOMAIN is set.",
+		Key:         "CERT_OPTION",
+		Description: "Certificate option when USE_CERT_MANAGER is false. Choose 'existing' to use existing certificate files, or 'generate' to create a self-signed certificate.",
 		Default:     "",
 		Required:    false,
 		Conditional: "USE_CERT_MANAGER=false",
+		Validator:   validateCertOption,
+	},
+	{
+		Key:         "TLS_CERT",
+		Description: "Path to TLS certificate file for ingress (PEM format). Required if CERT_OPTION is 'existing'.",
+		Default:     "",
+		Required:    false,
+		Conditional: "CERT_OPTION=existing",
 		Validator:   validateFilePath,
 	},
 	{
 		Key:         "TLS_KEY",
-		Description: "Path to TLS private key file for ingress (PEM format). Required if USE_CERT_MANAGER is false and DOMAIN is set.",
+		Description: "Path to TLS private key file for ingress (PEM format). Required if CERT_OPTION is 'existing'.",
 		Default:     "",
 		Required:    false,
-		Conditional: "USE_CERT_MANAGER=false",
+		Conditional: "CERT_OPTION=existing",
 		Validator:   validateFilePath,
 	},
 }
@@ -319,13 +338,22 @@ func runWizard() {
 
 	// Validate TLS configuration
 	if useCertManager, exists := config["USE_CERT_MANAGER"]; exists && !useCertManager.(bool) {
-		tlsCert, hasCert := config["TLS_CERT"]
-		tlsKey, hasKey := config["TLS_KEY"]
-		
-		if !hasCert || tlsCert == nil || tlsCert == "" || !hasKey || tlsKey == nil || tlsKey == "" {
-			fmt.Println("\n❌ Error: When USE_CERT_MANAGER is false, both TLS_CERT and TLS_KEY must be provided")
-			fmt.Println("Please run the wizard again and provide TLS certificate files.")
+		certOption, hasCertOption := config["CERT_OPTION"]
+		if !hasCertOption || certOption == nil || certOption == "" {
+			fmt.Println("\n❌ Error: When USE_CERT_MANAGER is false, CERT_OPTION must be specified")
+			fmt.Println("Please run the wizard again and choose 'existing' or 'generate' for certificate option.")
 			os.Exit(1)
+		}
+		
+		if certOption == "existing" {
+			tlsCert, hasCert := config["TLS_CERT"]
+			tlsKey, hasKey := config["TLS_KEY"]
+			
+			if !hasCert || tlsCert == nil || tlsCert == "" || !hasKey || tlsKey == nil || tlsKey == "" {
+				fmt.Println("\n❌ Error: When CERT_OPTION is 'existing', both TLS_CERT and TLS_KEY must be provided")
+				fmt.Println("Please run the wizard again and provide TLS certificate files.")
+				os.Exit(1)
+			}
 		}
 	}
 
