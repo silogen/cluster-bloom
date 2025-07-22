@@ -556,11 +556,12 @@ func initConfig() {
 		log.Infof("Using config file: %s", viper.ConfigFileUsed())
 	}
 
-	requiredConfigs := []string{"FIRST_NODE", "GPU_NODE", "DOMAIN"}
-	for _, config := range requiredConfigs {
-		if !viper.IsSet(config) || viper.GetString(config) == "" {
-			log.Fatalf("Required configuration item '%s' is not set", config)
-		}
+	if viper.GetBool("FIRST_NODE") {			// leaving the loop in case we want more options
+		requiredConfigs := []string{"DOMAIN"}
+		for _, config := range requiredConfigs {
+			if !viper.IsSet(config) || viper.GetString(config) == "" {
+				log.Fatalf("Required configuration item '%s' is not set", config)
+			}
 	}
 
 	if !viper.GetBool("FIRST_NODE") {
