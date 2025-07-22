@@ -20,7 +20,6 @@ The following environment variables control the disk management flow:
 | **SKIP_DISK_CHECK** | `false` | When `true`, bypasses entire disk setup process |
 | **SELECTED_DISKS** | `""` | Pre-configures specific disks (e.g., `/dev/sdb,/dev/sdc`), skipping discovery UI |
 | **LONGHORN_DISKS** | `""` | Directly specifies Longhorn disk paths (e.g., `/mnt/disk0,/mnt/disk1`), skipping mount operations |
-| **GPU_NODE** | `true` | When `true`, only NVMe disks are used for Longhorn; when `false`, all disks are used |
 
 ## Process Flow
 
@@ -31,7 +30,6 @@ flowchart TD
         V1[SKIP_DISK_CHECK: Skip all disk operations<br/>Default: false]
         V2[SELECTED_DISKS: Pre-configured disk list<br/>e.g., '/dev/sdb,/dev/sdc'<br/>Default: empty]
         V3[LONGHORN_DISKS: Override Longhorn config<br/>e.g., '/mnt/disk0,/mnt/disk1'<br/>Default: empty]
-        V4[GPU_NODE: Affects disk filtering<br/>true = NVMe only for Longhorn<br/>Default: true]
     end
     
     %% Legend
@@ -127,7 +125,6 @@ flowchart TD
     style CheckSelected fill:#FFE4B5,stroke:#FF6347,stroke-width:3px
     style CheckLonghorn fill:#FFE4B5,stroke:#FF6347,stroke-width:3px
     style CheckLonghornConfig fill:#FFE4B5,stroke:#FF6347,stroke-width:3px
-    style CheckGPU fill:#FFE4B5,stroke:#FF6347,stroke-width:3px
     style WriteRKE2Config fill:#87CEEB
 ```
 
@@ -176,10 +173,6 @@ Prepares disk information for Longhorn storage:
 - **LONGHORN_DISKS**: If set, uses this comma-separated list directly
 - **Automatic Detection**: Otherwise, finds all mounted disks at `/mnt/diskX`
 
-#### GPU vs Non-GPU Nodes:
-- **GPU Nodes**: Only uses NVMe disks for Longhorn storage
-- **Non-GPU Nodes**: Uses all mounted disks
-
 #### Label Generation:
 The selected disks are encoded as a string with `xxx` as delimiter (e.g., `disk0xxxdisk1xxxdisk2`) and written to `/etc/rancher/rke2/config.yaml` as:
 
@@ -199,7 +192,6 @@ These labels are applied to the node when RKE2 starts, allowing Longhorn to auto
 | `SKIP_DISK_CHECK` | Skip all disk operations | false |
 | `SELECTED_DISKS` | Pre-configured comma-separated disk list | "" |
 | `LONGHORN_DISKS` | Override Longhorn disk configuration | "" |
-| `GPU_NODE` | Whether this is a GPU node (affects disk selection) | true |
 
 ## Virtual Disk Detection
 
