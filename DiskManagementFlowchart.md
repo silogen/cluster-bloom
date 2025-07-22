@@ -112,12 +112,8 @@ flowchart TD
     CheckLonghornConfig -->|No - empty| FindMounted[Find mounted disks<br/>at /mnt/diskX]
     
     ParseConfig --> CreateLabelString[Join with 'xxx'<br/>delimiter]
-    FindMounted --> CheckGPU{GPU_NODE?}
+    FindMounted --> UseAllMounted[Use all mounted disks]
     
-    CheckGPU -->|Yes = true| FilterNVME[Filter only NVMe<br/>mounted disks]
-    CheckGPU -->|No = false| UseAllMounted[Use all mounted disks]
-    
-    FilterNVME --> CreateLabelString
     UseAllMounted --> CreateLabelString
     
     CreateLabelString --> WriteRKE2Config[Append to /etc/rancher/rke2/config.yaml:<br/>node-label:<br/>  - node.longhorn.io/create-default-disk=config<br/>  - node.longhorn.io/instance-manager=true<br/>  - silogen.ai/longhorndisks=disk0xxxdisk1xxx...]
