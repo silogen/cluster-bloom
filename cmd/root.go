@@ -72,7 +72,7 @@ Usage:
 			runWizard()
 			return
 		}
-		
+
 		log.Debug("Starting package installation")
 		rootSteps()
 	},
@@ -556,12 +556,13 @@ func initConfig() {
 		log.Infof("Using config file: %s", viper.ConfigFileUsed())
 	}
 
-	if viper.GetBool("FIRST_NODE") {			// leaving the loop in case we want more options
+	if viper.GetBool("FIRST_NODE") { // leaving the loop expecting more default options
 		requiredConfigs := []string{"DOMAIN"}
 		for _, config := range requiredConfigs {
 			if !viper.IsSet(config) || viper.GetString(config) == "" {
 				log.Fatalf("Required configuration item '%s' is not set", config)
 			}
+		}
 	}
 
 	if !viper.GetBool("FIRST_NODE") {
@@ -577,11 +578,11 @@ func initConfig() {
 	if !viper.GetBool("USE_CERT_MANAGER") {
 		tlsCert := viper.GetString("TLS_CERT")
 		tlsKey := viper.GetString("TLS_KEY")
-		
+
 		if tlsCert == "" || tlsKey == "" {
 			log.Fatalf("When USE_CERT_MANAGER is false, both TLS_CERT and TLS_KEY must be provided")
 		}
-		
+
 		// Verify the files exist
 		if _, err := os.Stat(tlsCert); os.IsNotExist(err) {
 			log.Fatalf("TLS_CERT file does not exist: %s", tlsCert)
