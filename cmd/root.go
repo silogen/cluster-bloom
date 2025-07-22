@@ -574,21 +574,23 @@ func initConfig() {
 		}
 	}
 
-	// Validate TLS configuration when USE_CERT_MANAGER is false
-	if !viper.GetBool("USE_CERT_MANAGER") {
-		tlsCert := viper.GetString("TLS_CERT")
-		tlsKey := viper.GetString("TLS_KEY")
+	// Validate TLS configuration on FIRST_NODE when USE_CERT_MANAGER is false
+	if viper.GetBool("FIRST_NODE") {
+		if !viper.GetBool("USE_CERT_MANAGER") {
+			tlsCert := viper.GetString("TLS_CERT")
+			tlsKey := viper.GetString("TLS_KEY")
 
-		if tlsCert == "" || tlsKey == "" {
-			log.Fatalf("When USE_CERT_MANAGER is false, both TLS_CERT and TLS_KEY must be provided")
-		}
+			if tlsCert == "" || tlsKey == "" {
+				log.Fatalf("When USE_CERT_MANAGER is false, both TLS_CERT and TLS_KEY must be provided")
+			}
 
-		// Verify the files exist
-		if _, err := os.Stat(tlsCert); os.IsNotExist(err) {
-			log.Fatalf("TLS_CERT file does not exist: %s", tlsCert)
-		}
-		if _, err := os.Stat(tlsKey); os.IsNotExist(err) {
-			log.Fatalf("TLS_KEY file does not exist: %s", tlsKey)
+			// Verify the files exist
+			if _, err := os.Stat(tlsCert); os.IsNotExist(err) {
+				log.Fatalf("TLS_CERT file does not exist: %s", tlsCert)
+			}
+			if _, err := os.Stat(tlsKey); os.IsNotExist(err) {
+				log.Fatalf("TLS_KEY file does not exist: %s", tlsKey)
+			}
 		}
 	}
 
