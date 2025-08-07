@@ -140,7 +140,6 @@ var validStepIDs = []string{
 	"SetupKubeConfig",
 	"CreateBloomConfigMapStep",
 	"CreateDomainConfigStep",
-	"SetupOnePasswordSecretStep",
 	"SetupClusterForgeStep",
 	"FinalOutput",
 	"UpdateUdevRulesStep",
