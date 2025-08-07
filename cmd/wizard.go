@@ -76,9 +76,9 @@ func validateStepsList(input string) error {
 		"MountSelectedDrivesStep", "GenerateLonghornDiskStringStep",
 		"SetupMetallbStep", "SetupLonghornStep", "CreateMetalLBConfigStep",
 		"PrepareRKE2Step", "HasSufficientRancherPartitionStep",
-		"NVMEDrivesAvailableStep", "SetupOnePasswordSecretStep",
+		"NVMEDrivesAvailableStep",
 		"SetupClusterForgeStep", "UpdateUdevRulesStep", "CleanLonghornMountsStep",
-		"UninstallRKE2Step", "SetupKubeConfig", "CreateBloomConfigMapStep", 
+		"UninstallRKE2Step", "SetupKubeConfig", "CreateBloomConfigMapStep",
 		"CreateDomainConfigStep", "FinalOutput",
 	}
 
@@ -221,13 +221,6 @@ var configOptions = []ConfigOption{
 		Validator:   validateDiskList,
 	},
 	{
-		Key:         "ONEPASS_CONNECT_TOKEN",
-		Description: "1Password Connect integration token. Leave empty to skip 1Password setup.",
-		Default:     "",
-		Required:    false,
-		Validator:   nil, // No specific validation for tokens
-	},
-	{
 		Key:         "CLUSTERFORGE_RELEASE",
 		Description: "ClusterForge release URL or 'none' to skip installation.",
 		Default:     "https://github.com/silogen/cluster-forge/releases/download/deploy/deploy-release.tar.gz",
@@ -300,7 +293,7 @@ The wizard will ask about:
 - Node type (first node vs additional node)
 - GPU availability and ROCm setup
 - Storage configuration
-- Optional integrations (1Password, ClusterForge)
+- Optional integrations (ClusterForge)
 - Advanced options (OIDC, custom steps)
 `,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -344,11 +337,11 @@ func runWizard() {
 			fmt.Println("Please run the wizard again and choose 'existing' or 'generate' for certificate option.")
 			os.Exit(1)
 		}
-		
+
 		if certOption == "existing" {
 			tlsCert, hasCert := config["TLS_CERT"]
 			tlsKey, hasKey := config["TLS_KEY"]
-			
+
 			if !hasCert || tlsCert == nil || tlsCert == "" || !hasKey || tlsKey == nil || tlsKey == "" {
 				fmt.Println("\n❌ Error: When CERT_OPTION is 'existing', both TLS_CERT and TLS_KEY must be provided")
 				fmt.Println("Please run the wizard again and provide TLS certificate files.")
@@ -395,7 +388,7 @@ func runWizard() {
 	if input == "y" || input == "yes" {
 		fmt.Println("\nRunning bloom with the generated configuration...")
 		fmt.Printf("Command: sudo ./bloom --config %s\n\n", filename)
-		
+
 		// Execute bloom with the generated config
 		err := runBloomWithConfig(filename)
 		if err != nil {
