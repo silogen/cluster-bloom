@@ -820,19 +820,6 @@ metadata:
 	},
 }
 
-var SetupOnePasswordSecretStep = Step{
-	Id:          "SetupOnePasswordSecretStep",
-	Name:        "Setup 1Password Secret",
-	Description: "Setup and configure connect server secrets for 1Password",
-	Action: func() StepResult {
-		err := SetupOnePasswordSecret()
-		if err != nil {
-			return StepResult{Error: fmt.Errorf("failed to setup 1Password secret: %v", err)}
-		}
-		return StepResult{Error: nil}
-	},
-}
-
 var SetupClusterForgeStep = Step{
 	Id:          "SetupClusterForgeStep",
 	Name:        "Setup Cluster Forge",

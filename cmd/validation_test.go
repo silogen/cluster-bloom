@@ -74,7 +74,7 @@ func TestValidateAllURLs(t *testing.T) {
 			config: map[string]string{
 				"OIDC_URL":              "https://auth.example.com",
 				"CLUSTERFORGE_RELEASE":  "https://github.com/example/repo/releases/download/v1.0/release.tar.gz",
-				"ROCM_BASE_URL":        "https://repo.radeon.com/amdgpu-install/6.3.2/ubuntu/",
+				"ROCM_BASE_URL":         "https://repo.radeon.com/amdgpu-install/6.3.2/ubuntu/",
 				"RKE2_INSTALLATION_URL": "https://get.rke2.io",
 			},
 			wantErr: false,
@@ -84,7 +84,7 @@ func TestValidateAllURLs(t *testing.T) {
 			config: map[string]string{
 				"OIDC_URL":              "",
 				"CLUSTERFORGE_RELEASE":  "none",
-				"ROCM_BASE_URL":        "https://repo.radeon.com/amdgpu-install/6.3.2/ubuntu/",
+				"ROCM_BASE_URL":         "https://repo.radeon.com/amdgpu-install/6.3.2/ubuntu/",
 				"RKE2_INSTALLATION_URL": "https://get.rke2.io",
 			},
 			wantErr: false,
@@ -94,7 +94,7 @@ func TestValidateAllURLs(t *testing.T) {
 			config: map[string]string{
 				"OIDC_URL":              "ftp://invalid.com",
 				"CLUSTERFORGE_RELEASE":  "https://github.com/example/repo/releases/download/v1.0/release.tar.gz",
-				"ROCM_BASE_URL":        "https://repo.radeon.com/amdgpu-install/6.3.2/ubuntu/",
+				"ROCM_BASE_URL":         "https://repo.radeon.com/amdgpu-install/6.3.2/ubuntu/",
 				"RKE2_INSTALLATION_URL": "https://get.rke2.io",
 			},
 			wantErr: true,
@@ -104,7 +104,7 @@ func TestValidateAllURLs(t *testing.T) {
 			config: map[string]string{
 				"OIDC_URL":              "https://auth.example.com",
 				"CLUSTERFORGE_RELEASE":  "https://github.com/example/repo/releases/download/v1.0/release.tar.gz",
-				"ROCM_BASE_URL":        "not-a-url",
+				"ROCM_BASE_URL":         "not-a-url",
 				"RKE2_INSTALLATION_URL": "https://get.rke2.io",
 			},
 			wantErr: true,
@@ -247,35 +247,6 @@ func TestValidateJoinToken(t *testing.T) {
 	}
 }
 
-func TestValidateOnePasswordToken(t *testing.T) {
-	tests := []struct {
-		name    string
-		token   string
-		wantErr bool
-	}{
-		{"Valid JWT token", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c", false},
-		{"Valid long base64 token", strings.Repeat("YWJjZGVmZ2hpamtsbW5vcA", 3), false},
-		{"Valid token with separators", strings.Repeat("token_part1.token_part2-token_part3.", 2), false},
-		{"Empty token (allowed)", "", false},
-		{"Too short token", "short", true},
-		{"Too long token", strings.Repeat("a", 2049), true},
-		{"Invalid JWT - 2 parts", "header.payload", true},
-		{"Invalid JWT - 4 parts", "header.payload.signature.extra", true},
-		{"Invalid JWT - empty part", "header..signature", true},
-		{"Invalid characters in JWT", "header@.payload#.signature$", true},
-		{"Invalid characters in regular token", "token with spaces", true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := validateOnePasswordToken(tt.token)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("validateOnePasswordToken() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
 func TestValidateToken(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -284,11 +255,9 @@ func TestValidateToken(t *testing.T) {
 		wantErr   bool
 	}{
 		{"Valid JOIN_TOKEN", "K10831EXAMPLE::server:aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789", "JOIN_TOKEN", false},
-		{"Valid ONEPASS_CONNECT_TOKEN", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c", "ONEPASS_CONNECT_TOKEN", false},
 		{"Empty token", "", "JOIN_TOKEN", false},
 		{"Unknown token type", "some-token", "UNKNOWN_TOKEN", true},
 		{"Invalid JOIN_TOKEN", "short", "JOIN_TOKEN", true},
-		{"Invalid ONEPASS_CONNECT_TOKEN", "short", "ONEPASS_CONNECT_TOKEN", true},
 	}
 
 	for _, tt := range tests {
@@ -338,31 +307,6 @@ func TestValidateAllTokens(t *testing.T) {
 				"JOIN_TOKEN": "short",
 			},
 			wantErr: true,
-		},
-		{
-			name: "Valid ONEPASS_CONNECT_TOKEN",
-			config: map[string]interface{}{
-				"FIRST_NODE":               true,
-				"ONEPASS_CONNECT_TOKEN":    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
-			},
-			wantErr: false,
-		},
-		{
-			name: "Invalid ONEPASS_CONNECT_TOKEN",
-			config: map[string]interface{}{
-				"FIRST_NODE":               true,
-				"ONEPASS_CONNECT_TOKEN":    "short",
-			},
-			wantErr: true,
-		},
-		{
-			name: "Both tokens valid",
-			config: map[string]interface{}{
-				"FIRST_NODE":               false,
-				"JOIN_TOKEN":               "K10831EXAMPLE::server:aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789",
-				"ONEPASS_CONNECT_TOKEN":    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
-			},
-			wantErr: false,
 		},
 	}
 
@@ -550,9 +494,9 @@ func TestValidateConfigurationConflicts(t *testing.T) {
 		{
 			name: "GPU_NODE=true with empty ROCM_BASE_URL (warning)",
 			config: map[string]interface{}{
-				"FIRST_NODE":     true,
-				"GPU_NODE":       true,
-				"ROCM_BASE_URL":  "",
+				"FIRST_NODE":    true,
+				"GPU_NODE":      true,
+				"ROCM_BASE_URL": "",
 			},
 			wantErr: false,
 			wantLog: true,
@@ -706,11 +650,11 @@ func TestValidationIntegration(t *testing.T) {
 		{
 			name: "Valid first node configuration",
 			config: map[string]interface{}{
-				"FIRST_NODE":             true,
-				"GPU_NODE":               true,
+				"FIRST_NODE":            true,
+				"GPU_NODE":              true,
 				"OIDC_URL":              "https://auth.example.com",
 				"CLUSTERFORGE_RELEASE":  "https://github.com/example/repo/releases/download/v1.0/release.tar.gz",
-				"ROCM_BASE_URL":        "https://repo.radeon.com/amdgpu-install/6.3.2/ubuntu/",
+				"ROCM_BASE_URL":         "https://repo.radeon.com/amdgpu-install/6.3.2/ubuntu/",
 				"RKE2_INSTALLATION_URL": "https://get.rke2.io",
 				"DISABLED_STEPS":        "",
 				"ENABLED_STEPS":         "",
@@ -721,13 +665,13 @@ func TestValidationIntegration(t *testing.T) {
 		{
 			name: "Valid additional node configuration",
 			config: map[string]interface{}{
-				"FIRST_NODE":             false,
-				"GPU_NODE":               false,
-				"SERVER_IP":              "192.168.1.100",
-				"JOIN_TOKEN":             "K10831EXAMPLE::server:aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789",
+				"FIRST_NODE":            false,
+				"GPU_NODE":              false,
+				"SERVER_IP":             "192.168.1.100",
+				"JOIN_TOKEN":            "K10831EXAMPLE::server:aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789",
 				"OIDC_URL":              "",
 				"CLUSTERFORGE_RELEASE":  "none",
-				"ROCM_BASE_URL":        "",
+				"ROCM_BASE_URL":         "",
 				"RKE2_INSTALLATION_URL": "https://get.rke2.io",
 				"DISABLED_STEPS":        "SetupAndCheckRocmStep,SetupClusterForgeStep",
 				"ENABLED_STEPS":         "",
@@ -738,11 +682,11 @@ func TestValidationIntegration(t *testing.T) {
 		{
 			name: "Invalid URL configuration",
 			config: map[string]interface{}{
-				"FIRST_NODE":             true,
-				"GPU_NODE":               true,
+				"FIRST_NODE":            true,
+				"GPU_NODE":              true,
 				"OIDC_URL":              "ftp://invalid.com",
 				"CLUSTERFORGE_RELEASE":  "https://github.com/example/repo/releases/download/v1.0/release.tar.gz",
-				"ROCM_BASE_URL":        "https://repo.radeon.com/amdgpu-install/6.3.2/ubuntu/",
+				"ROCM_BASE_URL":         "https://repo.radeon.com/amdgpu-install/6.3.2/ubuntu/",
 				"RKE2_INSTALLATION_URL": "https://get.rke2.io",
 			},
 			wantErr: true,

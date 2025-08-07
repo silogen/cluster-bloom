@@ -17,7 +17,6 @@
 package pkg
 
 import (
-	"context"
 	"fmt"
 	"io/fs"
 	"os"
@@ -26,11 +25,6 @@ import (
 	"strings"
 
 	"github.com/spf13/viper"
-	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
 )
 
 func CheckPackageInstallConnections() error {
@@ -174,64 +168,6 @@ func setupAudit() error {
 
 	LogMessage(Info, fmt.Sprintf("Copied %s to %s", sourceFile, targetPath))
 	LogMessage(Info, "Audit policy setup completed successfully")
-	return nil
-}
-
-func SetupOnePasswordSecret() error {
-	token := viper.GetString("ONEPASS_CONNECT_TOKEN")
-	if token == "" {
-		LogMessage(Info, "ONEPASS_CONNECT_TOKEN is not set. Skipping secret creation.")
-		return nil
-	}
-
-	config, err := rest.InClusterConfig()
-	if err != nil {
-		return fmt.Errorf("failed to create in-cluster config: %w", err)
-	}
-
-	clientset, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		return fmt.Errorf("failed to create Kubernetes client: %w", err)
-	}
-	ctx := context.Background()
-
-	namespace := "external-secrets"
-	_, err = clientset.CoreV1().Namespaces().Get(ctx, namespace, metav1.GetOptions{})
-	if err != nil {
-		if errors.IsNotFound(err) {
-			_, err = clientset.CoreV1().Namespaces().Create(ctx, &v1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: namespace,
-				},
-			}, metav1.CreateOptions{})
-			if err != nil {
-				return fmt.Errorf("failed to create namespace %s: %w", namespace, err)
-			}
-			LogMessage(Info, fmt.Sprintf("Namespace %s created successfully", namespace))
-		} else {
-			return fmt.Errorf("failed to check if namespace %s exists: %w", namespace, err)
-		}
-	} else {
-		LogMessage(Debug, fmt.Sprintf("Namespace %s already exists, skipping creation", namespace))
-	}
-
-	secretName := "onepassword-connect-token"
-	secret := &v1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      secretName,
-			Namespace: namespace,
-		},
-		Data: map[string][]byte{
-			"token": []byte(token),
-		},
-	}
-
-	_, err = clientset.CoreV1().Secrets(namespace).Create(ctx, secret, metav1.CreateOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to create secret %s in namespace %s: %w", secretName, namespace, err)
-	}
-
-	LogMessage(Info, fmt.Sprintf("Secret %s created successfully in namespace %s", secretName, namespace))
 	return nil
 }
 

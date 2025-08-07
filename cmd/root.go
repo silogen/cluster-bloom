@@ -53,7 +53,6 @@ Available Configuration Variables:
   - JOIN_TOKEN: The token used to join additional nodes to the cluster (required for additional nodes).
   - SKIP_DISK_CHECK: Set to true to skip disk-related operations (default: false).
   - LONGHORN_DISKS: Comma-separated list of disk paths to use for Longhorn (default: "").
-  - ONEPASS_CONNECT_TOKEN: The token used for 1Password Connect integration (default: "").
   - CLUSTERFORGE_RELEASE: The version of Cluster-Forge to install (default: "https://github.com/silogen/cluster-forge/releases/download/deploy/deploy-release.tar.gz"). Pass the URL for a specific release, or 'none' to not install ClusterForge.
   - DISABLED_STEPS: Comma-separated list of steps to skip. Example "SetupLonghornStep,SetupMetallbStep" (default: "").
   - ENABLED_STEPS: Comma-separated list of steps to perform. If empty, perform all. Example "SetupLonghornStep,SetupMetallbStep" (default: "").
@@ -109,14 +108,6 @@ func validateAllTokens() error {
 	if !viper.GetBool("FIRST_NODE") {
 		joinToken := viper.GetString("JOIN_TOKEN")
 		if err := validateToken(joinToken, "JOIN_TOKEN"); err != nil {
-			return err
-		}
-	}
-
-	// Validate ONEPASS_CONNECT_TOKEN if it's set
-	if viper.IsSet("ONEPASS_CONNECT_TOKEN") && viper.GetString("ONEPASS_CONNECT_TOKEN") != "" {
-		onepassToken := viper.GetString("ONEPASS_CONNECT_TOKEN")
-		if err := validateToken(onepassToken, "ONEPASS_CONNECT_TOKEN"); err != nil {
 			return err
 		}
 	}
@@ -540,7 +531,6 @@ func initConfig() {
 	viper.SetDefault("OIDC_URL", "")
 	viper.SetDefault("SKIP_DISK_CHECK", "false")
 	viper.SetDefault("LONGHORN_DISKS", "")
-	viper.SetDefault("ONEPASS_CONNECT_TOKEN", "")
 	viper.SetDefault("CLUSTERFORGE_RELEASE", "https://github.com/silogen/cluster-forge/releases/download/deploy/deploy-release.tar.gz")
 	viper.SetDefault("ROCM_BASE_URL", "https://repo.radeon.com/amdgpu-install/6.3.2/ubuntu/")
 	viper.SetDefault("ROCM_DEB_PACKAGE", "amdgpu-install_6.3.60302-1_all.deb")
@@ -713,10 +703,6 @@ func rootSteps() {
 		pkg.SetupClusterForgeStep,
 	}
 
-	if viper.IsSet("ONEPASS_CONNECT_TOKEN") && viper.GetString("ONEPASS_CONNECT_TOKEN") != "" {
-		postK8Ssteps = append(postK8Ssteps, pkg.SetupOnePasswordSecretStep)
-	}
-
 	postK8Ssteps = append(postK8Ssteps, pkg.FinalOutput)
 
 	pkg.RunStepsWithUI(append(append(preK8Ssteps, k8Ssteps...), postK8Ssteps...))
@@ -735,7 +721,6 @@ Available Configuration Variables:
   - JOIN_TOKEN: The token used to join additional nodes to the cluster (required for additional nodes).
   - SKIP_DISK_CHECK: Set to true to skip disk-related operations (default: false).
   - LONGHORN_DISKS: Comma-separated list of disk paths to use for Longhorn (default: "").
-  - ONEPASS_CONNECT_TOKEN: The token used for 1Password Connect integration (default: "").
   - CLUSTERFORGE_RELEASE: The version of Cluster-Forge to install (default: "https://github.com/silogen/cluster-forge/releases/download/deploy/deploy-release.tar.gz"). Pass the URL for a specific release, or 'none' to not install ClusterForge.
   - DISABLED_STEPS: Comma-separated list of steps to skip. Example "SetupLonghornStep,SetupMetallbStep" (default: "").
   - ENABLED_STEPS: Comma-separated list of steps to perform. If empty, perform all. Example "SetupLonghornStep,SetupMetallbStep" (default: "").

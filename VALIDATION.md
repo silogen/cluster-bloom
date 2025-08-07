@@ -51,22 +51,16 @@ The validation system runs in `initConfig()` in the following order:
 ### 3. Token Validation
 
 **Function**: `validateToken()`, `validateJoinToken()`, `validateOnePasswordToken()`, `validateAllTokens()`  
-**Parameters**: `JOIN_TOKEN` (when `FIRST_NODE=false`), `ONEPASS_CONNECT_TOKEN`
+**Parameters**: `JOIN_TOKEN` (when `FIRST_NODE=false`)
 
 **JOIN_TOKEN Rules**:
 - Length: 32-512 characters
 - Allowed characters: alphanumeric, +, /, =, _, ., :, -
 - Supports RKE2/K3s token formats
 
-**ONEPASS_CONNECT_TOKEN Rules**:
-- Length: 50-2048 characters
-- Supports JWT format (3-part dot-separated) or regular token format
-- JWT parts must contain only alphanumeric, _, - characters
-
 **Error Messages**:
 - `"JOIN_TOKEN is too short (minimum 32 characters), got {length} characters"`
 - `"JOIN_TOKEN contains invalid characters (only alphanumeric, +, /, =, _, ., :, - allowed)"`
-- `"ONEPASS_CONNECT_TOKEN JWT format invalid: part {num} is empty"`
 
 ### 4. Step Name Validation
 

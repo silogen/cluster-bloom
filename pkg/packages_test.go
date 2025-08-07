@@ -100,28 +100,6 @@ func TestSetupAudit(t *testing.T) {
 	}
 }
 
-func TestSetupOnePasswordSecret(t *testing.T) {
-	t.Run("without token", func(t *testing.T) {
-		viper.Set("ONEPASS_CONNECT_TOKEN", "")
-		err := SetupOnePasswordSecret()
-		if err != nil {
-			t.Errorf("Expected no error when token is empty, got: %v", err)
-		}
-	})
-
-	t.Run("with token", func(t *testing.T) {
-		viper.Set("ONEPASS_CONNECT_TOKEN", "test-token")
-		err := SetupOnePasswordSecret()
-		// This will fail because we're not in a Kubernetes cluster
-		if err == nil {
-			t.Log("SetupOnePasswordSecret succeeded unexpectedly")
-		} else {
-			t.Logf("SetupOnePasswordSecret failed as expected outside cluster: %v", err)
-		}
-		viper.Set("ONEPASS_CONNECT_TOKEN", "")
-	})
-}
-
 func TestSetupClusterForge(t *testing.T) {
 	t.Run("when disabled", func(t *testing.T) {
 		viper.Set("CLUSTERFORGE_RELEASE", "none")

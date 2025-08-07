@@ -112,8 +112,6 @@ func validateToken(token, paramName string) error {
 	switch paramName {
 	case "JOIN_TOKEN":
 		return validateJoinToken(token)
-	case "ONEPASS_CONNECT_TOKEN":
-		return validateOnePasswordToken(token)
 	default:
 		return fmt.Errorf("unknown token type: %s", paramName)
 	}
@@ -125,12 +123,12 @@ func validateJoinToken(token string) error {
 	// - Base64-encoded or hex strings
 	// - Usually 64+ characters long
 	// - Contain alphanumeric characters, +, /, =
-	
+
 	// Empty tokens are handled by validateToken function
 	if token == "" {
 		return nil
 	}
-	
+
 	if len(token) < 32 {
 		return fmt.Errorf("JOIN_TOKEN is too short (minimum 32 characters), got %d characters", len(token))
 	}
@@ -143,51 +141,6 @@ func validateJoinToken(token string) error {
 	validTokenPattern := regexp.MustCompile(`^[a-zA-Z0-9+/=_.:-]+$`)
 	if !validTokenPattern.MatchString(token) {
 		return fmt.Errorf("JOIN_TOKEN contains invalid characters (only alphanumeric, +, /, =, _, ., :, - allowed)")
-	}
-
-	return nil
-}
-
-// validateOnePasswordToken validates 1Password Connect token format
-func validateOnePasswordToken(token string) error {
-	// 1Password Connect tokens are typically:
-	// - JWT format (header.payload.signature) or
-	// - Base64-encoded strings
-	// - Usually quite long (100+ characters)
-	
-	// Empty tokens are handled by validateToken function
-	if token == "" {
-		return nil
-	}
-	
-	if len(token) < 50 {
-		return fmt.Errorf("ONEPASS_CONNECT_TOKEN is too short (minimum 50 characters), got %d characters", len(token))
-	}
-
-	if len(token) > 2048 {
-		return fmt.Errorf("ONEPASS_CONNECT_TOKEN is too long (maximum 2048 characters), got %d characters", len(token))
-	}
-
-	// Check if it's a JWT format (three parts separated by dots)
-	parts := strings.Split(token, ".")
-	if len(parts) == 3 {
-		// JWT format validation
-		for i, part := range parts {
-			if part == "" {
-				return fmt.Errorf("ONEPASS_CONNECT_TOKEN JWT format invalid: part %d is empty", i+1)
-			}
-			// Each part should be base64-like
-			jwtPartPattern := regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
-			if !jwtPartPattern.MatchString(part) {
-				return fmt.Errorf("ONEPASS_CONNECT_TOKEN JWT part %d contains invalid characters", i+1)
-			}
-		}
-	} else {
-		// Regular token format validation
-		validTokenPattern := regexp.MustCompile(`^[a-zA-Z0-9+/=_.-]+$`)
-		if !validTokenPattern.MatchString(token) {
-			return fmt.Errorf("ONEPASS_CONNECT_TOKEN contains invalid characters (only alphanumeric, +, /, =, _, ., - allowed)")
-		}
 	}
 
 	return nil

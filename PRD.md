@@ -102,7 +102,6 @@ The system executes a sequential pipeline of installation steps:
 - `SERVER_IP`/`JOIN_TOKEN`: Required for additional node joining
 - `SKIP_DISK_CHECK`: Bypasses disk-related operations
 - `LONGHORN_DISKS`: Manual disk specification
-- `ONEPASS_CONNECT_TOKEN`: 1Password integration
 - `CLUSTERFORGE_RELEASE`: ClusterForge version specification
 - `DISABLED_STEPS`/`ENABLED_STEPS`: Step execution control
 - `SELECTED_DISKS`: Pre-selected disk devices (also skips NVME drive checks)
