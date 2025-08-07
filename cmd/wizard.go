@@ -76,7 +76,7 @@ func validateStepsList(input string) error {
 		"MountSelectedDrivesStep", "GenerateLonghornDiskStringStep",
 		"SetupMetallbStep", "SetupLonghornStep", "CreateMetalLBConfigStep",
 		"PrepareRKE2Step", "HasSufficientRancherPartitionStep",
-		"NVMEDrivesAvailableStep", "SetupOnePasswordSecretStep",
+		"NVMEDrivesAvailableStep",
 		"SetupClusterForgeStep", "UpdateUdevRulesStep", "CleanLonghornMountsStep",
 		"UninstallRKE2Step", "SetupKubeConfig", "CreateBloomConfigMapStep",
 		"CreateDomainConfigStep", "FinalOutput",
@@ -293,7 +293,7 @@ The wizard will ask about:
 - Node type (first node vs additional node)
 - GPU availability and ROCm setup
 - Storage configuration
-- Optional integrations (1Password, ClusterForge)
+- Optional integrations (ClusterForge)
 - Advanced options (OIDC, custom steps)
 `,
 	Run: func(cmd *cobra.Command, args []string) {
