@@ -129,39 +129,44 @@ var SetupAndCheckRocmStep = Step{
 	Id:          "SetupAndCheckRocmStep",
 	Name:        "Setup and Check ROCm",
 	Description: "Verify, setup, and check ROCm devices",
+	Skip: func() bool {
+		if !viper.GetBool("GPU_NODE") {
+			LogMessage(Info, "Skipping ROCm setup for non-GPU node")
+			return true
+		}
+		return false
+	},
 	Action: func() StepResult {
-		if viper.GetBool("GPU_NODE") {
-			if !CheckAndInstallROCM() {
-				return StepResult{
-					Error: fmt.Errorf("setup of ROCm failed"),
-				}
+		if !CheckAndInstallROCM() {
+			return StepResult{
+				Error: fmt.Errorf("setup of ROCm failed"),
 			}
-			cmd := exec.Command("sh", "-c", `rocm-smi -i --json | jq -r '.[] | .["Device Name"]' | sort | uniq -c`)
-			output, err := cmd.CombinedOutput()
-			if err != nil {
-				LogMessage(Error, "Failed to execute rocm-smi: "+err.Error())
-				return StepResult{
-					Error: fmt.Errorf("failed to execute rocm-smi: %w", err),
-				}
+		}
+		cmd := exec.Command("sh", "-c", `rocm-smi -i --json | jq -r '.[] | .["Device Name"]' | sort | uniq -c`)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			LogMessage(Error, "Failed to execute rocm-smi: "+err.Error())
+			return StepResult{
+				Error: fmt.Errorf("failed to execute rocm-smi: %w", err),
 			}
-			// Check if the first characters are an integer
-			lines := strings.Split(string(output), "\n")
-			for _, line := range lines {
-				if len(line) > 0 {
-					parts := strings.Fields(line)
-					if len(parts) > 0 {
-						if _, err := strconv.Atoi(parts[0]); err != nil {
-							LogMessage(Error, "rocm-smi did not return any GPUs: "+string(output))
-							return StepResult{
-								Error: fmt.Errorf("rocm-smi did not return any GPUs: %s", string(output)),
-							}
+		}
+		// Check if the first characters are an integer
+		lines := strings.Split(string(output), "\n")
+		for _, line := range lines {
+			if len(line) > 0 {
+				parts := strings.Fields(line)
+				if len(parts) > 0 {
+					if _, err := strconv.Atoi(parts[0]); err != nil {
+						LogMessage(Error, "rocm-smi did not return any GPUs: "+string(output))
+						return StepResult{
+							Error: fmt.Errorf("rocm-smi did not return any GPUs: %s", string(output)),
 						}
 					}
 				}
 			}
-			// Log the output of rocm-smi
-			LogMessage(Info, "ROCm Devices:\n"+string(output))
 		}
+		// Log the output of rocm-smi
+		LogMessage(Info, "ROCm Devices:\n"+string(output))
 		return StepResult{Error: nil}
 	},
 }
@@ -298,6 +303,17 @@ var MountSelectedDrivesStep = Step{
 	Id:          "MountSelectedDrivesStep",
 	Name:        "Mount Selected Disks",
 	Description: "Mount the selected physical disks",
+	Skip: func() bool {
+		if viper.IsSet("LONGHORN_DISKS") && viper.GetString("LONGHORN_DISKS") != "" {
+			LogMessage(Info, "Skipping drive mounting as LONGHORN_DISKS is set.")
+			return true
+		}
+		if viper.GetBool("SKIP_DISK_CHECK") {
+			LogMessage(Info, "Skipping drive mounting as SKIP_DISK_CHECK is set.")
+			return true
+		}
+		return false
+	},
 	Action: func() StepResult {
 		selectedDisks := viper.GetStringSlice("selected_disks")
 		if len(selectedDisks) == 0 {
@@ -326,6 +342,13 @@ var GenerateLonghornDiskStringStep = Step{
 	Id:          "GenerateLonghornDiskStringStep",
 	Name:        "Generate Longhorn Disk String",
 	Description: "Generate Longhorn disk configuration string for NVMe drives",
+	Skip: func() bool {
+		if viper.GetBool("SKIP_DISK_CHECK") {
+			LogMessage(Info, "Skipping GenerateLonghornDiskString as SKIP_DISK_CHECK is set.")
+			return true
+		}
+		return false
+	},
 	Action: func() StepResult {
 		err := GenerateLonghornDiskString()
 		if err != nil {
@@ -339,6 +362,13 @@ var SetupMetallbStep = Step{
 	Id:          "SetupMetallbStep",
 	Name:        "Setup MetalLB manifests",
 	Description: "Copy MetalLB YAML files to the RKE2 manifests directory",
+	Skip: func() bool {
+		if viper.GetBool("FIRST_NODE") == false {
+			LogMessage(Info, "Skipping GenerateLonghornDiskString as SKIP_DISK_CHECK is set.")
+			return true
+		}
+		return false
+	},
 	Action: func() StepResult {
 		if viper.GetBool("FIRST_NODE") {
 			err := setupManifests("metallb")
@@ -356,6 +386,13 @@ var SetupLonghornStep = Step{
 	Id:          "SetupLonghornStep",
 	Name:        "Setup Longhorn manifests",
 	Description: "Copy Longhorn YAML files to the RKE2 manifests directory",
+	Skip: func() bool {
+		if viper.GetBool("SKIP_DISK_CHECK") {
+			LogMessage(Info, "Skipping GenerateLonghornDiskString as SKIP_DISK_CHECK is set.")
+			return true
+		}
+		return false
+	},
 	Action: func() StepResult {
 		if viper.GetBool("FIRST_NODE") {
 			err := setupManifests("longhorn")
@@ -373,14 +410,17 @@ var CreateMetalLBConfigStep = Step{
 	Id:          "CreateMetalLBConfigStep",
 	Name:        "Setup AddressPool for MetalLB",
 	Description: "Create IPAddressPool and L2Advertisement resources for MetalLB",
+	Skip: func() bool {
+		if !viper.GetBool("FIRST_NODE") {
+			LogMessage(Info, "Skipping for additional nodes.")
+			return true
+		}
+		return false
+	},
 	Action: func() StepResult {
-		if viper.GetBool("FIRST_NODE") {
-			err := CreateMetalLBConfig()
-			if err != nil {
-				return StepResult{Error: err}
-			}
-		} else {
-			return StepResult{Error: nil}
+		err := CreateMetalLBConfig()
+		if err != nil {
+			return StepResult{Error: err}
 		}
 		return StepResult{Error: nil}
 	},
@@ -403,6 +443,13 @@ var HasSufficientRancherPartitionStep = Step{
 	Id:          "HasSufficientRancherPartitionStep",
 	Name:        "Check /var/lib/rancher Partition Size",
 	Description: "Check if the /var/lib/rancher partition size is sufficient",
+	Skip: func() bool {
+		if !viper.GetBool("GPU_NODE") {
+			LogMessage(Info, "Skipping /var/lib/rancher partition check for CPU node.")
+			return true
+		}
+		return false
+	},
 	Action: func() StepResult {
 
 		if HasSufficientRancherPartition() {
@@ -416,12 +463,23 @@ var NVMEDrivesAvailableStep = Step{
 	Id:          "NVMEDrivesAvailableStep",
 	Name:        "Check NVMe Drives",
 	Description: "Check if NVMe drives are available",
-	Action: func() StepResult {
+	Skip: func() bool {
 		if !viper.GetBool("GPU_NODE") {
 			LogMessage(Info, "Skipped for non-GPU node")
-			return StepResult{Error: nil}
+			return true
+		}
+		if viper.GetBool("SKIP_DISK_CHECK") {
+			LogMessage(Info, "Skipping NVME drive check as SKIP_DISK_CHECK is set.")
+			return true
+		}
+		if viper.GetString("SELECTED_DISKS") != "" {
+			LogMessage(Info, "Skipping NVME drive check as SELECTED_DISKS is set.")
+			return true
 		}
 
+		return false
+	},
+	Action: func() StepResult {
 		if NVMEDrivesAvailable() {
 			return StepResult{Error: nil}
 		}
@@ -433,10 +491,14 @@ var SetupKubeConfig = Step{
 	Id:          "SetupKubeConfig",
 	Name:        "Setup KubeConfig",
 	Description: "Setup and configure KubeConfig, and additional cluster setup command",
-	Action: func() StepResult {
+	Skip: func() bool {
 		if !viper.GetBool("FIRST_NODE") {
-			return StepResult{Error: nil}
+			LogMessage(Info, "Skipping SetupKubeConfig for additional nodes.")
+			return true
 		}
+		return false
+	},
+	Action: func() StepResult {
 		cmd := exec.Command("sh", "-c", "ip route get 1.1.1.1 | awk '{print $7; exit}'")
 		output, err := cmd.Output()
 		if err != nil {
@@ -554,12 +616,14 @@ var CreateBloomConfigMapStep = Step{
 	Id:          "CreateBloomConfigMapStep",
 	Name:        "Create Bloom ConfigMap",
 	Description: "Create a ConfigMap with bloom configuration in the default namespace",
-	Action: func() StepResult {
+	Skip: func() bool {
 		if !viper.GetBool("FIRST_NODE") {
 			LogMessage(Info, "Skipped for additional node")
-			return StepResult{Error: nil}
+			return true
 		}
-
+		return false
+	},
+	Action: func() StepResult {
 		// Wait for the cluster to be ready
 		LogMessage(Info, "Waiting for cluster to be ready...")
 		time.Sleep(10 * time.Second)
@@ -645,12 +709,14 @@ var CreateDomainConfigStep = Step{
 	Id:          "CreateDomainConfigStep",
 	Name:        "Create Domain Configuration",
 	Description: "Create domain ConfigMap and TLS secret for ingress configuration",
-	Action: func() StepResult {
+	Skip: func() bool {
 		if !viper.GetBool("FIRST_NODE") {
 			LogMessage(Info, "Skipped for additional node")
-			return StepResult{Error: nil}
+			return true
 		}
-
+		return false
+	},
+	Action: func() StepResult {
 		domain := viper.GetString("DOMAIN")
 
 		// Wait for the cluster to be ready
@@ -702,8 +768,8 @@ data:
 
 			// Handle certificate generation or use existing
 			if certOption == "generate" {
-				LogMessage(Info, "Generating self-signed certificate for domain: " + domain)
-				
+				LogMessage(Info, "Generating self-signed certificate for domain: "+domain)
+
 				// Create temporary directory for certificate files
 				tempDir, err := os.MkdirTemp("", "bloom-tls-*")
 				if err != nil {
@@ -711,17 +777,17 @@ data:
 					return StepResult{Error: fmt.Errorf("failed to create temp directory: %w", err)}
 				}
 				defer os.RemoveAll(tempDir)
-				
+
 				tlsCertPath = filepath.Join(tempDir, "tls.crt")
 				tlsKeyPath = filepath.Join(tempDir, "tls.key")
-				
+
 				// Generate self-signed certificate using openssl
 				cmd := exec.Command("openssl", "req", "-x509", "-nodes", "-days", "365", "-newkey", "rsa:2048",
 					"-keyout", tlsKeyPath,
 					"-out", tlsCertPath,
 					"-subj", fmt.Sprintf("/CN=%s", domain),
 					"-addext", fmt.Sprintf("subjectAltName=DNS:%s,DNS:*.%s", domain, domain))
-				
+
 				output, err := cmd.CombinedOutput()
 				if err != nil {
 					LogMessage(Error, fmt.Sprintf("Failed to generate self-signed certificate: %v, output: %s", err, string(output)))
@@ -824,14 +890,17 @@ var SetupClusterForgeStep = Step{
 	Id:          "SetupClusterForgeStep",
 	Name:        "Setup Cluster Forge",
 	Description: "Setup and configure Cluster Forge",
+	Skip: func() bool {
+		if !viper.GetBool("FIRST_NODE") {
+			LogMessage(Info, "Skipping for additional nodes.")
+			return true
+		}
+		return false
+	},
 	Action: func() StepResult {
-		if viper.GetBool("FIRST_NODE") {
-			err := SetupClusterForge()
-			if err != nil {
-				return StepResult{Error: fmt.Errorf("failed to setup Cluster Forge: %v", err)}
-			}
-		} else {
-			LogMessage(Info, "Skipped for additional node")
+		err := SetupClusterForge()
+		if err != nil {
+			return StepResult{Error: fmt.Errorf("failed to setup Cluster Forge: %v", err)}
 		}
 		return StepResult{Error: nil}
 	},
@@ -886,12 +955,14 @@ var UpdateUdevRulesStep = Step{
 	Id:          "UpdateUdevRulesStep",
 	Name:        "Update Udev Rules",
 	Description: "Update AMD device-specific udev rules",
-	Action: func() StepResult {
+	Skip: func() bool {
 		if !viper.GetBool("GPU_NODE") {
 			LogMessage(Info, "Skipped for non-GPU node")
-			return StepResult{Error: nil}
+			return true
 		}
-
+		return false
+	},
+	Action: func() StepResult {
 		var fileName = "/etc/udev/rules.d/70-amdgpu.rules"
 
 		var fileContent = strings.Join([]string{

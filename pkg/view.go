@@ -37,6 +37,7 @@ type Step struct {
 	Name        string
 	Description string
 	Action      func() StepResult
+	Skip        func() bool
 }
 
 var (
@@ -172,7 +173,14 @@ func RunStepsWithUI(steps []Step) error {
 			logWriter("[blue]Starting step: %s[white]", step.Name)
 
 			startTime := time.Now()
-			result := step.Action()
+
+			result := StepResult{Error: nil, Message: ""}
+			if step.Skip != nil && step.Skip() {
+				logWriter("Step %s is skipped", step.Name)
+			} else {
+				result = step.Action()
+			}
+
 			duration := time.Since(startTime)
 
 			if result.Error != nil {
