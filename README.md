@@ -7,7 +7,6 @@
 - ROCm setup and configuration for AMD GPU nodes
 - Disk management and Longhorn storage integration
 - Multi-node cluster support with easy node joining
-- 1Password integration for secrets management
 - ClusterForge integration
 
 ## Prerequisites
@@ -124,8 +123,7 @@ Cluster-Bloom performs the following steps during installation:
 5. Prepares and installs RKE2
 6. Configures storage with Longhorn
 7. Sets up Kubernetes tools and configuration
-8. Configures integration with 1Password (if token provided)
-9. Installs ClusterForge
+8. Installs ClusterForge
 
 ## Roadmap
 
@@ -205,7 +203,6 @@ Cluster-Bloom performs the following steps during installation:
 
 - go (1.24.0)
 - cobra-cli
-- 1password-cli
 - jq, nfs-common, open-iscsi (installed during setup)
 - kubectl and k9s (installed during setup)
 
