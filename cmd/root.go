@@ -74,7 +74,7 @@ Usage:
 		}
 
 		log.Debug("Starting package installation")
-		rootSteps()
+		pkg.RunStepsWithUI(rootSteps())
 	},
 }
 
@@ -569,7 +569,7 @@ func initConfig() {
 	if viper.GetBool("FIRST_NODE") {
 		if !viper.GetBool("USE_CERT_MANAGER") {
 			certOption := viper.GetString("CERT_OPTION")
-			
+
 			// Only validate TLS_CERT and TLS_KEY if using existing certificates
 			if certOption == "existing" {
 				tlsCert := viper.GetString("TLS_CERT")
@@ -668,7 +668,7 @@ func logConfigValues() {
 	}
 }
 
-func rootSteps() {
+func rootSteps() []pkg.Step {
 	preK8Ssteps := []pkg.Step{
 		pkg.CheckUbuntuStep,
 		pkg.HasSufficientRancherPartitionStep,
@@ -703,8 +703,8 @@ func rootSteps() {
 	}
 
 	postK8Ssteps = append(postK8Ssteps, pkg.FinalOutput)
-
-	pkg.RunStepsWithUI(append(append(preK8Ssteps, k8Ssteps...), postK8Ssteps...))
+	combinedSteps := append(append(preK8Ssteps, k8Ssteps...), postK8Ssteps...)
+	return combinedSteps
 }
 
 func displayHelp() {
