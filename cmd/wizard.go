@@ -62,6 +62,29 @@ func validateDiskList(input string) error {
 	return nil
 }
 
+func validateLonghornMountpoints(input string) error {
+	if input == "" {
+		return nil // Mountpoint lists are optional
+	}
+
+	mountpoints := strings.Split(input, ",")
+	for _, mount := range mountpoints {
+		mount = strings.TrimSpace(mount)
+
+		if strings.Contains(mount, "/mnt/") {
+			return fmt.Errorf("mountpoint '%s' should not include '/mnt/' path", mount)
+		}
+
+		// Check for valid mountpoint name (alphanumeric with optional hyphens and underscores)
+		matched, _ := regexp.MatchString(`^[a-zA-Z0-9][-a-zA-Z0-9_]*$`, mount)
+		if !matched {
+			return fmt.Errorf("invalid mountpoint format: '%s'. Mountpoint names should start with an alphanumeric character and contain only alphanumeric characters, hyphens, or underscores", mount)
+		}
+	}
+
+	return nil
+}
+
 func validateStepsList(input string) error {
 	if input == "" {
 		return nil // Step lists are optional
@@ -78,7 +101,7 @@ func validateStepsList(input string) error {
 		"PrepareRKE2Step", "HasSufficientRancherPartitionStep",
 		"NVMEDrivesAvailableStep", "SetupOnePasswordSecretStep",
 		"SetupClusterForgeStep", "UpdateUdevRulesStep", "CleanLonghornMountsStep",
-		"UninstallRKE2Step", "SetupKubeConfig", "CreateBloomConfigMapStep", 
+		"UninstallRKE2Step", "SetupKubeConfig", "CreateBloomConfigMapStep",
 		"CreateDomainConfigStep", "FinalOutput",
 	}
 
@@ -215,17 +238,10 @@ var configOptions = []ConfigOption{
 	},
 	{
 		Key:         "LONGHORN_DISKS",
-		Description: "Comma-separated list of disk paths for Longhorn storage. Leave empty for automatic configuration.",
+		Description: "Comma-separated list of disk paths for Longhorn storage. Leave empty for automatic configuration. Example: \"disk0,disk1\" if mountpoints are /mnt/disk0,/mnt/disk1",
 		Default:     "",
 		Required:    false,
-		Validator:   validateDiskList,
-	},
-	{
-		Key:         "ONEPASS_CONNECT_TOKEN",
-		Description: "1Password Connect integration token. Leave empty to skip 1Password setup.",
-		Default:     "",
-		Required:    false,
-		Validator:   nil, // No specific validation for tokens
+		Validator:   validateLonghornMountpoints,
 	},
 	{
 		Key:         "CLUSTERFORGE_RELEASE",
@@ -344,11 +360,11 @@ func runWizard() {
 			fmt.Println("Please run the wizard again and choose 'existing' or 'generate' for certificate option.")
 			os.Exit(1)
 		}
-		
+
 		if certOption == "existing" {
 			tlsCert, hasCert := config["TLS_CERT"]
 			tlsKey, hasKey := config["TLS_KEY"]
-			
+
 			if !hasCert || tlsCert == nil || tlsCert == "" || !hasKey || tlsKey == nil || tlsKey == "" {
 				fmt.Println("\n❌ Error: When CERT_OPTION is 'existing', both TLS_CERT and TLS_KEY must be provided")
 				fmt.Println("Please run the wizard again and provide TLS certificate files.")
@@ -395,7 +411,7 @@ func runWizard() {
 	if input == "y" || input == "yes" {
 		fmt.Println("\nRunning bloom with the generated configuration...")
 		fmt.Printf("Command: sudo ./bloom --config %s\n\n", filename)
-		
+
 		// Execute bloom with the generated config
 		err := runBloomWithConfig(filename)
 		if err != nil {
