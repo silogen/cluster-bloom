@@ -3,7 +3,7 @@ kind: CronJob
 metadata:
   name: copy-label-to-annotation
 spec:
-  schedule: "*/5 * * * *"
+  schedule: "* * * * *"
   successfulJobsHistoryLimit: 0
   failedJobsHistoryLimit: 1
   concurrencyPolicy: Replace
@@ -25,6 +25,8 @@ spec:
                 - -c
                 - |
                   for node in $(kubectl get nodes -o name); do
+                    kubectl label nodes $node feature.node.kubernetes.io/amd-gpu=true
+                    kubectl label nodes $node amd.com/gpu.product-name=AMD_Instinct_MI300X_OAM
                     longhorn_label=$(kubectl get $node -o jsonpath='{.metadata.labels.silogen\.ai/longhorndisks}')
                     longhorn_annotation=$(kubectl get $node -o jsonpath='{.metadata.annotations.node\.longhorn\.io/default-disks-config}')
                     if [ -n "$longhorn_label" ] && [ -z "$longhorn_annotation" ]; then
