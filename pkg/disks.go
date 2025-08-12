@@ -95,8 +95,16 @@ func CleanDisks() error {
 	return nil
 }
 
-var longhornConfigTemplate = `
+var longhornConfigTemplateWithoutHorribleLabelHack = `
 node-label:
+  - node.longhorn.io/create-default-disk=config
+  - node.longhorn.io/instance-manager=true
+  - silogen.ai/longhorndisks=%s
+`
+
+var longhornConfigTemplateWithHorribleLabelHack = `
+node-label:
+  - amd.com/gpu.product-name=AMD_Instinct_MI300X_OAM
   - node.longhorn.io/create-default-disk=config
   - node.longhorn.io/instance-manager=true
   - silogen.ai/longhorndisks=%s
@@ -110,6 +118,13 @@ func ParseLonghornDiskConfig() string {
 
 func GenerateLonghornDiskString() error {
 	rke2ConfigPath := "/etc/rancher/rke2/config.yaml"
+	longhornConfigTemplate := longhornConfigTemplateWithoutHorribleLabelHack
+	if viper.GetBool("GPU_NODE") {
+		LogMessage(Info, "GPU_NODE is set, using longhornConfigTemplateWithHorribleLabelHack. THIS IS IS A HACK!")
+		longhornConfigTemplate = longhornConfigTemplateWithHorribleLabelHack
+	}
+	LogMessage(Info, longhornConfigTemplate)
+
 	if viper.IsSet("LONGHORN_DISKS") && viper.GetString("LONGHORN_DISKS") != "" {
 		LogMessage(Info, "Using LONGHORN_DISKS for Longhorn configuration.")
 		diskList := ParseLonghornDiskConfig()
