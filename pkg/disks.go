@@ -104,6 +104,7 @@ node-label:
 
 var longhornConfigTemplateWithHorribleLabelHack = `
 node-label:
+  - feature.node.kubernetes.io/amd-gpu=true
   - amd.com/gpu.product-name=AMD_Instinct_MI300X_OAM
   - node.longhorn.io/create-default-disk=config
   - node.longhorn.io/instance-manager=true
