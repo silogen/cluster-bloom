@@ -28,7 +28,7 @@ func TestCleanDisks(t *testing.T) {
 	if os.Getuid() != 0 {
 		t.Skip("Skipping test that requires root privileges")
 	}
-	
+
 	err := CleanDisks()
 	if err != nil {
 		t.Errorf("Expected no error, got: %v", err)
@@ -62,11 +62,11 @@ func TestParseLonghornDiskConfig(t *testing.T) {
 	}
 }
 
-func TestGenerateLonghornDiskString(t *testing.T) {
+func TestGenerateNodeLabels(t *testing.T) {
 	t.Run("with LONGHORN_DISKS set", func(t *testing.T) {
 		viper.Set("LONGHORN_DISKS", "/dev/sda")
-		
-		err := GenerateLonghornDiskString()
+
+		err := GenerateNodeLabels()
 		// Expected to fail due to permission/path issues in test
 		if err == nil {
 			t.Log("Function succeeded unexpectedly")
@@ -76,7 +76,7 @@ func TestGenerateLonghornDiskString(t *testing.T) {
 
 	t.Run("with SKIP_DISK_CHECK", func(t *testing.T) {
 		viper.Set("SKIP_DISK_CHECK", true)
-		err := GenerateLonghornDiskString()
+		err := GenerateNodeLabels()
 		if err != nil {
 			t.Errorf("Expected no error with SKIP_DISK_CHECK, got: %v", err)
 		}
@@ -85,7 +85,7 @@ func TestGenerateLonghornDiskString(t *testing.T) {
 
 	t.Run("with no selected disks", func(t *testing.T) {
 		viper.Set("selected_disks", []string{})
-		err := GenerateLonghornDiskString()
+		err := GenerateNodeLabels()
 		if err != nil {
 			t.Errorf("Expected no error with empty disk list, got: %v", err)
 		}

@@ -95,17 +95,11 @@ func CleanDisks() error {
 	return nil
 }
 
-var longhornConfigTemplateWithoutHorribleLabelHack = `
+var nodeLabelTemplate = `
 node-label:
-  - node.longhorn.io/create-default-disk=config
-  - node.longhorn.io/instance-manager=true
-  - silogen.ai/longhorndisks=%s
+  - cluster-bloom/gpu-node=%t
 `
-
-var longhornConfigTemplateWithHorribleLabelHack = `
-node-label:
-  - feature.node.kubernetes.io/amd-gpu=true
-  - amd.com/gpu.product-name=AMD_Instinct_MI300X_OAM
+var longhornDiskTemplate = `
   - node.longhorn.io/create-default-disk=config
   - node.longhorn.io/instance-manager=true
   - silogen.ai/longhorndisks=%s
@@ -117,19 +111,18 @@ func ParseLonghornDiskConfig() string {
 	return diskList
 }
 
-func GenerateLonghornDiskString() error {
+func GenerateNodeLabels() error {
 	rke2ConfigPath := "/etc/rancher/rke2/config.yaml"
-	longhornConfigTemplate := longhornConfigTemplateWithoutHorribleLabelHack
-	if viper.GetBool("GPU_NODE") {
-		LogMessage(Info, "GPU_NODE is set, using longhornConfigTemplateWithHorribleLabelHack. THIS IS IS A HACK!")
-		longhornConfigTemplate = longhornConfigTemplateWithHorribleLabelHack
+	// Fill the template with the GPU_NODE setting, leave longhor for later
+	nodeLabels := fmt.Sprintf(nodeLabelTemplate, viper.GetBool("GPU_NODE"))
+	if err := appendToFile(rke2ConfigPath, nodeLabels); err != nil {
+		return fmt.Errorf("failed to append Longhorn configuration to %s: %w", rke2ConfigPath, err)
 	}
-	LogMessage(Info, longhornConfigTemplate)
 
 	if viper.IsSet("LONGHORN_DISKS") && viper.GetString("LONGHORN_DISKS") != "" {
 		LogMessage(Info, "Using LONGHORN_DISKS for Longhorn configuration.")
 		diskList := ParseLonghornDiskConfig()
-		configContent := fmt.Sprintf(longhornConfigTemplate, diskList)
+		configContent := fmt.Sprintf(longhornDiskTemplate, diskList)
 		if err := appendToFile(rke2ConfigPath, configContent); err != nil {
 			return fmt.Errorf("failed to append Longhorn configuration to %s: %w", rke2ConfigPath, err)
 		}
@@ -176,7 +169,7 @@ func GenerateLonghornDiskString() error {
 	if len(diskNames) > 0 {
 		diskList := strings.Join(diskNames, "xxx")
 
-		configContent := fmt.Sprintf(longhornConfigTemplate, diskList)
+		configContent := fmt.Sprintf(longhornDiskTemplate, diskList)
 
 		if err := appendToFile(rke2ConfigPath, configContent); err != nil {
 			return fmt.Errorf("failed to append Longhorn configuration to %s: %w", rke2ConfigPath, err)
