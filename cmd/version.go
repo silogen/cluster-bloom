@@ -22,12 +22,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var Version = "dev-build"
+
 var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Version info",
 	Long:  `Version number`,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("v0.0.1")
+		fmt.Println(Version)
 	},
 }
 
