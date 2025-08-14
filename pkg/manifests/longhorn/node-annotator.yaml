@@ -1,9 +1,9 @@
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: copy-label-to-annotation
+  name: label-and-annotate-nodes
 spec:
-  schedule: "* * * * *"
+  schedule: "*/5 * * * *"
   successfulJobsHistoryLimit: 0
   failedJobsHistoryLimit: 1
   concurrencyPolicy: Replace
@@ -25,8 +25,12 @@ spec:
                 - -c
                 - |
                   for node in $(kubectl get nodes -o name); do
-                    kubectl label nodes $node feature.node.kubernetes.io/amd-gpu=true
-                    kubectl label nodes $node amd.com/gpu.product-name=AMD_Instinct_MI300X_OAM
+                    gpu_node=$(kubectl get $node -o jsonpath='{.metadata.labels.cluster-bloom/gpu-node}')
+                    if [ "$gpu_node" = "true" ]; then
+                      echo "Labeling $node as GPU node"
+                      kubectl label $node feature.node.kubernetes.io/amd-gpu=true
+                      kubectl label $node amd.com/gpu.product-name=AMD_Instinct_MI300X_OAM
+                    fi                      
                     longhorn_label=$(kubectl get $node -o jsonpath='{.metadata.labels.silogen\.ai/longhorndisks}')
                     longhorn_annotation=$(kubectl get $node -o jsonpath='{.metadata.annotations.node\.longhorn\.io/default-disks-config}')
                     if [ -n "$longhorn_label" ] && [ -z "$longhorn_annotation" ]; then

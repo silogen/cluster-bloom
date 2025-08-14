@@ -14,7 +14,7 @@ jobs:
         uses: jetify-com/devbox-install-action@v0.12.0
 
       - name: Build with devbox
-        run: devbox run build
+        run: devbox run build -ldflags="-X 'github.com/silogen/cluster-bloom/cmd.Version=$(GITHUB_REF_NAME)'"
       
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

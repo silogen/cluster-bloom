@@ -73,7 +73,7 @@ func validateStepsList(input string) error {
 		"CheckPortsBeforeOpeningStep", "InstallK8SToolsStep", "InotifyInstancesStep",
 		"SetupAndCheckRocmStep", "SetupRKE2Step", "CleanDisksStep",
 		"SetupMultipathStep", "UpdateModprobeStep", "SelectDrivesStep",
-		"MountSelectedDrivesStep", "GenerateLonghornDiskStringStep",
+		"MountSelectedDrivesStep", "GenerateNodeLabelsStep",
 		"SetupMetallbStep", "SetupLonghornStep", "CreateMetalLBConfigStep",
 		"PrepareRKE2Step", "HasSufficientRancherPartitionStep",
 		"NVMEDrivesAvailableStep",

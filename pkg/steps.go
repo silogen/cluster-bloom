@@ -338,19 +338,12 @@ var MountSelectedDrivesStep = Step{
 	},
 }
 
-var GenerateLonghornDiskStringStep = Step{
-	Id:          "GenerateLonghornDiskStringStep",
-	Name:        "Generate Longhorn Disk String",
-	Description: "Generate Longhorn disk configuration string for NVMe drives",
-	Skip: func() bool {
-		if viper.GetBool("SKIP_DISK_CHECK") {
-			LogMessage(Info, "Skipping GenerateLonghornDiskString as SKIP_DISK_CHECK is set.")
-			return true
-		}
-		return false
-	},
+var GenerateNodeLabelsStep = Step{
+	Id:          "GenerateNodeLabelsStep",
+	Name:        "Generate node Labels",
+	Description: "Generate labels for the node based on its configuration",
 	Action: func() StepResult {
-		err := GenerateLonghornDiskString()
+		err := GenerateNodeLabels()
 		if err != nil {
 			return StepResult{Error: err}
 		}
