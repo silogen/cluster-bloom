@@ -2,6 +2,7 @@ name: Build Prerelease
 
 on:
   workflow_dispatch:
+  pull_request:
 jobs:
   buildAndRelease:
     runs-on: ubuntu-latest
@@ -14,7 +15,7 @@ jobs:
       - name: Build with devbox
         run: |
           devbox run build -ldflags="-X 'github.com/silogen/cluster-bloom/cmd.Version=pre-${GITHUB_REF_NAME}-${GITHUB_SHA}'"
-          mv dist/bloom dist/bloom-"${GITHUB_REF_NAME}-${GITHUB_RUN_NUMBER}-${GITHUB_SHA}"
+          cp dist/bloom dist/bloom-"${GITHUB_REF_NAME}-${GITHUB_RUN_NUMBER}-${GITHUB_SHA}"
       
       - name: Create Tag
         run: |
