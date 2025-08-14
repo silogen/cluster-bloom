@@ -14,18 +14,8 @@ jobs:
       - name: Build with devbox
         run: devbox run build -ldflags="-X 'github.com/silogen/cluster-bloom/cmd.Version=pre-${GITHUB_REF_NAME}-${GITHUB_SHA}'"
       
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+      - uses: actions/upload-artifact@v4
+        name: "Upload Node Modules - v4"
         with:
-          tag_name: ${{ github.ref_name }}
-          draft: true
-          prerelease: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload Release Assets
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/*
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: bloom-${{ github.ref_name }}-${{ github.build_number }}
+          path: dist/bloom
