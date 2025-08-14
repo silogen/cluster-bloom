@@ -1,9 +1,7 @@
-name: Release Cluster-Bloom
+name: Build Prerelease
 
 on:
-  release:
-    types: [created]
-
+  workflow_dispatch:
 jobs:
   buildAndRelease:
     runs-on: ubuntu-latest
@@ -14,12 +12,13 @@ jobs:
         uses: jetify-com/devbox-install-action@v0.12.0
 
       - name: Build with devbox
-        run: devbox run build -ldflags="-X 'github.com/silogen/cluster-bloom/cmd.Version=${GITHUB_REF_NAME}'"
+        run: devbox run build -ldflags="-X 'github.com/silogen/cluster-bloom/cmd.Version=pre-${GITHUB_REF_NAME}-${GITHUB_SHA}'"
       
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
+          prerelease: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
