@@ -12,14 +12,10 @@ jobs:
         uses: jetify-com/devbox-install-action@v0.12.0
 
       - name: Build with devbox
-        run: devbox run build -ldflags="-X 'github.com/silogen/cluster-bloom/cmd.Version=pre-${GITHUB_REF_NAME}-${GITHUB_SHA}'"
+        run: |
+          devbox run build -ldflags="-X 'github.com/silogen/cluster-bloom/cmd.Version=pre-${GITHUB_REF_NAME}-${GITHUB_SHA}'"
+          mv dist/bloom dist/bloom-"${GITHUB_REF_NAME}-${GITHUB_BUILD_NUMBER}-${GITHUB_SHA}"
       
-      - uses: actions/upload-artifact@v4
-        name: "Upload Node Modules - v4"
-        with:
-          name: bloom-${{ github.ref_name }}-${{ github.build_number }}
-          path: dist/bloom
-
       - name: Create Tag
         run: |
           git tag draft-${{ github.ref_name }}
@@ -28,7 +24,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}-${{ github.build_number }}
+          tag_name: draft-${{ github.ref_name }}
           draft: true
           prerelease: true
         env:
