@@ -17,7 +17,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}-${{ github.run_number }}
+          tag_name: ${{ github.ref_name }}
           draft: true
           prerelease: true
         env:
