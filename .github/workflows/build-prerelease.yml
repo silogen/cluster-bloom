@@ -19,14 +19,13 @@ jobs:
       
       - name: Create Tag
         run: |
-          git tag draft-${{ github.ref_name }}
-          git push origin draft-${{ github.ref_name }} || true # allow failure if tag already exists
+          git tag pr-${{ github.ref_name }}
+          git push origin pr-${{ github.ref_name }} || true # allow failure if tag already exists
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: draft-${{ github.ref_name }}
-          draft: true
+          tag_name: pr-${{ github.ref_name }}
           prerelease: true
           files: dist/*
         env:
