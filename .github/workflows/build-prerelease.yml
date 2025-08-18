@@ -14,18 +14,20 @@ jobs:
 
       - name: Build with devbox
         run: |
-          devbox run build -ldflags="-X 'github.com/silogen/cluster-bloom/cmd.Version=pre-${GITHUB_REF_NAME}-${GITHUB_SHA}'"
-          cp dist/bloom dist/bloom-"${GITHUB_REF_NAME}-${GITHUB_RUN_NUMBER}-${GITHUB_SHA}"
+          echo devbox run build -ldflags="-X 'github.com/silogen/cluster-bloom/cmd.Version=pre-${GITHUB_HEAD_REF}'"
+          echo cp dist/bloom dist/bloom-"${GITHUB_HEAD_REF}-${GITHUB_RUN_NUMBER}"
+          devbox run build -ldflags="-X 'github.com/silogen/cluster-bloom/cmd.Version=pre-${GITHUB_HEAD_REF}'"
+          cp dist/bloom dist/bloom-"${GITHUB_HEAD_REF}-${GITHUB_RUN_NUMBER}"
       
       - name: Create Tag
         run: |
-          git tag pr-${{ github.ref_name }}
-          git push origin pr-${{ github.ref_name }} || true # allow failure if tag already exists
+          git tag pr-${{ github.head_ref }}
+          git push origin pr-${{ github.head_ref }} || true # allow failure if tag already exists
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: pr-${{ github.ref_name }}
+          tag_name: pr-${{ github.head_ref }}
           prerelease: true
           files: dist/*
         env:
