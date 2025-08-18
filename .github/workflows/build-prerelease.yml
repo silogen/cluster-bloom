@@ -14,8 +14,10 @@ jobs:
 
       - name: Build with devbox
         run: |
-          devbox run build -ldflags="-X 'github.com/silogen/cluster-bloom/cmd.Version=pre-${GITHUB_REF_NAME}-${GITHUB_SHA}'"
-          cp dist/bloom dist/bloom-"${GITHUB_REF_NAME}-${GITHUB_RUN_NUMBER}-${GITHUB_SHA}"
+          echo devbox run build -ldflags="-X 'github.com/silogen/cluster-bloom/cmd.Version=pre-${GITHUB_BASE_REF}-${GITHUB_SHA}'"
+          echo cp dist/bloom dist/bloom-"${GITHUB_BASE_REF}-${GITHUB_RUN_NUMBER}-${GITHUB_SHA}"
+          devbox run build -ldflags="-X 'github.com/silogen/cluster-bloom/cmd.Version=pre-${GITHUB_BASE_REF}-${GITHUB_SHA}'"
+          cp dist/bloom dist/bloom-"${GITHUB_BASE_REF}-${GITHUB_RUN_NUMBER}-${GITHUB_SHA}"
       
       - name: Create Tag
         run: |
