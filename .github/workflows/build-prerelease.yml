@@ -14,6 +14,8 @@ jobs:
 
       - name: Build with devbox
         run: |
+          echo devbox run build -ldflags="-X 'github.com/silogen/cluster-bloom/cmd.Version=pre-${GITHUB_REF_NAME}-${GITHUB_SHA}'"
+          echo cp dist/bloom dist/bloom-"${GITHUB_REF_NAME}-${GITHUB_RUN_NUMBER}-${GITHUB_SHA}"
           devbox run build -ldflags="-X 'github.com/silogen/cluster-bloom/cmd.Version=pre-${GITHUB_REF_NAME}-${GITHUB_SHA}'"
           cp dist/bloom dist/bloom-"${GITHUB_REF_NAME}-${GITHUB_RUN_NUMBER}-${GITHUB_SHA}"
       
