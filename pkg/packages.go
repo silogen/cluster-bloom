@@ -71,6 +71,7 @@ func InstallDependentPackages() error {
 		"open-iscsi",
 		"jq",
 		"nfs-common",
+		"chrony",
 	}
 
 	for _, pkg := range packagesToInstall {
