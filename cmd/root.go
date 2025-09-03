@@ -144,6 +144,7 @@ var validStepIDs = []string{
 	"FinalOutput",
 	"UpdateUdevRulesStep",
 	"CleanLonghornMountsStep",
+    "CreateChronyConfigStep",
 	"UninstallRKE2Step",
 }
 
@@ -693,6 +694,7 @@ func rootSteps() []pkg.Step {
 		pkg.SetupRKE2Step,
 	}
 	postK8Ssteps := []pkg.Step{
+		pkg.CreateChronyConfigStep,
 		pkg.SetupLonghornStep,
 		pkg.SetupMetallbStep,
 		pkg.CreateMetalLBConfigStep,

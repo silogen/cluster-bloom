@@ -67,6 +67,24 @@ var InstallDependentPackagesStep = Step{
 	},
 }
 
+var CreateChronyConfigStep = Step{
+  Id:          "CreateChronyConfigStep",
+  Name:        "Create Chrony Config",
+  Description: "Create chrony config for first node and additional node cases",
+  Action: func() StepResult {
+    var err error
+    if viper.GetBool("FIRST_NODE") {
+      err = GenerateChronyConfFirst()
+    } else if viper.GetString("SERVER_IP") !="" {
+      err = GenerateChronyConfAdditional()
+    }
+		if err != nil {
+          return StepResult{Error: err}
+    }
+    return StepResult{Error: nil}
+  },
+}
+
 var OpenPortsStep = Step{
 	Id:          "OpenPortsStep",
 	Name:        "Open Ports",
