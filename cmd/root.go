@@ -144,7 +144,7 @@ var validStepIDs = []string{
 	"FinalOutput",
 	"UpdateUdevRulesStep",
 	"CleanLonghornMountsStep",
-  "CreateChronyConfigStep",
+    "CreateChronyConfigStep",
 	"UninstallRKE2Step",
 }
 
