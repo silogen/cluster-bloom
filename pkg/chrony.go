@@ -19,7 +19,6 @@ import (
     "fmt"
     "os"
     "os/exec"
-    "strings"
 
 		"github.com/spf13/viper"
 )
@@ -49,7 +48,7 @@ pool 0.pool.ntp.org iburst maxsources 2
 func GenerateChronyConfFirst() error {
 	  firstNode := viper.GetBool("FIRST_NODE")
 	  if !firstNode {
-			return ftm.Errorf("This is not FIRST_NODE") 
+			return fmt.Errorf("This is not FIRST_NODE")
 		}
     chronyConf := chronyTemplateFirst
 
