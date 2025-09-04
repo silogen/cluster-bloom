@@ -55,7 +55,7 @@ var CheckUbuntuStep = Step{
 var InstallDependentPackagesStep = Step{
 	Id:          "InstallDependentPackagesStep",
 	Name:        "Install Dependent Packages",
-	Description: "Ensure jq, nfs-common, and open-iscsi are installed",
+	Description: "Ensure jq, nfs-common, open-iscsi , and chrony are installed",
 	Action: func() StepResult {
 		err := InstallDependentPackages()
 		if err != nil {
