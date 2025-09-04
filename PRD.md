@@ -52,6 +52,21 @@ ClusterBloom automates the deployment of Kubernetes clusters with AMD GPU suppor
 - **Environment Variables**: Support for environment-based configuration
 - **CLI Flags**: Command-line parameter support
 - **Validation**: Configuration validation with clear error messages
+- **Interactive Wizard**: Step-by-step configuration file generation
+- **ConfigMap Creation**: Automatic Kubernetes ConfigMap from bloom configuration
+
+### 7. Node Validation and Testing
+- **Proof Command**: Pre-deployment validation of node readiness
+- **Connectivity Testing**: Verification of package repository access
+- **GPU Availability Check**: Validation of GPU hardware for GPU nodes
+- **Port Validation**: Firewall and network port verification
+- **Test Mode**: Safe testing of disk operations and UI components
+
+### 8. TLS Certificate Management
+- **Cert-Manager Integration**: Automatic TLS certificates via Let's Encrypt
+- **Manual Certificate Support**: Option to provide existing certificates
+- **Self-Signed Generation**: Automatic self-signed certificate creation
+- **Domain Configuration**: Ingress configuration with custom domains
 
 ## Technical Architecture
 
@@ -61,6 +76,9 @@ ClusterBloom automates the deployment of Kubernetes clusters with AMD GPU suppor
 - **Root Command** (`cmd/root.go`): Main application entry point with configuration management
 - **Demo Command** (`cmd/demo.go`): UI demonstration and testing functionality
 - **Version Command** (`cmd/version.go`): Version information display
+- **Wizard Command** (`cmd/wizard.go`): Interactive configuration wizard for generating bloom.yaml files
+- **Proof Command** (`cmd/proof.go`): Node readiness validation and prerequisite checking
+- **Test Command** (`cmd/test.go`): Testing functionality for UI components and disk operations
 
 #### Package Organization
 - **Installation Steps** (`pkg/steps.go`): Modular installation step definitions
@@ -68,6 +86,11 @@ ClusterBloom automates the deployment of Kubernetes clusters with AMD GPU suppor
 - **RKE2 Integration** (`pkg/rke2.go`): Kubernetes cluster setup
 - **ROCm Support** (`pkg/rocm.go`): AMD GPU driver management
 - **UI Framework** (`pkg/view.go`): Terminal user interface implementation
+- **Configuration Maps** (`pkg/configmaps.go`): Kubernetes ConfigMap creation for bloom configuration
+- **Package Management** (`pkg/packages.go`): System package installation and management
+- **OS Setup** (`pkg/os-setup.go`): Operating system configuration and validation
+- **Demo Steps** (`pkg/demosteps.go`): Demonstration steps for testing and UI showcase
+- **Validation** (`cmd/validation.go`): Input validation functions for configuration parameters
 
 #### Installation Pipeline
 The system executes a sequential pipeline of installation steps:
@@ -91,6 +114,9 @@ The system executes a sequential pipeline of installation steps:
    - Longhorn storage system deployment
    - MetalLB load balancer setup
    - Kubeconfig configuration
+   - Bloom ConfigMap creation
+   - Domain configuration for ingress
+   - TLS certificate setup (cert-manager or manual)
    - ClusterForge integration (optional)
    - 1Password secrets integration (optional)
 
@@ -98,6 +124,7 @@ The system executes a sequential pipeline of installation steps:
 
 #### Supported Configuration Variables
 - `FIRST_NODE`: Designates first node vs additional nodes
+- `CONTROL_PLANE`: Indicates if additional node should be control plane (when FIRST_NODE is false)
 - `GPU_NODE`: Enables/disables GPU-specific configurations
 - `SERVER_IP`/`JOIN_TOKEN`: Required for additional node joining
 - `SKIP_DISK_CHECK`: Bypasses disk-related operations
@@ -105,6 +132,11 @@ The system executes a sequential pipeline of installation steps:
 - `CLUSTERFORGE_RELEASE`: ClusterForge version specification
 - `DISABLED_STEPS`/`ENABLED_STEPS`: Step execution control
 - `SELECTED_DISKS`: Pre-selected disk devices (also skips NVME drive checks)
+- `DOMAIN`: Domain name for cluster ingress configuration
+- `USE_CERT_MANAGER`: Enable cert-manager with Let's Encrypt for TLS
+- `CERT_OPTION`: Certificate handling when cert-manager disabled ('existing' or 'generate')
+- `TLS_CERT`/`TLS_KEY`: Paths to TLS certificate files for ingress
+- `OIDC_URL`: OIDC provider URL for authentication
 
 #### Configuration Sources (Priority Order)
 1. Command-line flags
@@ -115,6 +147,27 @@ The system executes a sequential pipeline of installation steps:
 ## User Experience
 
 ### Installation Workflow
+
+#### Configuration Wizard
+```bash
+./bloom wizard
+```
+- Interactive wizard for generating bloom.yaml configuration files
+- Guides through all configuration options with validation
+- Supports both first node and additional node configurations
+- Validates inputs including domains, IPs, URLs, and file paths
+- Optionally launches bloom with generated configuration
+
+#### Node Validation (Proof Command)
+```bash
+sudo ./bloom proof
+```
+- Validates node readiness before cluster deployment
+- Checks Ubuntu version compatibility
+- Verifies package installation connectivity
+- Tests GPU availability (for GPU nodes)
+- Validates firewall and port configurations
+- Checks inotify configuration
 
 #### First Node Setup
 ```bash
@@ -138,6 +191,13 @@ sudo ./bloom demo-ui
 - Demonstrates UI capabilities without system modifications
 - Useful for testing and familiarization
 
+#### Test Mode
+```bash
+sudo ./bloom test
+```
+- Tests disk selection and mounting operations
+- Validates UI components and workflows
+
 ### Error Handling and Recovery
 - **Graceful Failures**: Clear error messages with recovery suggestions
 - **Step Isolation**: Failed steps don't prevent manual retry
@@ -155,6 +215,12 @@ sudo ./bloom demo-ui
 - **Helm Charts**: Ready for Helm-based application deployment
 - **Kubectl Access**: Automated kubeconfig setup for cluster access
 - **K9s Integration**: Terminal-based Kubernetes management interface
+
+### CI/CD Pipeline
+- **GitHub Actions Integration**: Automated build and release workflow
+- **Devbox Build System**: Consistent development environment using Devbox
+- **Release Automation**: Automatic binary creation on GitHub release events
+- **Version Injection**: Build-time version injection from Git tags
 
 ## Current Limitations and Known Issues
 
