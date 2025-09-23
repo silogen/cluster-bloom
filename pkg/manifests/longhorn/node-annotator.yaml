@@ -13,7 +13,7 @@ spec:
         spec:
           containers:
             - name: node-label-annotator
-              image: bitnami/kubectl:latest
+              image: ghcr.io/silogen/kubectl:latest
               resources:
                 requests:
                   memory: "32Mi"
