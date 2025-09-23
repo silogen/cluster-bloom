@@ -247,8 +247,14 @@ func HasSufficientRancherPartition() bool {
 		LogMessage(Info, "Skipping /var/lib/rancher partition check for CPU node.")
 		return true
 	}
-	cmd := exec.Command("df", "-BG", "/var/lib/")
+	cmd := exec.Command("mkdir", "-p", "/var/lib/rancher")
 	output, err := cmd.Output()
+	if err != nil {
+		LogMessage(Error, fmt.Sprintf("Failed to create /var/lib/rancher: %v", err))
+		return false
+	}
+	cmd = exec.Command("df", "-BG", "/var/lib/rancher")
+	output, err = cmd.Output()
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to get /var/lib/rancher partition size: %v", err))
 		return false
