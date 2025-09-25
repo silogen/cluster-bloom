@@ -129,7 +129,7 @@ func GenerateNodeLabels() error {
 		LogMessage(Info, "Appended Longhorn disk configuration to RKE2 config.")
 		return nil
 	}
-	if viper.GetBool("SKIP_DISK_CHECK") == true {
+	if viper.GetBool("SKIP_DISK_CHECK") {
 		LogMessage(Info, "Skipping GenerateLonghornDiskString as SKIP_DISK_CHECK is set.")
 		return nil
 	}
@@ -212,7 +212,7 @@ func isVirtualDisk(udevOut []byte) bool {
 }
 
 func GetUnmountedPhysicalDisks() ([]string, error) {
-	if viper.GetBool("SKIP_DISK_CHECK") == true {
+	if viper.GetBool("SKIP_DISK_CHECK") {
 		LogMessage(Info, "Skipping disk check as SKIP_DISK_CHECK is set.")
 		return nil, nil
 	}
@@ -267,13 +267,14 @@ func MountDrives(drives []string) error {
 		LogMessage(Info, "Skipping drive mounting as LONGHORN_DISKS is set.")
 		return nil
 	}
-	if viper.GetBool("SKIP_DISK_CHECK") == true {
+	if viper.GetBool("SKIP_DISK_CHECK") {
 		LogMessage(Info, "Skipping drive mounting as SKIP_DISK_CHECK is set.")
 		return nil
 	}
 
 	usedMountPoints := make(map[string]bool)
 	i := 0
+
 	cmd := exec.Command("sh", "-c", "mount | awk '/\\/mnt\\/disk[0-9]+/ {print $3}'")
 	output, err := cmd.Output()
 	if err != nil {
@@ -289,39 +290,10 @@ func MountDrives(drives []string) error {
 	}
 
 	for _, drive := range drives {
-		cmd = exec.Command("lsblk", "-f", drive)
-		output, err := cmd.Output()
-		if err != nil {
-			return fmt.Errorf("failed to check filesystem type for %s: %w", drive, err)
-		}
-		if strings.Contains(string(output), "ext4") {
-			LogMessage(Info, fmt.Sprintf("Disk %s is already formatted as ext4. Skipping format.", drive))
-		} else {
-			cmd = exec.Command("lsblk", "-no", "PARTTYPE", drive)
-			output, err = cmd.Output()
-			if err != nil {
-				return fmt.Errorf("failed to check partition type for %s: %w", drive, err)
-			}
-			if strings.TrimSpace(string(output)) != "" {
-				LogMessage(Info, fmt.Sprintf("Disk %s has existing partitions. Removing partitions...", drive))
-				cmd = exec.Command("sudo", "wipefs", "-a", drive)
-				if err := cmd.Run(); err != nil {
-					return fmt.Errorf("failed to wipe partitions on %s: %w", drive, err)
-				}
-			}
+		FormatExt4(drive)
+		uuid := GetUUID(drive)
 
-			LogMessage(Info, fmt.Sprintf("Disk %s is not partitioned. Formatting with ext4...", drive))
-			cmd = exec.Command("mkfs.ext4", "-F", "-F", drive)
-			if err := cmd.Run(); err != nil {
-				return fmt.Errorf("failed to format %s: %w", drive, err)
-			}
-		}
-		cmd = exec.Command("blkid", "-s", "UUID", "-o", "value", drive)
-		uuidOutput, err := cmd.Output()
-		uuid := ""
-		if err == nil {
-			uuid = strings.TrimSpace(string(uuidOutput))
-		}
+		// If UUID is found and present in fstab, mount using mount -a
 		if uuid != "" && strings.Contains(string(fstabContent), fmt.Sprintf("UUID=%s", uuid)) {
 			LogMessage(Info, fmt.Sprintf("%s is in /etc/fstab, automounting.", drive))
 			cmd := exec.Command("mount", "-a", drive)
@@ -353,15 +325,60 @@ func MountDrives(drives []string) error {
 	return nil
 }
 
+func FormatExt4(drive string) error {
+	cmd := exec.Command("lsblk", "-f", drive)
+	output, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to check filesystem type for %s: %w", drive, err)
+	}
+	if strings.Contains(string(output), "ext4") {
+		LogMessage(Info, fmt.Sprintf("Disk %s is already formatted as ext4. Skipping format.", drive))
+		return nil
+	}
+
+	cmd = exec.Command("lsblk", "-no", "PARTTYPE", drive)
+	output, err = cmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to check partition type for %s: %w", drive, err)
+	}
+	if strings.TrimSpace(string(output)) != "" {
+		LogMessage(Info, fmt.Sprintf("Disk %s has existing partitions. Removing partitions...", drive))
+		cmd = exec.Command("sudo", "wipefs", "-a", drive)
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("failed to wipe partitions on %s: %w", drive, err)
+		}
+	}
+
+	LogMessage(Info, fmt.Sprintf("Disk %s is not partitioned. Formatting with ext4...", drive))
+	cmd = exec.Command("mkfs.ext4", "-F", "-F", drive)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to format %s: %w", drive, err)
+	}
+
+	LogMessage(Info, fmt.Sprintf("Disk %s formatted with ext4", drive))
+	return nil
+}
+
+func GetUUID(drive string) string {
+	cmd := exec.Command("blkid", "-s", "UUID", "-o", "value", drive)
+	uuidOutput, err := cmd.Output()
+	uuid := ""
+	if err == nil {
+		uuid = strings.TrimSpace(string(uuidOutput))
+	}
+	return uuid
+}
+
 func PersistMountedDisks() error {
 	if viper.IsSet("LONGHORN_DISKS") && viper.GetString("LONGHORN_DISKS") != "" {
 		LogMessage(Info, "Skipping drive mounting as LONGHORN_DISKS is set.")
 		return nil
 	}
-	if viper.GetBool("SKIP_DISK_CHECK") == true {
+	if viper.GetBool("SKIP_DISK_CHECK") {
 		LogMessage(Info, "Skipping drive mounting as SKIP_DISK_CHECK is set.")
 		return nil
 	}
+
 	cmd := exec.Command("sh", "-c", "mount | awk '/\\/mnt\\/disk[0-9]+/ {print $1, $3}'")
 	output, err := cmd.Output()
 	if err != nil {
@@ -372,7 +389,15 @@ func PersistMountedDisks() error {
 	if mountedDisks == "" {
 		return nil
 	}
+	if err := UpdateFstab(mountedDisks); err != nil {
+		return fmt.Errorf("failed to update /etc/fstab: %w", err)
+	}
+	LogMessage(Info, "Updated /etc/fstab with mounted disks.")
 
+	return nil
+}
+
+func UpdateFstab(mountedDisks string) error {
 	fstabFile := "/etc/fstab"
 	backupFile := "/etc/fstab.bak"
 	if err := exec.Command("sudo", "cp", fstabFile, backupFile).Run(); err != nil {
