@@ -72,11 +72,11 @@ flowchart TD
     NextDisk -->|Yes| FilterDisks
     NextDisk -->|No| ShowSelection[Show disk selection UI]
     
-    UseSelected --> MountDrives
+    UseSelected --> MountLonghornDrives
     ShowSelection --> StoreSel[Store selected_disks<br/>in viper config]
-    StoreSel --> MountDrives[MountDrives function]
+    StoreSel --> MountLonghornDrives[MountLonghornDrives function]
     
-    MountDrives --> CheckLonghorn{LONGHORN_DISKS<br/>configured?}
+    MountLonghornDrives --> CheckLonghorn{LONGHORN_DISKS<br/>configured?}
     CheckLonghorn -->|Yes - has value| SkipMount[Skip mounting<br/>Use LONGHORN_DISKS paths]
     CheckLonghorn -->|No - empty| ProcessEachDisk[Process each disk]
     
@@ -96,7 +96,7 @@ flowchart TD
     MountDisk --> NextMountDisk
     
     NextMountDisk -->|Yes| ProcessEachDisk
-    NextMountDisk -->|No| PersistMounts[PersistMountedDisks]
+    NextMountDisk -->|No| PersistMounts[PersistMountedLonghornDisks]
     
     PersistMounts --> GetUUID[Get UUID for each<br/>mounted disk]
     GetUUID --> UpdateFstab[Add to /etc/fstab:<br/>UUID=xxx /mnt/diskX ext4 defaults,nofail 0 2]
@@ -148,7 +148,7 @@ If disks aren't pre-configured:
 - Allows multiple disk selection using arrow keys and spacebar
 - Stores selected disks in the viper configuration
 
-### 4. Mounting Process (`MountDrives`)
+### 4. Mounting Process (`MountLonghornDrives`)
 For each selected disk:
 - **Format Check**: Checks if disk already has ext4 filesystem
 - **Partition Handling**: If disk has partitions but no ext4, wipes them with `wipefs -a`
@@ -159,7 +159,7 @@ For each selected disk:
   - Otherwise, finds next available `/mnt/diskX` directory
   - Creates directory and mounts the disk
 
-### 5. Persistence (`PersistMountedDisks`)
+### 5. Persistence (`PersistMountedLonghornDisks`)
 Makes mounts permanent by:
 - Backing up `/etc/fstab` to `/etc/fstab.bak`
 - Getting UUID for each mounted disk using `blkid`

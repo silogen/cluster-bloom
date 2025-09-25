@@ -73,7 +73,7 @@ func TestRunStepsWithUI(t *testing.T) {
 			if len(tt.steps) == 0 {
 				return
 			}
-			
+
 			result := tt.steps[0].Action()
 			if tt.expectedError && result.Error == nil {
 				t.Errorf("Expected error but got none")
@@ -87,7 +87,7 @@ func TestRunStepsWithUI(t *testing.T) {
 func TestShowOptionsScreen(t *testing.T) {
 	options := []string{"option1", "option2", "option3"}
 	preSelected := []string{"option1"}
-	
+
 	if globalApp == nil {
 		result, err := ShowOptionsScreen("Test", "Test message", options, preSelected)
 		if err == nil {
@@ -159,10 +159,10 @@ func TestSetupAndCheckRocmStep(t *testing.T) {
 	// Result depends on system state
 }
 
-func TestSelectDrivesStep(t *testing.T) {
+func TestSelectLonghornDrivesStep(t *testing.T) {
 	t.Run("with selected disks", func(t *testing.T) {
 		viper.Set("SELECTED_DISKS", "/dev/sda,/dev/sdb")
-		result := SelectDrivesStep.Action()
+		result := SelectLonghornDrivesStep.Action()
 		if result.Error != nil {
 			t.Errorf("Expected no error with selected disks, got: %v", result.Error)
 		}
@@ -170,9 +170,9 @@ func TestSelectDrivesStep(t *testing.T) {
 	})
 }
 
-func TestMountSelectedDrivesStep(t *testing.T) {
+func TestMountSelectedLonghornDrivesStep(t *testing.T) {
 	viper.Set("selected_disks", []string{})
-	result := MountSelectedDrivesStep.Action()
+	result := MountSelectedLonghornDrivesStep.Action()
 	if result.Error != nil {
 		t.Errorf("Expected no error with empty disk list, got: %v", result.Error)
 	}

@@ -252,8 +252,8 @@ var UpdateModprobeStep = Step{
 	},
 }
 
-var SelectDrivesStep = Step{
-	Id:          "SelectDrivesStep",
+var SelectLonghornDrivesStep = Step{
+	Id:          "SelectLonghornDrivesStep",
 	Name:        "Select Unmounted Disks",
 	Description: "Identify and select unmounted physical disks",
 	Action: func() StepResult {
@@ -287,9 +287,7 @@ var SelectDrivesStep = Step{
 		}
 		diskinfo := string(output)
 		options := make([]string, len(disks))
-		for i, disk := range disks {
-			options[i] = disk
-		}
+		copy(options, disks)
 
 		result, err := ShowOptionsScreen(
 			"Unmounted Disks",
@@ -344,48 +342,43 @@ var SelectRKE2MountpointStep = Step{
 			LogMessage(Info, "No unmounted physical disks found")
 			return StepResult{Error: nil}
 		}
-		cmd := exec.Command("sh", "-c", "'")
-		// output, err := cmd.Output()
-		// if err != nil {
-		// 	return StepResult{
-		// 		Error: fmt.Errorf("failed to get disk info: %v", err),
-		// 	}
-		// }
-		// diskinfo := string(output)
-		// options := make([]string, len(disks))
-		// for i, disk := range disks {
-		// 	options[i] = disk
-		// }
 
-		// result, err := ShowOptionsScreen(
-		// 	"Unmounted Disks",
-		// 	"Select disks to format and mount\n\n"+diskinfo+"\n\nThe suggested drives are pre-selected, arrow keys to navigate, spacebar to select, enter to confirm\n\nd when done, q to quit",
-		// 	options,
-		// 	options,
-		// )
-		// if err != nil {
-		// 	return StepResult{
-		// 		Error: fmt.Errorf("error selecting disks: %v", err),
-		// 	}
-		// }
+		cmd := exec.Command("sh", "-c", "lsblk |awk '/nvme/ {print $0}'")
+		output, err := cmd.Output()
+		if err != nil {
+			return StepResult{
+				Error: fmt.Errorf("failed to get disk info: %v", err),
+			}
+		}
+		diskinfo := string(output)
+		options := make([]string, len(disks))
+		copy(options, disks)
 
-		// if result.Canceled {
-		// 	return StepResult{
-		// 		Error: fmt.Errorf("disk selection canceled"),
-		// 	}
-		// }
-		// LogMessage(Info, fmt.Sprintf("Selected disks: %v", result.Selected))
+		result, err := ShowOptionsScreen(
+			"Unmounted Disks",
+			"Select disk for /var/lib/rancher \n\n"+diskinfo+"\n\n (arrow keys to navigate, spacebar to select, enter to confirm\n\nd when done, q to quit)",
+			options,
+			options,
+		)
+		if err != nil {
+			return StepResult{
+				Error: fmt.Errorf("error selecting disks: %v", err),
+			}
+		}
 
-		// // Store the selected disks for the next step
-		// viper.Set("selected_disks", result.Selected)
+		if result.Canceled {
+			return StepResult{
+				Error: fmt.Errorf("disk selection canceled"),
+			}
+		}
+		LogMessage(Info, fmt.Sprintf("Selected disk %v for /var/lib/rancher", result.Selected))
 
-		//return StepResult{Message: fmt.Sprintf("/var/lib/rancher mountpoint set to: %v", result.Selected)}
-		return StepResult{Message: fmt.Sprintf("/var/lib/rancher mountpoint set to: %v", "great place")}
+		return StepResult{Message: fmt.Sprintf("/var/lib/rancher mountpoint set to: %v", result.Selected)}
 	},
 }
 
-var MountSelectedDrivesStep = Step{
-	Id:          "MountSelectedDrivesStep",
+var MountSelectedLonghornDrivesStep = Step{
+	Id:          "MountSelectedLonghornDrivesStep",
 	Name:        "Mount Selected Disks",
 	Description: "Mount the selected physical disks",
 	Skip: func() bool {
@@ -406,13 +399,13 @@ var MountSelectedDrivesStep = Step{
 			return StepResult{Error: nil}
 		}
 
-		mountError := MountDrives(selectedDisks)
+		mountError := MountLonghornDrives(selectedDisks)
 		if mountError != nil {
 			return StepResult{
 				Error: fmt.Errorf("error mounting disks: %v", mountError),
 			}
 		}
-		persistError := PersistMountedDisks()
+		persistError := PersistMountedLonghornDisks()
 		if persistError != nil {
 			return StepResult{
 				Error: fmt.Errorf("error persisting mounted disks: %v", persistError),

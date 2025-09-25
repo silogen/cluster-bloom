@@ -138,14 +138,14 @@ func TestGetUnmountedPhysicalDisks(t *testing.T) {
 	})
 }
 
-func TestMountDrives(t *testing.T) {
+func TestMountLonghornDrives(t *testing.T) {
 	if os.Getuid() != 0 {
 		t.Skip("Skipping test that requires root privileges")
 	}
 
 	t.Run("with LONGHORN_DISKS set", func(t *testing.T) {
 		viper.Set("LONGHORN_DISKS", "/dev/sda")
-		err := MountDrives([]string{"/dev/sda"})
+		err := MountLonghornDrives([]string{"/dev/sda"})
 		if err != nil {
 			t.Errorf("Expected no error with LONGHORN_DISKS set, got: %v", err)
 		}
@@ -154,7 +154,7 @@ func TestMountDrives(t *testing.T) {
 
 	t.Run("with SKIP_DISK_CHECK", func(t *testing.T) {
 		viper.Set("SKIP_DISK_CHECK", true)
-		err := MountDrives([]string{"/dev/sda"})
+		err := MountLonghornDrives([]string{"/dev/sda"})
 		if err != nil {
 			t.Errorf("Expected no error with SKIP_DISK_CHECK, got: %v", err)
 		}
@@ -162,21 +162,21 @@ func TestMountDrives(t *testing.T) {
 	})
 
 	t.Run("empty drives list", func(t *testing.T) {
-		err := MountDrives([]string{})
+		err := MountLonghornDrives([]string{})
 		if err != nil {
 			t.Errorf("Expected no error with empty drives list, got: %v", err)
 		}
 	})
 }
 
-func TestPersistMountedDisks(t *testing.T) {
+func TestPersistMountedLonghornDisks(t *testing.T) {
 	if os.Getuid() != 0 {
 		t.Skip("Skipping test that requires root privileges")
 	}
 
 	t.Run("with LONGHORN_DISKS set", func(t *testing.T) {
 		viper.Set("LONGHORN_DISKS", "/dev/sda")
-		err := PersistMountedDisks()
+		err := PersistMountedLonghornDisks()
 		if err != nil {
 			t.Errorf("Expected no error with LONGHORN_DISKS set, got: %v", err)
 		}
@@ -185,7 +185,7 @@ func TestPersistMountedDisks(t *testing.T) {
 
 	t.Run("with SKIP_DISK_CHECK", func(t *testing.T) {
 		viper.Set("SKIP_DISK_CHECK", true)
-		err := PersistMountedDisks()
+		err := PersistMountedLonghornDisks()
 		if err != nil {
 			t.Errorf("Expected no error with SKIP_DISK_CHECK, got: %v", err)
 		}

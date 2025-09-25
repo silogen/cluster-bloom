@@ -262,7 +262,61 @@ func GetUnmountedPhysicalDisks() ([]string, error) {
 	}
 	return result, nil
 }
-func MountDrives(drives []string) error {
+
+func MountRKE2Drive(drive string) error {
+	if viper.IsSet("RKE2_DISK") && viper.GetString("RKE2_DISK") != "" {
+		LogMessage(Info, "Skipping /var/lib/rancher drive mounting as RKE_DISK is set.")
+		return nil
+	}
+
+	mountpoint := "/var/lib/rancher"
+
+	usedMountPoints := make(map[string]bool)
+	i := 0
+
+	cmd := exec.Command("sh", "-c", "mount | awk '/\\/var\\/lib\\/rancher/ {print $3}'")
+	output, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to list mount point for %s %w", mountpoint, err)
+	}
+	existingMountPoints := strings.Fields(string(output))
+	for _, mountPoint := range existingMountPoints {
+		usedMountPoints[mountPoint] = true
+	}
+	fstabContent, err := os.ReadFile("/etc/fstab")
+	if err != nil {
+		return fmt.Errorf("failed to read /etc/fstab: %w", err)
+	}
+
+	FormatExt4(drive)
+	uuid := GetUUID(drive)
+
+	// If UUID is found and present in fstab, mount using mount -a
+	if uuid != "" && strings.Contains(string(fstabContent), fmt.Sprintf("UUID=%s", uuid)) {
+		LogMessage(Info, fmt.Sprintf("%s is in /etc/fstab, automounting.", drive))
+		cmd := exec.Command("mount", "-a", drive)
+		_, err := cmd.Output()
+		if err != nil {
+			return fmt.Errorf("failed to automount %s: %w", drive, err)
+		}
+		return nil
+	}
+	mountPoint := fmt.Sprintf("%s", mountpoint)
+
+	if err := os.MkdirAll(mountPoint, 0755); err != nil {
+		return fmt.Errorf("failed to create mount point %s: %w", mountPoint, err)
+	}
+
+	cmd = exec.Command("mount", drive, mountPoint)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to mount %s at %s: %w", drive, mountPoint, err)
+	}
+	LogMessage(Info, fmt.Sprintf("Mounted %s at %s", drive, mountPoint))
+
+	return nil
+}
+
+func MountLonghornDrives(drives []string) error {
 	if viper.IsSet("LONGHORN_DISKS") && viper.GetString("LONGHORN_DISKS") != "" {
 		LogMessage(Info, "Skipping drive mounting as LONGHORN_DISKS is set.")
 		return nil
@@ -369,7 +423,7 @@ func GetUUID(drive string) string {
 	return uuid
 }
 
-func PersistMountedDisks() error {
+func PersistMountedLonghornDisks() error {
 	if viper.IsSet("LONGHORN_DISKS") && viper.GetString("LONGHORN_DISKS") != "" {
 		LogMessage(Info, "Skipping drive mounting as LONGHORN_DISKS is set.")
 		return nil
@@ -392,7 +446,26 @@ func PersistMountedDisks() error {
 	if err := UpdateFstab(mountedDisks); err != nil {
 		return fmt.Errorf("failed to update /etc/fstab: %w", err)
 	}
-	LogMessage(Info, "Updated /etc/fstab with mounted disks.")
+	LogMessage(Info, "/etc/fstab update complete for Longhorn disks")
+
+	return nil
+}
+
+func PersistRKE2Mountpoint(mountPoint string) error {
+	cmd := exec.Command("sh", "-c", "mount | awk '/\\/var\\/lib\\/rancher/ {print $1, $3}'")
+	output, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to list /var/lib/rancher", err)
+	}
+
+	rancherDisk := strings.TrimSpace(string(output))
+	if rancherDisk == "" {
+		return nil
+	}
+	if err := UpdateFstab(rancherDisk); err != nil {
+		return fmt.Errorf("failed to update /etc/fstab: %w", err)
+	}
+	LogMessage(Info, "/etc/fstab updated for /var/lib/rancher mountpoint")
 
 	return nil
 }
