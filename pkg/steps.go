@@ -373,13 +373,13 @@ var SelectRKE2MountpointStep = Step{
 		}
 		LogMessage(Info, fmt.Sprintf("Selected disk %v for /var/lib/rancher", result.Selected))
 
-		mountError := MountRKE2Drives(result.selected[0])
+		mountError := MountRKE2Drive(result.Selected[0])
 		if mountError != nil {
 			return StepResult{
 				Error: fmt.Errorf("error mounting disks: %v", mountError),
 			}
 		}
-		persistError := PersistRKE2Mountpint()
+		persistError := PersistRKE2Mountpoint()
 		if persistError != nil {
 			return StepResult{
 				Error: fmt.Errorf("error persisting mounted disks: %v", persistError),
