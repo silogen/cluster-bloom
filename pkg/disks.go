@@ -272,7 +272,6 @@ func MountRKE2Drive(drive string) error {
 	mountpoint := "/var/lib/rancher"
 
 	usedMountPoints := make(map[string]bool)
-	i := 0
 
 	cmd := exec.Command("sh", "-c", "mount | awk '/\\/var\\/lib\\/rancher/ {print $3}'")
 	output, err := cmd.Output()
@@ -451,7 +450,7 @@ func PersistMountedLonghornDisks() error {
 	return nil
 }
 
-func PersistRKE2Mountpoint(mountPoint string) error {
+func PersistRKE2Mountpoint() error {
 	cmd := exec.Command("sh", "-c", "mount | awk '/\\/var\\/lib\\/rancher/ {print $1, $3}'")
 	output, err := cmd.Output()
 	if err != nil {

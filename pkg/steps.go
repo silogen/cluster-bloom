@@ -358,7 +358,7 @@ var SelectRKE2MountpointStep = Step{
 			"Unmounted Disks",
 			"Select disk for /var/lib/rancher \n\n"+diskinfo+"\n\n (arrow keys to navigate, spacebar to select, enter to confirm\n\nd when done, q to quit)",
 			options,
-			options,
+			[]string{},
 		)
 		if err != nil {
 			return StepResult{
@@ -372,6 +372,19 @@ var SelectRKE2MountpointStep = Step{
 			}
 		}
 		LogMessage(Info, fmt.Sprintf("Selected disk %v for /var/lib/rancher", result.Selected))
+
+		mountError := MountRKE2Drives(result.selected[0])
+		if mountError != nil {
+			return StepResult{
+				Error: fmt.Errorf("error mounting disks: %v", mountError),
+			}
+		}
+		persistError := PersistRKE2Mountpint()
+		if persistError != nil {
+			return StepResult{
+				Error: fmt.Errorf("error persisting mounted disks: %v", persistError),
+			}
+		}
 
 		return StepResult{Message: fmt.Sprintf("/var/lib/rancher mountpoint set to: %v", result.Selected)}
 	},
