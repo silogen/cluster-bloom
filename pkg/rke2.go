@@ -40,7 +40,7 @@ audit-policy-file: "/etc/rancher/rke2/audit-policy.yaml"
 var oidcConfigTemplate = `
 kube-apiserver-arg:
   - "--oidc-issuer-url=%s"
-  - "--oidc-client-id=rke-clusters"
+  - "--oidc-client-id=k8s"
   - "--oidc-username-claim=preferred_username"
   - "--oidc-groups-claim=groups"
   - "--oidc-ca-file=/etc/rancher/rke2/oidc-ca.crt"
