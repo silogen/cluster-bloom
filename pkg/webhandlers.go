@@ -21,8 +21,11 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v2"
 )
@@ -325,7 +328,7 @@ func (h *WebHandlerService) DashboardHandler(w http.ResponseWriter, r *http.Requ
             <p>Real-time monitoring of Kubernetes cluster installation and configuration</p>
             <div class="controls">
                 <button class="btn" onclick="refreshData()">Refresh</button>
-                <button class="btn btn-secondary" id="reconfigure-btn" onclick="window.location.href='/'">Reconfigure</button>
+                <button class="btn btn-secondary" id="reconfigure-btn" onclick="handleReconfigure()">Reconfigure</button>
             </div>
             <div id="os-error-banner" style="display: none; background: #fff3e0; border: 2px solid #f57c00; border-radius: 4px; padding: 15px; margin-top: 15px;">
                 <h3 style="color: #f57c00; margin: 0 0 10px 0;">⚠️ Unsupported Operating System</h3>
@@ -360,6 +363,32 @@ func (h *WebHandlerService) DashboardHandler(w http.ResponseWriter, r *http.Requ
 
     <script>
         let lastRefresh = 0;
+
+        function handleReconfigure() {
+            if (!confirm('This will archive the current bloom.log and restart the configuration process. Continue?')) {
+                return;
+            }
+
+            fetch('/api/reconfigure', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    // Redirect to configuration page
+                    window.location.href = '/';
+                } else {
+                    alert('Failed to reconfigure: ' + (data.message || 'Unknown error'));
+                }
+            })
+            .catch(error => {
+                console.error('Reconfigure error:', error);
+                alert('Failed to reconfigure: ' + error.message);
+            });
+        }
 
         function refreshData() {
             const now = Date.now();
@@ -1103,7 +1132,7 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
 
                         Object.entries(stringFieldMap).forEach(([fieldId, configKey]) => {
                             const element = document.getElementById(fieldId);
-                            if (element && config[configKey] !== undefined && config[configKey] !== '') {
+                            if (element && config[configKey] !== undefined) {
                                 element.value = config[configKey];
                             }
                         });
@@ -1217,6 +1246,76 @@ func (h *WebHandlerService) ConfigChanged() bool {
 
 func (h *WebHandlerService) GetLastError() string {
 	return h.lastError
+}
+
+// ReconfigureHandler archives the existing bloom.log and switches to config mode
+func (h *WebHandlerService) ReconfigureHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Archive existing bloom.log
+	currentDir, _ := os.Getwd()
+	logPath := filepath.Join(currentDir, "bloom.log")
+
+	// First, parse the log to extract configuration values
+	if _, err := os.Stat(logPath); err == nil {
+		// Parse the log to get previous configuration
+		if status, err := ParseBloomLog(logPath); err == nil {
+			// Convert config values to prefilled config
+			h.prefilledConfig = make(map[string]interface{})
+
+			// Map the parsed values to the config keys used by the web interface
+			// The JavaScript expects lowercase keys matching viper format
+			for key, value := range status.ConfigValues {
+				// Keep key as lowercase to match JavaScript expectations
+				lowerKey := strings.ToLower(strings.ReplaceAll(key, " ", "_"))
+
+				// Handle boolean values
+				if value == "true" || value == "false" {
+					h.prefilledConfig[lowerKey] = value == "true"
+				} else {
+					h.prefilledConfig[lowerKey] = value
+				}
+			}
+
+			// Make sure we have the essential values (use lowercase keys)
+			if status.Domain != "" {
+				h.prefilledConfig["domain"] = status.Domain
+			}
+			h.prefilledConfig["first_node"] = status.FirstNode
+			h.prefilledConfig["control_plane"] = status.ControlPlane
+			h.prefilledConfig["gpu_node"] = status.GPUNode
+			if status.ServerIP != "" {
+				h.prefilledConfig["server_ip"] = status.ServerIP
+			}
+
+			log.Infof("Loaded previous configuration with %d values", len(h.prefilledConfig))
+		}
+
+		// Now archive the file
+		timestamp := time.Now().Format("20060102-150405")
+		archivedPath := filepath.Join(currentDir, fmt.Sprintf("bloom-%s.log", timestamp))
+
+		if err := os.Rename(logPath, archivedPath); err != nil {
+			log.Errorf("Failed to archive bloom.log: %v", err)
+			http.Error(w, fmt.Sprintf("Failed to archive log: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		log.Infof("Archived bloom.log to %s", filepath.Base(archivedPath))
+	}
+
+	// Switch to config mode
+	h.configMode = true
+
+	// Send success response
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"status": "success",
+		"message": "Log archived, ready to reconfigure",
+	})
 }
 
 func (h *WebHandlerService) ErrorAPIHandler(w http.ResponseWriter, r *http.Request) {

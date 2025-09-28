@@ -20,12 +20,14 @@ import (
 	"bufio"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -42,9 +44,13 @@ Cluster-Bloom installs and configures a Kubernetes cluster.
 It installs ROCm and other needed settings to prepare a (primarily AMD GPU) node to be part of a Kubernetes cluster,
 and ready to be deployed with Cluster-Forge.
 
-By default, running without arguments will start the web-based configuration interface.
+By default, running without arguments will:
+- Start the web-based configuration interface if no bloom.log exists
+- Display status and start monitoring interface if bloom.log exists
+
 Use --config to specify a configuration file that will pre-fill the web interface.
 Use --one-shot with --config to auto-proceed after loading configuration (useful for automation).
+Use --reconfigure to archive existing bloom.log and start fresh configuration.
 Use 'bloom cli --config <file>' for terminal-only mode.
 
 Available Configuration Variables:
@@ -71,7 +77,44 @@ Usage:
   Use --one-shot with --config to auto-proceed after loading configuration for automated deployments.
 `,
 	Run: func(cmd *cobra.Command, args []string) {
-		// Always start web interface - either for config or monitoring
+		// Handle reconfigure flag
+		if reconfigure {
+			currentDir, _ := os.Getwd()
+			logPath := filepath.Join(currentDir, "bloom.log")
+
+			if _, err := os.Stat(logPath); err == nil {
+				// Archive the existing bloom.log
+				timestamp := time.Now().Format("20060102-150405")
+				archivedPath := filepath.Join(currentDir, fmt.Sprintf("bloom-%s.log", timestamp))
+
+				if err := os.Rename(logPath, archivedPath); err != nil {
+					fmt.Printf("❌ Failed to archive bloom.log: %v\n", err)
+					os.Exit(1)
+				}
+
+				fmt.Printf("✅ Archived bloom.log to %s\n", filepath.Base(archivedPath))
+				fmt.Println("🚀 Starting fresh configuration...")
+				fmt.Println()
+			}
+			// Continue to configuration interface
+			runWebInterfaceWithConfig()
+			return
+		}
+
+		// Check if bloom.log exists when no config provided
+		if cfgFile == "" {
+			currentDir, _ := os.Getwd()
+			logPath := filepath.Join(currentDir, "bloom.log")
+			if _, err := os.Stat(logPath); err == nil {
+				// bloom.log exists - start webui for monitoring
+				fmt.Println("🔍 Found existing bloom.log - starting monitoring interface...")
+				fmt.Println()
+				startWebUIMonitoring()
+				return
+			}
+		}
+
+		// No existing log or config provided - start web interface for configuration
 		runWebInterfaceWithConfig()
 	},
 }
@@ -82,6 +125,7 @@ func Execute() {
 
 var cfgFile string
 var oneShot bool
+var reconfigure bool
 
 // validateAllURLs validates all URL-type configuration parameters
 func validateAllURLs() error {
@@ -501,15 +545,20 @@ func init() {
 
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is ./config.yaml)")
 	rootCmd.PersistentFlags().BoolVar(&oneShot, "one-shot", false, "skip confirmation when using --config (useful for automation)")
+	rootCmd.PersistentFlags().BoolVar(&reconfigure, "reconfigure", false, "archive existing bloom.log and start fresh configuration")
 	rootCmd.AddCommand(helpCmd)
 	rootCmd.AddCommand(cliCmd)
+	rootCmd.AddCommand(webuiCmd)
 }
 
 func initConfig() {
-	// Skip validation if running wizard or no config file specified
-	if (len(os.Args) > 1 && os.Args[1] == "wizard") || cfgFile == "" {
+	// Skip validation if no config file specified
+	if cfgFile == "" {
 		return
 	}
+
+	// Setup logging first so we can capture any errors
+	setupLogging()
 
 	if cfgFile != "" {
 		if _, err := os.Stat(cfgFile); os.IsNotExist(err) {
@@ -548,6 +597,9 @@ func initConfig() {
 	if err := viper.ReadInConfig(); err == nil {
 		log.Infof("Using config file: %s", viper.ConfigFileUsed())
 	}
+
+	// Log config BEFORE any validation that might exit
+	logConfigValues()
 
 	if viper.GetBool("FIRST_NODE") { // leaving the loop expecting more default options
 		requiredConfigs := []string{"DOMAIN"}
@@ -638,35 +690,43 @@ func initConfig() {
 	if err := validateResourceRequirements(); err != nil {
 		log.Fatalf("System requirements validation failed: %v", err)
 	}
+}
 
+func setupLogging() {
 	log.SetFormatter(&log.TextFormatter{
 		FullTimestamp: true,
 	})
 
 	currentDir, err := os.Getwd()
 	if err != nil {
-		log.Warnf("Could not determine current directory: %v", err)
+		// Still log to stderr if we can't get current dir
+		fmt.Fprintf(os.Stderr, "Could not determine current directory: %v\n", err)
 		return
 	}
 
 	logPath := filepath.Join(currentDir, "bloom.log")
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
-		log.Warnf("Could not open log file: %v", err)
+		// Still log to stderr if we can't open the file
+		fmt.Fprintf(os.Stderr, "Could not open log file: %v\n", err)
 		return
 	}
 	log.SetOutput(logFile)
-	logConfigValues()
 }
 
 func logConfigValues() {
 	log.Info("Configuration values:")
-	for _, key := range viper.AllKeys() {
-		value := viper.Get(key)
-		if key == "join_token" {
-			value = "---redacted---"
+	allKeys := viper.AllKeys()
+	if len(allKeys) == 0 {
+		log.Warn("No configuration values found in viper")
+	} else {
+		for _, key := range allKeys {
+			value := viper.Get(key)
+			if key == "join_token" {
+				value = "---redacted---"
+			}
+			log.Infof("%s: %v", key, value)
 		}
-		log.Infof("%s: %v", key, value)
 	}
 }
 
@@ -752,6 +812,147 @@ func findAvailablePort(startPort int) int {
 }
 
 
+func startWebUIMonitoring() {
+	// Display initial status
+	pkg.CheckAndDisplayExistingStatus()
+
+	currentDir, _ := os.Getwd()
+	logPath := filepath.Join(currentDir, "bloom.log")
+
+	// Find an available port starting from 62078
+	portNum := findAvailablePort(62078)
+	port := fmt.Sprintf(":%d", portNum)
+	url := fmt.Sprintf("http://127.0.0.1%s", port)
+
+	fmt.Println()
+	fmt.Printf("🌐 Starting web monitoring interface on %s\n", url)
+	fmt.Println("📊 Monitoring existing bloom.log file")
+	fmt.Printf("🔧 View detailed status at %s\n", url)
+	fmt.Println()
+	fmt.Println("💡 To run a new installation instead, use:")
+	fmt.Println("   bloom --config <config-file>")
+	fmt.Println()
+
+	// Start web interface in monitoring mode
+	monitor := pkg.NewWebMonitor()
+	pkg.SetGlobalWebMonitor(monitor)
+
+	// Parse existing log to populate initial status
+	if status, err := pkg.ParseBloomLog(logPath); err == nil {
+		// First, initialize ALL expected steps based on configuration
+		allSteps := rootSteps()
+		enabledSteps := pkg.CalculateEnabledSteps(allSteps)
+		for i, step := range enabledSteps {
+			monitor.InitializeStep(step, i+1)
+		}
+
+		// Create a map of step names to IDs for matching
+		stepNameToID := make(map[string]string)
+		for _, step := range enabledSteps {
+			stepNameToID[step.Name] = step.Id
+		}
+
+		// Then update the ones that were actually executed according to the log
+		for _, step := range status.Steps {
+			// Find the corresponding step ID
+			stepID := stepNameToID[step.Name]
+			if stepID == "" {
+				// Fallback: use the name as-is if we can't find a match
+				stepID = step.Name
+			}
+
+			// Add log entry for step start
+			monitor.AddLog("INFO", fmt.Sprintf("Starting step: %s", step.Name), stepID)
+
+			// Set step status and add relevant logs
+			switch step.Status {
+			case "completed":
+				monitor.StartStep(stepID)
+				monitor.CompleteStep(stepID, nil)
+				monitor.AddLog("INFO", fmt.Sprintf("Step %s completed", step.Name), stepID)
+			case "failed":
+				monitor.StartStep(stepID)
+				if step.Error != "" {
+					monitor.AddLog("ERROR", step.Error, stepID)
+				}
+				monitor.CompleteStep(stepID, fmt.Errorf(step.Error))
+			case "skipped":
+				monitor.SkipStep(stepID)
+				monitor.AddLog("INFO", fmt.Sprintf("Step %s is skipped", step.Name), stepID)
+			case "running":
+				monitor.StartStep(stepID)
+			}
+		}
+
+		// Add error logs to monitor
+		for _, errMsg := range status.Errors {
+			monitor.AddLog("ERROR", errMsg, "system")
+		}
+
+		// Add OS error if present
+		if status.OSError != "" {
+			monitor.AddLog("ERROR", status.OSError, "system")
+		}
+
+		// Set variables from parsed status
+		monitor.SetVariable("domain", status.Domain)
+		monitor.SetVariable("first_node", fmt.Sprintf("%v", status.FirstNode))
+		monitor.SetVariable("gpu_node", fmt.Sprintf("%v", status.GPUNode))
+		// Use the actual enabled steps count for total
+		monitor.SetVariable("total_steps", len(enabledSteps))
+
+		// Set overall installation status
+		hasErrors := len(status.Errors) > 0
+		for _, step := range status.Steps {
+			if step.Status == "failed" {
+				hasErrors = true
+				break
+			}
+		}
+		if hasErrors {
+			monitor.SetVariable("installation_status", "failed")
+		} else if len(status.Steps) > 0 {
+			allCompleted := true
+			for _, step := range status.Steps {
+				if step.Status != "completed" && step.Status != "skipped" {
+					allCompleted = false
+					break
+				}
+			}
+			if allCompleted {
+				monitor.SetVariable("installation_status", "completed")
+			} else {
+				monitor.SetVariable("installation_status", "in_progress")
+			}
+		}
+	}
+
+	handlerService := pkg.NewWebHandlerService(monitor)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", handlerService.DashboardHandler)
+	mux.HandleFunc("/api/logs", handlerService.LogsAPIHandler)
+	mux.HandleFunc("/api/variables", handlerService.VariablesAPIHandler)
+	mux.HandleFunc("/api/steps", handlerService.StepsAPIHandler)
+	mux.HandleFunc("/api/error", handlerService.ErrorAPIHandler)
+	mux.HandleFunc("/api/reconfigure", handlerService.ReconfigureHandler)
+	mux.HandleFunc("/api/prefilled-config", handlerService.PrefilledConfigAPIHandler)
+
+	handler := pkg.LocalhostOnly(mux)
+	server := &http.Server{
+		Addr:    "127.0.0.1" + port,
+		Handler: handler,
+	}
+
+	// Start watching the log file
+	go pkg.WatchLogFile(monitor)
+
+	fmt.Println("📊 Web interface is running. Press Ctrl+C to stop...")
+	if err := server.ListenAndServe(); err != http.ErrServerClosed {
+		fmt.Printf("Web server error: %v\n", err)
+	}
+}
+
 func runWebInterfaceWithConfig() {
 	fmt.Println("🚀 Starting Cluster-Bloom Web Interface...")
 	fmt.Println()
@@ -772,7 +973,7 @@ func runWebInterfaceWithConfig() {
 	}
 
 	fmt.Printf("🌐 Web interface starting on %s\n", url)
-	fmt.Println("📊 Configuration wizard accessible only from localhost")
+	fmt.Println("📊 Configuration interface accessible only from localhost")
 	fmt.Printf("🔧 Configure your cluster at %s\n", url)
 	fmt.Println()
 	fmt.Println("🔗 For remote access, create an SSH tunnel:")
@@ -780,7 +981,8 @@ func runWebInterfaceWithConfig() {
 	fmt.Printf("   Then access: http://127.0.0.1:%d\n\n", portNum)
 
 	// Pass config file information to the web interface
-	err := pkg.RunWebInterfaceWithConfig(port, rootSteps(), cfgFile, oneShot)
+	// Also pass setupLogging and logConfigValues functions to be called when installation starts
+	err := pkg.RunWebInterfaceWithConfig(port, rootSteps(), cfgFile, oneShot, setupLogging, logConfigValues)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -803,10 +1005,11 @@ This mode is useful for:
 	Run: func(cmd *cobra.Command, args []string) {
 		if cfgFile == "" {
 			fmt.Println("❌ CLI mode requires a configuration file. Use --config flag to specify one.")
-			fmt.Println("💡 Run 'bloom wizard' to generate a configuration file, or")
-			fmt.Println("💡 Run 'bloom' without arguments to use the web interface.")
+			fmt.Println("💡 Run 'bloom' without arguments to use the web interface for configuration.")
 			os.Exit(1)
 		}
+
+		// Note: setupLogging and logConfigValues already called in initConfig
 
 		fmt.Println("🚀 Starting Cluster-Bloom in CLI mode...")
 		fmt.Printf("📄 Using configuration: %s\n", cfgFile)
@@ -823,5 +1026,157 @@ var helpCmd = &cobra.Command{
 	Short: "Display help information",
 	Run: func(cmd *cobra.Command, args []string) {
 		displayHelp()
+	},
+}
+
+var webuiCmd = &cobra.Command{
+	Use:   "webui",
+	Short: "Start web interface for monitoring existing installation",
+	Long: `
+Start the web interface to monitor an existing or running installation.
+This command will display the current status from the bloom.log file
+in a web interface that updates in real-time.
+`,
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Println("🚀 Starting Cluster-Bloom Web Monitoring Interface...")
+		fmt.Println()
+
+		// Check if bloom.log exists
+		currentDir, _ := os.Getwd()
+		logPath := filepath.Join(currentDir, "bloom.log")
+		if _, err := os.Stat(logPath); os.IsNotExist(err) {
+			fmt.Println("⚠️  No bloom.log found in current directory")
+			fmt.Println("💡 Run bloom with a config file first to generate logs")
+			return
+		}
+
+		// Find an available port starting from 62078
+		portNum := findAvailablePort(62078)
+		port := fmt.Sprintf(":%d", portNum)
+		url := fmt.Sprintf("http://127.0.0.1%s", port)
+
+		fmt.Printf("🌐 Web monitoring interface starting on %s\n", url)
+		fmt.Println("📊 Monitoring existing bloom.log file")
+		fmt.Printf("🔧 View status at %s\n", url)
+		fmt.Println()
+
+		// Start web interface in monitoring mode
+		monitor := pkg.NewWebMonitor()
+		pkg.SetGlobalWebMonitor(monitor)
+
+		// Parse existing log to populate initial status
+		if status, err := pkg.ParseBloomLog(logPath); err == nil {
+			// First, initialize ALL expected steps based on configuration
+			allSteps := rootSteps()
+			enabledSteps := pkg.CalculateEnabledSteps(allSteps)
+			for i, step := range enabledSteps {
+				monitor.InitializeStep(step, i+1)
+			}
+
+			// Create a map of step names to IDs for matching
+			stepNameToID := make(map[string]string)
+			for _, step := range enabledSteps {
+				stepNameToID[step.Name] = step.Id
+			}
+
+			// Then update the ones that were actually executed according to the log
+			for _, step := range status.Steps {
+				// Find the corresponding step ID
+				stepID := stepNameToID[step.Name]
+				if stepID == "" {
+					// Fallback: use the name as-is if we can't find a match
+					stepID = step.Name
+				}
+
+				// Add log entry for step start
+				monitor.AddLog("INFO", fmt.Sprintf("Starting step: %s", step.Name), stepID)
+
+				// Set step status and add relevant logs
+				switch step.Status {
+				case "completed":
+					monitor.StartStep(stepID)
+					monitor.CompleteStep(stepID, nil)
+					monitor.AddLog("INFO", fmt.Sprintf("Step %s completed", step.Name), stepID)
+				case "failed":
+					monitor.StartStep(stepID)
+					if step.Error != "" {
+						monitor.AddLog("ERROR", step.Error, stepID)
+					}
+					monitor.CompleteStep(stepID, fmt.Errorf(step.Error))
+				case "skipped":
+					monitor.SkipStep(stepID)
+					monitor.AddLog("INFO", fmt.Sprintf("Step %s is skipped", step.Name), stepID)
+				case "running":
+					monitor.StartStep(stepID)
+				}
+			}
+
+			// Add error logs to monitor
+			for _, errMsg := range status.Errors {
+				monitor.AddLog("ERROR", errMsg, "system")
+			}
+
+			// Add OS error if present
+			if status.OSError != "" {
+				monitor.AddLog("ERROR", status.OSError, "system")
+			}
+
+			// Set variables from parsed status
+			monitor.SetVariable("domain", status.Domain)
+			monitor.SetVariable("first_node", fmt.Sprintf("%v", status.FirstNode))
+			monitor.SetVariable("gpu_node", fmt.Sprintf("%v", status.GPUNode))
+			// Use the actual enabled steps count for total
+			monitor.SetVariable("total_steps", len(enabledSteps))
+
+			// Set overall installation status
+			hasErrors := len(status.Errors) > 0
+			for _, step := range status.Steps {
+				if step.Status == "failed" {
+					hasErrors = true
+					break
+				}
+			}
+			if hasErrors {
+				monitor.SetVariable("installation_status", "failed")
+			} else if len(status.Steps) > 0 {
+				allCompleted := true
+				for _, step := range status.Steps {
+					if step.Status != "completed" && step.Status != "skipped" {
+						allCompleted = false
+						break
+					}
+				}
+				if allCompleted {
+					monitor.SetVariable("installation_status", "completed")
+				} else {
+					monitor.SetVariable("installation_status", "in_progress")
+				}
+			}
+		}
+
+		handlerService := pkg.NewWebHandlerService(monitor)
+
+		mux := http.NewServeMux()
+		mux.HandleFunc("/", handlerService.DashboardHandler)
+		mux.HandleFunc("/api/logs", handlerService.LogsAPIHandler)
+		mux.HandleFunc("/api/variables", handlerService.VariablesAPIHandler)
+		mux.HandleFunc("/api/steps", handlerService.StepsAPIHandler)
+		mux.HandleFunc("/api/error", handlerService.ErrorAPIHandler)
+		mux.HandleFunc("/api/reconfigure", handlerService.ReconfigureHandler)
+		mux.HandleFunc("/api/prefilled-config", handlerService.PrefilledConfigAPIHandler)
+
+		handler := pkg.LocalhostOnly(mux)
+		server := &http.Server{
+			Addr:    "127.0.0.1" + port,
+			Handler: handler,
+		}
+
+		// Start watching the log file
+		go pkg.WatchLogFile(monitor)
+
+		fmt.Println("📊 Web interface is running. Press Ctrl+C to stop...")
+		if err := server.ListenAndServe(); err != http.ErrServerClosed {
+			fmt.Printf("Web server error: %v\n", err)
+		}
 	},
 }
