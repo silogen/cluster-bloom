@@ -50,6 +50,8 @@ type WebHandlerService struct {
 	oneShot          bool
 	validationFailed bool
 	validationErrors []string
+	steps            []Step
+	startInstallation func() error
 }
 
 func NewWebHandlerService(monitor *WebMonitor) *WebHandlerService {
@@ -61,7 +63,14 @@ func NewWebHandlerService(monitor *WebMonitor) *WebHandlerService {
 		configVersion:   0,
 		prefilledConfig: make(map[string]interface{}),
 		oneShot:         false,
+		steps:           nil,
+		startInstallation: nil,
 	}
+}
+
+func (h *WebHandlerService) SetInstallationHandler(steps []Step, startCallback func() error) {
+	h.steps = steps
+	h.startInstallation = startCallback
 }
 
 func NewWebHandlerServiceConfig() *WebHandlerService {
@@ -74,6 +83,21 @@ func NewWebHandlerServiceConfig() *WebHandlerService {
 		prefilledConfig: make(map[string]interface{}),
 		oneShot:         false,
 	}
+}
+
+// SetPrefilledConfig sets the prefilled configuration from parsed log data
+func (h *WebHandlerService) SetPrefilledConfig(configValues map[string]string) {
+	h.prefilledConfig = make(map[string]interface{})
+	for key, value := range configValues {
+		lowerKey := strings.ToLower(strings.ReplaceAll(key, " ", "_"))
+		// Handle boolean values
+		if value == "true" || value == "false" {
+			h.prefilledConfig[lowerKey] = value == "true"
+		} else {
+			h.prefilledConfig[lowerKey] = value
+		}
+	}
+	log.Infof("Prefilled config set with %d values from parsed log", len(h.prefilledConfig))
 }
 
 func categorizeError(errorMsg string) ErrorType {
@@ -151,18 +175,26 @@ func (h *WebHandlerService) PrefilledConfigAPIHandler(w http.ResponseWriter, r *
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
+	// Debug logging
+	log.Infof("PrefilledConfigAPIHandler called - config has %d entries", len(h.prefilledConfig))
+	if len(h.prefilledConfig) > 0 {
+		for key, value := range h.prefilledConfig {
+			log.Debugf("  %s: %v", key, value)
+		}
+	}
+
 	response := map[string]interface{}{
 		"config":   h.prefilledConfig,
 		"oneShot":  h.oneShot,
 		"hasPrefilled": len(h.prefilledConfig) > 0,
 	}
 
-
 	json.NewEncoder(w).Encode(response)
 }
 
 func (h *WebHandlerService) DashboardHandler(w http.ResponseWriter, r *http.Request) {
 	if h.configMode {
+		log.Info("DashboardHandler: In config mode, redirecting to ConfigWizardHandler")
 		h.ConfigWizardHandler(w, r)
 		return
 	}
@@ -188,6 +220,53 @@ func (h *WebHandlerService) DashboardHandler(w http.ResponseWriter, r *http.Requ
             border-radius: 8px;
             margin-bottom: 20px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .tabs {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .tab-nav {
+            display: flex;
+            border-bottom: 2px solid #f0f0f0;
+            background: #fafafa;
+            border-radius: 8px 8px 0 0;
+        }
+        .tab-button {
+            padding: 15px 25px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 15px;
+            color: #666;
+            transition: all 0.3s ease;
+            position: relative;
+            font-weight: 600;
+        }
+        .tab-button:hover {
+            background: rgba(76,175,80,0.05);
+        }
+        .tab-button.active {
+            color: #4CAF50;
+        }
+        .tab-button.active::after {
+            content: '';
+            position: absolute;
+            bottom: -2px;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: #4CAF50;
+        }
+        .tab-content {
+            padding: 20px;
+        }
+        .tab-panel {
+            display: none;
+        }
+        .tab-panel.active {
+            display: block;
         }
         .section {
             background: white;
@@ -339,30 +418,46 @@ func (h *WebHandlerService) DashboardHandler(w http.ResponseWriter, r *http.Requ
 
         <div class="overview" id="overview"></div>
 
-        <div class="section">
-            <div class="section-header">📋 Installation Steps</div>
-            <div class="section-content">
-                <div class="progress-bar">
-                    <div class="progress-fill" id="overall-progress"></div>
-                </div>
-                <div class="progress-text" id="progress-text"></div>
-                <div id="steps"></div>
+        <div class="tabs">
+            <div class="tab-nav">
+                <button class="tab-button active" onclick="switchTab('steps-tab')">📋 Installation Steps</button>
+                <button class="tab-button" onclick="switchTab('variables-tab')">🔧 Variables</button>
+                <button class="tab-button" onclick="switchTab('logs-tab')">📊 Recent Logs</button>
             </div>
-        </div>
-
-        <div class="section">
-            <div class="section-header">🔧 Variables</div>
-            <div class="section-content" id="variables"></div>
-        </div>
-
-        <div class="section">
-            <div class="section-header">📋 Recent Logs</div>
-            <div class="section-content" id="logs"></div>
+            <div class="tab-content">
+                <div id="steps-tab" class="tab-panel active">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="overall-progress"></div>
+                    </div>
+                    <div class="progress-text" id="progress-text"></div>
+                    <div id="steps"></div>
+                </div>
+                <div id="variables-tab" class="tab-panel">
+                    <div id="variables"></div>
+                </div>
+                <div id="logs-tab" class="tab-panel">
+                    <div id="logs"></div>
+                </div>
+            </div>
         </div>
     </div>
 
     <script>
         let lastRefresh = 0;
+
+        function switchTab(tabId) {
+            // Remove active class from all tabs and panels
+            document.querySelectorAll('.tab-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.querySelectorAll('.tab-panel').forEach(panel => {
+                panel.classList.remove('active');
+            });
+
+            // Add active class to clicked tab and corresponding panel
+            event.target.classList.add('active');
+            document.getElementById(tabId).classList.add('active');
+        }
 
         function handleReconfigure() {
             if (!confirm('This will archive the current bloom.log and restart the configuration process. Continue?')) {
@@ -682,7 +777,7 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
             </div>
         </div>
 
-        <form id="config-form">
+        <form id="config-form" novalidate>
             <!-- Basic Configuration -->
             <div class="config-section">
                 <div class="section-header">📋 Basic Configuration</div>
@@ -708,7 +803,14 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
                     <div class="form-group">
                         <label for="DOMAIN">Domain Name *</label>
                         <div class="description">Domain name for the cluster (e.g., cluster.example.com). Used for ingress configuration.</div>
-                        <input type="text" id="DOMAIN" name="DOMAIN" placeholder="cluster.example.com" required>
+                        <input type="text" id="DOMAIN" name="DOMAIN" placeholder="cluster.example.com"
+                               pattern="[a-z0-9]([a-z0-9\-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)*"
+                               title="Valid domain format: example.com or subdomain.example.com" required>
+                        <small class="help-text" style="color: #666; font-size: 12px; margin-top: 4px; display: block;">
+                            ✓ Format: domain.com or sub.domain.com<br>
+                            ✓ Must start with alphanumeric, can contain hyphens<br>
+                            ✗ No special characters except dots and hyphens
+                        </small>
                     </div>
                 </div>
             </div>
@@ -729,7 +831,14 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
                     <div class="form-group">
                         <label for="SERVER_IP">Server IP Address *</label>
                         <div class="description">IP address of the RKE2 server (first node).</div>
-                        <input type="text" id="SERVER_IP" name="SERVER_IP" placeholder="192.168.1.100">
+                        <input type="text" id="SERVER_IP" name="SERVER_IP" placeholder="192.168.1.100"
+                               pattern="^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"
+                               title="Valid IPv4 address format: xxx.xxx.xxx.xxx (0-255 for each octet)">
+                        <small class="help-text" style="color: #666; font-size: 12px; margin-top: 4px; display: block;">
+                            ✓ Format: IPv4 address (e.g., 192.168.1.100)<br>
+                            ✓ Each octet: 0-255<br>
+                            ✗ No IPv6 addresses yet
+                        </small>
                     </div>
 
                     <div class="form-group">
@@ -756,13 +865,29 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
                     <div class="form-group">
                         <label for="SELECTED_DISKS">Selected Disks</label>
                         <div class="description">Comma-separated list of specific disk devices to use (e.g., /dev/sdb,/dev/sdc). Leave empty for automatic selection.</div>
-                        <input type="text" id="SELECTED_DISKS" name="SELECTED_DISKS" placeholder="/dev/sdb,/dev/sdc">
+                        <input type="text" id="SELECTED_DISKS" name="SELECTED_DISKS" placeholder="/dev/sdb,/dev/sdc"
+                               pattern="^(/dev/[a-zA-Z0-9]+)(,/dev/[a-zA-Z0-9]+)*$|^$"
+                               title="Format: /dev/xxx or comma-separated /dev/xxx,/dev/yyy">
+                        <small class="help-text" style="color: #666; font-size: 12px; margin-top: 4px; display: block;">
+                            ✓ Format: /dev/sdb or /dev/sdb,/dev/sdc<br>
+                            ✓ Must be valid block device paths<br>
+                            ✓ Leave empty for auto-detection<br>
+                            ✗ Ensure devices exist and are not in use
+                        </small>
                     </div>
 
                     <div class="form-group">
                         <label for="LONGHORN_DISKS">Longhorn Disks</label>
                         <div class="description">Comma-separated list of disk paths for Longhorn storage. Leave empty for automatic configuration.</div>
-                        <input type="text" id="LONGHORN_DISKS" name="LONGHORN_DISKS" placeholder="/dev/sdb,/dev/sdc">
+                        <input type="text" id="LONGHORN_DISKS" name="LONGHORN_DISKS" placeholder="/dev/sdb,/dev/sdc"
+                               pattern="^(/dev/[a-zA-Z0-9]+)(,/dev/[a-zA-Z0-9]+)*$|^$"
+                               title="Format: /dev/xxx or comma-separated /dev/xxx,/dev/yyy">
+                        <small class="help-text" style="color: #666; font-size: 12px; margin-top: 4px; display: block;">
+                            ✓ Format: /dev/sdb or /dev/sdb,/dev/sdc<br>
+                            ✓ Must be existing block devices<br>
+                            ✓ Will be formatted for Longhorn storage<br>
+                            ⚠️ Data on specified disks will be erased
+                        </small>
                     </div>
                 </div>
             </div>
@@ -793,13 +918,27 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
                     <div class="form-group conditional" id="tls-cert-section">
                         <label for="TLS_CERT">TLS Certificate Path *</label>
                         <div class="description">Path to TLS certificate file for ingress (PEM format).</div>
-                        <input type="text" id="TLS_CERT" name="TLS_CERT" placeholder="/path/to/cert.pem">
+                        <input type="text" id="TLS_CERT" name="TLS_CERT" placeholder="/path/to/cert.pem"
+                               pattern="^(/[^/]+)+\.(pem|crt|cert)$|^$"
+                               title="Must be an absolute path to a .pem, .crt, or .cert file">
+                        <small class="help-text" style="color: #666; font-size: 12px; margin-top: 4px; display: block;">
+                            ✓ Format: Absolute path (starts with /)<br>
+                            ✓ File extensions: .pem, .crt, .cert<br>
+                            ✓ Must be readable by the user
+                        </small>
                     </div>
 
                     <div class="form-group conditional" id="tls-key-section">
                         <label for="TLS_KEY">TLS Private Key Path *</label>
                         <div class="description">Path to TLS private key file for ingress (PEM format).</div>
-                        <input type="text" id="TLS_KEY" name="TLS_KEY" placeholder="/path/to/key.pem">
+                        <input type="text" id="TLS_KEY" name="TLS_KEY" placeholder="/path/to/key.pem"
+                               pattern="^(/[^/]+)+\.(pem|key)$|^$"
+                               title="Must be an absolute path to a .pem or .key file">
+                        <small class="help-text" style="color: #666; font-size: 12px; margin-top: 4px; display: block;">
+                            ✓ Format: Absolute path (starts with /)<br>
+                            ✓ File extensions: .pem, .key<br>
+                            ✓ Must be readable and should be protected (600 permissions)
+                        </small>
                     </div>
                 </div>
             </div>
@@ -811,7 +950,14 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
                     <div class="form-group">
                         <label for="OIDC_URL">OIDC Provider URL</label>
                         <div class="description">URL of the OIDC provider for authentication. Leave empty to skip OIDC configuration.</div>
-                        <input type="url" id="OIDC_URL" name="OIDC_URL" placeholder="https://your-oidc-provider.com">
+                        <input type="url" id="OIDC_URL" name="OIDC_URL" placeholder="https://your-oidc-provider.com"
+                               pattern="^https?://.*$|^$"
+                               title="Must be a valid HTTP or HTTPS URL">
+                        <small class="help-text" style="color: #666; font-size: 12px; margin-top: 4px; display: block;">
+                            ✓ Format: https://provider.com or http://provider.local<br>
+                            ✓ Must be accessible from the cluster<br>
+                            ✓ Leave empty to skip OIDC setup
+                        </small>
                     </div>
 
                     <div class="form-group">
@@ -861,19 +1007,64 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
             const certOptionSection = document.getElementById('cert-option-section');
             const tlsCertSection = document.getElementById('tls-cert-section');
             const tlsKeySection = document.getElementById('tls-key-section');
+            const tlsCertInput = document.getElementById('TLS_CERT');
+            const tlsKeyInput = document.getElementById('TLS_KEY');
 
             if (useCertManager) {
                 certOptionSection.classList.remove('show');
                 tlsCertSection.classList.remove('show');
                 tlsKeySection.classList.remove('show');
+                // Remove pattern validation from hidden certificate fields
+                if (tlsCertInput) {
+                    tlsCertInput.removeAttribute('pattern');
+                    tlsCertInput.removeAttribute('required');
+                    if (!window.prefilledData?.tls_cert) {
+                        tlsCertInput.value = '';
+                    }
+                }
+                if (tlsKeyInput) {
+                    tlsKeyInput.removeAttribute('pattern');
+                    tlsKeyInput.removeAttribute('required');
+                    if (!window.prefilledData?.tls_key) {
+                        tlsKeyInput.value = '';
+                    }
+                }
             } else {
                 certOptionSection.classList.add('show');
                 if (certOption === 'existing') {
                     tlsCertSection.classList.add('show');
                     tlsKeySection.classList.add('show');
+                    // Restore pattern validation for visible certificate fields
+                    if (tlsCertInput) {
+                        tlsCertInput.setAttribute('pattern', '^(/[^/]+)+\\.(pem|crt|cert)$|^$');
+                        if (window.prefilledData?.tls_cert) {
+                            tlsCertInput.value = window.prefilledData.tls_cert;
+                        }
+                    }
+                    if (tlsKeyInput) {
+                        tlsKeyInput.setAttribute('pattern', '^(/[^/]+)+\\.(pem|key)$|^$');
+                        if (window.prefilledData?.tls_key) {
+                            tlsKeyInput.value = window.prefilledData.tls_key;
+                        }
+                    }
                 } else {
                     tlsCertSection.classList.remove('show');
                     tlsKeySection.classList.remove('show');
+                    // Remove pattern validation from hidden certificate fields
+                    if (tlsCertInput) {
+                        tlsCertInput.removeAttribute('pattern');
+                        tlsCertInput.removeAttribute('required');
+                        if (!window.prefilledData?.tls_cert) {
+                            tlsCertInput.value = '';
+                        }
+                    }
+                    if (tlsKeyInput) {
+                        tlsKeyInput.removeAttribute('pattern');
+                        tlsKeyInput.removeAttribute('required');
+                        if (!window.prefilledData?.tls_key) {
+                            tlsKeyInput.value = '';
+                        }
+                    }
                 }
             }
 
@@ -914,15 +1105,75 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
         document.getElementById('config-form').addEventListener('submit', function(e) {
             e.preventDefault();
 
+            // First check if the form is valid according to HTML5 validation
+            const form = e.target;
+            console.log('Form validity check:', form.checkValidity());
+
+            // If form is invalid, show which fields are invalid
+            if (!form.checkValidity()) {
+                console.error('Form has HTML5 validation errors');
+
+                // Find all invalid fields
+                const allInputs = form.querySelectorAll('input, select, textarea');
+                let invalidFields = [];
+
+                allInputs.forEach(input => {
+                    if (!input.validity.valid) {
+                        const parent = input.closest('.form-group');
+                        const isVisible = parent && window.getComputedStyle(parent).display !== 'none';
+
+                        // Set custom validation message
+                        let message = '';
+                        if (input.validity.patternMismatch) {
+                            const helpText = input.nextElementSibling ? input.nextElementSibling.textContent : '';
+                            message = 'Invalid format. ' + helpText;
+                        } else if (input.validity.valueMissing) {
+                            message = 'This field is required';
+                        } else if (input.validity.typeMismatch) {
+                            message = 'Please enter a valid value';
+                        }
+
+                        input.setCustomValidity(message);
+
+                        invalidFields.push({
+                            name: input.name || input.id,
+                            value: input.value,
+                            pattern: input.getAttribute('pattern'),
+                            required: input.hasAttribute('required'),
+                            visible: isVisible,
+                            validity: {
+                                patternMismatch: input.validity.patternMismatch,
+                                valueMissing: input.validity.valueMissing,
+                                typeMismatch: input.validity.typeMismatch
+                            },
+                            message: message
+                        });
+                    } else {
+                        // Clear any custom validation message for valid fields
+                        input.setCustomValidity('');
+                    }
+                });
+
+                console.error('Invalid fields:', invalidFields);
+
+                // Show the validation messages
+                form.reportValidity();
+                return;
+            }
+
             const formData = new FormData(this);
             const config = {};
 
-            // Convert form data to config object
+            // First, handle all checkboxes (including unchecked ones)
+            const checkboxes = document.querySelectorAll('input[type="checkbox"]');
+            checkboxes.forEach(checkbox => {
+                config[checkbox.name] = checkbox.checked;
+            });
+
+            // Then handle other form fields
             for (let [key, value] of formData.entries()) {
                 const input = document.querySelector(` + "`" + `[name="${key}"]` + "`" + `);
-                if (input.type === 'checkbox') {
-                    config[key] = input.checked;
-                } else if (value.trim()) {
+                if (input.type !== 'checkbox' && value.trim()) {
                     config[key] = value.trim();
                 }
             }
@@ -933,17 +1184,140 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
             const certOption = config.CERT_OPTION;
 
             let errors = [];
-            if (!config.DOMAIN) errors.push('Domain is required');
+
+            // Log all form fields for debugging
+            console.log('=== Form Validation Debug ===');
+            console.log('Configuration:', config);
+
+            // Function to check and log field validation
+            function validateField(fieldId, fieldName) {
+                const element = document.getElementById(fieldId);
+                if (element) {
+                    const value = element.value;
+                    const pattern = element.getAttribute('pattern');
+                    const isValid = element.validity.valid;
+                    const visibility = window.getComputedStyle(element.parentElement).display;
+                    console.log(fieldName + ':', {
+                        value: value,
+                        pattern: pattern,
+                        valid: isValid,
+                        visible: visibility !== 'none',
+                        validationMessage: element.validationMessage,
+                        validity: element.validity
+                    });
+                    return isValid;
+                }
+                console.log(fieldName + ': Element not found');
+                return true;
+            }
+
+            // Check all form fields for validation issues
+            function checkAllFormFields() {
+                console.log('=== Checking ALL Form Fields ===');
+                const allInputs = document.querySelectorAll('input[pattern]');
+                allInputs.forEach(input => {
+                    if (!input.validity.valid) {
+                        const parent = input.closest('.form-group');
+                        const isVisible = parent && window.getComputedStyle(parent).display !== 'none';
+                        console.error('INVALID FIELD:', {
+                            id: input.id,
+                            name: input.name,
+                            value: input.value,
+                            pattern: input.getAttribute('pattern'),
+                            visible: isVisible,
+                            validationMessage: input.validationMessage,
+                            parentClass: parent?.className
+                        });
+                    }
+                });
+                console.log('=== End Form Field Check ===');
+            }
+
+            // Enhanced validation with detailed messages and logging
+            if (!config.DOMAIN) {
+                errors.push('❌ Domain is required - Please enter a valid domain name (e.g., cluster.example.com)');
+            } else if (!validateField('DOMAIN', 'DOMAIN')) {
+                errors.push('❌ Invalid domain format - Must be a valid domain like example.com or sub.example.com');
+            }
+
             if (!firstNode) {
-                if (!config.SERVER_IP) errors.push('Server IP is required for additional nodes');
-                if (!config.JOIN_TOKEN) errors.push('Join Token is required for additional nodes');
+                if (!config.SERVER_IP) {
+                    errors.push('❌ Server IP is required - Please enter the IP address of the first node (e.g., 192.168.1.100)');
+                } else if (!validateField('SERVER_IP', 'SERVER_IP')) {
+                    errors.push('❌ Invalid IP address format - Must be a valid IPv4 address (e.g., 192.168.1.100)');
+                }
+                if (!config.JOIN_TOKEN) {
+                    errors.push('❌ Join Token is required - Please enter the token from the first node installation');
+                }
             }
+
             if (!useCertManager && !certOption) {
-                errors.push('Certificate option is required when not using cert-manager');
+                errors.push('❌ Certificate option is required - Please select how to handle TLS certificates when not using cert-manager');
             }
+
             if (certOption === 'existing') {
-                if (!config.TLS_CERT) errors.push('TLS Certificate path is required for existing certificates');
-                if (!config.TLS_KEY) errors.push('TLS Private Key path is required for existing certificates');
+                if (!config.TLS_CERT) {
+                    errors.push('❌ TLS Certificate path is required - Please provide the path to your certificate file (e.g., /path/to/cert.pem)');
+                } else if (!validateField('TLS_CERT', 'TLS_CERT')) {
+                    errors.push('❌ Invalid certificate path - Must be an absolute path to a .pem, .crt, or .cert file');
+                }
+                if (!config.TLS_KEY) {
+                    errors.push('❌ TLS Private Key path is required - Please provide the path to your key file (e.g., /path/to/key.pem)');
+                } else if (!validateField('TLS_KEY', 'TLS_KEY')) {
+                    errors.push('❌ Invalid key path - Must be an absolute path to a .pem or .key file');
+                }
+            }
+
+            // Validate disk paths if provided
+            if (config.SELECTED_DISKS) {
+                validateField('SELECTED_DISKS', 'SELECTED_DISKS');
+                if (!document.getElementById('SELECTED_DISKS').validity.valid) {
+                    errors.push('❌ Invalid disk format - Must be /dev/xxx or comma-separated list like /dev/sdb,/dev/sdc');
+                }
+            }
+            if (config.LONGHORN_DISKS) {
+                validateField('LONGHORN_DISKS', 'LONGHORN_DISKS');
+                if (!document.getElementById('LONGHORN_DISKS').validity.valid) {
+                    errors.push('❌ Invalid Longhorn disk format - Must be /dev/xxx or comma-separated list. Note: specified disks must exist on the system');
+                }
+            }
+
+            // Validate OIDC URL if provided
+            if (config.OIDC_URL) {
+                validateField('OIDC_URL', 'OIDC_URL');
+                if (!document.getElementById('OIDC_URL').validity.valid) {
+                    errors.push('❌ Invalid OIDC URL - Must be a valid HTTP or HTTPS URL');
+                }
+            }
+
+            console.log('Validation errors:', errors);
+            console.log('=== End Validation Debug ===');
+
+            // Check all form fields for any HTML5 validation issues
+            checkAllFormFields();
+
+            // Double-check form validity right before submission
+            const finalValidityCheck = document.getElementById('config-form').checkValidity();
+            console.log('Final form validity check before submission:', finalValidityCheck);
+
+            if (!finalValidityCheck) {
+                console.error('Form became invalid between validation and submission!');
+                // Find the invalid field
+                const allInputs = document.querySelectorAll('input, select, textarea');
+                allInputs.forEach(input => {
+                    if (!input.validity.valid) {
+                        console.error('INVALID FIELD FOUND:', {
+                            name: input.name,
+                            id: input.id,
+                            value: input.value,
+                            pattern: input.getAttribute('pattern'),
+                            required: input.hasAttribute('required'),
+                            validity: input.validity,
+                            validationMessage: input.validationMessage
+                        });
+                    }
+                });
+                return;
             }
 
             if (errors.length > 0) {
@@ -957,17 +1331,63 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
                     });
                     return;
                 } else {
-                    alert('Please fix the following errors:\\n\\n' + errors.join('\\n'));
+                    // Show detailed error message with suggestions
+                    const errorDiv = document.createElement('div');
+                    errorDiv.innerHTML = '<h3 style="color: #d32f2f;">❌ Validation Failed</h3>' +
+                        '<p style="color: #666;">Please fix the following issues:</p>' +
+                        '<ul style="list-style: none; padding: 0;">' +
+                        errors.map(e => '<li style="margin: 8px 0;">' + e + '</li>').join('') +
+                        '</ul>' +
+                        '<p style="color: #666; font-style: italic; margin-top: 15px;">💡 Tip: Hover over fields to see format requirements</p>';
+
+                    // Create a better modal instead of alert
+                    const modal = document.createElement('div');
+                    modal.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); ' +
+                        'background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); ' +
+                        'z-index: 10000; max-width: 600px; max-height: 80vh; overflow-y: auto;';
+                    modal.appendChild(errorDiv);
+
+                    const closeBtn = document.createElement('button');
+                    closeBtn.textContent = 'OK';
+                    closeBtn.style.cssText = 'background: #4CAF50; color: white; border: none; padding: 10px 20px; ' +
+                        'border-radius: 4px; cursor: pointer; margin-top: 15px; font-size: 16px;';
+                    closeBtn.onclick = () => {
+                        document.body.removeChild(modal);
+                        document.body.removeChild(overlay);
+                        // Focus first invalid field
+                        const firstError = errors[0];
+                        if (firstError.includes('Domain')) document.getElementById('DOMAIN').focus();
+                        else if (firstError.includes('Server IP')) document.getElementById('SERVER_IP').focus();
+                        else if (firstError.includes('Join Token')) document.getElementById('JOIN_TOKEN').focus();
+                        else if (firstError.includes('Certificate path')) document.getElementById('TLS_CERT').focus();
+                        else if (firstError.includes('Key path')) document.getElementById('TLS_KEY').focus();
+                    };
+                    modal.appendChild(closeBtn);
+
+                    const overlay = document.createElement('div');
+                    overlay.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; ' +
+                        'background: rgba(0,0,0,0.5); z-index: 9999;';
+
+                    document.body.appendChild(overlay);
+                    document.body.appendChild(modal);
                     return;
                 }
             }
 
             // Submit configuration
-            fetch('/api/config', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(config)
-            })
+            console.log('About to submit configuration via fetch...');
+            console.log('Config object:', config);
+
+            try {
+                console.log('Creating fetch request...');
+                const fetchPromise = fetch('/api/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(config)
+                });
+
+                console.log('Fetch request created, waiting for response...');
+                fetchPromise
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
@@ -995,20 +1415,67 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
                 }
             })
             .catch(error => {
+                console.error('Submission error details:', {
+                    message: error.message,
+                    stack: error.stack,
+                    type: error.name,
+                    error: error
+                });
+
+                // Try to identify what's causing the error
+                if (error.message && error.message.includes('pattern')) {
+                    console.error('Pattern validation error detected');
+                    // Check ALL form fields one more time
+                    const form = document.getElementById('config-form');
+                    const allInputs = form.querySelectorAll('input, select, textarea');
+                    console.error('Checking all', allInputs.length, 'form inputs:');
+
+                    allInputs.forEach((input, index) => {
+                        const parent = input.closest('.form-group');
+                        const isVisible = parent ? window.getComputedStyle(parent).display !== 'none' : true;
+                        const isInHiddenSection = input.closest('.form-section:not(.show)') !== null;
+
+                        console.log('Field ' + index + ': ' + (input.name || input.id), {
+                            type: input.type,
+                            value: input.value,
+                            pattern: input.getAttribute('pattern'),
+                            required: input.hasAttribute('required'),
+                            visible: isVisible,
+                            inHiddenSection: isInHiddenSection,
+                            validity: input.validity,
+                            validationMessage: input.validationMessage,
+                            checkValidity: input.checkValidity()
+                        });
+                    });
+                }
+
                 document.getElementById('result').innerHTML = ` + "`" + `
                     <div class="error">
                         <h3>❌ Submission Failed</h3>
                         <p>Failed to submit configuration: ${error.message}</p>
+                        <p style="font-size: 12px; color: #666;">Check browser console for detailed debugging information</p>
                     </div>
                 ` + "`" + `;
                 document.getElementById('result').style.display = 'block';
             });
+            } catch (e) {
+                console.error('Exception thrown before fetch:', e);
+                throw e;
+            }
         });
 
-        // Add event listeners for progress tracking
+        // Add event listeners for progress tracking and clearing validation
         document.querySelectorAll('#config-form input, #config-form select').forEach(input => {
-            input.addEventListener('input', updateProgress);
-            input.addEventListener('change', updateProgress);
+            input.addEventListener('input', function() {
+                updateProgress();
+                // Clear any custom validation message when user starts typing
+                this.setCustomValidity('');
+            });
+            input.addEventListener('change', function() {
+                updateProgress();
+                // Clear any custom validation message when field changes
+                this.setCustomValidity('');
+            });
         });
 
         // Check for errors on page load
@@ -1065,11 +1532,17 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
 
         // Load pre-filled configuration if available
         function loadPrefilledConfig() {
+            console.log('Starting loadPrefilledConfig...');
             fetch('/api/prefilled-config')
-                .then(response => response.json())
+                .then(response => {
+                    console.log('API response status:', response.status);
+                    return response.json();
+                })
                 .then(data => {
-                    if (data.hasPrefilled) {
-                        console.log('Loading pre-filled configuration:', data.config);
+                    console.log('API response data:', data);
+                    if (data.hasPrefilled && data.config) {
+                        console.log('Loading pre-filled configuration with', Object.keys(data.config).length, 'values');
+                        window.prefilledData = data.config;  // Store for debugging
 
                         // Set global one-shot flag for validation error handling
                         window.isOneShot = data.oneShot;
@@ -1080,39 +1553,48 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
                         const message = document.getElementById('error-message');
                         const suggestion = document.getElementById('error-suggestion');
 
-                        banner.style.background = '#e8f5e8';
-                        banner.style.border = '2px solid #2e7d32';
-                        title.style.color = '#2e7d32';
-                        title.textContent = '📄 Configuration Loaded from File';
-                        message.textContent = 'Configuration has been pre-filled from your config file.';
+                        if (banner && title && message && suggestion) {
+                            banner.style.background = '#e8f5e8';
+                            banner.style.border = '2px solid #2e7d32';
+                            title.style.color = '#2e7d32';
+                            title.textContent = '📄 Configuration Loaded from File';
+                            message.textContent = 'Configuration has been pre-filled from your config file.';
 
-                        if (data.oneShot) {
-                            suggestion.textContent = 'One-shot mode enabled - auto-proceeding...';
-                        } else {
-                            suggestion.textContent = 'Please review the configuration below and click "Generate Configuration & Start Installation" to proceed.';
+                            if (data.oneShot) {
+                                suggestion.textContent = 'One-shot mode enabled - auto-proceeding...';
+                            } else {
+                                suggestion.textContent = 'Please review the configuration below and click "Generate Configuration & Start Installation" to proceed.';
+                            }
+
+                            banner.style.display = 'block';
                         }
-
-                        banner.style.display = 'block';
 
                         // Fill form fields with pre-filled values
                         const config = data.config;
+                        let fieldsSet = 0;
+                        let fieldsNotFound = [];
 
                         // Boolean fields (checkboxes) - viper keys are lowercase
-                        if (config.first_node !== undefined) {
-                            document.getElementById('FIRST_NODE').checked = config.first_node;
-                        }
-                        if (config.gpu_node !== undefined) {
-                            document.getElementById('GPU_NODE').checked = config.gpu_node;
-                        }
-                        if (config.control_plane !== undefined) {
-                            document.getElementById('CONTROL_PLANE').checked = config.control_plane;
-                        }
-                        if (config.skip_disk_check !== undefined) {
-                            document.getElementById('SKIP_DISK_CHECK').checked = config.skip_disk_check;
-                        }
-                        if (config.use_cert_manager !== undefined) {
-                            document.getElementById('USE_CERT_MANAGER').checked = config.use_cert_manager;
-                        }
+                        const booleanFields = {
+                            'FIRST_NODE': 'first_node',
+                            'GPU_NODE': 'gpu_node',
+                            'CONTROL_PLANE': 'control_plane',
+                            'SKIP_DISK_CHECK': 'skip_disk_check',
+                            'USE_CERT_MANAGER': 'use_cert_manager'
+                        };
+
+                        Object.entries(booleanFields).forEach(([fieldId, configKey]) => {
+                            const element = document.getElementById(fieldId);
+                            if (element) {
+                                if (config[configKey] !== undefined) {
+                                    element.checked = config[configKey];
+                                    console.log('Set checkbox', fieldId, 'to', config[configKey]);
+                                    fieldsSet++;
+                                }
+                            } else {
+                                fieldsNotFound.push(fieldId);
+                            }
+                        });
 
                         // String fields - map form IDs to viper keys (lowercase)
                         const stringFieldMap = {
@@ -1132,10 +1614,24 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
 
                         Object.entries(stringFieldMap).forEach(([fieldId, configKey]) => {
                             const element = document.getElementById(fieldId);
-                            if (element && config[configKey] !== undefined) {
-                                element.value = config[configKey];
+                            if (element) {
+                                const value = config[configKey];
+                                if (value !== undefined && value !== null && value !== '') {
+                                    element.value = String(value);
+                                    // Trigger change event to update any dependent fields
+                                    element.dispatchEvent(new Event('change', { bubbles: true }));
+                                    console.log('Set text field', fieldId, 'to', value);
+                                    fieldsSet++;
+                                }
+                            } else {
+                                fieldsNotFound.push(fieldId);
                             }
                         });
+
+                        console.log('Fields successfully set:', fieldsSet);
+                        if (fieldsNotFound.length > 0) {
+                            console.warn('Fields not found in DOM:', fieldsNotFound);
+                        }
 
                         // Update conditionals after filling
                         updateConditionals();
@@ -1143,22 +1639,44 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
 
                         // Auto-submit if in one-shot mode
                         if (data.oneShot) {
-                            // Auto-submit after form is fully populated
-                            const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
-                            document.getElementById('config-form').dispatchEvent(submitEvent);
+                            console.log('One-shot mode detected, preparing to auto-submit...');
+                            setTimeout(() => {
+                                const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
+                                document.getElementById('config-form').dispatchEvent(submitEvent);
+                            }, 500);
                         }
+                    } else {
+                        console.log('No pre-filled configuration available');
+                        // Still need to call these when no prefilled config
+                        updateConditionals();
+                        updateProgress();
                     }
                 })
                 .catch(err => {
-                    console.log('No pre-filled configuration available');
+                    console.error('Error loading pre-filled configuration:', err);
+                    // Still need to call these on error
+                    updateConditionals();
+                    updateProgress();
                 });
         }
 
-        // Initialize
-        loadPrefilledConfig();
-        checkForErrors();
-        updateConditionals();
-        updateProgress();
+        // Initialize when DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', function() {
+                console.log('DOM ready, initializing...');
+                // Don't call updateConditionals here - it's called inside loadPrefilledConfig
+                loadPrefilledConfig();
+                checkForErrors();
+                // updateProgress is called inside loadPrefilledConfig
+            });
+        } else {
+            // DOM is already loaded
+            console.log('DOM already loaded, initializing...');
+            // Don't call updateConditionals here - it's called inside loadPrefilledConfig
+            loadPrefilledConfig();
+            checkForErrors();
+            // updateProgress is called inside loadPrefilledConfig
+        }
     </script>
 </body>
 </html>`
@@ -1206,6 +1724,16 @@ func (h *WebHandlerService) ConfigAPIHandler(w http.ResponseWriter, r *http.Requ
 	h.config = config
 	h.configVersion++
 	h.lastError = "" // Clear any previous errors
+
+	// Start installation if callback is set (monitoring mode)
+	if h.startInstallation != nil {
+		go func() {
+			log.Info("Starting installation process after configuration save...")
+			if err := h.startInstallation(); err != nil {
+				log.Errorf("Failed to start installation: %v", err)
+			}
+		}()
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -1255,46 +1783,79 @@ func (h *WebHandlerService) ReconfigureHandler(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	log.Info("ReconfigureHandler: Starting reconfigure process")
+
 	// Archive existing bloom.log
 	currentDir, _ := os.Getwd()
 	logPath := filepath.Join(currentDir, "bloom.log")
 
-	// First, parse the log to extract configuration values
-	if _, err := os.Stat(logPath); err == nil {
-		// Parse the log to get previous configuration
-		if status, err := ParseBloomLog(logPath); err == nil {
-			// Convert config values to prefilled config
-			h.prefilledConfig = make(map[string]interface{})
-
-			// Map the parsed values to the config keys used by the web interface
-			// The JavaScript expects lowercase keys matching viper format
-			for key, value := range status.ConfigValues {
-				// Keep key as lowercase to match JavaScript expectations
-				lowerKey := strings.ToLower(strings.ReplaceAll(key, " ", "_"))
-
-				// Handle boolean values
-				if value == "true" || value == "false" {
-					h.prefilledConfig[lowerKey] = value == "true"
-				} else {
-					h.prefilledConfig[lowerKey] = value
+	// Only load configuration if we don't already have it
+	// (it might have been loaded at startup in monitoring mode)
+	if len(h.prefilledConfig) == 0 {
+		// Try to load configuration from bloom.yaml first (if it exists)
+		yamlPath := filepath.Join(currentDir, "bloom.yaml")
+		if _, err := os.Stat(yamlPath); err == nil {
+			// Read bloom.yaml
+			yamlData, err := os.ReadFile(yamlPath)
+			if err == nil {
+				var yamlConfig map[string]interface{}
+				if err := yaml.Unmarshal(yamlData, &yamlConfig); err == nil {
+					h.prefilledConfig = yamlConfig
+					log.Infof("ReconfigureHandler: Loaded %d config values from bloom.yaml", len(h.prefilledConfig))
 				}
 			}
-
-			// Make sure we have the essential values (use lowercase keys)
-			if status.Domain != "" {
-				h.prefilledConfig["domain"] = status.Domain
-			}
-			h.prefilledConfig["first_node"] = status.FirstNode
-			h.prefilledConfig["control_plane"] = status.ControlPlane
-			h.prefilledConfig["gpu_node"] = status.GPUNode
-			if status.ServerIP != "" {
-				h.prefilledConfig["server_ip"] = status.ServerIP
-			}
-
-			log.Infof("Loaded previous configuration with %d values", len(h.prefilledConfig))
 		}
+	} else {
+		log.Infof("ReconfigureHandler: Using existing prefilled config with %d values", len(h.prefilledConfig))
+	}
 
-		// Now archive the file
+	// If we still don't have config, try parsing the log
+	if len(h.prefilledConfig) == 0 {
+		if _, err := os.Stat(logPath); err == nil {
+			// Parse the log to get previous configuration
+			if status, err := ParseBloomLog(logPath); err == nil {
+				log.Infof("ReconfigureHandler: Parsed %d config values from bloom.log", len(status.ConfigValues))
+				// Convert config values to prefilled config
+				h.prefilledConfig = make(map[string]interface{})
+
+				// Map the parsed values to the config keys used by the web interface
+				// The JavaScript expects lowercase keys matching viper format
+				for key, value := range status.ConfigValues {
+					// Keep key as lowercase to match JavaScript expectations
+					lowerKey := strings.ToLower(strings.ReplaceAll(key, " ", "_"))
+
+					// Handle boolean values
+					if value == "true" || value == "false" {
+						h.prefilledConfig[lowerKey] = value == "true"
+					} else {
+						h.prefilledConfig[lowerKey] = value
+					}
+				}
+
+				// Make sure we have the essential values (use lowercase keys)
+				if status.Domain != "" {
+					h.prefilledConfig["domain"] = status.Domain
+				}
+				h.prefilledConfig["first_node"] = status.FirstNode
+				h.prefilledConfig["control_plane"] = status.ControlPlane
+				h.prefilledConfig["gpu_node"] = status.GPUNode
+				if status.ServerIP != "" {
+					h.prefilledConfig["server_ip"] = status.ServerIP
+				}
+
+				log.Infof("Loaded previous configuration with %d values", len(h.prefilledConfig))
+				// Log details for debugging
+				for key, value := range h.prefilledConfig {
+					log.Debugf("  prefilled[%s] = %v", key, value)
+				}
+			} else {
+				log.Warnf("ReconfigureHandler: Failed to parse bloom.log: %v", err)
+			}
+		}
+	}
+
+	// Now archive the file if it exists
+	if _, err := os.Stat(logPath); err == nil {
 		timestamp := time.Now().Format("20060102-150405")
 		archivedPath := filepath.Join(currentDir, fmt.Sprintf("bloom-%s.log", timestamp))
 
@@ -1309,6 +1870,7 @@ func (h *WebHandlerService) ReconfigureHandler(w http.ResponseWriter, r *http.Re
 
 	// Switch to config mode
 	h.configMode = true
+	log.Info("ReconfigureHandler: Switched to config mode")
 
 	// Send success response
 	w.Header().Set("Content-Type", "application/json")
