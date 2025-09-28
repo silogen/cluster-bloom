@@ -19,6 +19,7 @@ package cmd
 import (
 	"bufio"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -41,8 +42,10 @@ Cluster-Bloom installs and configures a Kubernetes cluster.
 It installs ROCm and other needed settings to prepare a (primarily AMD GPU) node to be part of a Kubernetes cluster,
 and ready to be deployed with Cluster-Forge.
 
-By default, running without arguments will start the interactive configuration wizard.
-Use --config to specify a configuration file and skip the wizard.
+By default, running without arguments will start the web-based configuration interface.
+Use --config to specify a configuration file that will pre-fill the web interface.
+Use --one-shot with --config to auto-proceed after loading configuration (useful for automation).
+Use 'bloom cli --config <file>' for terminal-only mode.
 
 Available Configuration Variables:
   - FIRST_NODE: Set to true if this is the first node in the cluster (default: true).
@@ -64,17 +67,12 @@ Available Configuration Variables:
   - TLS_KEY: Path to TLS private key file for ingress (required if CERT_OPTION is 'existing').
 
 Usage:
-  Use the --config flag to specify a configuration file, or set the above variables in the environment or a Viper-compatible config file.
+  Use the --config flag to specify a configuration file that will pre-fill the web interface, or set the above variables in the environment or a Viper-compatible config file.
+  Use --one-shot with --config to auto-proceed after loading configuration for automated deployments.
 `,
 	Run: func(cmd *cobra.Command, args []string) {
-		// Run wizard by default if no config file is specified
-		if cfgFile == "" {
-			runWizard()
-			return
-		}
-
-		log.Debug("Starting package installation")
-		pkg.RunStepsWithUI(rootSteps())
+		// Always start web interface - either for config or monitoring
+		runWebInterfaceWithConfig()
 	},
 }
 
@@ -83,6 +81,7 @@ func Execute() {
 }
 
 var cfgFile string
+var oneShot bool
 
 // validateAllURLs validates all URL-type configuration parameters
 func validateAllURLs() error {
@@ -501,7 +500,9 @@ func init() {
 	cobra.OnInitialize(initConfig)
 
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is ./config.yaml)")
+	rootCmd.PersistentFlags().BoolVar(&oneShot, "one-shot", false, "skip confirmation when using --config (useful for automation)")
 	rootCmd.AddCommand(helpCmd)
+	rootCmd.AddCommand(cliCmd)
 }
 
 func initConfig() {
@@ -733,9 +734,88 @@ Available Configuration Variables:
   - TLS_KEY: Path to TLS private key file for ingress (required if CERT_OPTION is 'existing').
 
 Usage:
-  Use the --config flag to specify a configuration file, or set the above variables in the environment or a Viper-compatible config file.
+  Use the --config flag to specify a configuration file that will pre-fill the web interface, or set the above variables in the environment or a Viper-compatible config file.
+  Use --one-shot with --config to auto-proceed after loading configuration for automated deployments.
 `
 	fmt.Println(helpContent)
+}
+
+func findAvailablePort(startPort int) int {
+	for port := startPort; port < startPort+100; port++ {
+		ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+		if err == nil {
+			ln.Close()
+			return port
+		}
+	}
+	return startPort // fallback to original port if nothing available
+}
+
+
+func runWebInterfaceWithConfig() {
+	fmt.Println("🚀 Starting Cluster-Bloom Web Interface...")
+	fmt.Println()
+
+	// Find an available port starting from 62078
+	portNum := findAvailablePort(62078)
+	port := fmt.Sprintf(":%d", portNum)
+	url := fmt.Sprintf("http://127.0.0.1%s", port)
+
+	if cfgFile != "" {
+		fmt.Printf("📄 Configuration file: %s\n", cfgFile)
+		if oneShot {
+			fmt.Println("⚡ One-shot mode: will auto-proceed after loading configuration")
+		} else {
+			fmt.Println("🔄 Pre-filled configuration ready for review and confirmation")
+		}
+		fmt.Println()
+	}
+
+	fmt.Printf("🌐 Web interface starting on %s\n", url)
+	fmt.Println("📊 Configuration wizard accessible only from localhost")
+	fmt.Printf("🔧 Configure your cluster at %s\n", url)
+	fmt.Println()
+	fmt.Println("🔗 For remote access, create an SSH tunnel:")
+	fmt.Printf("   ssh -L %d:127.0.0.1:%d user@remote-server\n", portNum, portNum)
+	fmt.Printf("   Then access: http://127.0.0.1:%d\n\n", portNum)
+
+	// Pass config file information to the web interface
+	err := pkg.RunWebInterfaceWithConfig(port, rootSteps(), cfgFile, oneShot)
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+
+var cliCmd = &cobra.Command{
+	Use:   "cli",
+	Short: "Run with CLI-only interface (logs only)",
+	Long: `
+Run Cluster-Bloom with command-line interface only. This mode shows logs in the terminal
+and requires a configuration file to be provided via --config flag.
+
+This mode is useful for:
+- Automated deployments
+- Headless environments
+- CI/CD pipelines
+- Users who prefer terminal-only interfaces
+`,
+	Run: func(cmd *cobra.Command, args []string) {
+		if cfgFile == "" {
+			fmt.Println("❌ CLI mode requires a configuration file. Use --config flag to specify one.")
+			fmt.Println("💡 Run 'bloom wizard' to generate a configuration file, or")
+			fmt.Println("💡 Run 'bloom' without arguments to use the web interface.")
+			os.Exit(1)
+		}
+
+		fmt.Println("🚀 Starting Cluster-Bloom in CLI mode...")
+		fmt.Printf("📄 Using configuration: %s\n", cfgFile)
+		fmt.Println("📋 Logs will be displayed in terminal")
+		fmt.Println()
+
+		log.Debug("Starting package installation in CLI mode")
+		pkg.RunStepsWithCLI(rootSteps())
+	},
 }
 
 var helpCmd = &cobra.Command{
