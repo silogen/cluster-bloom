@@ -125,7 +125,6 @@ func TestStepExecution(t *testing.T) {
 	t.Run("CheckUbuntuStep", func(t *testing.T) {
 		result := CheckUbuntuStep.Action()
 		if result.Error == nil && result.Message == "" {
-			// Result structure is valid
 		}
 	})
 
@@ -135,14 +134,12 @@ func TestStepExecution(t *testing.T) {
 		}
 		result := InstallDependentPackagesStep.Action()
 		if result.Error == nil && result.Message == "" {
-			// Result structure is valid
 		}
 	})
 
 	t.Run("InotifyInstancesStep", func(t *testing.T) {
 		result := InotifyInstancesStep.Action()
 		if result.Error == nil && result.Message == "" {
-			// Result structure is valid
 		}
 	})
 }
@@ -156,7 +153,6 @@ func TestSetupAndCheckRocmStep(t *testing.T) {
 
 	viper.Set("GPU_NODE", true)
 	result = SetupAndCheckRocmStep.Action()
-	// Result depends on system state
 }
 
 func TestSelectDrivesStep(t *testing.T) {
@@ -213,5 +209,4 @@ func TestSetupKubeConfig(t *testing.T) {
 func TestFinalOutput(t *testing.T) {
 	viper.Set("FIRST_NODE", false)
 	result := FinalOutput.Action()
-	// Result depends on system state
 }

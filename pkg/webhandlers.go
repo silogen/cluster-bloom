@@ -85,12 +85,10 @@ func NewWebHandlerServiceConfig() *WebHandlerService {
 	}
 }
 
-// SetPrefilledConfig sets the prefilled configuration from parsed log data
 func (h *WebHandlerService) SetPrefilledConfig(configValues map[string]string) {
 	h.prefilledConfig = make(map[string]interface{})
 	for key, value := range configValues {
 		lowerKey := strings.ToLower(strings.ReplaceAll(key, " ", "_"))
-		// Handle boolean values
 		if value == "true" || value == "false" {
 			h.prefilledConfig[lowerKey] = value == "true"
 		} else {
@@ -103,7 +101,6 @@ func (h *WebHandlerService) SetPrefilledConfig(configValues map[string]string) {
 func categorizeError(errorMsg string) ErrorType {
 	errorMsg = strings.ToLower(errorMsg)
 
-	// OS compatibility errors
 	if strings.Contains(errorMsg, "ubuntu") && (strings.Contains(errorMsg, "version") || strings.Contains(errorMsg, "requires")) {
 		return ErrorTypeOS
 	}
@@ -111,12 +108,10 @@ func categorizeError(errorMsg string) ErrorType {
 		return ErrorTypeOS
 	}
 
-	// System resource errors
 	if strings.Contains(errorMsg, "memory") || strings.Contains(errorMsg, "cpu") || strings.Contains(errorMsg, "disk space") {
 		return ErrorTypeSystem
 	}
 
-	// Configuration errors (could be fixed by reconfiguration)
 	if strings.Contains(errorMsg, "config") || strings.Contains(errorMsg, "invalid") || strings.Contains(errorMsg, "required") {
 		return ErrorTypeConfig
 	}
@@ -127,17 +122,14 @@ func categorizeError(errorMsg string) ErrorType {
 func (h *WebHandlerService) LoadConfigFromFile(configFile string, oneShot bool) {
 	h.oneShot = oneShot
 
-	// Read all viper settings and copy them to prefilledConfig
 	for _, key := range viper.AllKeys() {
 		value := viper.Get(key)
 		h.prefilledConfig[key] = value
 	}
 
-	// In one-shot mode, also populate the config directly to bypass web UI
 	if oneShot {
 		h.config = make(map[string]interface{})
 
-		// Convert viper keys to uppercase format expected by the rest of the system
 		keyMapping := map[string]string{
 			"domain":               "DOMAIN",
 			"server_ip":            "SERVER_IP",
@@ -158,12 +150,10 @@ func (h *WebHandlerService) LoadConfigFromFile(configFile string, oneShot bool) 
 			"enabled_steps":        "ENABLED_STEPS",
 		}
 
-		// Copy configuration with proper key mapping
 		for viperKey, value := range h.prefilledConfig {
 			if upperKey, exists := keyMapping[viperKey]; exists {
 				h.config[upperKey] = value
 			} else {
-				// Fallback: convert to uppercase
 				h.config[strings.ToUpper(viperKey)] = value
 			}
 		}
@@ -175,7 +165,6 @@ func (h *WebHandlerService) PrefilledConfigAPIHandler(w http.ResponseWriter, r *
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
-	// Debug logging
 	log.Infof("PrefilledConfigAPIHandler called - config has %d entries", len(h.prefilledConfig))
 	if len(h.prefilledConfig) > 0 {
 		for key, value := range h.prefilledConfig {
@@ -446,7 +435,6 @@ func (h *WebHandlerService) DashboardHandler(w http.ResponseWriter, r *http.Requ
         let lastRefresh = 0;
 
         function switchTab(tabId) {
-            // Remove active class from all tabs and panels
             document.querySelectorAll('.tab-button').forEach(btn => {
                 btn.classList.remove('active');
             });
@@ -454,7 +442,6 @@ func (h *WebHandlerService) DashboardHandler(w http.ResponseWriter, r *http.Requ
                 panel.classList.remove('active');
             });
 
-            // Add active class to clicked tab and corresponding panel
             event.target.classList.add('active');
             document.getElementById(tabId).classList.add('active');
         }
@@ -473,7 +460,6 @@ func (h *WebHandlerService) DashboardHandler(w http.ResponseWriter, r *http.Requ
             .then(response => response.json())
             .then(data => {
                 if (data.status === 'success') {
-                    // Redirect to configuration page
                     window.location.href = '/';
                 } else {
                     alert('Failed to reconfigure: ' + (data.message || 'Unknown error'));
@@ -538,7 +524,6 @@ func (h *WebHandlerService) DashboardHandler(w http.ResponseWriter, r *http.Requ
             const completedSteps = stepsArray.filter(s => s.status === 'completed' || s.status === 'skipped').length;
             const progress = totalSteps > 0 ? (completedSteps / totalSteps) * 100 : 0;
 
-            // Update progress bar
             document.getElementById('overall-progress').style.width = progress + '%';
             document.getElementById('progress-text').textContent = ` + "`" + `${completedSteps} of ${totalSteps} steps completed (${Math.round(progress)}%)` + "`" + `;
 
@@ -584,7 +569,6 @@ func (h *WebHandlerService) DashboardHandler(w http.ResponseWriter, r *http.Requ
             }).join('');
         }
 
-        // Check for OS errors and adjust UI accordingly
         function checkForOSErrors() {
             fetch('/api/error')
                 .then(response => response.json())
@@ -593,7 +577,6 @@ func (h *WebHandlerService) DashboardHandler(w http.ResponseWriter, r *http.Requ
                         document.getElementById('os-error-message').textContent = data.error;
                         document.getElementById('os-error-banner').style.display = 'block';
 
-                        // Update reconfigure button behavior for OS errors
                         const reconfigBtn = document.getElementById('reconfigure-btn');
                         reconfigBtn.style.background = '#666';
                         reconfigBtn.textContent = 'View Configuration';
@@ -608,7 +591,6 @@ func (h *WebHandlerService) DashboardHandler(w http.ResponseWriter, r *http.Requ
                 });
         }
 
-        // Auto-refresh every 2 seconds
         setInterval(refreshData, 2000);
         refreshData();
         checkForOSErrors();
@@ -995,7 +977,6 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
             const useCertManager = document.getElementById('USE_CERT_MANAGER').checked;
             const certOption = document.getElementById('CERT_OPTION').value;
 
-            // Show/hide additional node section
             const additionalNodeSection = document.getElementById('additional-node-section');
             if (firstNode) {
                 additionalNodeSection.classList.remove('show');
@@ -1003,7 +984,6 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
                 additionalNodeSection.classList.add('show');
             }
 
-            // Show/hide certificate options
             const certOptionSection = document.getElementById('cert-option-section');
             const tlsCertSection = document.getElementById('tls-cert-section');
             const tlsKeySection = document.getElementById('tls-key-section');
@@ -1014,7 +994,6 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
                 certOptionSection.classList.remove('show');
                 tlsCertSection.classList.remove('show');
                 tlsKeySection.classList.remove('show');
-                // Remove pattern validation from hidden certificate fields
                 if (tlsCertInput) {
                     tlsCertInput.removeAttribute('pattern');
                     tlsCertInput.removeAttribute('required');
@@ -1034,7 +1013,6 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
                 if (certOption === 'existing') {
                     tlsCertSection.classList.add('show');
                     tlsKeySection.classList.add('show');
-                    // Restore pattern validation for visible certificate fields
                     if (tlsCertInput) {
                         tlsCertInput.setAttribute('pattern', '^(/[^/]+)+\\.(pem|crt|cert)$|^$');
                         if (window.prefilledData?.tls_cert) {
@@ -1050,7 +1028,6 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
                 } else {
                     tlsCertSection.classList.remove('show');
                     tlsKeySection.classList.remove('show');
-                    // Remove pattern validation from hidden certificate fields
                     if (tlsCertInput) {
                         tlsCertInput.removeAttribute('pattern');
                         tlsCertInput.removeAttribute('required');
@@ -1105,15 +1082,12 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
         document.getElementById('config-form').addEventListener('submit', function(e) {
             e.preventDefault();
 
-            // First check if the form is valid according to HTML5 validation
             const form = e.target;
             console.log('Form validity check:', form.checkValidity());
 
-            // If form is invalid, show which fields are invalid
             if (!form.checkValidity()) {
                 console.error('Form has HTML5 validation errors');
 
-                // Find all invalid fields
                 const allInputs = form.querySelectorAll('input, select, textarea');
                 let invalidFields = [];
 
@@ -1122,7 +1096,6 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
                         const parent = input.closest('.form-group');
                         const isVisible = parent && window.getComputedStyle(parent).display !== 'none';
 
-                        // Set custom validation message
                         let message = '';
                         if (input.validity.patternMismatch) {
                             const helpText = input.nextElementSibling ? input.nextElementSibling.textContent : '';
@@ -1149,14 +1122,12 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
                             message: message
                         });
                     } else {
-                        // Clear any custom validation message for valid fields
                         input.setCustomValidity('');
                     }
                 });
 
                 console.error('Invalid fields:', invalidFields);
 
-                // Show the validation messages
                 form.reportValidity();
                 return;
             }
@@ -1164,13 +1135,11 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
             const formData = new FormData(this);
             const config = {};
 
-            // First, handle all checkboxes (including unchecked ones)
             const checkboxes = document.querySelectorAll('input[type="checkbox"]');
             checkboxes.forEach(checkbox => {
                 config[checkbox.name] = checkbox.checked;
             });
 
-            // Then handle other form fields
             for (let [key, value] of formData.entries()) {
                 const input = document.querySelector(` + "`" + `[name="${key}"]` + "`" + `);
                 if (input.type !== 'checkbox' && value.trim()) {
@@ -1178,18 +1147,15 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
                 }
             }
 
-            // Validate required fields
             const firstNode = config.FIRST_NODE !== false;
             const useCertManager = config.USE_CERT_MANAGER === true;
             const certOption = config.CERT_OPTION;
 
             let errors = [];
 
-            // Log all form fields for debugging
             console.log('=== Form Validation Debug ===');
             console.log('Configuration:', config);
 
-            // Function to check and log field validation
             function validateField(fieldId, fieldName) {
                 const element = document.getElementById(fieldId);
                 if (element) {
@@ -1211,7 +1177,6 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
                 return true;
             }
 
-            // Check all form fields for validation issues
             function checkAllFormFields() {
                 console.log('=== Checking ALL Form Fields ===');
                 const allInputs = document.querySelectorAll('input[pattern]');
@@ -1233,7 +1198,6 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
                 console.log('=== End Form Field Check ===');
             }
 
-            // Enhanced validation with detailed messages and logging
             if (!config.DOMAIN) {
                 errors.push('❌ Domain is required - Please enter a valid domain name (e.g., cluster.example.com)');
             } else if (!validateField('DOMAIN', 'DOMAIN')) {
@@ -1268,7 +1232,6 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
                 }
             }
 
-            // Validate disk paths if provided
             if (config.SELECTED_DISKS) {
                 validateField('SELECTED_DISKS', 'SELECTED_DISKS');
                 if (!document.getElementById('SELECTED_DISKS').validity.valid) {
@@ -1282,7 +1245,6 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
                 }
             }
 
-            // Validate OIDC URL if provided
             if (config.OIDC_URL) {
                 validateField('OIDC_URL', 'OIDC_URL');
                 if (!document.getElementById('OIDC_URL').validity.valid) {
@@ -1293,16 +1255,13 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
             console.log('Validation errors:', errors);
             console.log('=== End Validation Debug ===');
 
-            // Check all form fields for any HTML5 validation issues
             checkAllFormFields();
 
-            // Double-check form validity right before submission
             const finalValidityCheck = document.getElementById('config-form').checkValidity();
             console.log('Final form validity check before submission:', finalValidityCheck);
 
             if (!finalValidityCheck) {
                 console.error('Form became invalid between validation and submission!');
-                // Find the invalid field
                 const allInputs = document.querySelectorAll('input, select, textarea');
                 allInputs.forEach(input => {
                     if (!input.validity.valid) {
@@ -1321,9 +1280,7 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
             }
 
             if (errors.length > 0) {
-                // Check if we're in one-shot mode
                 if (window.isOneShot) {
-                    // In one-shot mode, send error to server for automated handling
                     fetch('/api/validation-error', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -1331,7 +1288,6 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
                     });
                     return;
                 } else {
-                    // Show detailed error message with suggestions
                     const errorDiv = document.createElement('div');
                     errorDiv.innerHTML = '<h3 style="color: #d32f2f;">❌ Validation Failed</h3>' +
                         '<p style="color: #666;">Please fix the following issues:</p>' +
@@ -1340,7 +1296,6 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
                         '</ul>' +
                         '<p style="color: #666; font-style: italic; margin-top: 15px;">💡 Tip: Hover over fields to see format requirements</p>';
 
-                    // Create a better modal instead of alert
                     const modal = document.createElement('div');
                     modal.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); ' +
                         'background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); ' +
@@ -1354,7 +1309,6 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
                     closeBtn.onclick = () => {
                         document.body.removeChild(modal);
                         document.body.removeChild(overlay);
-                        // Focus first invalid field
                         const firstError = errors[0];
                         if (firstError.includes('Domain')) document.getElementById('DOMAIN').focus();
                         else if (firstError.includes('Server IP')) document.getElementById('SERVER_IP').focus();
@@ -1374,7 +1328,6 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
                 }
             }
 
-            // Submit configuration
             console.log('About to submit configuration via fetch...');
             console.log('Config object:', config);
 
@@ -1400,7 +1353,6 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
                     ` + "`" + `;
                     document.getElementById('result').style.display = 'block';
 
-                    // Redirect to monitor after 3 seconds
                     setTimeout(() => {
                         window.location.href = '/monitor';
                     }, 3000);
@@ -1422,10 +1374,8 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
                     error: error
                 });
 
-                // Try to identify what's causing the error
                 if (error.message && error.message.includes('pattern')) {
                     console.error('Pattern validation error detected');
-                    // Check ALL form fields one more time
                     const form = document.getElementById('config-form');
                     const allInputs = form.querySelectorAll('input, select, textarea');
                     console.error('Checking all', allInputs.length, 'form inputs:');
@@ -1464,21 +1414,17 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
             }
         });
 
-        // Add event listeners for progress tracking and clearing validation
         document.querySelectorAll('#config-form input, #config-form select').forEach(input => {
             input.addEventListener('input', function() {
                 updateProgress();
-                // Clear any custom validation message when user starts typing
                 this.setCustomValidity('');
             });
             input.addEventListener('change', function() {
                 updateProgress();
-                // Clear any custom validation message when field changes
                 this.setCustomValidity('');
             });
         });
 
-        // Check for errors on page load
         function checkForErrors() {
             fetch('/api/error')
                 .then(response => response.json())
@@ -1530,7 +1476,6 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
                 });
         }
 
-        // Load pre-filled configuration if available
         function loadPrefilledConfig() {
             console.log('Starting loadPrefilledConfig...');
             fetch('/api/prefilled-config')
@@ -1544,10 +1489,8 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
                         console.log('Loading pre-filled configuration with', Object.keys(data.config).length, 'values');
                         window.prefilledData = data.config;  // Store for debugging
 
-                        // Set global one-shot flag for validation error handling
                         window.isOneShot = data.oneShot;
 
-                        // Show banner indicating pre-filled configuration
                         const banner = document.getElementById('error-banner');
                         const title = document.getElementById('error-title');
                         const message = document.getElementById('error-message');
@@ -1569,12 +1512,10 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
                             banner.style.display = 'block';
                         }
 
-                        // Fill form fields with pre-filled values
                         const config = data.config;
                         let fieldsSet = 0;
                         let fieldsNotFound = [];
 
-                        // Boolean fields (checkboxes) - viper keys are lowercase
                         const booleanFields = {
                             'FIRST_NODE': 'first_node',
                             'GPU_NODE': 'gpu_node',
@@ -1596,7 +1537,6 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
                             }
                         });
 
-                        // String fields - map form IDs to viper keys (lowercase)
                         const stringFieldMap = {
                             'DOMAIN': 'domain',
                             'SERVER_IP': 'server_ip',
@@ -1618,7 +1558,6 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
                                 const value = config[configKey];
                                 if (value !== undefined && value !== null && value !== '') {
                                     element.value = String(value);
-                                    // Trigger change event to update any dependent fields
                                     element.dispatchEvent(new Event('change', { bubbles: true }));
                                     console.log('Set text field', fieldId, 'to', value);
                                     fieldsSet++;
@@ -1633,11 +1572,9 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
                             console.warn('Fields not found in DOM:', fieldsNotFound);
                         }
 
-                        // Update conditionals after filling
                         updateConditionals();
                         updateProgress();
 
-                        // Auto-submit if in one-shot mode
                         if (data.oneShot) {
                             console.log('One-shot mode detected, preparing to auto-submit...');
                             setTimeout(() => {
@@ -1647,35 +1584,27 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
                         }
                     } else {
                         console.log('No pre-filled configuration available');
-                        // Still need to call these when no prefilled config
                         updateConditionals();
                         updateProgress();
                     }
                 })
                 .catch(err => {
                     console.error('Error loading pre-filled configuration:', err);
-                    // Still need to call these on error
                     updateConditionals();
                     updateProgress();
                 });
         }
 
-        // Initialize when DOM is ready
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', function() {
                 console.log('DOM ready, initializing...');
-                // Don't call updateConditionals here - it's called inside loadPrefilledConfig
                 loadPrefilledConfig();
                 checkForErrors();
-                // updateProgress is called inside loadPrefilledConfig
             });
         } else {
-            // DOM is already loaded
             console.log('DOM already loaded, initializing...');
-            // Don't call updateConditionals here - it's called inside loadPrefilledConfig
             loadPrefilledConfig();
             checkForErrors();
-            // updateProgress is called inside loadPrefilledConfig
         }
     </script>
 </body>
@@ -1723,9 +1652,8 @@ func (h *WebHandlerService) ConfigAPIHandler(w http.ResponseWriter, r *http.Requ
 
 	h.config = config
 	h.configVersion++
-	h.lastError = "" // Clear any previous errors
+	h.lastError = ""
 
-	// Start installation if callback is set (monitoring mode)
 	if h.startInstallation != nil {
 		go func() {
 			log.Info("Starting installation process after configuration save...")
@@ -1761,11 +1689,9 @@ func (h *WebHandlerService) SetError(errorMsg string) {
 	h.lastError = errorMsg
 	h.errorType = categorizeError(errorMsg)
 
-	// Only switch to config mode for configuration errors
 	if h.errorType == ErrorTypeConfig {
 		h.configMode = true
 	}
-	// For OS/System errors, stay in monitoring mode but show error
 }
 
 func (h *WebHandlerService) ConfigChanged() bool {
@@ -1776,7 +1702,6 @@ func (h *WebHandlerService) GetLastError() string {
 	return h.lastError
 }
 
-// ReconfigureHandler archives the existing bloom.log and switches to config mode
 func (h *WebHandlerService) ReconfigureHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -1785,17 +1710,12 @@ func (h *WebHandlerService) ReconfigureHandler(w http.ResponseWriter, r *http.Re
 
 	log.Info("ReconfigureHandler: Starting reconfigure process")
 
-	// Archive existing bloom.log
 	currentDir, _ := os.Getwd()
 	logPath := filepath.Join(currentDir, "bloom.log")
 
-	// Only load configuration if we don't already have it
-	// (it might have been loaded at startup in monitoring mode)
 	if len(h.prefilledConfig) == 0 {
-		// Try to load configuration from bloom.yaml first (if it exists)
 		yamlPath := filepath.Join(currentDir, "bloom.yaml")
 		if _, err := os.Stat(yamlPath); err == nil {
-			// Read bloom.yaml
 			yamlData, err := os.ReadFile(yamlPath)
 			if err == nil {
 				var yamlConfig map[string]interface{}
@@ -1809,22 +1729,15 @@ func (h *WebHandlerService) ReconfigureHandler(w http.ResponseWriter, r *http.Re
 		log.Infof("ReconfigureHandler: Using existing prefilled config with %d values", len(h.prefilledConfig))
 	}
 
-	// If we still don't have config, try parsing the log
 	if len(h.prefilledConfig) == 0 {
 		if _, err := os.Stat(logPath); err == nil {
-			// Parse the log to get previous configuration
 			if status, err := ParseBloomLog(logPath); err == nil {
 				log.Infof("ReconfigureHandler: Parsed %d config values from bloom.log", len(status.ConfigValues))
-				// Convert config values to prefilled config
 				h.prefilledConfig = make(map[string]interface{})
 
-				// Map the parsed values to the config keys used by the web interface
-				// The JavaScript expects lowercase keys matching viper format
 				for key, value := range status.ConfigValues {
-					// Keep key as lowercase to match JavaScript expectations
 					lowerKey := strings.ToLower(strings.ReplaceAll(key, " ", "_"))
 
-					// Handle boolean values
 					if value == "true" || value == "false" {
 						h.prefilledConfig[lowerKey] = value == "true"
 					} else {
@@ -1832,7 +1745,6 @@ func (h *WebHandlerService) ReconfigureHandler(w http.ResponseWriter, r *http.Re
 					}
 				}
 
-				// Make sure we have the essential values (use lowercase keys)
 				if status.Domain != "" {
 					h.prefilledConfig["domain"] = status.Domain
 				}
@@ -1844,7 +1756,6 @@ func (h *WebHandlerService) ReconfigureHandler(w http.ResponseWriter, r *http.Re
 				}
 
 				log.Infof("Loaded previous configuration with %d values", len(h.prefilledConfig))
-				// Log details for debugging
 				for key, value := range h.prefilledConfig {
 					log.Debugf("  prefilled[%s] = %v", key, value)
 				}
@@ -1854,7 +1765,6 @@ func (h *WebHandlerService) ReconfigureHandler(w http.ResponseWriter, r *http.Re
 		}
 	}
 
-	// Now archive the file if it exists
 	if _, err := os.Stat(logPath); err == nil {
 		timestamp := time.Now().Format("20060102-150405")
 		archivedPath := filepath.Join(currentDir, fmt.Sprintf("bloom-%s.log", timestamp))
@@ -1868,11 +1778,9 @@ func (h *WebHandlerService) ReconfigureHandler(w http.ResponseWriter, r *http.Re
 		log.Infof("Archived bloom.log to %s", filepath.Base(archivedPath))
 	}
 
-	// Switch to config mode
 	h.configMode = true
 	log.Info("ReconfigureHandler: Switched to config mode")
 
-	// Send success response
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
 		"status": "success",
@@ -1918,13 +1826,11 @@ func (h *WebHandlerService) ValidationErrorAPIHandler(w http.ResponseWriter, r *
 		return
 	}
 
-	// Log validation errors
 	LogMessage(Error, "Validation failed in one-shot mode:")
 	for _, err := range requestData.Errors {
 		LogMessage(Error, fmt.Sprintf("  - %s", err))
 	}
 
-	// Signal for server shutdown
 	h.validationFailed = true
 	h.validationErrors = requestData.Errors
 

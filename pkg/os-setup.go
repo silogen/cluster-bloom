@@ -30,7 +30,6 @@ import (
 
 var SupportedUbuntuVersions = []string{"20.04", "22.04", "24.04"}
 var ports = []string{
-	//"22;tcp", Ignoring ssh because it will always be required anyhow.
 	"80;tcp", "443;tcp", "2376;tcp", "2379;tcp", "2380;tcp", "6443;tcp",
 	"8472;udp", "9099;tcp", "9345;tcp", "10250;tcp", "10254;tcp", "30000:32767;tcp", "30000:32767;udp",
 }
@@ -71,32 +70,26 @@ func IsRunningOnSupportedUbuntu() bool {
 }
 
 func CheckPortsBeforeOpening() error {
-	// In dry-run mode, just output port status with lsof
 	LogMessage(Info, "Proof mode: checking port status with lsof...")
 
 	var portsInUse bool = false
 	var stepErr error
 
-	// Check each port specifically
 	for _, entry := range ports {
 		parts := strings.Split(entry, ";")
 		port, protocol := parts[0], parts[1]
 
-		// Handle port ranges poorly
 		if strings.Contains(port, ":") {
-			// For ranges, we can't easily check with lsof, so just log the info
 			LogMessage(Info, fmt.Sprintf("Would configure port range %s (%s) in actual run", port, protocol))
 			continue
 		}
 
-		// For specific ports, check with lsof
 		portCmd := exec.Command("lsof", "-i", fmt.Sprintf("%s:%s", strings.ToUpper(protocol), port))
 		var portOutput bytes.Buffer
 		portCmd.Stdout = &portOutput
 		portCmd.Stderr = &portOutput
 
 		if err := portCmd.Run(); err != nil {
-			// lsof returns non-zero if no processes are using the port
 			LogMessage(Info, fmt.Sprintf("Port %s (%s) is not currently in use", port, protocol))
 		} else {
 			portsInUse = true
@@ -120,15 +113,12 @@ func OpenPorts() bool {
 		parts := strings.Split(entry, ";")
 		port, protocol := parts[0], parts[1]
 
-		// Check if rule exists first to avoid duplicates
 		checkCmd := exec.Command("sudo", "iptables", "-C", "INPUT", "-p", protocol, "-m", "state", "--state", "NEW", "-m", protocol, "--dport", port, "-j", "ACCEPT")
 		if checkCmd.Run() == nil {
-			// Rule already exists
 			LogMessage(Info, fmt.Sprintf("Rule for %s/%s already exists", port, protocol))
 			continue
 		}
 
-		// Add the rule
 		cmd := exec.Command("sudo", "iptables", "-A", "INPUT", "-p", protocol, "-m", "state", "--state", "NEW", "-m", protocol, "--dport", port, "-j", "ACCEPT")
 		if err := cmd.Run(); err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to open port %s/%s: %v", port, protocol, err))
@@ -378,9 +368,7 @@ metadata:
 	return nil
 }
 
-// GetUserHomeDirViaShell gets a user's home directory using shell tilde expansion
 func GetUserHomeDirViaShell(username string) (string, error) {
-	// Use shell's tilde expansion to get the home directory
 	cmd := exec.Command("sh", "-c", fmt.Sprintf("eval echo ~%s", username))
 	output, err := cmd.Output()
 	if err != nil {
@@ -388,7 +376,6 @@ func GetUserHomeDirViaShell(username string) (string, error) {
 	}
 
 	homeDir := strings.TrimSpace(string(output))
-	// Check if the expansion was successful (if it wasn't, the shell would just echo back ~username)
 	if homeDir == fmt.Sprintf("~%s", username) {
 		return "", fmt.Errorf("user %s not found or home directory not available", username)
 	}
@@ -400,7 +387,6 @@ func setupMultipath() error {
 	configFile := "/etc/multipath.conf"
 	blacklistEntry := `devnode "^sd[a-z0-9]+"`
 	configContent := "blacklist {\n    devnode \"^sd[a-z0-9]+\"\n}\n"
-	// Check if the configuration file exists
 	_, err := os.Stat(configFile)
 	if os.IsNotExist(err) {
 		LogMessage(Info, "Creating default multipath configuration file...")
@@ -412,7 +398,6 @@ func setupMultipath() error {
 	} else if err != nil {
 		return fmt.Errorf("failed to check if multipath.conf exists: %w", err)
 	} else {
-		// File exists, check if the blacklist entry is already there
 		configData, err := os.ReadFile(configFile)
 		if err != nil {
 			return fmt.Errorf("failed to read multipath.conf: %w", err)
@@ -420,7 +405,6 @@ func setupMultipath() error {
 		newConfigData := ""
 		if !strings.Contains(string(configData), blacklistEntry) {
 			LogMessage(Info, "Adding blacklist entry to multipath.conf...")
-			// Replace this with more robust regex if the file structure varies significantly
 			if strings.Contains(string(configData), "blacklist {") {
 				newConfigData = strings.Replace(
 					string(configData),
@@ -428,7 +412,6 @@ func setupMultipath() error {
 					"blacklist {\n    "+blacklistEntry,
 					1)
 			} else {
-				// if no blacklistEntry still, add it
 				newConfigData = string(configData) + configContent
 			}
 
@@ -437,14 +420,12 @@ func setupMultipath() error {
 				return fmt.Errorf("failed to update multipath.conf: %w", err)
 			}
 
-			// Restart multipath service
 			LogMessage(Info, "Restarting multipathd.service...")
 			_, err = runCommand("systemctl", "restart", "multipathd.service")
 			if err != nil {
 				return fmt.Errorf("failed to restart multipathd service: %w", err)
 			}
 
-			// Verify configuration
 			LogMessage(Info, "Verifying multipath configuration...")
 			output, err := runCommand("multipath", "-t")
 			if err != nil {

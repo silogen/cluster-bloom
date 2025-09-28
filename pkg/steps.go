@@ -31,10 +31,8 @@ import (
 
 var rke2ManifestDirectory = "/var/lib/rancher/rke2/server/manifests"
 
-//go:embed manifests/*/*.yaml
 var manifestFiles embed.FS
 
-//go:embed templates/*.yaml
 var templateFiles embed.FS
 
 var CheckUbuntuStep = Step{
@@ -168,7 +166,6 @@ var SetupAndCheckRocmStep = Step{
 				Error: fmt.Errorf("failed to execute rocm-smi: %w", err),
 			}
 		}
-		// Check if the first characters are an integer
 		lines := strings.Split(string(output), "\n")
 		for _, line := range lines {
 			if len(line) > 0 {
@@ -183,7 +180,6 @@ var SetupAndCheckRocmStep = Step{
 				}
 			}
 		}
-		// Log the output of rocm-smi
 		LogMessage(Info, "ROCm Devices:\n"+string(output))
 		return StepResult{Error: nil}
 	},
@@ -310,7 +306,6 @@ var SelectDrivesStep = Step{
 		}
 		LogMessage(Info, fmt.Sprintf("Selected disks: %v", result.Selected))
 
-		// Store the selected disks for the next step
 		viper.Set("selected_disks", result.Selected)
 
 		return StepResult{Message: fmt.Sprintf("Selected disks: %v", result.Selected)}
@@ -524,7 +519,6 @@ var SetupKubeConfig = Step{
 			return StepResult{Error: fmt.Errorf("failed to update RKE2 config file: %w", err)}
 		}
 
-		// Get the actual user's home directory, not root's
 		userHome := os.Getenv("HOME")
 		if userHome == "" {
 			if user := os.Getenv("SUDO_USER"); user != "" {
@@ -540,7 +534,6 @@ var SetupKubeConfig = Step{
 			return StepResult{Error: fmt.Errorf("failed to create .kube directory: %w", err)}
 		}
 
-		// Change ownership of .kube directory to the actual user if running with sudo
 		if sudoUser := os.Getenv("SUDO_USER"); sudoUser != "" {
 			chownCmd := fmt.Sprintf("sudo chown %s:%s %s", sudoUser, sudoUser, kubeDir)
 			if err := exec.Command("sh", "-c", chownCmd).Run(); err != nil {
@@ -556,7 +549,6 @@ var SetupKubeConfig = Step{
 			return StepResult{Error: fmt.Errorf("failed to update KUBECONFIG file: %w", err)}
 		}
 
-		// Change ownership to the actual user if running with sudo
 		if sudoUser := os.Getenv("SUDO_USER"); sudoUser != "" {
 			chownCmd := fmt.Sprintf("sudo chown %s:%s %s", sudoUser, sudoUser, kubeconfigPath)
 			if err := exec.Command("sh", "-c", chownCmd).Run(); err != nil {
@@ -581,7 +573,6 @@ var SetupKubeConfig = Step{
 			homedir, err := GetUserHomeDirViaShell(sudoUserName)
 			if err != nil {
 				LogMessage(Error, fmt.Sprintf("Failed to get home directory for sudo user '%s': %v. Using current user's home directory instead.", sudoUserName, err))
-				// Continue with currentUser.HomeDir as fallback
 			} else {
 				userHomeDir = homedir
 			}
@@ -598,18 +589,14 @@ var SetupKubeConfig = Step{
 			LogMessage(Error, fmt.Sprintf("Failed to change ownership of KUBECONFIG file: %v", err))
 		}
 
-		// Store the path to k9s in a variable
 		k9sPath := "/snap/k9s/current/bin"
 
-		// Check if k9s path is already in bashrc
 		bashrcPath := fmt.Sprintf("%s/.bashrc", userHomeDir)
 		bashrcContent, err := os.ReadFile(bashrcPath)
 		if err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to read .bashrc: %v", err))
 		} else {
-			// Check if k9s path already exists in .bashrc
 			if !strings.Contains(string(bashrcContent), k9sPath) {
-				// Add k9s path to .bashrc if not found
 				pathCmd := fmt.Sprintf("echo 'export PATH=$PATH:%s' >> %s", k9sPath, bashrcPath)
 				if err = exec.Command("sh", "-c", pathCmd).Run(); err != nil {
 					LogMessage(Error, fmt.Sprintf("Failed to update PATH: %v", err))
@@ -628,7 +615,6 @@ var CreateBloomConfigMapStep = Step{
 	Name:        "Create Bloom ConfigMap",
 	Description: "Create a ConfigMap with bloom configuration in the default namespace",
 	Action: func() StepResult {
-		// Wait for the cluster to be ready
 		if viper.GetBool("FIRST_NODE") {
 			LogMessage(Info, "Waiting for cluster to be ready...")
 			time.Sleep(10 * time.Second)
@@ -664,11 +650,9 @@ var CreateDomainConfigStep = Step{
 	Action: func() StepResult {
 		domain := viper.GetString("DOMAIN")
 
-		// Wait for the cluster to be ready
 		LogMessage(Info, "Waiting for cluster to be ready...")
 		time.Sleep(5 * time.Second)
 
-		// Create domain ConfigMap
 		useCertManager := viper.GetBool("USE_CERT_MANAGER")
 
 		configMapYAML := fmt.Sprintf(`apiVersion: v1
@@ -681,7 +665,6 @@ data:
   use-cert-manager: "%t"
 `, domain, useCertManager)
 
-		// Write ConfigMap to temporary file and apply
 		tmpFile, err := os.CreateTemp("", "domain-configmap-*.yaml")
 		if err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to create temporary file: %v", err))
@@ -695,7 +678,6 @@ data:
 		}
 		tmpFile.Close()
 
-		// Apply the ConfigMap
 		cmd := exec.Command("/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "apply", "-f", tmpFile.Name())
 		output, err := cmd.CombinedOutput()
 		if err != nil {
@@ -705,17 +687,14 @@ data:
 
 		LogMessage(Info, "Successfully created domain ConfigMap")
 
-		// Handle TLS certificates
 		if !useCertManager {
 			certOption := viper.GetString("CERT_OPTION")
 			tlsCertPath := viper.GetString("TLS_CERT")
 			tlsKeyPath := viper.GetString("TLS_KEY")
 
-			// Handle certificate generation or use existing
 			if certOption == "generate" {
 				LogMessage(Info, "Generating self-signed certificate for domain: "+domain)
 
-				// Create temporary directory for certificate files
 				tempDir, err := os.MkdirTemp("", "bloom-tls-*")
 				if err != nil {
 					LogMessage(Error, fmt.Sprintf("Failed to create temp directory: %v", err))
@@ -726,7 +705,6 @@ data:
 				tlsCertPath = filepath.Join(tempDir, "tls.crt")
 				tlsKeyPath = filepath.Join(tempDir, "tls.key")
 
-				// Generate self-signed certificate using openssl
 				cmd := exec.Command("openssl", "req", "-x509", "-nodes", "-days", "365", "-newkey", "rsa:2048",
 					"-keyout", tlsKeyPath,
 					"-out", tlsCertPath,
@@ -740,7 +718,6 @@ data:
 				}
 				LogMessage(Info, "Successfully generated self-signed certificate")
 			} else if certOption == "existing" {
-				// Verify certificate and key files exist
 				if tlsCertPath == "" || tlsKeyPath == "" {
 					LogMessage(Error, "CERT_OPTION is 'existing' but TLS_CERT or TLS_KEY not provided")
 					return StepResult{Error: fmt.Errorf("TLS certificate files not provided")}
@@ -758,7 +735,6 @@ data:
 				return StepResult{Message: "Domain ConfigMap created but no TLS configuration applied"}
 			}
 
-			// Create kgateway-system namespace
 			namespaceYAML := `apiVersion: v1
 kind: Namespace
 metadata:
@@ -777,7 +753,6 @@ metadata:
 			}
 			tmpNsFile.Close()
 
-			// Apply the namespace
 			cmd := exec.Command("/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "apply", "-f", tmpNsFile.Name())
 			output, err := cmd.CombinedOutput()
 			if err != nil {
@@ -786,7 +761,6 @@ metadata:
 			}
 			LogMessage(Info, "Successfully created kgateway-system namespace")
 
-			// Create TLS secret using kubectl
 			cmd = exec.Command("/var/lib/rancher/rke2/bin/kubectl",
 				"--kubeconfig", "/etc/rancher/rke2/rke2.yaml",
 				"create", "secret", "tls", "cluster-tls",
@@ -801,7 +775,6 @@ metadata:
 				return StepResult{Error: fmt.Errorf("failed to generate TLS secret: %w", err)}
 			}
 
-			// Apply the secret
 			tmpSecretFile, err := os.CreateTemp("", "tls-secret-*.yaml")
 			if err != nil {
 				LogMessage(Error, fmt.Sprintf("Failed to create temporary secret file: %v", err))
@@ -946,17 +919,13 @@ var CleanLonghornMountsStep = Step{
 	Action: func() StepResult {
 		LogMessage(Info, "Cleaning Longhorn mounts and PVCs")
 
-		// Stop Longhorn services first if they exist
 		cmd := exec.Command("sh", "-c", "sudo systemctl stop longhorn-* 2>/dev/null || true")
 		cmd.CombinedOutput()
 
-		// Find and unmount all Longhorn-related mounts
 		for i := 0; i < 3; i++ {
-			// Unmount Longhorn device files
 			cmd = exec.Command("sh", "-c", "sudo umount -lf /dev/longhorn/pvc* 2>/dev/null || true")
 			cmd.CombinedOutput()
 
-			// Find /mnt/disk* mount points that contain longhorn-disk.cfg and unmount them
 			cmd = exec.Command("sh", "-c", `
 				for mount_point in /mnt/disk*; do
 					if [ -d "$mount_point" ] && find "$mount_point" -name "longhorn-disk.cfg" 2>/dev/null | grep -q .; then
@@ -967,30 +936,24 @@ var CleanLonghornMountsStep = Step{
 			`)
 			cmd.CombinedOutput()
 
-			// Find and unmount CSI volume mounts
 			cmd = exec.Command("sh", "-c", "sudo umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/pvc-* 2>/dev/null || true")
 			cmd.CombinedOutput()
 			cmd = exec.Command("sh", "-c", "sudo umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/*/mount 2>/dev/null || true")
 			cmd.CombinedOutput()
 
-			// Find and unmount CSI plugin mounts
 			cmd = exec.Command("sh", "-c", "mount | grep 'driver.longhorn.io' | awk '{print $3}' | xargs -r sudo umount -lf 2>/dev/null || true")
 			cmd.CombinedOutput()
 
-			// Find and unmount any remaining kubelet plugin mounts
 			cmd = exec.Command("sh", "-c", "sudo umount -Af /var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/* 2>/dev/null || true")
 			cmd.CombinedOutput()
 		}
 
-		// Force kill any processes using Longhorn mounts
 		cmd = exec.Command("sh", "-c", "sudo fuser -km /dev/longhorn/ 2>/dev/null || true")
 		cmd.CombinedOutput()
 
-		// Clean up device files
 		cmd = exec.Command("sh", "-c", "sudo rm -rf /dev/longhorn/pvc-* 2>/dev/null || true")
 		cmd.CombinedOutput()
 
-		// Clean up kubelet CSI mounts
 		cmd = exec.Command("sh", "-c", "sudo rm -rf /var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/* 2>/dev/null || true")
 		cmd.CombinedOutput()
 

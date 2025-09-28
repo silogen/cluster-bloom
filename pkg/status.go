@@ -50,7 +50,6 @@ type BloomStatus struct {
 	Errors          []string
 	OSError         string
 	TotalSteps      int
-	// Additional config values
 	ConfigValues    map[string]string
 }
 
@@ -92,35 +91,27 @@ func ParseBloomLog(logPath string) (*BloomStatus, error) {
 	for scanner.Scan() {
 		line := scanner.Text()
 
-		// Check if we're entering configuration values section
 		if strings.Contains(line, "Configuration values:") {
 			inConfigSection = true
 			continue
 		}
 
-		// Check if we're starting a step (which ends config section)
 		if strings.Contains(line, "Starting step:") {
 			inConfigSection = false
 		}
 
-		// Parse configuration values when in config section
 		if inConfigSection && strings.Contains(line, "level=info") {
-			// Extract the message content
 			msgRegex := regexp.MustCompile(`msg="([^"]*)"`)
 			if matches := msgRegex.FindStringSubmatch(line); len(matches) > 1 {
 				msg := matches[1]
-				// Parse key:value pairs
 				if colonIdx := strings.Index(msg, ":"); colonIdx > 0 {
 					key := strings.TrimSpace(msg[:colonIdx])
 					value := strings.TrimSpace(msg[colonIdx+1:])
 
-					// Don't store messages that are clearly not config
 					if !strings.Contains(key, "Starting") && !strings.Contains(key, "Completed") &&
 					   !strings.Contains(key, "Execution") && !strings.Contains(key, "Error") {
-						// Store in ConfigValues map
 						status.ConfigValues[key] = value
 
-						// Also store specific important values
 						switch strings.ToLower(key) {
 						case "domain":
 							status.Domain = value
@@ -139,7 +130,6 @@ func ParseBloomLog(logPath string) (*BloomStatus, error) {
 				}
 			}
 		} else if inConfigSection && !strings.Contains(line, "level=info") {
-			// Also end config section if we encounter non-info level logs
 			inConfigSection = false
 		}
 
@@ -173,7 +163,6 @@ func ParseBloomLog(logPath string) (*BloomStatus, error) {
 			}
 		}
 
-		// Also check for "Execution failed" messages
 		if matches := failedRegex.FindStringSubmatch(line); len(matches) > 1 {
 			errorMsg := matches[1]
 			status.Errors = append(status.Errors, errorMsg)
@@ -209,7 +198,6 @@ func ParseBloomLog(logPath string) (*BloomStatus, error) {
 			status.LonghornDisks = parseDisks(matches[1])
 		}
 
-		// Parse total steps
 		if matches := totalStepsRegex.FindStringSubmatch(line); len(matches) > 1 {
 			if totalSteps, err := strconv.Atoi(matches[1]); err == nil {
 				status.TotalSteps = totalSteps
@@ -257,7 +245,6 @@ func DisplayBloomStatus(status *BloomStatus) {
 	fmt.Println("╚══════════════════════════════════════════════════════════════╝")
 	fmt.Println()
 
-	// Check if there are any failures
 	hasFailures := false
 	for _, step := range status.Steps {
 		if step.Status == "failed" {
@@ -266,7 +253,6 @@ func DisplayBloomStatus(status *BloomStatus) {
 		}
 	}
 
-	// Show prominent failure warning if there are failures
 	if hasFailures || len(status.Errors) > 0 {
 		fmt.Println("❌ INSTALLATION FAILED - ERRORS DETECTED")
 		fmt.Println("════════════════════════════════════════")
@@ -285,25 +271,21 @@ func DisplayBloomStatus(status *BloomStatus) {
 	fmt.Printf("🕐 Last updated: %s\n", status.LastModified.Format(time.RFC3339))
 	fmt.Println()
 
-	// If there are errors, show full configuration that was used
 	if hasFailures || len(status.Errors) > 0 {
 		fmt.Println("⚙️  Configuration Used (at time of error):")
 		fmt.Println("════════════════════════════════════════")
 
-		// Show important configs first
 		importantKeys := []string{"domain", "first_node", "control_plane", "gpu_node", "server_ip",
 			"skip_disk_check", "selected_disks", "longhorn_disks", "rocm_base_url", "disabled_steps", "enabled_steps"}
 
 		for _, key := range importantKeys {
 			if val, exists := status.ConfigValues[key]; exists && val != "" {
-				// Skip redacted values unless they're important for debugging
 				if key != "join_token" || val != "---redacted---" {
 					fmt.Printf("   %s: %s\n", key, val)
 				}
 			}
 		}
 
-		// Show any other non-empty configs
 		for key, val := range status.ConfigValues {
 			isImportant := false
 			for _, iKey := range importantKeys {
@@ -318,7 +300,6 @@ func DisplayBloomStatus(status *BloomStatus) {
 		}
 		fmt.Println()
 	} else {
-		// Normal summary for successful runs
 		fmt.Println("📋 Configuration Summary:")
 		fmt.Println("════════════════════════════")
 		if status.Domain != "" {
@@ -384,7 +365,6 @@ func DisplayBloomStatus(status *BloomStatus) {
 
 	fmt.Println()
 	fmt.Println("📈 Summary:")
-	// Show expected total if available, otherwise show what we found
 	if status.TotalSteps > 0 {
 		fmt.Printf("   Progress: %d of %d steps\n", len(status.Steps), status.TotalSteps)
 		if len(status.Steps) < status.TotalSteps {
