@@ -144,7 +144,7 @@ var validStepIDs = []string{
 	"FinalOutput",
 	"UpdateUdevRulesStep",
 	"CleanLonghornMountsStep",
-    "CreateChronyConfigStep",
+	"CreateChronyConfigStep",
 	"UninstallRKE2Step",
 }
 
@@ -700,7 +700,7 @@ func rootSteps() []pkg.Step {
 		pkg.CreateMetalLBConfigStep,
 		pkg.SetupKubeConfig,
 		pkg.CreateDomainConfigStep,
-		pkg.CreateBloomConfigMapStep,
+		pkg.CreateBloomConfigMapStepFunc(Version),
 		pkg.SetupClusterForgeStep,
 	}
 
