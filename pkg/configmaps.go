@@ -26,7 +26,7 @@ import (
 	"github.com/spf13/viper"
 )
 
-func CreateConfigMap() error {
+func CreateConfigMap(version string) error {
 	bloomConfig := make(map[string]string)
 
 	configFile := viper.ConfigFileUsed()
@@ -71,6 +71,7 @@ metadata:
   name: bloom
   namespace: default
 data:
+  BLOOM_VERSION: "` + version + `"
 `
 	// Add each configuration item
 	for key, value := range bloomConfig {
@@ -79,7 +80,6 @@ data:
 		escapedValue = strings.ReplaceAll(escapedValue, "\"", "\\\"")
 		configMapYAML += fmt.Sprintf("  %s: \"%s\"\n", key, escapedValue)
 	}
-
 	// Write to temporary file
 	tmpFile, err := os.CreateTemp("", "bloom-configmap-*.yaml")
 	if err != nil {
