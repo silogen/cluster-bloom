@@ -68,21 +68,21 @@ var InstallDependentPackagesStep = Step{
 }
 
 var CreateChronyConfigStep = Step{
-  Id:          "CreateChronyConfigStep",
-  Name:        "Create Chrony Config",
-  Description: "Create chrony config for first node and additional node cases",
-  Action: func() StepResult {
-    var err error
-    if viper.GetBool("FIRST_NODE") {
-      err = GenerateChronyConfFirst()
-    } else if viper.GetString("SERVER_IP") !="" {
-      err = GenerateChronyConfAdditional()
-    }
+	Id:          "CreateChronyConfigStep",
+	Name:        "Create Chrony Config",
+	Description: "Create chrony config for first node and additional node cases",
+	Action: func() StepResult {
+		var err error
+		if viper.GetBool("FIRST_NODE") {
+			err = GenerateChronyConfFirst()
+		} else if viper.GetString("SERVER_IP") != "" {
+			err = GenerateChronyConfAdditional()
+		}
 		if err != nil {
-          return StepResult{Error: err}
-    }
-    return StepResult{Error: nil}
-  },
+			return StepResult{Error: err}
+		}
+		return StepResult{Error: nil}
+	},
 }
 
 var OpenPortsStep = Step{
@@ -623,31 +623,34 @@ var SetupKubeConfig = Step{
 	},
 }
 
-var CreateBloomConfigMapStep = Step{
-	Id:          "CreateBloomConfigMapStep",
-	Name:        "Create Bloom ConfigMap",
-	Description: "Create a ConfigMap with bloom configuration in the default namespace",
-	Action: func() StepResult {
-		// Wait for the cluster to be ready
-		if viper.GetBool("FIRST_NODE") {
-			LogMessage(Info, "Waiting for cluster to be ready...")
-			time.Sleep(10 * time.Second)
-			err := CreateConfigMap()
-			if err != nil {
-				LogMessage(Error, fmt.Sprintf("Failed to create bloom ConfigMap: %v", err))
-				return StepResult{Error: fmt.Errorf("failed to create bloom ConfigMap: %w", err)}
+func CreateBloomConfigMapStepFunc(version string) Step {
+	return Step{
+		Id:          "CreateBloomConfigMapStep",
+		Name:        "Create Bloom ConfigMap",
+		Description: "Create a ConfigMap with bloom configuration in the default namespace",
+		Action: func() StepResult {
+			// Wait for the cluster to be ready
+			if viper.GetBool("FIRST_NODE") {
+				LogMessage(Info, "Waiting for cluster to be ready...")
+
+				time.Sleep(10 * time.Second)
+				err := CreateConfigMap(version)
+				if err != nil {
+					LogMessage(Error, fmt.Sprintf("Failed to create bloom ConfigMap: %v", err))
+					return StepResult{Error: fmt.Errorf("failed to create bloom ConfigMap: %w", err)}
+				}
+				LogMessage(Info, "Successfully created bloom ConfigMap in default namespace")
+				return StepResult{Message: "Bloom ConfigMap created successfully"}
+			} else {
+				err := CreateConfigMapPod()
+				if err != nil {
+					LogMessage(Error, fmt.Sprintf("Failed to create bloom ConfigMap Pod: %v", err))
+					return StepResult{Error: fmt.Errorf("failed to create bloom ConfigMap Pod: %w", err)}
+				}
+				return StepResult{Error: nil}
 			}
-			LogMessage(Info, "Successfully created bloom ConfigMap in default namespace")
-			return StepResult{Message: "Bloom ConfigMap created successfully"}
-		} else {
-			err := CreateConfigMapPod()
-			if err != nil {
-				LogMessage(Error, fmt.Sprintf("Failed to create bloom ConfigMap Pod: %v", err))
-				return StepResult{Error: fmt.Errorf("failed to create bloom ConfigMap Pod: %w", err)}
-			}
-			return StepResult{Error: nil}
-		}
-	},
+		},
+	}
 }
 
 var CreateDomainConfigStep = Step{
