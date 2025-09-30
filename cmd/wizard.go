@@ -194,7 +194,7 @@ var configOptions = []ConfigOption{
 	},
 	{
 		Key:         "OIDC_URL",
-		Description: "URL of the OIDC provider for authentication. Leave empty to skip OIDC configuration.",
+		Description: "URL of the OIDC provider for authentication. To use the bundled cluster-internal Keycloak, use `kc.<your_domain>`. Leave empty to skip OIDC configuration.",
 		Default:     "",
 		Required:    false,
 		Validator:   validateURLWrapper,
