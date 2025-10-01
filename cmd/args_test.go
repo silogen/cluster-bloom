@@ -21,60 +21,60 @@ func setupViperForTest() {
 	viper.Set("RKE2_INSTALLATION_URL", "https://get.rke2.io")
 }
 
-func TestEvaluateDependency(t *testing.T) {
+func TestArgs_EvaluateDependency(t *testing.T) {
 	setupViperForTest()
 
 	tests := []struct {
 		name       string
-		dependency Dependency
+		dependency UsedWhen
 		viperSetup func()
 		expected   bool
 	}{
 		{
 			name:       "equals_true with true value",
-			dependency: Dependency{Arg: "FIRST_NODE", Type: "equals_true"},
+			dependency: UsedWhen{Arg: "FIRST_NODE", Type: "equals_true"},
 			viperSetup: func() { viper.Set("FIRST_NODE", true) },
 			expected:   true,
 		},
 		{
 			name:       "equals_true with false value",
-			dependency: Dependency{Arg: "FIRST_NODE", Type: "equals_true"},
+			dependency: UsedWhen{Arg: "FIRST_NODE", Type: "equals_true"},
 			viperSetup: func() { viper.Set("FIRST_NODE", false) },
 			expected:   false,
 		},
 		{
 			name:       "equals_false with false value",
-			dependency: Dependency{Arg: "FIRST_NODE", Type: "equals_false"},
+			dependency: UsedWhen{Arg: "FIRST_NODE", Type: "equals_false"},
 			viperSetup: func() { viper.Set("FIRST_NODE", false) },
 			expected:   true,
 		},
 		{
 			name:       "equals_false with true value",
-			dependency: Dependency{Arg: "FIRST_NODE", Type: "equals_false"},
+			dependency: UsedWhen{Arg: "FIRST_NODE", Type: "equals_false"},
 			viperSetup: func() { viper.Set("FIRST_NODE", true) },
 			expected:   false,
 		},
 		{
 			name:       "equals_existing with existing value",
-			dependency: Dependency{Arg: "CERT_OPTION", Type: "equals_existing"},
+			dependency: UsedWhen{Arg: "CERT_OPTION", Type: "equals_existing"},
 			viperSetup: func() { viper.Set("CERT_OPTION", "existing") },
 			expected:   true,
 		},
 		{
 			name:       "equals_existing with generate value",
-			dependency: Dependency{Arg: "CERT_OPTION", Type: "equals_existing"},
+			dependency: UsedWhen{Arg: "CERT_OPTION", Type: "equals_existing"},
 			viperSetup: func() { viper.Set("CERT_OPTION", "generate") },
 			expected:   false,
 		},
 		{
 			name:       "equals_generate with generate value",
-			dependency: Dependency{Arg: "CERT_OPTION", Type: "equals_generate"},
+			dependency: UsedWhen{Arg: "CERT_OPTION", Type: "equals_generate"},
 			viperSetup: func() { viper.Set("CERT_OPTION", "generate") },
 			expected:   true,
 		},
 		{
 			name:       "unknown dependency type",
-			dependency: Dependency{Arg: "FIRST_NODE", Type: "unknown_type"},
+			dependency: UsedWhen{Arg: "FIRST_NODE", Type: "unknown_type"},
 			viperSetup: func() { viper.Set("FIRST_NODE", true) },
 			expected:   false,
 		},
@@ -92,7 +92,7 @@ func TestEvaluateDependency(t *testing.T) {
 	}
 }
 
-func TestIsArgRequired(t *testing.T) {
+func TestArgs_IsArgRequired(t *testing.T) {
 	setupViperForTest()
 
 	tests := []struct {
@@ -108,13 +108,13 @@ func TestIsArgRequired(t *testing.T) {
 				Dependencies: nil,
 			},
 			viperSetup: func() {},
-			expected:   false,
+			expected:   true,
 		},
 		{
 			name: "single dependency satisfied",
 			arg: ArgDefault{
 				Key:          "DOMAIN",
-				Dependencies: []Dependency{{"FIRST_NODE", "equals_true"}},
+				Dependencies: []UsedWhen{{"FIRST_NODE", "equals_true"}},
 			},
 			viperSetup: func() { viper.Set("FIRST_NODE", true) },
 			expected:   true,
@@ -123,7 +123,7 @@ func TestIsArgRequired(t *testing.T) {
 			name: "single dependency not satisfied",
 			arg: ArgDefault{
 				Key:          "DOMAIN",
-				Dependencies: []Dependency{{"FIRST_NODE", "equals_true"}},
+				Dependencies: []UsedWhen{{"FIRST_NODE", "equals_true"}},
 			},
 			viperSetup: func() { viper.Set("FIRST_NODE", false) },
 			expected:   false,
@@ -132,7 +132,7 @@ func TestIsArgRequired(t *testing.T) {
 			name: "multiple dependencies all satisfied",
 			arg: ArgDefault{
 				Key: "TLS_CERT",
-				Dependencies: []Dependency{
+				Dependencies: []UsedWhen{
 					{"CERT_OPTION", "equals_existing"},
 					{"USE_CERT_MANAGER", "equals_false"},
 				},
@@ -147,7 +147,7 @@ func TestIsArgRequired(t *testing.T) {
 			name: "multiple dependencies partially satisfied",
 			arg: ArgDefault{
 				Key: "TLS_CERT",
-				Dependencies: []Dependency{
+				Dependencies: []UsedWhen{
 					{"CERT_OPTION", "equals_existing"},
 					{"USE_CERT_MANAGER", "equals_false"},
 				},
@@ -164,7 +164,7 @@ func TestIsArgRequired(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			setupViperForTest()
 			tt.viperSetup()
-			result := isArgRequired(tt.arg)
+			result := IsArgUsed(tt.arg)
 			if result != tt.expected {
 				t.Errorf("isArgRequired() = %v, want %v", result, tt.expected)
 			}
@@ -172,7 +172,7 @@ func TestIsArgRequired(t *testing.T) {
 	}
 }
 
-func TestValidateArgs_TypeValidation(t *testing.T) {
+func TestArgs_ValidateArgs_TypeValidation(t *testing.T) {
 	setupViperForTest()
 
 	// Create a temporary file for file validation tests
@@ -229,6 +229,10 @@ func TestValidateArgs_TypeValidation(t *testing.T) {
 			name: "non-absolute file path",
 			viperSetup: func() {
 				viper.Set("TLS_CERT", "relative/path.pem")
+				viper.Set("FIRST_NODE", true)
+				viper.Set("DOMAIN", "cluster.example.com")
+				viper.Set("USE_CERT_MANAGER", false)
+				viper.Set("CERT_OPTION", "existing")
 			},
 			expectError: true,
 			errorPart:   "must be an absolute file path",
@@ -237,6 +241,10 @@ func TestValidateArgs_TypeValidation(t *testing.T) {
 			name: "non-existent file",
 			viperSetup: func() {
 				viper.Set("TLS_CERT", "/nonexistent/file.pem")
+				viper.Set("FIRST_NODE", true)
+				viper.Set("DOMAIN", "cluster.example.com")
+				viper.Set("USE_CERT_MANAGER", false)
+				viper.Set("CERT_OPTION", "existing")
 			},
 			expectError: true,
 			errorPart:   "file does not exist",
@@ -265,6 +273,18 @@ func TestValidateArgs_TypeValidation(t *testing.T) {
 			expectError: true,
 			errorPart:   "must be one of",
 		},
+		{
+			name: "non-empty URL validation",
+			viperSetup: func() {
+				// Test that non-empty prefix works with URL type
+				viper.Set("FIRST_NODE", true)
+				viper.Set("DOMAIN", "cluster.example.com")
+				viper.Set("USE_CERT_MANAGER", true)
+				viper.Set("OIDC_URL", "not-a-url")
+			},
+			expectError: true,
+			errorPart:   "invalid URL format: missing scheme or host",
+		},
 	}
 
 	for _, tt := range tests {
@@ -288,7 +308,7 @@ func TestValidateArgs_TypeValidation(t *testing.T) {
 	}
 }
 
-func TestValidateArgs_RequiredFields(t *testing.T) {
+func TestArgs_ValidateArgs_RequiredFields(t *testing.T) {
 	setupViperForTest()
 
 	tests := []struct {
@@ -364,7 +384,7 @@ func TestValidateArgs_RequiredFields(t *testing.T) {
 				viper.Set("CERT_OPTION", "")
 			},
 			expectError: true,
-			errorPart:   "CERT_OPTION is required",
+			errorPart:   "must be one of",
 		},
 	}
 
@@ -389,7 +409,7 @@ func TestValidateArgs_RequiredFields(t *testing.T) {
 	}
 }
 
-func TestValidateArgs_ValidCombinations(t *testing.T) {
+func TestArgs_ValidateArgs_ValidCombinations(t *testing.T) {
 	setupViperForTest()
 
 	// Create a temporary file for file validation tests
