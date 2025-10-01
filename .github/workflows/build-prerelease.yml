@@ -48,11 +48,6 @@ jobs:
               EXTRA_ARGS="--latest=false"
             fi
             NEW_VERSION="${{ steps.semver.outputs.next }}"
-          elif [[ "${{ github.event_name }}" == "release" ]]; then
-            NEW_VERSION="${{ github.event.release.tag_name }}"
-            EXTRA_ARGS="--latest=false"
-          else
-            NEW_VERSION="unknown-${{ github.run_number }}"
           fi
           echo "Args: ${EXTRA_ARGS}"
           echo "New version: $NEW_VERSION"
@@ -83,10 +78,10 @@ jobs:
         env:
           VERSION: ${{ needs.version.outputs.new_version }}
         run: |
-          echo devbox run build -ldflags="-X 'github.com/silogen/cluster-bloom/cmd.Version=pre-${GITHUB_HEAD_REF}'"
-          echo cp dist/bloom dist/bloom-"${GITHUB_HEAD_REF}-${GITHUB_RUN_NUMBER}"
-          devbox run build -ldflags="-X 'github.com/silogen/cluster-bloom/cmd.Version=pre-${GITHUB_HEAD_REF}'"
-          cp dist/bloom dist/bloom-"${GITHUB_HEAD_REF}-${GITHUB_RUN_NUMBER}"
+          echo devbox run build -ldflags="-X 'github.com/silogen/cluster-bloom/cmd.Version=$VERSION'"
+          echo cp dist/bloom dist/bloom-"$VERSION"
+          devbox run build -ldflags="-X 'github.com/silogen/cluster-bloom/cmd.Version=$VERSION'"
+          cp dist/bloom dist/bloom-"$VERSION"
 
       - name: Upload Release Asset
         env:
