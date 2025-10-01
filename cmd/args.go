@@ -29,31 +29,23 @@ type Arg struct {
 var Arguments = []Arg{
 	// Core cluster configuration
 	{
-		Key:          "FIRST_NODE",
-		Default:      true,
-		Description:  "Set to true if this is the first node in the cluster (default: true).",
-		Type:         "bool",
-		Options:      nil,
-		Dependencies: nil,
-		Validator:    nil,
+		Key:         "FIRST_NODE",
+		Default:     true,
+		Description: "Set to true if this is the first node in the cluster (default: true).",
+		Type:        "bool",
 	},
 	{
 		Key:          "CONTROL_PLANE",
 		Default:      false,
 		Description:  "Set to true if this node should be a control plane node (default: false, only applies when FIRST_NODE is false).",
 		Type:         "bool",
-		Options:      nil,
 		Dependencies: []UsedWhen{{"FIRST_NODE", "equals_false"}},
-		Validator:    nil,
 	},
 	{
-		Key:          "GPU_NODE",
-		Default:      true,
-		Description:  "Set to true if this node has GPUs (default: true).",
-		Type:         "bool",
-		Options:      nil,
-		Dependencies: nil,
-		Validator:    nil,
+		Key:         "GPU_NODE",
+		Default:     true,
+		Description: "Set to true if this node has GPUs (default: true).",
+		Type:        "bool",
 	},
 
 	// Network configuration
@@ -62,25 +54,20 @@ var Arguments = []Arg{
 		Default:      "",
 		Description:  "The domain name for the cluster (e.g., \"cluster.example.com\") (required).",
 		Type:         "non-empty-string",
-		Options:      nil,
 		Dependencies: []UsedWhen{{"FIRST_NODE", "equals_true"}},
-		Validator:    nil,
 	},
 	{
 		Key:          "SERVER_IP",
 		Default:      "",
 		Description:  "IP address of the RKE2 server (required for non-first nodes).",
 		Type:         "non-empty-string",
-		Options:      nil,
 		Dependencies: []UsedWhen{{"FIRST_NODE", "equals_false"}},
-		Validator:    nil,
 	},
 	{
 		Key:          "JOIN_TOKEN",
 		Default:      "",
 		Description:  "Token for joining additional nodes to the cluster (required for non-first nodes).",
 		Type:         "non-empty-string",
-		Options:      nil,
 		Dependencies: []UsedWhen{{"FIRST_NODE", "equals_false"}},
 		Validator:    validateJoinTokenArg,
 	},
@@ -91,9 +78,7 @@ var Arguments = []Arg{
 		Default:      false,
 		Description:  "Use cert-manager with Let's Encrypt for automatic TLS certificates (default: false).",
 		Type:         "bool",
-		Options:      nil,
 		Dependencies: []UsedWhen{{"FIRST_NODE", "equals_true"}},
-		Validator:    nil,
 	},
 	{
 		Key:          "CERT_OPTION",
@@ -101,66 +86,49 @@ var Arguments = []Arg{
 		Description:  "Certificate option when USE_CERT_MANAGER is false. Choose 'existing' or 'generate' (default: \"\").",
 		Type:         "enum",
 		Options:      []string{"existing", "generate"},
-		Dependencies: []UsedWhen{{"USE_CERT_MANAGER", "equals_false"}, {"FIRST_NODE", "equals_true"}},
-		Validator:    nil,
+		Dependencies: []UsedWhen{{"USE_CERT_MANAGER", "equals_false"}, UsedWhen{"FIRST_NODE", "equals_true"}},
 	},
 	{
 		Key:          "TLS_CERT",
 		Default:      "",
 		Description:  "Path to TLS certificate file for ingress (required if CERT_OPTION is 'existing').",
 		Type:         "file",
-		Options:      nil,
 		Dependencies: []UsedWhen{{"CERT_OPTION", "equals_existing"}},
-		Validator:    nil,
 	},
 	{
 		Key:          "TLS_KEY",
 		Default:      "",
 		Description:  "Path to TLS private key file for ingress (required if CERT_OPTION is 'existing').",
 		Type:         "file",
-		Options:      nil,
 		Dependencies: []UsedWhen{{"CERT_OPTION", "equals_existing"}},
-		Validator:    nil,
 	},
 
 	// Authentication
 	{
-		Key:          "OIDC_URL",
-		Default:      "",
-		Description:  "The URL of the OIDC provider (default: \"\").",
-		Type:         "url",
-		Options:      nil,
-		Dependencies: nil,
-		Validator:    nil,
+		Key:         "OIDC_URL",
+		Default:     "",
+		Description: "The URL of the OIDC provider (default: \"\").",
+		Type:        "url",
 	},
 
 	// Disk and storage configuration
 	{
-		Key:          "SKIP_DISK_CHECK",
-		Default:      false,
-		Description:  "Set to true to skip disk-related operations (default: false).",
-		Type:         "bool",
-		Options:      nil,
-		Dependencies: nil,
-		Validator:    nil,
+		Key:         "SKIP_DISK_CHECK",
+		Default:     false,
+		Description: "Set to true to skip disk-related operations (default: false).",
+		Type:        "bool",
 	},
 	{
-		Key:          "LONGHORN_DISKS",
-		Default:      "",
-		Description:  "Comma-separated list of disk paths to use for Longhorn (default: \"\").",
-		Type:         "string",
-		Options:      nil,
-		Dependencies: nil,
-		Validator:    nil,
+		Key:         "LONGHORN_DISKS",
+		Default:     "",
+		Description: "Comma-separated list of disk paths to use for Longhorn (default: \"\").",
+		Type:        "string",
 	},
 	{
-		Key:          "SELECTED_DISKS",
-		Default:      "",
-		Description:  "Comma-separated list of disk devices. Example \"/dev/sdb,/dev/sdc\" (default: \"\").",
-		Type:         "string",
-		Options:      nil,
-		Dependencies: nil,
-		Validator:    nil,
+		Key:         "SELECTED_DISKS",
+		Default:     "",
+		Description: "Comma-separated list of disk devices. Example \"/dev/sdb,/dev/sdc\" (default: \"\").",
+		Type:        "string",
 	},
 
 	// GPU/ROCm configuration
@@ -169,58 +137,44 @@ var Arguments = []Arg{
 		Default:      "https://repo.radeon.com/amdgpu-install/6.3.2/ubuntu/",
 		Description:  "ROCm base repository URL (default: this URL).",
 		Type:         "non-empty-url",
-		Options:      nil,
 		Dependencies: []UsedWhen{{"GPU_NODE", "equals_true"}},
-		Validator:    nil,
 	},
 	{
 		Key:          "ROCM_DEB_PACKAGE",
 		Default:      "amdgpu-install_6.3.60302-1_all.deb",
 		Description:  "ROCm DEB package name (default: this package).",
 		Type:         "non-empty-string",
-		Options:      nil,
 		Dependencies: []UsedWhen{{"GPU_NODE", "equals_true"}},
-		Validator:    nil,
 	},
 
 	// External URLs
 	{
-		Key:          "CLUSTERFORGE_RELEASE",
-		Default:      "https://github.com/silogen/cluster-forge/releases/download/deploy/deploy-release.tar.gz",
-		Description:  "The version of Cluster-Forge to install (default: this URL). Pass the URL for a specific release, or 'none' to not install ClusterForge.",
-		Type:         "url",
-		Options:      nil,
-		Dependencies: nil,
-		Validator:    nil,
+		Key:         "CLUSTERFORGE_RELEASE",
+		Default:     "https://github.com/silogen/cluster-forge/releases/download/deploy/deploy-release.tar.gz",
+		Description: "The version of Cluster-Forge to install (default: this URL). Pass the URL for a specific release, or 'none' to not install ClusterForge.",
+		Type:        "url",
 	},
 	{
-		Key:          "RKE2_INSTALLATION_URL",
-		Default:      "https://get.rke2.io",
-		Description:  "RKE2 installation script URL (default: this URL).",
-		Type:         "non-empty-url",
-		Options:      nil,
-		Dependencies: nil,
-		Validator:    nil,
+		Key:         "RKE2_INSTALLATION_URL",
+		Default:     "https://get.rke2.io",
+		Description: "RKE2 installation script URL (default: this URL).",
+		Type:        "non-empty-url",
 	},
 
 	// Step control
 	{
-		Key:          "DISABLED_STEPS",
-		Default:      "",
-		Description:  "Comma-separated list of steps to skip. Example \"SetupLonghornStep,SetupMetallbStep\" (default: \"\").",
-		Type:         "string",
-		Options:      nil,
-		Dependencies: nil,
-		Validator:    nil,
+		Key:         "DISABLED_STEPS",
+		Default:     "",
+		Description: "Comma-separated list of steps to skip. Example \"SetupLonghornStep,SetupMetallbStep\" (default: \"\").",
+		Type:        "string",
+		Validator:   validateStepNamesArg,
 	},
 	{
-		Key:          "ENABLED_STEPS",
-		Default:      "",
-		Description:  "Comma-separated list of steps to perform. If empty, perform all. Example \"SetupLonghornStep,SetupMetallbStep\" (default: \"\").",
-		Type:         "string",
-		Options:      nil,
-		Dependencies: nil,
-		Validator:    nil,
+		Key:         "ENABLED_STEPS",
+		Default:     "",
+		Description: "Comma-separated list of steps to perform. If empty, perform all. Example \"SetupLonghornStep,SetupMetallbStep\" (default: \"\").",
+		Type:        "string",
+		Validator:   validateStepNamesArg,
 	},
 }
 
@@ -238,12 +192,13 @@ func evaluateDependency(dep UsedWhen) bool {
 	}
 }
 
+
 func IsArgUsed(arg Arg) bool {
 	if len(arg.Dependencies) == 0 {
 		return true
 	}
 
-	// All dependencies must be satisfied for the arg to be required
+	// All dependencies must be satisfied for the arg to be used
 	for _, dep := range arg.Dependencies {
 		if !evaluateDependency(dep) {
 			return false
@@ -281,6 +236,44 @@ func validateJoinTokenArg(token string) error {
 	return nil
 }
 
+// validateStepNamesArg validates that step names are valid against the steps from rootSteps
+func validateStepNamesArg(stepNames string) error {
+	if stepNames == "" {
+		return nil // Empty step lists are allowed
+	}
+
+	// Get valid step IDs from rootSteps by extracting their Id field
+	validStepIDs := make([]string, len(rootSteps))
+	for i, step := range rootSteps {
+		validStepIDs[i] = step.Id
+	}
+
+	// Split comma-separated list and validate each step name
+	inputSteps := strings.Split(stepNames, ",")
+	for _, inputStep := range inputSteps {
+		inputStep = strings.TrimSpace(inputStep)
+		if inputStep == "" {
+			continue // Skip empty entries
+		}
+
+		// Check if step name is valid
+		valid := false
+		for _, validStep := range validStepIDs {
+			if inputStep == validStep {
+				valid = true
+				break
+			}
+		}
+
+		if !valid {
+			return fmt.Errorf("invalid step name '%s'. Valid step names are: %s",
+				inputStep, strings.Join(validStepIDs, ", "))
+		}
+	}
+
+	return nil
+}
+
 func ValidateArgs() error {
 	var errors []string
 
@@ -288,6 +281,7 @@ func ValidateArgs() error {
 		value := viper.GetString(arg.Key)
 
 		// Check if this argument is needed based on its dependencies
+
 		if !IsArgUsed(arg) {
 			continue
 		}

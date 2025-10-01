@@ -74,7 +74,7 @@ Usage:
 		}
 
 		log.Debug("Starting package installation")
-		pkg.RunStepsWithUI(rootSteps())
+		pkg.RunStepsWithUI(rootSteps)
 	},
 }
 
@@ -669,7 +669,7 @@ func logConfigValues() {
 	}
 }
 
-func rootSteps() []pkg.Step {
+var rootSteps = func() []pkg.Step {
 	preK8Ssteps := []pkg.Step{
 		pkg.CheckUbuntuStep,
 		pkg.HasSufficientRancherPartitionStep,
@@ -707,7 +707,7 @@ func rootSteps() []pkg.Step {
 	postK8Ssteps = append(postK8Ssteps, pkg.FinalOutput)
 	combinedSteps := append(append(preK8Ssteps, k8Ssteps...), postK8Ssteps...)
 	return combinedSteps
-}
+}()
 
 func displayHelp() {
 	helpContent := `

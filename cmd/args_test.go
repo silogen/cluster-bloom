@@ -134,7 +134,7 @@ func TestArgs_IsArgRequired(t *testing.T) {
 				Key: "TLS_CERT",
 				Dependencies: []UsedWhen{
 					{"CERT_OPTION", "equals_existing"},
-					{"USE_CERT_MANAGER", "equals_false"},
+					UsedWhen{"USE_CERT_MANAGER", "equals_false"},
 				},
 			},
 			viperSetup: func() {
@@ -149,7 +149,7 @@ func TestArgs_IsArgRequired(t *testing.T) {
 				Key: "TLS_CERT",
 				Dependencies: []UsedWhen{
 					{"CERT_OPTION", "equals_existing"},
-					{"USE_CERT_MANAGER", "equals_false"},
+					UsedWhen{"USE_CERT_MANAGER", "equals_false"},
 				},
 			},
 			viperSetup: func() {
@@ -561,6 +561,48 @@ func TestArgs_ValidateArgs_CustomValidator(t *testing.T) {
 			},
 			expectError: true,
 			errorPart:   "JOIN_TOKEN is required", // Should fail on required validation, not custom validator
+		},
+		{
+			name: "step names validator success - valid DISABLED_STEPS",
+			viperSetup: func() {
+				viper.Set("FIRST_NODE", true)
+				viper.Set("DOMAIN", "cluster.example.com")
+				viper.Set("USE_CERT_MANAGER", true)
+				viper.Set("DISABLED_STEPS", "SetupLonghornStep,SetupMetallbStep")
+			},
+			expectError: false,
+		},
+		{
+			name: "step names validator success - valid ENABLED_STEPS",
+			viperSetup: func() {
+				viper.Set("FIRST_NODE", true)
+				viper.Set("DOMAIN", "cluster.example.com")
+				viper.Set("USE_CERT_MANAGER", true)
+				viper.Set("ENABLED_STEPS", "CheckUbuntuStep,SetupRKE2Step")
+			},
+			expectError: false,
+		},
+		{
+			name: "step names validator failure - invalid DISABLED_STEPS",
+			viperSetup: func() {
+				viper.Set("FIRST_NODE", true)
+				viper.Set("DOMAIN", "cluster.example.com")
+				viper.Set("USE_CERT_MANAGER", true)
+				viper.Set("DISABLED_STEPS", "InvalidStepName,SetupLonghornStep")
+			},
+			expectError: true,
+			errorPart:   "invalid step name 'InvalidStepName'",
+		},
+		{
+			name: "step names validator failure - invalid ENABLED_STEPS",
+			viperSetup: func() {
+				viper.Set("FIRST_NODE", true)
+				viper.Set("DOMAIN", "cluster.example.com")
+				viper.Set("USE_CERT_MANAGER", true)
+				viper.Set("ENABLED_STEPS", "CheckUbuntuStep,NonExistentStep")
+			},
+			expectError: true,
+			errorPart:   "invalid step name 'NonExistentStep'",
 		},
 	}
 
