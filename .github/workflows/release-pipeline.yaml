@@ -1,4 +1,5 @@
-name: Build Prerelease
+name: Release Pipeline
+
 on:
   pull_request:
     types: [opened, synchronize, reopened]
@@ -11,7 +12,7 @@ on:
         description: 'Is this a prerelease?'
         required: false
         type: boolean
-        default: 'true'
+        default: 'false'
 
 jobs:
   version:
@@ -61,7 +62,7 @@ jobs:
           EXTRA_ARGS: ${{ steps.version.outputs.extra_args }}
         run: |
           gh release create "$VERSION" $EXTRA_ARGS \
-              --title="ClusterBloom Release $VERSION" \
+              --title="Cluster-Bloom Release $VERSION" \
               --repo="$GITHUB_REPOSITORY" \
               --generate-notes || true # Ignore if release already exists
 
@@ -78,17 +79,27 @@ jobs:
         env:
           VERSION: ${{ needs.version.outputs.new_version }}
         run: |
-          echo devbox run build -ldflags="-X 'github.com/silogen/cluster-bloom/cmd.Version=$VERSION'"
-          echo cp dist/bloom dist/bloom-"$VERSION"
+          # Build the binary with proper version information
           devbox run build -ldflags="-X 'github.com/silogen/cluster-bloom/cmd.Version=$VERSION'"
-          cp dist/bloom dist/bloom-"$VERSION"
+          
+          # Create versioned copy of the binary
+          cp dist/bloom dist/bloom-$VERSION
+
+      - name: Create release package
+        env:
+          VERSION: ${{ needs.version.outputs.new_version }}
+        run: |
+          # Create a tarball with the release assets
+          tar -C dist/ -zcvf dist/cluster-bloom-$VERSION.tar.gz bloom bloom-$VERSION
 
       - name: Upload Release Asset
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.version.outputs.new_version }}
         run: |
-          # Upload asset to the release
+          # Upload assets to the release
           gh release upload "$VERSION" \
-              "dist/*" \
+              "dist/cluster-bloom-$VERSION.tar.gz#Cluster-Bloom Binary Package" \
+              "dist/bloom#Cluster-Bloom Binary" \
+              "dist/bloom-$VERSION#Cluster-Bloom Versioned Binary" \
               --clobber
