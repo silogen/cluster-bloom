@@ -11,7 +11,7 @@ on:
         description: 'Is this a prerelease?'
         required: false
         type: boolean
-        default: 'false'
+        default: 'true'
 
 jobs:
   version:
