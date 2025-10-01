@@ -97,13 +97,13 @@ func TestArgs_IsArgRequired(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		arg        ArgDefault
+		arg        Arg
 		viperSetup func()
 		expected   bool
 	}{
 		{
 			name: "no dependencies",
-			arg: ArgDefault{
+			arg: Arg{
 				Key:          "GPU_NODE",
 				Dependencies: nil,
 			},
@@ -112,7 +112,7 @@ func TestArgs_IsArgRequired(t *testing.T) {
 		},
 		{
 			name: "single dependency satisfied",
-			arg: ArgDefault{
+			arg: Arg{
 				Key:          "DOMAIN",
 				Dependencies: []UsedWhen{{"FIRST_NODE", "equals_true"}},
 			},
@@ -121,7 +121,7 @@ func TestArgs_IsArgRequired(t *testing.T) {
 		},
 		{
 			name: "single dependency not satisfied",
-			arg: ArgDefault{
+			arg: Arg{
 				Key:          "DOMAIN",
 				Dependencies: []UsedWhen{{"FIRST_NODE", "equals_true"}},
 			},
@@ -130,7 +130,7 @@ func TestArgs_IsArgRequired(t *testing.T) {
 		},
 		{
 			name: "multiple dependencies all satisfied",
-			arg: ArgDefault{
+			arg: Arg{
 				Key: "TLS_CERT",
 				Dependencies: []UsedWhen{
 					{"CERT_OPTION", "equals_existing"},
@@ -145,7 +145,7 @@ func TestArgs_IsArgRequired(t *testing.T) {
 		},
 		{
 			name: "multiple dependencies partially satisfied",
-			arg: ArgDefault{
+			arg: Arg{
 				Key: "TLS_CERT",
 				Dependencies: []UsedWhen{
 					{"CERT_OPTION", "equals_existing"},
@@ -341,7 +341,7 @@ func TestArgs_ValidateArgs_RequiredFields(t *testing.T) {
 			viperSetup: func() {
 				viper.Set("FIRST_NODE", false)
 				viper.Set("SERVER_IP", "192.168.1.100")
-				viper.Set("JOIN_TOKEN", "some-token")
+				viper.Set("JOIN_TOKEN", "K10abcdef1234567890abcdef1234567890abcdef123456789")
 			},
 			expectError: false,
 		},
@@ -350,7 +350,7 @@ func TestArgs_ValidateArgs_RequiredFields(t *testing.T) {
 			viperSetup: func() {
 				viper.Set("FIRST_NODE", false)
 				viper.Set("SERVER_IP", "")
-				viper.Set("JOIN_TOKEN", "some-token")
+				viper.Set("JOIN_TOKEN", "K10abcdef1234567890abcdef1234567890abcdef123456789")
 			},
 			expectError: true,
 			errorPart:   "SERVER_IP is required",
@@ -461,7 +461,7 @@ func TestArgs_ValidateArgs_ValidCombinations(t *testing.T) {
 				viper.Set("FIRST_NODE", false)
 				viper.Set("GPU_NODE", false)
 				viper.Set("SERVER_IP", "192.168.1.100")
-				viper.Set("JOIN_TOKEN", "some-join-token")
+				viper.Set("JOIN_TOKEN", "K10abcdef1234567890abcdef1234567890abcdef123456789")
 			},
 		},
 		{
@@ -471,7 +471,7 @@ func TestArgs_ValidateArgs_ValidCombinations(t *testing.T) {
 				viper.Set("CONTROL_PLANE", true)
 				viper.Set("GPU_NODE", true)
 				viper.Set("SERVER_IP", "192.168.1.100")
-				viper.Set("JOIN_TOKEN", "some-join-token")
+				viper.Set("JOIN_TOKEN", "K10abcdef1234567890abcdef1234567890abcdef123456789")
 			},
 		},
 	}
@@ -483,6 +483,103 @@ func TestArgs_ValidateArgs_ValidCombinations(t *testing.T) {
 			err := ValidateArgs()
 			if err != nil {
 				t.Errorf("Expected valid configuration but got error: %v", err)
+			}
+		})
+	}
+}
+
+func TestArgs_ValidateArgs_CustomValidator(t *testing.T) {
+	setupViperForTest()
+
+	tests := []struct {
+		name        string
+		viperSetup  func()
+		expectError bool
+		errorPart   string
+	}{
+		{
+			name: "custom validator success - valid JOIN_TOKEN",
+			viperSetup: func() {
+				viper.Set("FIRST_NODE", false)
+				viper.Set("SERVER_IP", "192.168.1.100")
+				viper.Set("JOIN_TOKEN", "K10abcdef1234567890abcdef1234567890abcdef123456789")
+			},
+			expectError: false,
+		},
+		{
+			name: "custom validator failure - JOIN_TOKEN too short",
+			viperSetup: func() {
+				viper.Set("FIRST_NODE", false)
+				viper.Set("SERVER_IP", "192.168.1.100")
+				viper.Set("JOIN_TOKEN", "short")
+			},
+			expectError: true,
+			errorPart:   "JOIN_TOKEN is too short (minimum 32 characters), got 5 characters",
+		},
+		{
+			name: "custom validator failure - JOIN_TOKEN too long",
+			viperSetup: func() {
+				viper.Set("FIRST_NODE", false)
+				viper.Set("SERVER_IP", "192.168.1.100")
+				// Create a 520 character token (over the 512 limit)
+				longToken := ""
+				for i := 0; i < 52; i++ {
+					longToken += "1234567890"
+				}
+				viper.Set("JOIN_TOKEN", longToken)
+			},
+			expectError: true,
+			errorPart:   "JOIN_TOKEN is too long (maximum 512 characters), got 520 characters",
+		},
+		{
+			name: "custom validator failure - JOIN_TOKEN invalid characters",
+			viperSetup: func() {
+				viper.Set("FIRST_NODE", false)
+				viper.Set("SERVER_IP", "192.168.1.100")
+				viper.Set("JOIN_TOKEN", "K10abcdef1234567890abcdef1234567890abcdef123456789@#$")
+			},
+			expectError: true,
+			errorPart:   "JOIN_TOKEN contains invalid characters (only alphanumeric, +, /, =, _, ., :, - allowed)",
+		},
+		{
+			name: "custom validator not called when dependency not satisfied",
+			viperSetup: func() {
+				// FIRST_NODE=true means JOIN_TOKEN dependency not satisfied, so validator shouldn't be called
+				viper.Set("FIRST_NODE", true)
+				viper.Set("DOMAIN", "cluster.example.com")
+				viper.Set("USE_CERT_MANAGER", true)
+				viper.Set("JOIN_TOKEN", "invalid@#$")
+			},
+			expectError: false,
+		},
+		{
+			name: "custom validator not called when value is empty and not required",
+			viperSetup: func() {
+				viper.Set("FIRST_NODE", false)
+				viper.Set("SERVER_IP", "192.168.1.100")
+				viper.Set("JOIN_TOKEN", "")
+			},
+			expectError: true,
+			errorPart:   "JOIN_TOKEN is required", // Should fail on required validation, not custom validator
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setupViperForTest()
+			tt.viperSetup()
+			err := ValidateArgs()
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Expected error but got none")
+				} else if !strings.Contains(err.Error(), tt.errorPart) {
+					t.Errorf("Expected error containing '%s' but got: %v", tt.errorPart, err)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Expected no error but got: %v", err)
+				}
 			}
 		})
 	}
