@@ -38,13 +38,41 @@ var AllArgDefaults = []ArgDefault{
 	{"DISABLED_STEPS", "", "Comma-separated list of steps to skip. Example \"SetupLonghornStep,SetupMetallbStep\" (default: \"\").", "string", nil, nil},
 	{"ENABLED_STEPS", "", "Comma-separated list of steps to perform. If empty, perform all. Example \"SetupLonghornStep,SetupMetallbStep\" (default: \"\").", "string", nil, nil},
 	{"SELECTED_DISKS", "", "Comma-separated list of disk devices. Example \"/dev/sdb,/dev/sdc\" (default: \"\").", "string", nil, []Dependency{{"SKIP_DISK_CHECK", "equals_false"}}},
-	{"DOMAIN", "", "The domain name for the cluster (e.g., \"cluster.example.com\") (required).", "string", nil, []Dependency{{"FIRST_NODE", "equals_true"}}},
+	{"DOMAIN", "", "The domain name for the cluster (e.g., \"cluster.example.com\") (required).", "non-empty-string", nil, []Dependency{{"FIRST_NODE", "equals_true"}}},
 	{"TLS_CERT", "", "Path to TLS certificate file for ingress (required if CERT_OPTION is 'existing').", "file", nil, []Dependency{{"CERT_OPTION", "equals_existing"}, {"USE_CERT_MANAGER", "equals_false"}}},
 	{"TLS_KEY", "", "Path to TLS private key file for ingress (required if CERT_OPTION is 'existing').", "file", nil, []Dependency{{"CERT_OPTION", "equals_existing"}, {"USE_CERT_MANAGER", "equals_false"}}},
 	{"USE_CERT_MANAGER", false, "Use cert-manager with Let's Encrypt for automatic TLS certificates (default: false).", "bool", nil, []Dependency{{"FIRST_NODE", "equals_true"}}},
 	{"CERT_OPTION", "", "Certificate option when USE_CERT_MANAGER is false. Choose 'existing' or 'generate' (default: \"\").", "enum", []string{"existing", "generate"}, []Dependency{{"USE_CERT_MANAGER", "equals_false"}, {"FIRST_NODE", "equals_true"}}},
-	{"JOIN_TOKEN", "", "Token for joining additional nodes to the cluster (required for non-first nodes).", "string", nil, []Dependency{{"FIRST_NODE", "equals_false"}}},
-	{"SERVER_IP", "", "IP address of the RKE2 server (required for non-first nodes).", "string", nil, []Dependency{{"FIRST_NODE", "equals_false"}}},
+	{"JOIN_TOKEN", "", "Token for joining additional nodes to the cluster (required for non-first nodes).", "non-empty-string", nil, []Dependency{{"FIRST_NODE", "equals_false"}}},
+	{"SERVER_IP", "", "IP address of the RKE2 server (required for non-first nodes).", "non-empty-string", nil, []Dependency{{"FIRST_NODE", "equals_false"}}},
+}
+
+func evaluateDependency(dep Dependency) bool {
+	switch {
+	case dep.Type == "equals_true":
+		return viper.GetBool(dep.Arg)
+	case dep.Type == "equals_false":
+		return !viper.GetBool(dep.Arg)
+	case strings.HasPrefix(dep.Type, "equals_"):
+		expectedValue := strings.TrimPrefix(dep.Type, "equals_")
+		return viper.GetString(dep.Arg) == expectedValue
+	default:
+		return false
+	}
+}
+
+func isArgRequired(arg ArgDefault) bool {
+	if len(arg.Dependencies) == 0 {
+		return false
+	}
+
+	// All dependencies must be satisfied for the arg to be required
+	for _, dep := range arg.Dependencies {
+		if !evaluateDependency(dep) {
+			return false
+		}
+	}
+	return true
 }
 
 func ValidateArgs() error {
@@ -53,14 +81,20 @@ func ValidateArgs() error {
 	for _, arg := range AllArgDefaults {
 		value := viper.GetString(arg.Key)
 
+		// Check if this argument is required based on its dependencies
+		required := isArgRequired(arg)
+
+		// Type-specific validation
 		switch arg.Type {
 		case "bool":
 			// viper.GetBool handles string-to-bool conversion, so we're good
 			continue
 		case "url":
 			if value != "" && value != "none" {
-				if _, err := url.Parse(value); err != nil {
+				if u, err := url.Parse(value); err != nil {
 					errors = append(errors, fmt.Sprintf("%s: invalid URL format: %v", arg.Key, err))
+				} else if u.Scheme == "" || u.Host == "" {
+					errors = append(errors, fmt.Sprintf("%s: invalid URL format: missing scheme or host", arg.Key))
 				}
 			}
 		case "file":
@@ -73,42 +107,30 @@ func ValidateArgs() error {
 				}
 			}
 		case "enum":
-			if arg.Key == "CERT_OPTION" && value != "" {
-				if value != "existing" && value != "generate" {
-					errors = append(errors, fmt.Sprintf("%s: must be 'existing' or 'generate', got: %s", arg.Key, value))
+			if value != "" && len(arg.Options) > 0 {
+				validOption := false
+				for _, option := range arg.Options {
+					if value == option {
+						validOption = true
+						break
+					}
+				}
+				if !validOption {
+					errors = append(errors, fmt.Sprintf("%s: must be one of %v, got: %s", arg.Key, arg.Options, value))
 				}
 			}
 		case "string":
 			// Basic string validation can be added here if needed
 			continue
-		}
-	}
-
-	// Cross-field validation
-	if !viper.GetBool("FIRST_NODE") {
-		if viper.GetString("SERVER_IP") == "" {
-			errors = append(errors, "SERVER_IP is required when FIRST_NODE is false")
-		}
-		if viper.GetString("JOIN_TOKEN") == "" {
-			errors = append(errors, "JOIN_TOKEN is required when FIRST_NODE is false")
-		}
-	}
-
-	if viper.GetBool("FIRST_NODE") && viper.GetString("DOMAIN") == "" {
-		errors = append(errors, "DOMAIN is required when FIRST_NODE is true")
-	}
-
-	if !viper.GetBool("USE_CERT_MANAGER") && viper.GetBool("FIRST_NODE") {
-		certOption := viper.GetString("CERT_OPTION")
-		if certOption == "" {
-			errors = append(errors, "CERT_OPTION is required when USE_CERT_MANAGER is false")
-		} else if certOption == "existing" {
-			if viper.GetString("TLS_CERT") == "" {
-				errors = append(errors, "TLS_CERT is required when CERT_OPTION is 'existing'")
+		case "non-empty-string":
+			if required && value == "" {
+				errors = append(errors, fmt.Sprintf("%s is required", arg.Key))
 			}
-			if viper.GetString("TLS_KEY") == "" {
-				errors = append(errors, "TLS_KEY is required when CERT_OPTION is 'existing'")
-			}
+		}
+
+		// Check if required value is missing
+		if required && value == "" {
+			errors = append(errors, fmt.Sprintf("%s is required", arg.Key))
 		}
 	}
 

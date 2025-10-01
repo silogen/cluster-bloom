@@ -1,0 +1,469 @@
+package cmd
+
+import (
+	"os"
+	"strings"
+	"testing"
+
+	"github.com/spf13/viper"
+)
+
+func setupViperForTest() {
+	viper.Reset()
+	// Set some reasonable defaults for testing
+	viper.Set("FIRST_NODE", true)
+	viper.Set("GPU_NODE", true)
+	viper.Set("SKIP_DISK_CHECK", false)
+	viper.Set("USE_CERT_MANAGER", false)
+	viper.Set("CLUSTERFORGE_RELEASE", "https://github.com/silogen/cluster-forge/releases/download/deploy/deploy-release.tar.gz")
+	viper.Set("ROCM_BASE_URL", "https://repo.radeon.com/amdgpu-install/6.3.2/ubuntu/")
+	viper.Set("ROCM_DEB_PACKAGE", "amdgpu-install_6.3.60302-1_all.deb")
+	viper.Set("RKE2_INSTALLATION_URL", "https://get.rke2.io")
+}
+
+func TestEvaluateDependency(t *testing.T) {
+	setupViperForTest()
+
+	tests := []struct {
+		name       string
+		dependency Dependency
+		viperSetup func()
+		expected   bool
+	}{
+		{
+			name:       "equals_true with true value",
+			dependency: Dependency{Arg: "FIRST_NODE", Type: "equals_true"},
+			viperSetup: func() { viper.Set("FIRST_NODE", true) },
+			expected:   true,
+		},
+		{
+			name:       "equals_true with false value",
+			dependency: Dependency{Arg: "FIRST_NODE", Type: "equals_true"},
+			viperSetup: func() { viper.Set("FIRST_NODE", false) },
+			expected:   false,
+		},
+		{
+			name:       "equals_false with false value",
+			dependency: Dependency{Arg: "FIRST_NODE", Type: "equals_false"},
+			viperSetup: func() { viper.Set("FIRST_NODE", false) },
+			expected:   true,
+		},
+		{
+			name:       "equals_false with true value",
+			dependency: Dependency{Arg: "FIRST_NODE", Type: "equals_false"},
+			viperSetup: func() { viper.Set("FIRST_NODE", true) },
+			expected:   false,
+		},
+		{
+			name:       "equals_existing with existing value",
+			dependency: Dependency{Arg: "CERT_OPTION", Type: "equals_existing"},
+			viperSetup: func() { viper.Set("CERT_OPTION", "existing") },
+			expected:   true,
+		},
+		{
+			name:       "equals_existing with generate value",
+			dependency: Dependency{Arg: "CERT_OPTION", Type: "equals_existing"},
+			viperSetup: func() { viper.Set("CERT_OPTION", "generate") },
+			expected:   false,
+		},
+		{
+			name:       "equals_generate with generate value",
+			dependency: Dependency{Arg: "CERT_OPTION", Type: "equals_generate"},
+			viperSetup: func() { viper.Set("CERT_OPTION", "generate") },
+			expected:   true,
+		},
+		{
+			name:       "unknown dependency type",
+			dependency: Dependency{Arg: "FIRST_NODE", Type: "unknown_type"},
+			viperSetup: func() { viper.Set("FIRST_NODE", true) },
+			expected:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setupViperForTest()
+			tt.viperSetup()
+			result := evaluateDependency(tt.dependency)
+			if result != tt.expected {
+				t.Errorf("evaluateDependency() = %v, want %v", result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestIsArgRequired(t *testing.T) {
+	setupViperForTest()
+
+	tests := []struct {
+		name       string
+		arg        ArgDefault
+		viperSetup func()
+		expected   bool
+	}{
+		{
+			name: "no dependencies",
+			arg: ArgDefault{
+				Key:          "GPU_NODE",
+				Dependencies: nil,
+			},
+			viperSetup: func() {},
+			expected:   false,
+		},
+		{
+			name: "single dependency satisfied",
+			arg: ArgDefault{
+				Key:          "DOMAIN",
+				Dependencies: []Dependency{{"FIRST_NODE", "equals_true"}},
+			},
+			viperSetup: func() { viper.Set("FIRST_NODE", true) },
+			expected:   true,
+		},
+		{
+			name: "single dependency not satisfied",
+			arg: ArgDefault{
+				Key:          "DOMAIN",
+				Dependencies: []Dependency{{"FIRST_NODE", "equals_true"}},
+			},
+			viperSetup: func() { viper.Set("FIRST_NODE", false) },
+			expected:   false,
+		},
+		{
+			name: "multiple dependencies all satisfied",
+			arg: ArgDefault{
+				Key: "TLS_CERT",
+				Dependencies: []Dependency{
+					{"CERT_OPTION", "equals_existing"},
+					{"USE_CERT_MANAGER", "equals_false"},
+				},
+			},
+			viperSetup: func() {
+				viper.Set("CERT_OPTION", "existing")
+				viper.Set("USE_CERT_MANAGER", false)
+			},
+			expected: true,
+		},
+		{
+			name: "multiple dependencies partially satisfied",
+			arg: ArgDefault{
+				Key: "TLS_CERT",
+				Dependencies: []Dependency{
+					{"CERT_OPTION", "equals_existing"},
+					{"USE_CERT_MANAGER", "equals_false"},
+				},
+			},
+			viperSetup: func() {
+				viper.Set("CERT_OPTION", "existing")
+				viper.Set("USE_CERT_MANAGER", true)
+			},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setupViperForTest()
+			tt.viperSetup()
+			result := isArgRequired(tt.arg)
+			if result != tt.expected {
+				t.Errorf("isArgRequired() = %v, want %v", result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestValidateArgs_TypeValidation(t *testing.T) {
+	setupViperForTest()
+
+	// Create a temporary file for file validation tests
+	tmpFile, err := os.CreateTemp("", "test_cert_*.pem")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+	tmpFile.Close()
+
+	tests := []struct {
+		name        string
+		viperSetup  func()
+		expectError bool
+		errorPart   string
+	}{
+		{
+			name: "valid URL",
+			viperSetup: func() {
+				viper.Set("OIDC_URL", "https://auth.example.com")
+				// Set up minimal valid configuration to avoid other validation errors
+				viper.Set("FIRST_NODE", true)
+				viper.Set("DOMAIN", "cluster.example.com")
+				viper.Set("USE_CERT_MANAGER", true)
+			},
+			expectError: false,
+		},
+		{
+			name: "invalid URL",
+			viperSetup: func() {
+				viper.Set("OIDC_URL", "not-a-url")
+				// Set up minimal valid configuration to avoid other validation errors
+				viper.Set("FIRST_NODE", true)
+				viper.Set("DOMAIN", "cluster.example.com")
+				viper.Set("USE_CERT_MANAGER", true)
+			},
+			expectError: true,
+			errorPart:   "invalid URL format: missing scheme or host",
+		},
+		{
+			name: "valid file path",
+			viperSetup: func() {
+				viper.Set("TLS_CERT", tmpFile.Name())
+				viper.Set("TLS_KEY", tmpFile.Name())
+				// Set up required configuration for TLS_CERT to be validated
+				viper.Set("FIRST_NODE", true)
+				viper.Set("DOMAIN", "cluster.example.com")
+				viper.Set("USE_CERT_MANAGER", false)
+				viper.Set("CERT_OPTION", "existing")
+			},
+			expectError: false,
+		},
+		{
+			name: "non-absolute file path",
+			viperSetup: func() {
+				viper.Set("TLS_CERT", "relative/path.pem")
+			},
+			expectError: true,
+			errorPart:   "must be an absolute file path",
+		},
+		{
+			name: "non-existent file",
+			viperSetup: func() {
+				viper.Set("TLS_CERT", "/nonexistent/file.pem")
+			},
+			expectError: true,
+			errorPart:   "file does not exist",
+		},
+		{
+			name: "valid enum value",
+			viperSetup: func() {
+				viper.Set("FIRST_NODE", true)
+				viper.Set("USE_CERT_MANAGER", false)
+				viper.Set("CERT_OPTION", "existing")
+				viper.Set("DOMAIN", "example.com")
+				// Since CERT_OPTION is 'existing', we need TLS_CERT and TLS_KEY
+				viper.Set("TLS_CERT", tmpFile.Name())
+				viper.Set("TLS_KEY", tmpFile.Name())
+			},
+			expectError: false,
+		},
+		{
+			name: "invalid enum value",
+			viperSetup: func() {
+				viper.Set("FIRST_NODE", true)
+				viper.Set("USE_CERT_MANAGER", false)
+				viper.Set("CERT_OPTION", "invalid_option")
+				viper.Set("DOMAIN", "example.com")
+			},
+			expectError: true,
+			errorPart:   "must be one of",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setupViperForTest()
+			tt.viperSetup()
+			err := ValidateArgs()
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Expected error but got none")
+				} else if !strings.Contains(err.Error(), tt.errorPart) {
+					t.Errorf("Expected error containing '%s' but got: %v", tt.errorPart, err)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Expected no error but got: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestValidateArgs_RequiredFields(t *testing.T) {
+	setupViperForTest()
+
+	tests := []struct {
+		name        string
+		viperSetup  func()
+		expectError bool
+		errorPart   string
+	}{
+		{
+			name: "first node with domain - valid",
+			viperSetup: func() {
+				viper.Set("FIRST_NODE", true)
+				viper.Set("DOMAIN", "cluster.example.com")
+				viper.Set("USE_CERT_MANAGER", true)
+			},
+			expectError: false,
+		},
+		{
+			name: "first node without domain - invalid",
+			viperSetup: func() {
+				viper.Set("FIRST_NODE", true)
+				viper.Set("DOMAIN", "")
+				viper.Set("USE_CERT_MANAGER", true)
+			},
+			expectError: true,
+			errorPart:   "DOMAIN is required",
+		},
+		{
+			name: "additional node with tokens - valid",
+			viperSetup: func() {
+				viper.Set("FIRST_NODE", false)
+				viper.Set("SERVER_IP", "192.168.1.100")
+				viper.Set("JOIN_TOKEN", "some-token")
+			},
+			expectError: false,
+		},
+		{
+			name: "additional node without server IP - invalid",
+			viperSetup: func() {
+				viper.Set("FIRST_NODE", false)
+				viper.Set("SERVER_IP", "")
+				viper.Set("JOIN_TOKEN", "some-token")
+			},
+			expectError: true,
+			errorPart:   "SERVER_IP is required",
+		},
+		{
+			name: "additional node without join token - invalid",
+			viperSetup: func() {
+				viper.Set("FIRST_NODE", false)
+				viper.Set("SERVER_IP", "192.168.1.100")
+				viper.Set("JOIN_TOKEN", "")
+			},
+			expectError: true,
+			errorPart:   "JOIN_TOKEN is required",
+		},
+		{
+			name: "cert manager disabled with cert option - valid",
+			viperSetup: func() {
+				viper.Set("FIRST_NODE", true)
+				viper.Set("DOMAIN", "cluster.example.com")
+				viper.Set("USE_CERT_MANAGER", false)
+				viper.Set("CERT_OPTION", "generate")
+			},
+			expectError: false,
+		},
+		{
+			name: "cert manager disabled without cert option - invalid",
+			viperSetup: func() {
+				viper.Set("FIRST_NODE", true)
+				viper.Set("DOMAIN", "cluster.example.com")
+				viper.Set("USE_CERT_MANAGER", false)
+				viper.Set("CERT_OPTION", "")
+			},
+			expectError: true,
+			errorPart:   "CERT_OPTION is required",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setupViperForTest()
+			tt.viperSetup()
+			err := ValidateArgs()
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Expected error but got none")
+				} else if !strings.Contains(err.Error(), tt.errorPart) {
+					t.Errorf("Expected error containing '%s' but got: %v", tt.errorPart, err)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Expected no error but got: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestValidateArgs_ValidCombinations(t *testing.T) {
+	setupViperForTest()
+
+	// Create a temporary file for file validation tests
+	tmpFile, err := os.CreateTemp("", "test_cert_*.pem")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+	tmpFile.Close()
+
+	tests := []struct {
+		name       string
+		viperSetup func()
+	}{
+		{
+			name: "first node with cert manager",
+			viperSetup: func() {
+				viper.Set("FIRST_NODE", true)
+				viper.Set("GPU_NODE", true)
+				viper.Set("DOMAIN", "cluster.example.com")
+				viper.Set("USE_CERT_MANAGER", true)
+			},
+		},
+		{
+			name: "first node with generated certs",
+			viperSetup: func() {
+				viper.Set("FIRST_NODE", true)
+				viper.Set("GPU_NODE", false)
+				viper.Set("DOMAIN", "cluster.example.com")
+				viper.Set("USE_CERT_MANAGER", false)
+				viper.Set("CERT_OPTION", "generate")
+			},
+		},
+		{
+			name: "first node with existing certs",
+			viperSetup: func() {
+				viper.Set("FIRST_NODE", true)
+				viper.Set("GPU_NODE", true)
+				viper.Set("DOMAIN", "cluster.example.com")
+				viper.Set("USE_CERT_MANAGER", false)
+				viper.Set("CERT_OPTION", "existing")
+				viper.Set("TLS_CERT", tmpFile.Name())
+				viper.Set("TLS_KEY", tmpFile.Name())
+			},
+		},
+		{
+			name: "additional node",
+			viperSetup: func() {
+				viper.Set("FIRST_NODE", false)
+				viper.Set("GPU_NODE", false)
+				viper.Set("SERVER_IP", "192.168.1.100")
+				viper.Set("JOIN_TOKEN", "some-join-token")
+			},
+		},
+		{
+			name: "additional control plane node",
+			viperSetup: func() {
+				viper.Set("FIRST_NODE", false)
+				viper.Set("CONTROL_PLANE", true)
+				viper.Set("GPU_NODE", true)
+				viper.Set("SERVER_IP", "192.168.1.100")
+				viper.Set("JOIN_TOKEN", "some-join-token")
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setupViperForTest()
+			tt.viperSetup()
+			err := ValidateArgs()
+			if err != nil {
+				t.Errorf("Expected valid configuration but got error: %v", err)
+			}
+		})
+	}
+}
