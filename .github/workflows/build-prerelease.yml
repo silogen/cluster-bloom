@@ -46,6 +46,11 @@ jobs:
               EXTRA_ARGS="--latest=false"
             fi
             NEW_VERSION="${{ steps.semver.outputs.next }}"
+          elif [[ "${{ github.event_name }}" == "release" ]]; then
+            NEW_VERSION="${{ github.event.release.tag_name }}"
+            EXTRA_ARGS="--latest=false"
+          else
+            NEW_VERSION="unknown-${{ github.run_number }}"
           fi
           echo "Args: ${EXTRA_ARGS}"
           echo "New version: $NEW_VERSION"
@@ -62,26 +67,41 @@ jobs:
               --title="ClusterBloom Release $VERSION" \
               --repo="$GITHUB_REPOSITORY" \
               --generate-notes || true # Ignore if release already exists
+
   build:
     needs: [version]
-      runs-on: ubuntu-latest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
       - name: Install devbox
         uses: jetify-com/devbox-install-action@v0.12.0
 
       - name: Build with devbox
+        env:
+          VERSION: ${{ needs.version.outputs.new_version }}
         run: |
-          echo devbox run build -ldflags="-X 'github.com/silogen/cluster-bloom/cmd.Version=pre-${GITHUB_HEAD_REF}'"
-          echo cp dist/bloom dist/bloom-"${GITHUB_HEAD_REF}-${GITHUB_RUN_NUMBER}"
-          devbox run build -ldflags="-X 'github.com/silogen/cluster-bloom/cmd.Version=pre-${GITHUB_HEAD_REF}'"
-          cp dist/bloom dist/bloom-"${GITHUB_HEAD_REF}-${GITHUB_RUN_NUMBER}"
-      
-          files: dist/*      - name: Upload Release Asset
+          # Build the binary with proper version information
+          devbox run build -ldflags="-X 'github.com/silogen/cluster-bloom/cmd.Version=$VERSION'"
+          
+          # Create versioned copy of the binary
+          cp dist/bloom dist/bloom-$VERSION
+
+      - name: Create release package
+        env:
+          VERSION: ${{ needs.version.outputs.new_version }}
+        run: |
+          # Create a tarball with the release assets
+          tar -C dist/ -zcvf dist/cluster-bloom-$VERSION.tar.gz bloom bloom-$VERSION
+
+      - name: Upload Release Asset
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.version.outputs.new_version }}
         run: |
-          # Upload asset to the release
+          # Upload assets to the release
           gh release upload "$VERSION" \
-              "dist/*" \
+              "dist/cluster-bloom-$VERSION.tar.gz#Cluster-Bloom Binary Package" \
+              "dist/bloom#Cluster-Bloom Binary" \
+              "dist/bloom-$VERSION#Cluster-Bloom Versioned Binary" \
               --clobber
-
