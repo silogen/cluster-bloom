@@ -1,5 +1,4 @@
 name: Build Prerelease
-
 on:
   pull_request:
     types: [opened, synchronize, reopened]
@@ -13,7 +12,6 @@ on:
         required: false
         type: boolean
         default: 'false'
-
 jobs:
   version:
     runs-on: ubuntu-latest
@@ -24,7 +22,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
       - name: Get Next Version
         if: github.event_name == 'workflow_dispatch'
         id: semver
@@ -65,8 +62,6 @@ jobs:
               --title="ClusterBloom Release $VERSION" \
               --repo="$GITHUB_REPOSITORY" \
               --generate-notes || true # Ignore if release already exists
-
-
   build:
     needs: [version]
       runs-on: ubuntu-latest
