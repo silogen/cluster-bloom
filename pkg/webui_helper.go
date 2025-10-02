@@ -1,3 +1,18 @@
+/**
+ * Copyright 2025 Advanced Micro Devices, Inc.  All rights reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+**/
 package pkg
 
 import (
@@ -19,6 +34,38 @@ const (
     Debug = "DEBUG"
 )
 
+func GetPriorLonghornDisks() ([]string, error) {
+    // Step 1: Try LONGHORN_DISKS first
+    disks, err := GetDisksFromLonghornConfig()
+    if err != nil {
+        LogMessage(Warn, fmt.Sprintf("GetDisksFromLonghornConfig failed: %v", err))
+    } else if disks != nil && len(disks) > 0 {
+        LogMessage(Info, "Successfully found disks from LONGHORN_DISKS configuration")
+        return disks, nil
+    }
+
+    // Step 2: Try SELECTED_DISKS if Step 1 failed or returned no disks
+    disks, err = GetDisksFromSelectedConfig()
+    if err != nil {
+        LogMessage(Warn, fmt.Sprintf("GetDisksFromSelectedConfig failed: %v", err))
+    } else if disks != nil && len(disks) > 0 {
+        LogMessage(Info, "Successfully found disks from SELECTED_DISKS configuration")
+        return disks, nil
+    }
+
+    // Step 3: Try bloom.log if Step 1 and 2 failed or returned no disks
+    disks, err = GetDisksFromBloomLog()
+    if err != nil {
+        LogMessage(Warn, fmt.Sprintf("GetDisksFromBloomLog failed: %v", err))
+    } else if disks != nil && len(disks) > 0 {
+        LogMessage(Info, "Successfully found disks from bloom.log")
+        return disks, nil
+    }
+
+    // All functions failed or returned no disks
+    LogMessage(Error, "No longhorn disks found from any source (LONGHORN_DISKS, SELECTED_DISKS, bloom.log)")
+    return nil, fmt.Errorf("no longhorn disks found from any configuration source")
+}
 // LogMessage function - you may need to import this from your main package
 func LogMessage(level string, message string) {
     // This should match your existing LogMessage function
@@ -144,37 +191,4 @@ func GetDisksFromBloomLog() ([]string, error) {
     
     LogMessage(Info, "No '[blue]Message: Selected disks:' found in bloom.log")
     return nil, nil
-}
-
-func GetListLonghornDisks() ([]string, error) {
-    // Step 1: Try LONGHORN_DISKS first
-    disks, err := GetDisksFromLonghornConfig()
-    if err != nil {
-        LogMessage(Warn, fmt.Sprintf("GetDisksFromLonghornConfig failed: %v", err))
-    } else if disks != nil && len(disks) > 0 {
-        LogMessage(Info, "Successfully found disks from LONGHORN_DISKS configuration")
-        return disks, nil
-    }
-
-    // Step 2: Try SELECTED_DISKS if Step 1 failed or returned no disks
-    disks, err = GetDisksFromSelectedConfig()
-    if err != nil {
-        LogMessage(Warn, fmt.Sprintf("GetDisksFromSelectedConfig failed: %v", err))
-    } else if disks != nil && len(disks) > 0 {
-        LogMessage(Info, "Successfully found disks from SELECTED_DISKS configuration")
-        return disks, nil
-    }
-
-    // Step 3: Try bloom.log if Step 1 and 2 failed or returned no disks
-    disks, err = GetDisksFromBloomLog()
-    if err != nil {
-        LogMessage(Warn, fmt.Sprintf("GetDisksFromBloomLog failed: %v", err))
-    } else if disks != nil && len(disks) > 0 {
-        LogMessage(Info, "Successfully found disks from bloom.log")
-        return disks, nil
-    }
-
-    // All functions failed or returned no disks
-    LogMessage(Error, "No longhorn disks found from any source (LONGHORN_DISKS, SELECTED_DISKS, bloom.log)")
-    return nil, fmt.Errorf("no longhorn disks found from any configuration source")
 }
