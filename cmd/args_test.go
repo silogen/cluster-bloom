@@ -604,6 +604,38 @@ func TestArgs_ValidateArgs_CustomValidator(t *testing.T) {
 			expectError: true,
 			errorPart:   "invalid step name 'NonExistentStep'",
 		},
+		{
+			name: "longhorn disks validator success - valid short disk list",
+			viperSetup: func() {
+				viper.Set("FIRST_NODE", true)
+				viper.Set("DOMAIN", "cluster.example.com")
+				viper.Set("USE_CERT_MANAGER", true)
+				viper.Set("LONGHORN_DISKS", "disk0,disk1")
+			},
+			expectError: false,
+		},
+		{
+			name: "longhorn disks validator success - empty configuration",
+			viperSetup: func() {
+				viper.Set("FIRST_NODE", true)
+				viper.Set("DOMAIN", "cluster.example.com")
+				viper.Set("USE_CERT_MANAGER", true)
+				viper.Set("LONGHORN_DISKS", "")
+			},
+			expectError: false,
+		},
+		{
+			name: "longhorn disks validator failure - contains slashes in parsed string",
+			viperSetup: func() {
+				viper.Set("FIRST_NODE", true)
+				viper.Set("DOMAIN", "cluster.example.com")
+				viper.Set("USE_CERT_MANAGER", true)
+				// Test with paths that contain slashes - this should fail
+				viper.Set("LONGHORN_DISKS", "/dev/disk1,/dev/disk2")
+			},
+			expectError: true,
+			errorPart:   "LONGHORN_DISKS must not contain slashes",
+		},
 	}
 
 	for _, tt := range tests {

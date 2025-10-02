@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/silogen/cluster-bloom/pkg"
 	"github.com/spf13/viper"
 )
 
@@ -123,6 +124,7 @@ var Arguments = []Arg{
 		Default:     "",
 		Description: "Comma-separated list of disk paths to use for Longhorn (default: \"\").",
 		Type:        "string",
+		Validator:   validateLonghornDisksArg,
 	},
 	{
 		Key:         "SELECTED_DISKS",
@@ -191,7 +193,6 @@ func evaluateDependency(dep UsedWhen) bool {
 		return false
 	}
 }
-
 
 func IsArgUsed(arg Arg) bool {
 	if len(arg.Dependencies) == 0 {
@@ -269,6 +270,21 @@ func validateStepNamesArg(stepNames string) error {
 			return fmt.Errorf("invalid step name '%s'. Valid step names are: %s",
 				inputStep, strings.Join(validStepIDs, ", "))
 		}
+	}
+
+	return nil
+}
+
+// validateLonghornDisksArg validates LONGHORN_DISKS configuration
+func validateLonghornDisksArg(disks string) error {
+	// Use the same logic as the existing validation in root.go
+	longhornDiskString := pkg.ParseLonghornDiskConfig()
+	if len(longhornDiskString) > 63 {
+		return fmt.Errorf("LONGHORN_DISKS configuration too long (%d characters), maximum 63 characters allowed. Parsed string: %s",
+			len(longhornDiskString), longhornDiskString)
+	}
+	if strings.Contains(longhornDiskString, "/") {
+		return fmt.Errorf("LONGHORN_DISKS must not contain slashes. Parsed string: %s", longhornDiskString)
 	}
 
 	return nil
