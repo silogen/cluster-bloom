@@ -26,7 +26,7 @@ import (
 	"github.com/spf13/viper"
 )
 
-func CreateConfigMap() error {
+func CreateConfigMap(version string) error {
 	bloomConfig := make(map[string]string)
 
 	configFile := viper.ConfigFileUsed()
@@ -71,13 +71,16 @@ metadata:
   name: bloom
   namespace: default
 data:
+  BLOOM_VERSION: "` + version + `"
 `
+	// Add each configuration item
 	for key, value := range bloomConfig {
+		// Escape any special characters in the value
 		escapedValue := strings.ReplaceAll(value, "\n", "\\n")
 		escapedValue = strings.ReplaceAll(escapedValue, "\"", "\\\"")
 		configMapYAML += fmt.Sprintf("  %s: \"%s\"\n", key, escapedValue)
 	}
-
+	// Write to temporary file
 	tmpFile, err := os.CreateTemp("", "bloom-configmap-*.yaml")
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to create temporary file: %v", err))
@@ -91,6 +94,7 @@ data:
 	}
 	tmpFile.Close()
 
+	// Apply the ConfigMap using kubectl
 	cmd := exec.Command("/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "apply", "-f", tmpFile.Name())
 	output, err := cmd.CombinedOutput()
 	if err != nil {
