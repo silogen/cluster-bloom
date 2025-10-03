@@ -113,7 +113,6 @@ func ParseLonghornDiskConfig() string {
 
 func GenerateNodeLabels() error {
 	rke2ConfigPath := "/etc/rancher/rke2/config.yaml"
-	// Fill the template with the GPU_NODE setting, leave longhor for later
 	nodeLabels := fmt.Sprintf(nodeLabelTemplate, viper.GetBool("GPU_NODE"))
 	if err := appendToFile(rke2ConfigPath, nodeLabels); err != nil {
 		return fmt.Errorf("failed to append Longhorn configuration to %s: %w", rke2ConfigPath, err)
@@ -152,19 +151,9 @@ func GenerateNodeLabels() error {
 		return nil
 	}
 	diskNames := []string{}
-	// # Check if GPU_NODE is set or no disks are selected
-	// if viper.GetBool("GPU_NODE") || !selectedDisks {
-	// 	for _, disk := range disks {
-	// 		cmd := exec.Command("sh", "-c", fmt.Sprintf("lsblk -no NAME,MOUNTPOINT | grep '%s' | grep 'nvme'", disk))
-	// 		if err := cmd.Run(); err == nil {
-	// 			diskNames = append(diskNames, strings.TrimPrefix(disk, "/mnt/"))
-	// 		}
-	// 	}
-	// } else {
 	for _, disk := range disks {
 		diskNames = append(diskNames, strings.TrimPrefix(disk, "/mnt/"))
 	}
-	// }
 
 	if len(diskNames) > 0 {
 		diskList := strings.Join(diskNames, "xxx")

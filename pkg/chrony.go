@@ -23,7 +23,6 @@ import (
 		"github.com/spf13/viper"
 )
 
-// Define chrony configuration templates as package-level variables
 var (
     chronyTemplateFirst = `pool 0.pool.ntp.org iburst maxsources 2
 server time.google.com iburst
@@ -44,7 +43,6 @@ pool 0.pool.ntp.org iburst maxsources 2
 `
 )
 
-// GenerateChronyConfFirst creates a chrony.conf for first node
 func GenerateChronyConfFirst() error {
 	  firstNode := viper.GetBool("FIRST_NODE")
 	  if !firstNode {
@@ -57,7 +55,6 @@ func GenerateChronyConfFirst() error {
         return err
     }
 
-    // Restart chronyd service
     restartCmd := exec.Command("systemctl", "restart", "chronyd")
     if output, err := restartCmd.CombinedOutput(); err != nil {
         return fmt.Errorf("failed to restart chronyd: %w, output: %s", err, string(output))
@@ -67,7 +64,6 @@ func GenerateChronyConfFirst() error {
     return nil
 }
 
-// GenerateChronyConfAdditional creates a chrony.conf for additional node.
 func GenerateChronyConfAdditional() error {
 		serverIP := viper.GetString("SERVER_IP")
 	  if serverIP == "" {
@@ -80,7 +76,6 @@ func GenerateChronyConfAdditional() error {
         return err
     }
 
-    // Restart chronyd service
     restartCmd := exec.Command("systemctl", "restart", "chronyd")
     if output, err := restartCmd.CombinedOutput(); err != nil {
         return fmt.Errorf("failed to restart chronyd: %w, output: %s", err, string(output))
@@ -90,7 +85,6 @@ func GenerateChronyConfAdditional() error {
     return nil
 }
 
-// writeChronyConf writes the chrony configuration to the specified file.
 func writeChronyConf(chronyConf string) error {
     backupCmd := exec.Command("cp", "/etc/chrony/chrony.conf", "/etc/chrony/chrony.conf.bak")
     if err := backupCmd.Run(); err != nil {

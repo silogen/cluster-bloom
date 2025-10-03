@@ -36,12 +36,10 @@ func TestCheckAndInstallROCM(t *testing.T) {
 		t.Skip("Skipping test that requires root privileges")
 	}
 
-	// Test when rocm-smi is not found (likely case in test environment)
 	viper.Set("ROCM_DEB_PACKAGE", "amdgpu-install_6.1.60103-1_all.deb")
 	viper.Set("ROCM_BASE_URL", "https://repo.radeon.com/amdgpu-install/6.1.3/ubuntu/")
 	
 	result := CheckAndInstallROCM()
-	// This will likely return false in test environment due to missing GPU hardware
 	if result {
 		t.Log("CheckAndInstallROCM succeeded")
 	} else {
@@ -50,7 +48,6 @@ func TestCheckAndInstallROCM(t *testing.T) {
 }
 
 func TestPrintROCMVersion(t *testing.T) {
-	// Test function exists and doesn't panic
 	printROCMVersion()
 }
 
@@ -83,7 +80,6 @@ func TestRunCommand(t *testing.T) {
 }
 
 func TestRunCommandWithDifferentArgs(t *testing.T) {
-	// Test with different argument combinations
 	output, err := runCommand("echo", "test")
 	if err != nil {
 		t.Errorf("Expected no error, got: %v", err)
@@ -100,7 +96,6 @@ func TestRunCommandWithDifferentArgs(t *testing.T) {
 		t.Errorf("Expected 'no-newline', got '%s'", output)
 	}
 
-	// Test command that should fail
 	_, err = runCommand("false")
 	if err == nil {
 		t.Errorf("Expected error from 'false' command")
@@ -108,7 +103,6 @@ func TestRunCommandWithDifferentArgs(t *testing.T) {
 }
 
 func TestRunCommandErrorHandling(t *testing.T) {
-	// Test command with stderr output
 	_, err := runCommand("sh", "-c", "echo 'error message' >&2; exit 1")
 	if err == nil {
 		t.Errorf("Expected error from failing command")
@@ -119,7 +113,6 @@ func TestRunCommandErrorHandling(t *testing.T) {
 }
 
 func TestROCMConfiguration(t *testing.T) {
-	// Test ROCM configuration values
 	viper.Set("ROCM_DEB_PACKAGE", "test-package.deb")
 	viper.Set("ROCM_BASE_URL", "https://test.com/")
 	
@@ -135,7 +128,6 @@ func TestROCMConfiguration(t *testing.T) {
 }
 
 func TestCommandOutputParsing(t *testing.T) {
-	// Test parsing command output
 	output, err := runCommand("echo", "line1\nline2\nline3")
 	if err != nil {
 		t.Errorf("Expected no error, got: %v", err)
