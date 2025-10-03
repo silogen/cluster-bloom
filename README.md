@@ -95,6 +95,13 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | DISABLED_STEPS | Comma-separated list of steps to skip. Example "SetupLonghornStep,SetupMetallbStep" | "" |
 | ENABLED_STEPS | Comma-separated list of steps to perform. If empty, perform all. Example "SetupLonghornStep,SetupMetallbStep" | "" |
 | SELECTED_DISKS | Comma-separated list of disk devices. Example "/dev/sdb,/dev/sdc". Also skips NVME drive checks. | "" |
+| CONTROL_PLANE |  Set to true if this node should be a control plane node |false, only applies when FIRST_NODE is false |
+| DOMAIN | The domain name for the cluster (e.g., "cluster.example.com") (required). | "" |
+| USE_CERT_MANAGER | Use cert-manager with Let's Encrypt for automatic TLS certificates | false |
+| CERT_OPTION | Certificate option when USE_CERT_MANAGER is false. Choose 'existing' or 'generate' | "" |
+| TLS_CERT | Path to TLS certificate file for ingress (required if CERT_OPTION is 'existing') | "" |
+| TLS_KEY | Path to TLS private key file for ingress (required if CERT_OPTION is 'existing') | "" |
+
 
 ### Using a Configuration File
 
