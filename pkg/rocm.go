@@ -34,7 +34,6 @@ func CheckGPUAvailability() error {
 		return fmt.Errorf("Failed to run lsmod: "+err.Error())
 	} 
 
-	// grep will give an error if the module is not found, but we want to check the output
 	output, err = exec.Command("sh", "-c", "lsmod | grep '^amdgpu'").CombinedOutput()	
 	if len(output) == 0 {
 		LogMessage(Warn, "WARNING: The amdgpu module is not loaded")

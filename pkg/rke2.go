@@ -153,7 +153,6 @@ func startServiceWithTimeout(serviceName string, timeout time.Duration) error {
 	LogMessage(Info, fmt.Sprintf("Waiting for service %s to become active (timeout: %v)", serviceName, timeout))
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		// The exec.Command is fine here as it uses CombinedOutput
 		isActiveCmd := exec.Command("systemctl", "is-active", serviceName+".service")
 		output, err := isActiveCmd.CombinedOutput()
 		status := string(output)
