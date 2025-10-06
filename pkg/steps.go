@@ -252,32 +252,6 @@ var UpdateModprobeStep = Step{
 	},
 }
 
-var CleanTargetDisksStep = Step{
-	Id:          "CleanTargetDisksStep",
-	Name:        "Clean target disks",
-	Description: "Clean disks used for longhorn in any previous bloom installation",
-
-	Skip: func() bool {
-		disks, err := GetPriorLonghornDisks()
-		if err != nil {
-			LogMessage(Error, fmt.Sprintf("Failed to get prior Longhorn disks: %v", err))
-			return true
-		}
-
-		if disks == nil || len(disks) == 0 {
-			LogMessage(Info, "Skipping disk cleaning as no prior Longhorn disks found.")
-			return true
-		}
-
-		return false
-	},
-
-	Action: func() StepResult {
-		disks, _ := GetPriorLonghornDisks()
-		err := CleanTargetDisks(disks)
-		return StepResult{Error: err}
-	},
-}
 
 var SelectDrivesStep = Step{
 	Id:          "SelectDrivesStep",
