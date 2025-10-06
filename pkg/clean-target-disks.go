@@ -35,7 +35,7 @@ func CleanTargetDisks(targetDisks []string) error {
 	var successfulUnmounts []string
 	for _, disk := range targetDisks {
 		if err := UnmountTargetDisks([]string{disk}); err != nil {
-			LogMessage(Warning, fmt.Sprintf("Skipping disk %s: failed to unmount (%v)", disk, err))
+			LogMessage(Info, fmt.Sprintf("Skipping disk %s: failed to unmount (%v)", disk, err))
 			continue
 		}
 		successfulUnmounts = append(successfulUnmounts, disk)
@@ -51,7 +51,7 @@ func CleanTargetDisks(targetDisks []string) error {
 	var successfullyWiped []string
 	for _, disk := range successfulUnmounts {
 		if err := WipeTargetDisks([]string{disk}); err != nil {
-			LogMessage(Warning, fmt.Sprintf("Skipping disk %s: failed to wipe (%v)", disk, err))
+			LogMessage(Info, fmt.Sprintf("Skipping disk %s: failed to wipe (%v)", disk, err))
 			continue
 		}
 		successfullyWiped = append(successfullyWiped, disk)
@@ -66,7 +66,7 @@ func CleanTargetDisks(targetDisks []string) error {
 	LogMessage(Info, "Step 5: Removing mount point directories")
 	for _, mountPoint := range mountPointsToRemove {
 		if err := RemoveMountPointDirectories([]string{mountPoint}); err != nil {
-			LogMessage(Warning, fmt.Sprintf("Failed to remove mount point %s: %v", mountPoint, err))
+			LogMessage(Info, fmt.Sprintf("Failed to remove mount point %s: %v", mountPoint, err))
 		}
 	}
   LogMessage(Info, fmt.Sprintf("Successfully completed cleanup process for %d disks (some may have been skipped)", len(successfullyWiped)))

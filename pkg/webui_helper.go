@@ -26,14 +26,6 @@ import (
     "github.com/spf13/viper"
 )
 
-// LogMessage levels ###
-const (
-    Info  = "INFO"
-    Warn  = "WARN"
-    Error = "ERROR"
-    Debug = "DEBUG"
-)
-
 func GetPriorLonghornDisks() ([]string, error) {
     // Step 1: Try LONGHORN_DISKS first
     disks, err := GetDisksFromLonghornConfig()
@@ -66,11 +58,7 @@ func GetPriorLonghornDisks() ([]string, error) {
     LogMessage(Error, "No longhorn disks found from any source (LONGHORN_DISKS, SELECTED_DISKS, bloom.log)")
     return nil, fmt.Errorf("no longhorn disks found from any configuration source")
 }
-// LogMessage function - you may need to import this from your main package ###
-func LogMessage(level string, message string) {
-    // This should match your existing LogMessage function
-    fmt.Printf("[%s] %s\n", level, message)
-}
+
 
 func GetDisksFromLonghornConfig() ([]string, error) {
     if !viper.IsSet("LONGHORN_DISKS") || viper.GetString("LONGHORN_DISKS") == "" {
