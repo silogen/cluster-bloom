@@ -232,7 +232,7 @@ func WipeTargetDisks(targetDisks []string) error {
         LogMessage(Warn, fmt.Sprintf("Disk %s appears to still be mounted", disk))
     }
 		LogMessage(Info, fmt.Sprintf("Wiping filesystem signatures on %s", disk))
-		cmd := exec.Command("sudo", "wipefs", "-a", disk) //
+		cmd = exec.Command("sudo", "wipefs", "-a", disk) //
 		if err := cmd.Run(); err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to wipe %s: %v", disk, err))
 			continue
