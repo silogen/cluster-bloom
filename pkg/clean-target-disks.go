@@ -32,23 +32,44 @@ func CleanTargetDisks(targetDisks []string) error {
 
 	// Step 3: Unmount target disks
 	LogMessage(Info, "Step 3: Unmounting target disks")
-	if err := UnmountTargetDisks(targetDisks); err != nil {
-		return fmt.Errorf("failed to unmount target disks: %w", err)
+	var successfulUnmounts []string
+	for _, disk := range targetDisks {
+		if err := UnmountTargetDisks([]string{disk}); err != nil {
+			LogMessage(Warning, fmt.Sprintf("Skipping disk %s: failed to unmount (%v)", disk, err))
+			continue
+		}
+		successfulUnmounts = append(successfulUnmounts, disk)
 	}
+	if len(successfulUnmounts) == 0 {
+		LogMessage(Error, "No disks could be successfully unmounted. Aborting cleanup.")
+		return fmt.Errorf("all target disks failed to unmount")
+	}
+
 
 	// Step 4: Wipe target disks (wipe and format - reverse of MountDrive)
 	LogMessage(Info, "Step 4: Wiping and formatting target disks")
-	if err := WipeTargetDisks(targetDisks); err != nil {
-		return fmt.Errorf("failed to wipe target disks: %w", err)
+	var successfullyWiped []string
+	for _, disk := range successfulUnmounts {
+		if err := WipeTargetDisks([]string{disk}); err != nil {
+			LogMessage(Warning, fmt.Sprintf("Skipping disk %s: failed to wipe (%v)", disk, err))
+			continue
+		}
+		successfullyWiped = append(successfullyWiped, disk)
+	}
+
+	if len(successfullyWiped) == 0 {
+		LogMessage(Error, "No disks could be successfully wiped. Aborting cleanup.")
+		return fmt.Errorf("all target disks failed to wipe")
 	}
 
 	// Step 5: Remove mount point directories
 	LogMessage(Info, "Step 5: Removing mount point directories")
-	if err := RemoveMountPointDirectories(mountPointsToRemove); err != nil {
-		return fmt.Errorf("failed to remove mount point directories: %w", err)
+	for _, mountPoint := range mountPointsToRemove {
+		if err := RemoveMountPointDirectories([]string{mountPoint}); err != nil {
+			LogMessage(Warning, fmt.Sprintf("Failed to remove mount point %s: %v", mountPoint, err))
+		}
 	}
-
-	LogMessage(Info, fmt.Sprintf("Successfully completed cleanup process for %d disks", len(targetDisks)))
+  LogMessage(Info, fmt.Sprintf("Successfully completed cleanup process for %d disks (some may have been skipped)", len(successfullyWiped)))
 	return nil
 }
 
@@ -211,7 +232,7 @@ func WipeTargetDisks(targetDisks []string) error {
         LogMessage(Warn, fmt.Sprintf("Disk %s appears to still be mounted", disk))
     }
 		LogMessage(Info, fmt.Sprintf("Wiping filesystem signatures on %s", disk))
-		cmd := exec.Command("sudo", "wipefs", "-a", disk)
+		cmd := exec.Command("sudo", "wipefs", "-a", disk) //
 		if err := cmd.Run(); err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to wipe %s: %v", disk, err))
 			continue

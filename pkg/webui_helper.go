@@ -1,4 +1,4 @@
-/**
+**
  * Copyright 2025 Advanced Micro Devices, Inc.  All rights reserved.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,7 +26,7 @@ import (
     "github.com/spf13/viper"
 )
 
-// LogMessage levels
+// LogMessage levels ###
 const (
     Info  = "INFO"
     Warn  = "WARN"
@@ -66,7 +66,7 @@ func GetPriorLonghornDisks() ([]string, error) {
     LogMessage(Error, "No longhorn disks found from any source (LONGHORN_DISKS, SELECTED_DISKS, bloom.log)")
     return nil, fmt.Errorf("no longhorn disks found from any configuration source")
 }
-// LogMessage function - you may need to import this from your main package
+// LogMessage function - you may need to import this from your main package ###
 func LogMessage(level string, message string) {
     // This should match your existing LogMessage function
     fmt.Printf("[%s] %s\n", level, message)
