@@ -252,7 +252,6 @@ var UpdateModprobeStep = Step{
 	},
 }
 
-
 var SelectDrivesStep = Step{
 	Id:          "SelectDrivesStep",
 	Name:        "Select Unmounted Disks",
