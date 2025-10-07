@@ -80,6 +80,7 @@ data:
 		escapedValue = strings.ReplaceAll(escapedValue, "\"", "\\\"")
 		configMapYAML += fmt.Sprintf("  %s: \"%s\"\n", key, escapedValue)
 	}
+
 	// Write to temporary file
 	tmpFile, err := os.CreateTemp("", "bloom-configmap-*.yaml")
 	if err != nil {

@@ -166,11 +166,15 @@ func TestLogLevel(t *testing.T) {
 }
 
 func TestLogToUI(t *testing.T) {
+	// Test when globalApp and globalLogView are nil
 	LogToUI("test message")
 
+	// Test when globalApp and globalLogView are set (would require UI setup)
+	// This is mainly for coverage, actual UI testing would be more complex
 }
 
 func TestGlobalVariables(t *testing.T) {
+	// Test initial state of global variables
 	if globalApp != nil {
 		t.Errorf("Expected globalApp to be nil initially")
 	}
@@ -183,8 +187,10 @@ func TestGlobalVariables(t *testing.T) {
 }
 
 func TestStepStructure(t *testing.T) {
+	// Test that Step struct has all required fields
 	step := Step{}
 	
+	// Verify zero values
 	if step.Id != "" {
 		t.Errorf("Expected empty Id, got '%s'", step.Id)
 	}
@@ -200,8 +206,10 @@ func TestStepStructure(t *testing.T) {
 }
 
 func TestStepResultStructure(t *testing.T) {
+	// Test StepResult struct
 	result := StepResult{}
 	
+	// Verify zero values
 	if result.Error != nil {
 		t.Errorf("Expected nil Error, got %v", result.Error)
 	}
@@ -211,8 +219,10 @@ func TestStepResultStructure(t *testing.T) {
 }
 
 func TestOptionResultStructure(t *testing.T) {
+	// Test OptionResult struct
 	result := OptionResult{}
 	
+	// Verify zero values
 	if result.Selected != nil {
 		t.Errorf("Expected nil Selected, got %v", result.Selected)
 	}

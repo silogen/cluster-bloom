@@ -34,6 +34,7 @@ func TestCheckPackageInstallConnections(t *testing.T) {
 	viper.Set("RKE2_INSTALLATION_URL", "https://httpbin.org/status/200")
 
 	err := CheckPackageInstallConnections()
+	// This may fail in test environment due to network/permission issues
 	if err != nil {
 		t.Logf("CheckPackageInstallConnections failed as expected in test environment: %v", err)
 	}
@@ -45,6 +46,7 @@ func TestInstallDependentPackages(t *testing.T) {
 	}
 
 	err := InstallDependentPackages()
+	// This will likely fail in test environment
 	if err != nil {
 		t.Logf("InstallDependentPackages failed as expected in test environment: %v", err)
 	}
@@ -55,6 +57,7 @@ func TestInstallPackage(t *testing.T) {
 		t.Skip("Skipping test that requires root privileges")
 	}
 
+	// Test with a package that should already be installed
 	err := installpackage("bash")
 	if err != nil {
 		t.Logf("installpackage failed as expected in test environment: %v", err)
@@ -67,6 +70,7 @@ func TestInstallK8sTools(t *testing.T) {
 	}
 
 	err := installK8sTools()
+	// This will likely fail in test environment
 	if err != nil {
 		t.Logf("installK8sTools failed as expected in test environment: %v", err)
 	}
@@ -78,6 +82,7 @@ func TestSetupManifests(t *testing.T) {
 	}
 
 	err := setupManifests("metallb")
+	// This will likely fail in test environment due to permissions
 	if err != nil {
 		t.Logf("setupManifests failed as expected in test environment: %v", err)
 	}
@@ -89,6 +94,7 @@ func TestSetupAudit(t *testing.T) {
 	}
 
 	err := setupAudit()
+	// This will likely fail in test environment due to permissions
 	if err != nil {
 		t.Logf("setupAudit failed as expected in test environment: %v", err)
 	}

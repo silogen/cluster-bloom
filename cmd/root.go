@@ -78,11 +78,13 @@ Usage:
   Use --one-shot with --config to auto-proceed after loading configuration for automated deployments.
 `,
 	Run: func(cmd *cobra.Command, args []string) {
+		// Handle reconfigure flag
 		if reconfigure {
 			currentDir, _ := os.Getwd()
 			logPath := filepath.Join(currentDir, "bloom.log")
 
 			if _, err := os.Stat(logPath); err == nil {
+				// Archive the existing bloom.log
 				timestamp := time.Now().Format("20060102-150405")
 				archivedPath := filepath.Join(currentDir, fmt.Sprintf("bloom-%s.log", timestamp))
 
@@ -95,14 +97,17 @@ Usage:
 				fmt.Println("🚀 Starting fresh configuration...")
 				fmt.Println()
 			}
+			// Continue to configuration interface
 			runWebInterfaceWithConfig()
 			return
 		}
 
+		// Check if bloom.log exists when no config provided
 		if cfgFile == "" {
 			currentDir, _ := os.Getwd()
 			logPath := filepath.Join(currentDir, "bloom.log")
 			if _, err := os.Stat(logPath); err == nil {
+				// bloom.log exists - start webui for monitoring
 				fmt.Println("🔍 Found existing bloom.log - starting monitoring interface...")
 				fmt.Println()
 				startWebUIMonitoring()
@@ -110,6 +115,7 @@ Usage:
 			}
 		}
 
+		// No existing log or config provided - start web interface for configuration
 		runWebInterfaceWithConfig()
 	},
 }
@@ -122,6 +128,7 @@ var cfgFile string
 var oneShot bool
 var reconfigure bool
 
+// validateAllURLs validates all URL-type configuration parameters
 func validateAllURLs() error {
 	urlParams := map[string]string{
 		"OIDC_URL":              viper.GetString("OIDC_URL"),
@@ -139,7 +146,9 @@ func validateAllURLs() error {
 	return nil
 }
 
+// validateAllTokens validates all token configuration parameters
 func validateAllTokens() error {
+	// Validate JOIN_TOKEN if it's required (when FIRST_NODE is false)
 	if !viper.GetBool("FIRST_NODE") {
 		joinToken := viper.GetString("JOIN_TOKEN")
 		if err := validateToken(joinToken, "JOIN_TOKEN"); err != nil {
@@ -150,6 +159,7 @@ func validateAllTokens() error {
 	return nil
 }
 
+// validStepIDs contains all valid step identifiers
 var validStepIDs = []string{
 	"CheckUbuntuStep",
 	"InstallDependentPackagesStep",
@@ -182,18 +192,21 @@ var validStepIDs = []string{
 	"UninstallRKE2Step",
 }
 
+// validateStepNames validates that step names in DISABLED_STEPS and ENABLED_STEPS are valid
 func validateStepNames(stepNames, paramName string) error {
 	if stepNames == "" {
-		return nil
+		return nil // Empty step lists are allowed
 	}
 
+	// Split comma-separated list and validate each step name
 	steps := strings.Split(stepNames, ",")
 	for _, step := range steps {
 		step = strings.TrimSpace(step)
 		if step == "" {
-			continue
+			continue // Skip empty entries
 		}
 
+		// Check if step name is valid
 		valid := false
 		for _, validStep := range validStepIDs {
 			if step == validStep {
@@ -211,7 +224,9 @@ func validateStepNames(stepNames, paramName string) error {
 	return nil
 }
 
+// validateAllStepNames validates all step name configuration parameters
 func validateAllStepNames() error {
+	// Validate DISABLED_STEPS
 	if viper.IsSet("DISABLED_STEPS") {
 		disabledSteps := viper.GetString("DISABLED_STEPS")
 		if err := validateStepNames(disabledSteps, "DISABLED_STEPS"); err != nil {
@@ -219,6 +234,7 @@ func validateAllStepNames() error {
 		}
 	}
 
+	// Validate ENABLED_STEPS
 	if viper.IsSet("ENABLED_STEPS") {
 		enabledSteps := viper.GetString("ENABLED_STEPS")
 		if err := validateStepNames(enabledSteps, "ENABLED_STEPS"); err != nil {
@@ -229,7 +245,9 @@ func validateAllStepNames() error {
 	return nil
 }
 
+// validateConfigurationConflicts detects and warns about conflicting configuration combinations
 func validateConfigurationConflicts() error {
+	// Check FIRST_NODE=false requires SERVER_IP and JOIN_TOKEN
 	if !viper.GetBool("FIRST_NODE") {
 		serverIP := viper.GetString("SERVER_IP")
 		joinToken := viper.GetString("JOIN_TOKEN")
@@ -242,18 +260,22 @@ func validateConfigurationConflicts() error {
 		}
 	}
 
+	// Check GPU_NODE vs ROCm requirements
 	if viper.GetBool("GPU_NODE") {
+		// If GPU_NODE is true, we expect ROCm-related configurations to be valid
 		rocmBaseURL := viper.GetString("ROCM_BASE_URL")
 		if rocmBaseURL == "" {
 			log.Warnf("GPU_NODE=true but ROCM_BASE_URL is empty - ROCm installation may fail")
 		}
 
+		// Check if SetupAndCheckRocmStep is disabled when GPU_NODE=true
 		disabledSteps := viper.GetString("DISABLED_STEPS")
 		if strings.Contains(disabledSteps, "SetupAndCheckRocmStep") {
 			log.Warnf("GPU_NODE=true but SetupAndCheckRocmStep is disabled - GPU functionality may not work")
 		}
 	}
 
+	// Check SKIP_DISK_CHECK consistency with disk-related parameters
 	skipDiskCheck := viper.GetBool("SKIP_DISK_CHECK")
 	longhornDisks := viper.GetString("LONGHORN_DISKS")
 	selectedDisks := viper.GetString("SELECTED_DISKS")
@@ -266,10 +288,12 @@ func validateConfigurationConflicts() error {
 		log.Warnf("SKIP_DISK_CHECK=false but no disk parameters specified - automatic disk detection will be used")
 	}
 
+	// Check for conflicting step configurations
 	disabledSteps := viper.GetString("DISABLED_STEPS")
 	enabledSteps := viper.GetString("ENABLED_STEPS")
 
 	if disabledSteps != "" && enabledSteps != "" {
+		// Parse both lists and check for overlaps
 		disabled := strings.Split(disabledSteps, ",")
 		enabled := strings.Split(enabledSteps, ",")
 
@@ -292,6 +316,7 @@ func validateConfigurationConflicts() error {
 		}
 	}
 
+	// Check for essential steps being disabled
 	if strings.Contains(disabledSteps, "CheckUbuntuStep") {
 		log.Warnf("CheckUbuntuStep is disabled - system compatibility may not be verified")
 	}
@@ -303,31 +328,39 @@ func validateConfigurationConflicts() error {
 	return nil
 }
 
+// validateResourceRequirements validates system resource requirements and compatibility
 func validateResourceRequirements() error {
+	// Validate partition sizes and disk space
 	if err := validateDiskSpace(); err != nil {
 		return err
 	}
 
+	// Validate memory and CPU requirements
 	if err := validateSystemResources(); err != nil {
 		return err
 	}
 
+	// Validate Ubuntu version compatibility
 	if err := validateUbuntuVersion(); err != nil {
 		return err
 	}
 
+	// Validate required kernel modules and drivers (non-fatal warnings)
 	validateKernelModules()
 
 	return nil
 }
 
+// validateDiskSpace checks partition sizes and available disk space
 func validateDiskSpace() error {
+	// Check root partition size (minimum 20GB recommended for Kubernetes)
 	var stat syscall.Statfs_t
 	if err := syscall.Statfs("/", &stat); err != nil {
 		log.Warnf("Could not check root partition size: %v", err)
-		return nil
+		return nil // Non-fatal
 	}
 
+	// Calculate available space in GB
 	availableGB := float64(stat.Bavail*uint64(stat.Bsize)) / (1024 * 1024 * 1024)
 	totalGB := float64(stat.Blocks*uint64(stat.Bsize)) / (1024 * 1024 * 1024)
 
@@ -339,6 +372,7 @@ func validateDiskSpace() error {
 		return fmt.Errorf("insufficient disk space: %.1fGB available, minimum 10GB required", availableGB)
 	}
 
+	// Check /var partition if it exists separately
 	if err := syscall.Statfs("/var", &stat); err == nil {
 		varAvailableGB := float64(stat.Bavail*uint64(stat.Bsize)) / (1024 * 1024 * 1024)
 		if varAvailableGB < 5 {
@@ -349,11 +383,13 @@ func validateDiskSpace() error {
 	return nil
 }
 
+// validateSystemResources checks memory and CPU requirements
 func validateSystemResources() error {
+	// Check memory requirements (minimum 4GB for Kubernetes)
 	memInfo, err := os.Open("/proc/meminfo")
 	if err != nil {
 		log.Warnf("Could not read memory information: %v", err)
-		return nil
+		return nil // Non-fatal
 	}
 	defer memInfo.Close()
 
@@ -382,10 +418,11 @@ func validateSystemResources() error {
 		}
 	}
 
+	// Check CPU count (minimum 2 cores for Kubernetes)
 	cpuInfo, err := os.Open("/proc/cpuinfo")
 	if err != nil {
 		log.Warnf("Could not read CPU information: %v", err)
-		return nil
+		return nil // Non-fatal
 	}
 	defer cpuInfo.Close()
 
@@ -408,11 +445,13 @@ func validateSystemResources() error {
 	return nil
 }
 
+// validateUbuntuVersion checks Ubuntu version compatibility
 func validateUbuntuVersion() error {
+	// Read /etc/os-release for Ubuntu version information
 	osRelease, err := os.Open("/etc/os-release")
 	if err != nil {
 		log.Warnf("Could not read OS release information: %v", err)
-		return nil
+		return nil // Non-fatal, might not be Ubuntu
 	}
 	defer osRelease.Close()
 
@@ -428,11 +467,13 @@ func validateUbuntuVersion() error {
 		}
 	}
 
+	// Check if it's Ubuntu
 	if distroID != "ubuntu" {
 		log.Warnf("Not running on Ubuntu (detected: %s) - some features may not work as expected", distroID)
 		return nil
 	}
 
+	// Validate Ubuntu version (support 20.04, 22.04, 24.04)
 	supportedVersions := []string{"20.04", "22.04", "24.04"}
 	supported := false
 	for _, version := range supportedVersions {
@@ -450,7 +491,9 @@ func validateUbuntuVersion() error {
 	return nil
 }
 
+// validateKernelModules checks for required kernel modules and drivers
 func validateKernelModules() {
+	// Check for required kernel modules (non-fatal, just warnings)
 	requiredModules := []string{
 		"overlay",      // Required for container runtimes
 		"br_netfilter", // Required for Kubernetes networking
@@ -462,6 +505,7 @@ func validateKernelModules() {
 		}
 	}
 
+	// Check for GPU-related modules if GPU_NODE is true
 	if viper.GetBool("GPU_NODE") {
 		gpuModules := []string{
 			"amdgpu", // AMD GPU driver
@@ -474,11 +518,13 @@ func validateKernelModules() {
 		}
 	}
 
+	// Check if Docker/containerd can use overlay2 storage driver
 	if !isModuleLoaded("overlay") {
 		log.Warnf("Overlay filesystem module not loaded - container runtime may fall back to less efficient storage driver")
 	}
 }
 
+// isModuleLoaded checks if a kernel module is currently loaded
 func isModuleLoaded(moduleName string) bool {
 	cmd := exec.Command("lsmod")
 	output, err := cmd.Output()
@@ -488,6 +534,7 @@ func isModuleLoaded(moduleName string) bool {
 	return strings.Contains(string(output), moduleName)
 }
 
+// isModuleAvailable checks if a kernel module is available to load
 func isModuleAvailable(moduleName string) bool {
 	cmd := exec.Command("modinfo", moduleName)
 	err := cmd.Run()
@@ -505,10 +552,12 @@ func init() {
 }
 
 func initConfig() {
+	// Skip validation if no config file specified
 	if cfgFile == "" {
 		return
 	}
 
+	// Setup logging first so we can capture any errors
 	setupLogging()
 
 	if cfgFile != "" {
@@ -517,10 +566,12 @@ func initConfig() {
 		}
 		viper.SetConfigFile(cfgFile)
 	} else {
+		// Check for bloom.yaml in current directory first (created by webui)
 		if _, err := os.Stat("bloom.yaml"); err == nil {
 			viper.SetConfigFile("bloom.yaml")
 			log.Info("Using config file: bloom.yaml")
 		} else {
+			// Fall back to home directory config
 			home, err := os.UserHomeDir()
 			if err != nil {
 				log.Fatalf("Could not determine home directory: %v", err)
@@ -554,6 +605,7 @@ func initConfig() {
 		log.Infof("Using config file: %s", viper.ConfigFileUsed())
 	}
 
+	// Log config BEFORE any validation that might exit
 	logConfigValues()
 
 	if viper.GetBool("FIRST_NODE") { // leaving the loop expecting more default options
@@ -574,10 +626,12 @@ func initConfig() {
 		}
 	}
 
+	// Validate TLS configuration on FIRST_NODE when USE_CERT_MANAGER is false
 	if viper.GetBool("FIRST_NODE") {
 		if !viper.GetBool("USE_CERT_MANAGER") {
 			certOption := viper.GetString("CERT_OPTION")
 
+			// Only validate TLS_CERT and TLS_KEY if using existing certificates
 			if certOption == "existing" {
 				tlsCert := viper.GetString("TLS_CERT")
 				tlsKey := viper.GetString("TLS_KEY")
@@ -586,6 +640,7 @@ func initConfig() {
 					log.Fatalf("When CERT_OPTION is 'existing', both TLS_CERT and TLS_KEY must be provided")
 				}
 
+				// Verify the files exist
 				if _, err := os.Stat(tlsCert); os.IsNotExist(err) {
 					log.Fatalf("TLS_CERT file does not exist: %s", tlsCert)
 				}
@@ -593,6 +648,7 @@ func initConfig() {
 					log.Fatalf("TLS_KEY file does not exist: %s", tlsKey)
 				}
 			} else if certOption == "generate" {
+				// No validation needed for generate option - certificates will be created automatically
 				log.Println("Self-signed certificates will be generated during setup")
 			} else if certOption != "" {
 				log.Fatalf("Invalid CERT_OPTION value: %s. Must be 'existing' or 'generate'", certOption)
@@ -609,10 +665,12 @@ func initConfig() {
 		}
 	}
 
+	// Validate URL parameters
 	if err := validateAllURLs(); err != nil {
 		log.Fatalf("Configuration validation failed: %v", err)
 	}
 
+	// Validate IP address parameters (SERVER_IP if required)
 	if !viper.GetBool("FIRST_NODE") {
 		serverIP := viper.GetString("SERVER_IP")
 		if err := validateIPAddress(serverIP, "SERVER_IP"); err != nil {
@@ -620,18 +678,22 @@ func initConfig() {
 		}
 	}
 
+	// Validate token parameters
 	if err := validateAllTokens(); err != nil {
 		log.Fatalf("Configuration validation failed: %v", err)
 	}
 
+	// Validate step name parameters
 	if err := validateAllStepNames(); err != nil {
 		log.Fatalf("Configuration validation failed: %v", err)
 	}
 
+	// Validate configuration conflicts
 	if err := validateConfigurationConflicts(); err != nil {
 		log.Fatalf("Configuration validation failed: %v", err)
 	}
 
+	// Validate system resource requirements
 	if err := validateResourceRequirements(); err != nil {
 		log.Fatalf("System requirements validation failed: %v", err)
 	}
@@ -644,6 +706,7 @@ func setupLogging() {
 
 	currentDir, err := os.Getwd()
 	if err != nil {
+		// Still log to stderr if we can't get current dir
 		fmt.Fprintf(os.Stderr, "Could not determine current directory: %v\n", err)
 		return
 	}
@@ -651,6 +714,7 @@ func setupLogging() {
 	logPath := filepath.Join(currentDir, "bloom.log")
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
+		// Still log to stderr if we can't open the file
 		fmt.Fprintf(os.Stderr, "Could not open log file: %v\n", err)
 		return
 	}
@@ -756,14 +820,17 @@ func findAvailablePort(startPort int) int {
 
 
 func startWebUIMonitoring() {
+	// Setup logging early
 	setupLogging()
 
+	// Display initial status
 	pkg.CheckAndDisplayExistingStatus()
 
 	currentDir, _ := os.Getwd()
 	logPath := filepath.Join(currentDir, "bloom.log")
 	yamlPath := filepath.Join(currentDir, "bloom.yaml")
 
+	// Find an available port starting from 62078
 	portNum := findAvailablePort(62078)
 	port := fmt.Sprintf(":%d", portNum)
 	url := fmt.Sprintf("http://127.0.0.1%s", port)
@@ -777,31 +844,40 @@ func startWebUIMonitoring() {
 	fmt.Println("   bloom --config <config-file>")
 	fmt.Println()
 
+	// Start web interface in monitoring mode
 	monitor := pkg.NewWebMonitor()
 	pkg.SetGlobalWebMonitor(monitor)
 
+	// Parse existing log to populate initial status
 	var status *pkg.BloomStatus
 	if parsedStatus, err := pkg.ParseBloomLog(logPath); err == nil {
 		status = parsedStatus
+		// First, initialize ALL expected steps based on configuration
 		allSteps := rootSteps()
 		enabledSteps := pkg.CalculateEnabledSteps(allSteps)
 		for i, step := range enabledSteps {
 			monitor.InitializeStep(step, i+1)
 		}
 
+		// Create a map of step names to IDs for matching
 		stepNameToID := make(map[string]string)
 		for _, step := range enabledSteps {
 			stepNameToID[step.Name] = step.Id
 		}
 
+		// Then update the ones that were actually executed according to the log
 		for _, step := range status.Steps {
+			// Find the corresponding step ID
 			stepID := stepNameToID[step.Name]
 			if stepID == "" {
+				// Fallback: use the name as-is if we can't find a match
 				stepID = step.Name
 			}
 
+			// Add log entry for step start
 			monitor.AddLog("INFO", fmt.Sprintf("Starting step: %s", step.Name), stepID)
 
+			// Set step status and add relevant logs
 			switch step.Status {
 			case "completed":
 				monitor.StartStep(stepID)
@@ -821,25 +897,31 @@ func startWebUIMonitoring() {
 			}
 		}
 
+		// Add error logs to monitor
 		for _, errMsg := range status.Errors {
 			monitor.AddLog("ERROR", errMsg, "system")
 		}
 
+		// Add OS error if present
 		if status.OSError != "" {
 			monitor.AddLog("ERROR", status.OSError, "system")
 		}
 
+		// Set variables from parsed status
 		monitor.SetVariable("domain", status.Domain)
 		monitor.SetVariable("first_node", fmt.Sprintf("%v", status.FirstNode))
 		monitor.SetVariable("gpu_node", fmt.Sprintf("%v", status.GPUNode))
+		// Use the actual enabled steps count for total
 		monitor.SetVariable("total_steps", len(enabledSteps))
 
+		// Add all configuration values to monitor (skip empty values)
 		for key, value := range status.ConfigValues {
 			if value != "" {
 				monitor.SetVariable(key, value)
 			}
 		}
 
+		// Set overall installation status
 		hasErrors := len(status.Errors) > 0
 		for _, step := range status.Steps {
 			if step.Status == "failed" {
@@ -867,9 +949,11 @@ func startWebUIMonitoring() {
 
 	handlerService := pkg.NewWebHandlerService(monitor)
 
+	// Set up installation capability for monitoring mode reconfigure
 	handlerService.SetInstallationHandler(rootSteps(), func() error {
 		log.Info("Restarting bloom with new configuration...")
 
+		// Archive current log if it exists
 		if _, err := os.Stat("bloom.log"); err == nil {
 			timestamp := time.Now().Format("20060102-150405")
 			archivedPath := fmt.Sprintf("bloom-%s.log", timestamp)
@@ -880,14 +964,17 @@ func startWebUIMonitoring() {
 			}
 		}
 
+		// Start installation with new configuration
 		return pkg.RunStepsWithCLI(rootSteps())
 	})
 
+	// Load configuration from bloom.yaml if it exists (prioritize this over log)
 	if _, err := os.Stat(yamlPath); err == nil {
 		yamlData, err := os.ReadFile(yamlPath)
 		if err == nil {
 			var yamlConfig map[string]interface{}
 			if err := yaml.Unmarshal(yamlData, &yamlConfig); err == nil {
+				// Convert to map[string]string
 				configValues := make(map[string]string)
 				for k, v := range yamlConfig {
 					if v != nil {
@@ -899,6 +986,7 @@ func startWebUIMonitoring() {
 			}
 		}
 	} else if status != nil && len(status.ConfigValues) > 0 {
+		// Fall back to config values from log if no yaml file
 		handlerService.SetPrefilledConfig(status.ConfigValues)
 		log.Infof("Using %d config values from bloom.log", len(status.ConfigValues))
 	}
@@ -920,6 +1008,7 @@ func startWebUIMonitoring() {
 		Handler: handler,
 	}
 
+	// Start watching the log file
 	go pkg.WatchLogFile(monitor)
 
 	fmt.Println("📊 Web interface is running. Press Ctrl+C to stop...")
@@ -932,6 +1021,7 @@ func runWebInterfaceWithConfig() {
 	fmt.Println("🚀 Starting Cluster-Bloom Web Interface...")
 	fmt.Println()
 
+	// Find an available port starting from 62078
 	portNum := findAvailablePort(62078)
 	port := fmt.Sprintf(":%d", portNum)
 	url := fmt.Sprintf("http://127.0.0.1%s", port)
@@ -954,6 +1044,8 @@ func runWebInterfaceWithConfig() {
 	fmt.Printf("   ssh -L %d:127.0.0.1:%d user@remote-server\n", portNum, portNum)
 	fmt.Printf("   Then access: http://127.0.0.1:%d\n\n", portNum)
 
+	// Pass config file information to the web interface
+	// Also pass setupLogging and logConfigValues functions to be called when installation starts
 	err := pkg.RunWebInterfaceWithConfig(port, rootSteps(), cfgFile, oneShot, setupLogging, logConfigValues)
 	if err != nil {
 		log.Fatal(err)
@@ -981,6 +1073,7 @@ This mode is useful for:
 			os.Exit(1)
 		}
 
+		// Note: setupLogging and logConfigValues already called in initConfig
 
 		fmt.Println("🚀 Starting Cluster-Bloom in CLI mode...")
 		fmt.Printf("📄 Using configuration: %s\n", cfgFile)

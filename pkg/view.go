@@ -229,6 +229,7 @@ func RunStepsWithUI(steps []Step) error {
 func RunWebInterfaceWithConfig(port string, steps []Step, configFile string, oneShot bool, setupLogging func(), logConfig func()) error {
 	handlerService := NewWebHandlerServiceConfig()
 
+	// If config file provided, pre-fill the configuration
 	if configFile != "" {
 		handlerService.LoadConfigFromFile(configFile, oneShot)
 	}
@@ -264,6 +265,7 @@ func RunWebInterfaceWithConfig(port string, steps []Step, configFile string, one
 		}
 	}()
 
+	// Check for validation failures in one-shot mode
 	validationFailed := make(chan bool)
 	go func() {
 		for {
@@ -282,28 +284,34 @@ func RunWebInterfaceWithConfig(port string, steps []Step, configFile string, one
 			fmt.Println("🔄 Starting installation...")
 			fmt.Println()
 
+			// Setup logging now that we're about to start installation
 			if setupLogging != nil {
 				setupLogging()
 			}
 
+			// Log the configuration values
 			if logConfig != nil {
 				logConfig()
 			}
 
+			// Switch to monitoring mode but keep same server
 			handlerService.configMode = false
 			monitor := NewWebMonitor()
 			handlerService.monitor = monitor
 			globalWebMonitor = monitor
 
+			// Add monitoring endpoints to the same server
 			mux.HandleFunc("/api/logs", handlerService.LogsAPIHandler)
 			mux.HandleFunc("/api/variables", handlerService.VariablesAPIHandler)
 			mux.HandleFunc("/api/steps", handlerService.StepsAPIHandler)
 
+			// Run installation
 			installErr := runStepsInBackground(steps, monitor)
 
 			if installErr != nil {
 				errorType := categorizeError(installErr.Error())
 
+				// In one-shot mode, exit immediately on installation failure
 				if oneShot {
 					switch errorType {
 					case ErrorTypeOS:
@@ -322,6 +330,7 @@ func RunWebInterfaceWithConfig(port string, steps []Step, configFile string, one
 					return fmt.Errorf("installation failed: %v", installErr)
 				}
 
+				// Interactive mode: show error and wait for reconfiguration
 				switch errorType {
 				case ErrorTypeOS:
 					fmt.Printf("❌ Installation failed: %v\n", installErr)
@@ -339,6 +348,7 @@ func RunWebInterfaceWithConfig(port string, steps []Step, configFile string, one
 				}
 				handlerService.SetError(installErr.Error())
 
+				// Wait for new configuration
 				go func() {
 					for {
 						time.Sleep(1 * time.Second)
@@ -351,15 +361,18 @@ func RunWebInterfaceWithConfig(port string, steps []Step, configFile string, one
 			} else {
 				fmt.Println("✅ Installation completed successfully!")
 
+				// In one-shot mode, exit after successful installation
 				if oneShot {
 					server.Close()
 					return nil
 				}
 
 				fmt.Println("📊 Web interface will remain available for monitoring")
+				// Keep server running for monitoring
 			}
 
 		case <-validationFailed:
+			// Validation failed in one-shot mode - shut down server and exit
 			fmt.Printf("\n❌ Validation failed in one-shot mode:\n")
 			for _, err := range handlerService.validationErrors {
 				fmt.Printf("   - %s\n", err)
@@ -386,6 +399,7 @@ func runStepsInBackground(steps []Step, monitor *WebMonitor) error {
 	}
 
 	monitor.SetVariable("total_steps", len(enabledSteps))
+	// Log the total number of steps for parsing later
 	LogMessage(Info, fmt.Sprintf("Total steps to execute: %d", len(enabledSteps)))
 	monitor.AddLog("INFO", "Installation started", "system")
 
@@ -396,6 +410,7 @@ func runStepsInBackground(steps []Step, monitor *WebMonitor) error {
 	for _, step := range enabledSteps {
 		monitor.StartStep(step.Id)
 		monitor.AddLog("INFO", fmt.Sprintf("Starting step: %s", step.Name), step.Id)
+		// Also log to file
 		LogMessage(Info, fmt.Sprintf("Starting step: %s", step.Name))
 
 		startTime := time.Now()
@@ -404,6 +419,7 @@ func runStepsInBackground(steps []Step, monitor *WebMonitor) error {
 		if step.Skip != nil && step.Skip() {
 			monitor.AddLog("INFO", fmt.Sprintf("Step %s is skipped", step.Name), step.Id)
 			monitor.SkipStep(step.Id)
+			// Also log to file
 			LogMessage(Info, fmt.Sprintf("Step %s is skipped", step.Name))
 		} else {
 			result = step.Action()
@@ -415,15 +431,18 @@ func runStepsInBackground(steps []Step, monitor *WebMonitor) error {
 			finalErr = result.Error
 			monitor.AddLog("ERROR", fmt.Sprintf("Error: %v", result.Error), step.Id)
 			monitor.CompleteStep(step.Id, result.Error)
+			// Also log to file
 			LogMessage(Error, fmt.Sprintf("Execution failed: %v", result.Error))
 			break
 		} else {
 			if result.Message != "" {
 				monitor.AddLog("INFO", fmt.Sprintf("Message: %s", result.Message), step.Id)
+				// Also log to file
 				LogMessage(Info, result.Message)
 			}
 			monitor.AddLog("INFO", fmt.Sprintf("Completed in %v", duration.Round(time.Millisecond)), step.Id)
 			monitor.CompleteStep(step.Id, nil)
+			// Also log to file
 			LogMessage(Info, fmt.Sprintf("Completed in %v", duration.Round(time.Millisecond)))
 		}
 
@@ -449,6 +468,7 @@ func runStepsInBackground(steps []Step, monitor *WebMonitor) error {
 	return finalErr
 }
 
+// CalculateEnabledSteps filters the provided steps based on DISABLED_STEPS and ENABLED_STEPS configuration
 func CalculateEnabledSteps(steps []Step) []Step {
 	var nonDisabledSteps []Step
 	var enabledSteps []Step
@@ -482,6 +502,7 @@ func RunStepsWithCLI(steps []Step) error {
 	fmt.Println("════════════════════════════════════════")
 	fmt.Println()
 
+	// Log the total number of steps for parsing later
 	LogMessage(Info, fmt.Sprintf("Total steps to execute: %d", len(enabledSteps)))
 
 	var finalErr error
@@ -489,6 +510,7 @@ func RunStepsWithCLI(steps []Step) error {
 	for i, step := range enabledSteps {
 		fmt.Printf("[%d/%d] %s\n", i+1, len(enabledSteps), step.Name)
 		fmt.Printf("      %s\n", step.Description)
+		// Log to file
 		LogMessage(Info, fmt.Sprintf("Starting step: %s", step.Name))
 
 		startTime := time.Now()
@@ -496,6 +518,7 @@ func RunStepsWithCLI(steps []Step) error {
 		result := StepResult{Error: nil, Message: ""}
 		if step.Skip != nil && step.Skip() {
 			fmt.Printf("      ⏭️  SKIPPED\n")
+			// Log to file
 			LogMessage(Info, fmt.Sprintf("Step %s is skipped", step.Name))
 		} else {
 			result = step.Action()
@@ -506,14 +529,17 @@ func RunStepsWithCLI(steps []Step) error {
 		if result.Error != nil {
 			finalErr = result.Error
 			fmt.Printf("      ❌ FAILED: %v\n", result.Error)
+			// Log to file
 			LogMessage(Error, fmt.Sprintf("Execution failed: %v", result.Error))
 			break
 		} else {
 			if result.Message != "" {
 				fmt.Printf("      💬 %s\n", result.Message)
+				// Log to file
 				LogMessage(Info, result.Message)
 			}
 			fmt.Printf("      ✅ COMPLETED in %v\n", duration.Round(time.Millisecond))
+			// Log to file
 			LogMessage(Info, fmt.Sprintf("Completed in %v", duration.Round(time.Millisecond)))
 		}
 		fmt.Println()

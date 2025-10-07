@@ -39,7 +39,10 @@ func TestSupportedUbuntuVersions(t *testing.T) {
 }
 
 func TestIsRunningOnSupportedUbuntu(t *testing.T) {
+	// This test will depend on the actual system
 	result := IsRunningOnSupportedUbuntu()
+	// On macOS or non-Ubuntu systems, this should return false
+	// On Ubuntu systems, it should return true if the version is supported
 	t.Logf("IsRunningOnSupportedUbuntu returned: %v", result)
 }
 
@@ -56,6 +59,7 @@ func TestOpenPorts(t *testing.T) {
 	}
 
 	result := OpenPorts()
+	// This will likely fail in test environment due to permissions
 	if !result {
 		t.Log("OpenPorts failed as expected in test environment")
 	}
@@ -76,11 +80,13 @@ func TestSetInotifyValue(t *testing.T) {
 		t.Skip("Skipping test that requires root privileges")
 	}
 
+	// Get current value first
 	currentValue, err := getCurrentInotifyValue()
 	if err != nil {
 		t.Fatalf("Failed to get current inotify value: %v", err)
 	}
 
+	// Try to set the same value
 	err = setInotifyValue(currentValue)
 	if err != nil {
 		t.Errorf("Expected no error from setInotifyValue, got: %v", err)
@@ -110,6 +116,7 @@ func TestHasSufficientRancherPartition(t *testing.T) {
 	t.Run("GPU node", func(t *testing.T) {
 		viper.Set("GPU_NODE", true)
 		result := HasSufficientRancherPartition()
+		// Result depends on system, just ensure it doesn't crash
 		t.Logf("HasSufficientRancherPartition for GPU node: %v", result)
 	})
 }
@@ -126,6 +133,7 @@ func TestNVMEDrivesAvailable(t *testing.T) {
 
 	t.Run("normal check", func(t *testing.T) {
 		result := NVMEDrivesAvailable()
+		// Result depends on system hardware
 		t.Logf("NVMEDrivesAvailable returned: %v", result)
 	})
 }
@@ -136,6 +144,7 @@ func TestCreateMetalLBConfig(t *testing.T) {
 	}
 
 	err := CreateMetalLBConfig()
+	// This will likely fail in test environment due to permissions/directory
 	if err != nil {
 		t.Logf("CreateMetalLBConfig failed as expected in test environment: %v", err)
 	}
@@ -171,6 +180,7 @@ func TestSetupMultipath(t *testing.T) {
 	}
 
 	err := setupMultipath()
+	// This will likely fail in test environment due to permissions/missing multipath
 	if err != nil {
 		t.Logf("setupMultipath failed as expected in test environment: %v", err)
 	}
@@ -182,6 +192,7 @@ func TestUpdateModprobe(t *testing.T) {
 	}
 
 	err := updateModprobe()
+	// This will likely fail in test environment
 	if err != nil {
 		t.Logf("updateModprobe failed as expected in test environment: %v", err)
 	}

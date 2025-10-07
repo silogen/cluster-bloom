@@ -55,6 +55,7 @@ func TestValidateURL(t *testing.T) {
 }
 
 func TestValidateAllURLs(t *testing.T) {
+	// Save original config
 	originalViper := viper.AllSettings()
 	defer func() {
 		viper.Reset()
@@ -157,6 +158,7 @@ func TestValidateIPAddress(t *testing.T) {
 }
 
 func TestValidateAllIPs(t *testing.T) {
+	// Save original config
 	originalViper := viper.AllSettings()
 	defer func() {
 		viper.Reset()
@@ -269,6 +271,7 @@ func TestValidateToken(t *testing.T) {
 }
 
 func TestValidateAllTokens(t *testing.T) {
+	// Save original config
 	originalViper := viper.AllSettings()
 	defer func() {
 		viper.Reset()
@@ -352,6 +355,7 @@ func TestValidateStepNames(t *testing.T) {
 }
 
 func TestValidateAllStepNames(t *testing.T) {
+	// Save original config
 	originalViper := viper.AllSettings()
 	defer func() {
 		viper.Reset()
@@ -435,6 +439,7 @@ func TestValidateAllStepNames(t *testing.T) {
 }
 
 func TestValidateConfigurationConflicts(t *testing.T) {
+	// Save original config
 	originalViper := viper.AllSettings()
 	defer func() {
 		viper.Reset()
@@ -574,13 +579,17 @@ func TestValidateConfigurationConflicts(t *testing.T) {
 }
 
 func TestValidateResourceRequirements(t *testing.T) {
+	// Note: This test is primarily for structure validation
+	// Actual resource checks are system-dependent and may not be testable in all environments
 	err := validateResourceRequirements()
+	// We expect this to either pass or fail gracefully with specific error messages
 	if err != nil {
 		t.Logf("validateResourceRequirements() returned error (may be expected on limited systems): %v", err)
 	}
 }
 
 func TestValidateDiskSpace(t *testing.T) {
+	// Test that the function runs without crashing
 	err := validateDiskSpace()
 	if err != nil {
 		t.Logf("validateDiskSpace() returned error (may be expected on limited systems): %v", err)
@@ -588,6 +597,7 @@ func TestValidateDiskSpace(t *testing.T) {
 }
 
 func TestValidateSystemResources(t *testing.T) {
+	// Test that the function runs without crashing
 	err := validateSystemResources()
 	if err != nil {
 		t.Logf("validateSystemResources() returned error (may be expected on limited systems): %v", err)
@@ -595,6 +605,7 @@ func TestValidateSystemResources(t *testing.T) {
 }
 
 func TestValidateUbuntuVersion(t *testing.T) {
+	// Test that the function runs without crashing
 	err := validateUbuntuVersion()
 	if err != nil {
 		t.Logf("validateUbuntuVersion() returned error (may be expected on non-Ubuntu systems): %v", err)
@@ -602,20 +613,26 @@ func TestValidateUbuntuVersion(t *testing.T) {
 }
 
 func TestValidateKernelModules(t *testing.T) {
+	// Test that the function runs without crashing (it only logs warnings)
 	validateKernelModules()
+	// No assertions needed as this function only logs warnings
 }
 
 func TestIsModuleLoaded(t *testing.T) {
+	// Test with a module that should always exist on Linux systems
 	result := isModuleLoaded("kernel") // This might not exist, but function should not crash
 	t.Logf("isModuleLoaded('kernel') returned: %v", result)
 }
 
 func TestIsModuleAvailable(t *testing.T) {
+	// Test with a common module
 	result := isModuleAvailable("overlay")
 	t.Logf("isModuleAvailable('overlay') returned: %v", result)
 }
 
+// Integration tests for complete configuration scenarios
 func TestValidationIntegration(t *testing.T) {
+	// Save original config
 	originalViper := viper.AllSettings()
 	defer func() {
 		viper.Reset()
@@ -726,6 +743,7 @@ func TestValidationIntegration(t *testing.T) {
 				viper.Set(k, v)
 			}
 
+			// Test URL validation
 			urlErr := validateAllURLs()
 			if urlErr != nil && !tt.wantErr {
 				t.Errorf("validateAllURLs() failed unexpectedly: %v", urlErr)
@@ -736,6 +754,7 @@ func TestValidationIntegration(t *testing.T) {
 				return // Expected failure
 			}
 
+			// Test IP validation
 			ipErr := validateAllIPs()
 			if ipErr != nil && !tt.wantErr {
 				t.Errorf("validateAllIPs() failed unexpectedly: %v", ipErr)
@@ -746,6 +765,7 @@ func TestValidationIntegration(t *testing.T) {
 				return // Expected failure
 			}
 
+			// Test token validation
 			tokenErr := validateAllTokens()
 			if tokenErr != nil && !tt.wantErr {
 				t.Errorf("validateAllTokens() failed unexpectedly: %v", tokenErr)
@@ -756,6 +776,7 @@ func TestValidationIntegration(t *testing.T) {
 				return // Expected failure
 			}
 
+			// Test step name validation
 			stepErr := validateAllStepNames()
 			if stepErr != nil && !tt.wantErr {
 				t.Errorf("validateAllStepNames() failed unexpectedly: %v", stepErr)
@@ -766,6 +787,7 @@ func TestValidationIntegration(t *testing.T) {
 				return // Expected failure
 			}
 
+			// Test configuration conflicts
 			conflictErr := validateConfigurationConflicts()
 			if conflictErr != nil && !tt.wantErr {
 				t.Errorf("validateConfigurationConflicts() failed unexpectedly: %v", conflictErr)
@@ -776,11 +798,13 @@ func TestValidationIntegration(t *testing.T) {
 				return // Expected failure
 			}
 
+			// Test resource requirements (may fail on limited systems, so we handle gracefully)
 			resourceErr := validateResourceRequirements()
 			if resourceErr != nil {
 				t.Logf("validateResourceRequirements() returned error (may be system-dependent): %v", resourceErr)
 			}
 
+			// If we reach here and expected an error, the test should fail
 			if tt.wantErr {
 				t.Errorf("Expected validation to fail but all validations passed for: %s", tt.desc)
 			}

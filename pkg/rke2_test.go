@@ -68,6 +68,7 @@ func TestPrepareRKE2(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			viper.Set("OIDC_URL", tt.oidcURL)
 			err := PrepareRKE2()
+			// May fail due to permissions, but function should exist
 			if err == nil {
 				t.Log("PrepareRKE2 succeeded")
 			} else {
@@ -84,6 +85,7 @@ func TestSetupFirstRKE2(t *testing.T) {
 
 	viper.Set("RKE2_INSTALLATION_URL", "https://get.rke2.io")
 	err := SetupFirstRKE2()
+	// This will likely fail in test environment
 	if err == nil {
 		t.Log("SetupFirstRKE2 succeeded unexpectedly")
 	} else {

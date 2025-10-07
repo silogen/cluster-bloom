@@ -53,6 +53,7 @@ func TestParseLonghornDiskConfig(t *testing.T) {
 			if tt.disks == "" && result != "" {
 				t.Errorf("Expected empty result for empty disks, got: %s", result)
 			} else if tt.disks != "" && !strings.Contains(result, "xxx") {
+				// For multiple disks, should contain 'xxx' separator
 				if strings.Contains(tt.disks, ",") && !strings.Contains(result, "xxx") {
 					t.Errorf("Expected result to contain 'xxx' separator for multiple disks")
 				}
@@ -66,6 +67,7 @@ func TestGenerateNodeLabels(t *testing.T) {
 		viper.Set("LONGHORN_DISKS", "/dev/sda")
 
 		err := GenerateNodeLabels()
+		// Expected to fail due to permission/path issues in test
 		if err == nil {
 			t.Log("Function succeeded unexpectedly")
 		}
