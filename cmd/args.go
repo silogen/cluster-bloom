@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/silogen/cluster-bloom/pkg"
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
 
@@ -24,7 +25,7 @@ type Arg struct {
 	Type         string
 	Options      []string
 	Dependencies []UsedWhen
-	Validator    func(value string) error
+	Validators   []func(value string) error
 }
 
 var Arguments = []Arg{
@@ -70,7 +71,7 @@ var Arguments = []Arg{
 		Description:  "Token for joining additional nodes to the cluster (required for non-first nodes).",
 		Type:         "non-empty-string",
 		Dependencies: []UsedWhen{{"FIRST_NODE", "equals_false"}},
-		Validator:    validateJoinTokenArg,
+		Validators:   []func(value string) error{validateJoinTokenArg},
 	},
 
 	// TLS/Certificate configuration
@@ -124,7 +125,7 @@ var Arguments = []Arg{
 		Default:     "",
 		Description: "Comma-separated list of disk paths to use for Longhorn (default: \"\").",
 		Type:        "string",
-		Validator:   validateLonghornDisksArg,
+		Validators:  []func(value string) error{validateLonghornDisksArg},
 	},
 	{
 		Key:         "SELECTED_DISKS",
@@ -169,14 +170,14 @@ var Arguments = []Arg{
 		Default:     "",
 		Description: "Comma-separated list of steps to skip. Example \"SetupLonghornStep,SetupMetallbStep\" (default: \"\").",
 		Type:        "string",
-		Validator:   validateStepNamesArg,
+		Validators:  []func(value string) error{validateStepNamesArg, validateDisabledStepsWarnings, validateDisabledStepsConflict},
 	},
 	{
 		Key:         "ENABLED_STEPS",
 		Default:     "",
 		Description: "Comma-separated list of steps to perform. If empty, perform all. Example \"SetupLonghornStep,SetupMetallbStep\" (default: \"\").",
 		Type:        "string",
-		Validator:   validateStepNamesArg,
+		Validators:  []func(value string) error{validateStepNamesArg},
 	},
 }
 
@@ -275,6 +276,43 @@ func validateStepNamesArg(stepNames string) error {
 	return nil
 }
 
+// validateDisabledStepsWarnings warns about disabling essential steps
+func validateDisabledStepsWarnings(stepNames string) error {
+	if stepNames == "" {
+		return nil
+	}
+
+	// Check for essential steps being disabled
+	if strings.Contains(stepNames, "CheckUbuntuStep") {
+		log.Warnf("CheckUbuntuStep is disabled - system compatibility may not be verified")
+	}
+
+	if strings.Contains(stepNames, "SetupRKE2Step") {
+		log.Warnf("SetupRKE2Step is disabled - Kubernetes cluster will not be set up")
+	}
+
+	// Check if SetupAndCheckRocmStep is disabled when GPU_NODE=true
+	if strings.Contains(stepNames, "SetupAndCheckRocmStep") && viper.GetBool("GPU_NODE") {
+		log.Warnf("GPU_NODE=true but SetupAndCheckRocmStep is disabled - GPU functionality may not work")
+	}
+
+	return nil
+}
+
+// validateDisabledStepsConflict ensures DISABLED_STEPS and ENABLED_STEPS are not both set
+func validateDisabledStepsConflict(stepNames string) error {
+	if stepNames == "" {
+		return nil
+	}
+
+	enabledSteps := viper.GetString("ENABLED_STEPS")
+	if enabledSteps != "" {
+		return fmt.Errorf("DISABLED_STEPS and ENABLED_STEPS cannot both be set - use one or the other")
+	}
+
+	return nil
+}
+
 // validateLonghornDisksArg validates LONGHORN_DISKS configuration
 func validateLonghornDisksArg(disks string) error {
 	// Use the same logic as the existing validation in root.go
@@ -348,9 +386,9 @@ func ValidateArgs() error {
 			// Basic string validation can be added here if needed
 		}
 
-		// Run custom validator if provided
-		if arg.Validator != nil {
-			if err := arg.Validator(value); err != nil {
+		// Run custom validators if provided
+		for _, validator := range arg.Validators {
+			if err := validator(value); err != nil {
 				errors = append(errors, fmt.Sprintf("%s: %v", arg.Key, err))
 			}
 		}

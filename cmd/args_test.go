@@ -636,6 +636,40 @@ func TestArgs_ValidateArgs_CustomValidator(t *testing.T) {
 			expectError: true,
 			errorPart:   "LONGHORN_DISKS must not contain slashes",
 		},
+		{
+			name: "disabled steps conflict - both DISABLED_STEPS and ENABLED_STEPS set",
+			viperSetup: func() {
+				viper.Set("FIRST_NODE", true)
+				viper.Set("DOMAIN", "cluster.example.com")
+				viper.Set("USE_CERT_MANAGER", true)
+				viper.Set("DISABLED_STEPS", "SetupLonghornStep")
+				viper.Set("ENABLED_STEPS", "SetupRKE2Step")
+			},
+			expectError: true,
+			errorPart:   "DISABLED_STEPS and ENABLED_STEPS cannot both be set",
+		},
+		{
+			name: "disabled steps no conflict - only DISABLED_STEPS set",
+			viperSetup: func() {
+				viper.Set("FIRST_NODE", true)
+				viper.Set("DOMAIN", "cluster.example.com")
+				viper.Set("USE_CERT_MANAGER", true)
+				viper.Set("DISABLED_STEPS", "SetupLonghornStep")
+				viper.Set("ENABLED_STEPS", "")
+			},
+			expectError: false,
+		},
+		{
+			name: "disabled steps no conflict - only ENABLED_STEPS set",
+			viperSetup: func() {
+				viper.Set("FIRST_NODE", true)
+				viper.Set("DOMAIN", "cluster.example.com")
+				viper.Set("USE_CERT_MANAGER", true)
+				viper.Set("DISABLED_STEPS", "")
+				viper.Set("ENABLED_STEPS", "SetupRKE2Step")
+			},
+			expectError: false,
+		},
 	}
 
 	for _, tt := range tests {

@@ -104,34 +104,6 @@ func validateAllURLs() error {
 
 // validateConfigurationConflicts detects and warns about conflicting configuration combinations
 func validateConfigurationConflicts() error {
-	// Check FIRST_NODE=false requires SERVER_IP and JOIN_TOKEN
-	if !viper.GetBool("FIRST_NODE") {
-		serverIP := viper.GetString("SERVER_IP")
-		joinToken := viper.GetString("JOIN_TOKEN")
-
-		if serverIP == "" {
-			return fmt.Errorf("when FIRST_NODE=false, SERVER_IP must be provided")
-		}
-		if joinToken == "" {
-			return fmt.Errorf("when FIRST_NODE=false, JOIN_TOKEN must be provided")
-		}
-	}
-
-	// Check GPU_NODE vs ROCm requirements
-	if viper.GetBool("GPU_NODE") {
-		// If GPU_NODE is true, we expect ROCm-related configurations to be valid
-		rocmBaseURL := viper.GetString("ROCM_BASE_URL")
-		if rocmBaseURL == "" {
-			log.Warnf("GPU_NODE=true but ROCM_BASE_URL is empty - ROCm installation may fail")
-		}
-
-		// Check if SetupAndCheckRocmStep is disabled when GPU_NODE=true
-		disabledSteps := viper.GetString("DISABLED_STEPS")
-		if strings.Contains(disabledSteps, "SetupAndCheckRocmStep") {
-			log.Warnf("GPU_NODE=true but SetupAndCheckRocmStep is disabled - GPU functionality may not work")
-		}
-	}
-
 	// Check SKIP_DISK_CHECK consistency with disk-related parameters
 	skipDiskCheck := viper.GetBool("SKIP_DISK_CHECK")
 	longhornDisks := viper.GetString("LONGHORN_DISKS")
@@ -143,43 +115,6 @@ func validateConfigurationConflicts() error {
 
 	if !skipDiskCheck && longhornDisks == "" && selectedDisks == "" {
 		log.Warnf("SKIP_DISK_CHECK=false but no disk parameters specified - automatic disk detection will be used")
-	}
-
-	// Check for conflicting step configurations
-	disabledSteps := viper.GetString("DISABLED_STEPS")
-	enabledSteps := viper.GetString("ENABLED_STEPS")
-
-	if disabledSteps != "" && enabledSteps != "" {
-		// Parse both lists and check for overlaps
-		disabled := strings.Split(disabledSteps, ",")
-		enabled := strings.Split(enabledSteps, ",")
-
-		for _, disabledStep := range disabled {
-			disabledStep = strings.TrimSpace(disabledStep)
-			if disabledStep == "" {
-				continue
-			}
-
-			for _, enabledStep := range enabled {
-				enabledStep = strings.TrimSpace(enabledStep)
-				if enabledStep == "" {
-					continue
-				}
-
-				if disabledStep == enabledStep {
-					return fmt.Errorf("step '%s' is both enabled and disabled - this is conflicting", disabledStep)
-				}
-			}
-		}
-	}
-
-	// Check for essential steps being disabled
-	if strings.Contains(disabledSteps, "CheckUbuntuStep") {
-		log.Warnf("CheckUbuntuStep is disabled - system compatibility may not be verified")
-	}
-
-	if strings.Contains(disabledSteps, "SetupRKE2Step") {
-		log.Warnf("SetupRKE2Step is disabled - Kubernetes cluster will not be set up")
 	}
 
 	return nil
