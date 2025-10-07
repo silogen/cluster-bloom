@@ -19,6 +19,7 @@ package pkg
 import (
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -639,7 +640,41 @@ func (h *WebHandlerService) StepsAPIHandler(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.Request) {
-	html := `
+	// Get disk information for template
+	longhornDisks, _ := GetDisksFromLonghornConfig()
+	selectedDisks, _ := GetDisksFromSelectedConfig()
+	logDisks, _ := GetDisksFromBloomLog()
+
+	// Convert disk arrays to comma-separated strings
+	var longhornDisksStr, selectedDisksStr, logDisksStr string
+	if len(longhornDisks) > 0 {
+		longhornDisksStr = strings.Join(longhornDisks, ", ")
+	} else {
+		longhornDisksStr = "None found"
+	}
+	if len(selectedDisks) > 0 {
+		selectedDisksStr = strings.Join(selectedDisks, ", ")
+	} else {
+		selectedDisksStr = "None found"
+	}
+	if len(logDisks) > 0 {
+		logDisksStr = strings.Join(logDisks, ", ")
+	} else {
+		logDisksStr = "None found"
+	}
+
+	// Template data
+	data := struct {
+		LonghornDisks string
+		SelectedDisks string
+		LogDisks      string
+	}{
+		LonghornDisks: longhornDisksStr,
+		SelectedDisks: selectedDisksStr,
+		LogDisks:      logDisksStr,
+	}
+
+	htmlTemplate := `
 <!DOCTYPE html>
 <html>
 <head>
@@ -874,6 +909,8 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
                             ✓ Leave empty for auto-detection<br>
                             ✗ Ensure devices exist and are not in use
                         </small>
+                        <span>From Selected Config: {{ .SelectedDisks }}</span>
+                        <span>From Bloom Log: {{ .LogDisks }}</span>
                     </div>
 
                     <div class="form-group">
@@ -888,6 +925,7 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
                             ✓ Will be formatted for Longhorn storage<br>
                             ⚠️ Data on specified disks will be erased
                         </small>
+                        <span>From Longhorn Config: {{ .LonghornDisks }}</span>
                     </div>
                 </div>
             </div>
@@ -1681,8 +1719,18 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
 </body>
 </html>`
 
+	// Parse and execute template
+	tmpl, err := template.New("config").Parse(htmlTemplate)
+	if err != nil {
+		http.Error(w, "Template parsing error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	w.Header().Set("Content-Type", "text/html")
-	fmt.Fprint(w, html)
+	if err := tmpl.Execute(w, data); err != nil {
+		http.Error(w, "Template execution error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 }
 
 func (h *WebHandlerService) ConfigAPIHandler(w http.ResponseWriter, r *http.Request) {
