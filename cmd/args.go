@@ -119,6 +119,7 @@ var Arguments = []Arg{
 		Default:     false,
 		Description: "Set to true to skip disk-related operations (default: false).",
 		Type:        "bool",
+		Validators:  []func(value string) error{validateSkipDiskCheckConsistency},
 	},
 	{
 		Key:         "LONGHORN_DISKS",
@@ -313,6 +314,23 @@ func validateDisabledStepsConflict(stepNames string) error {
 	return nil
 }
 
+// validateSkipDiskCheckConsistency warns about inconsistencies with SKIP_DISK_CHECK
+func validateSkipDiskCheckConsistency(skipDiskCheckStr string) error {
+	skipDiskCheck := viper.GetBool("SKIP_DISK_CHECK")
+	longhornDisks := viper.GetString("LONGHORN_DISKS")
+	selectedDisks := viper.GetString("SELECTED_DISKS")
+
+	if skipDiskCheck && (longhornDisks != "" || selectedDisks != "") {
+		log.Warnf("SKIP_DISK_CHECK=true but disk parameters are set (LONGHORN_DISKS or SELECTED_DISKS) - disk operations will be skipped")
+	}
+
+	if !skipDiskCheck && longhornDisks == "" && selectedDisks == "" {
+		log.Warnf("SKIP_DISK_CHECK=false but no disk parameters specified - automatic disk detection will be used")
+	}
+
+	return nil
+}
+
 // validateLonghornDisksArg validates LONGHORN_DISKS configuration
 func validateLonghornDisksArg(disks string) error {
 	// Use the same logic as the existing validation in root.go
@@ -351,7 +369,6 @@ func ValidateArgs() error {
 		switch baseType {
 		case "bool":
 			// viper.GetBool handles string-to-bool conversion, so we're good
-			continue
 		case "url":
 			if value != "" && value != "none" {
 				if u, err := url.Parse(value); err != nil {

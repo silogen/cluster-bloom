@@ -102,24 +102,6 @@ func validateAllURLs() error {
 	return nil
 }
 
-// validateConfigurationConflicts detects and warns about conflicting configuration combinations
-func validateConfigurationConflicts() error {
-	// Check SKIP_DISK_CHECK consistency with disk-related parameters
-	skipDiskCheck := viper.GetBool("SKIP_DISK_CHECK")
-	longhornDisks := viper.GetString("LONGHORN_DISKS")
-	selectedDisks := viper.GetString("SELECTED_DISKS")
-
-	if skipDiskCheck && (longhornDisks != "" || selectedDisks != "") {
-		log.Warnf("SKIP_DISK_CHECK=true but disk parameters are set (LONGHORN_DISKS or SELECTED_DISKS) - disk operations will be skipped")
-	}
-
-	if !skipDiskCheck && longhornDisks == "" && selectedDisks == "" {
-		log.Warnf("SKIP_DISK_CHECK=false but no disk parameters specified - automatic disk detection will be used")
-	}
-
-	return nil
-}
-
 // validateResourceRequirements validates system resource requirements and compatibility
 func validateResourceRequirements() error {
 	// Validate partition sizes and disk space
@@ -386,11 +368,6 @@ func initConfig() {
 
 	// Validate all arguments using the unified validation system
 	if err := ValidateArgs(); err != nil {
-		log.Fatalf("Configuration validation failed: %v", err)
-	}
-
-	// Validate configuration conflicts
-	if err := validateConfigurationConflicts(); err != nil {
 		log.Fatalf("Configuration validation failed: %v", err)
 	}
 
