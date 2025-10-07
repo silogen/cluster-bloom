@@ -30,7 +30,6 @@ import (
 func CleanDisks() error {
 	LogMessage(Info, "Disks cleanup started.")
 	
-	// First, try to clean prior Longhorn target disks
 	disks, err := GetPriorLonghornDisks()
 	if err != nil {
 		LogMessage(Warn, fmt.Sprintf("Failed to get prior Longhorn disks: %v", err))
@@ -43,7 +42,6 @@ func CleanDisks() error {
 		LogMessage(Info, "No prior Longhorn disks found to clean.")
 	}
 	
-	// Continue with existing cleanup logic
 	cmd := exec.Command("mount")
 	output, err := cmd.Output()
 	if err != nil {
@@ -449,13 +447,11 @@ func CleanTargetDisks(targetDisks []string) error {
 
 	LogMessage(Info, fmt.Sprintf("Starting cleanup process for %d disks: %v", len(targetDisks), targetDisks))
 
-	// Step 1: Clean fstab entries (reverse of PersistMountedDisks)
 	LogMessage(Info, "Step 1: Cleaning fstab entries")
 	if err := CleanFstab(targetDisks); err != nil {
 		return fmt.Errorf("failed to clean fstab: %w", err)
 	}
 
-	// Step 2: Get mount points before unmounting (for later cleanup)
 	LogMessage(Info, "Step 2: Getting mount points for cleanup")
 	mountPointsToRemove, err := GetMountPoints(targetDisks)
 	if err != nil {
@@ -463,7 +459,6 @@ func CleanTargetDisks(targetDisks []string) error {
 	}
 	LogMessage(Debug, fmt.Sprintf("Found %d mount points to remove later: %v", len(mountPointsToRemove), mountPointsToRemove))
 
-	// Step 3: Unmount target disks
 	LogMessage(Info, "Step 3: Unmounting target disks")
 	var successfulUnmounts []string
 	for _, disk := range targetDisks {
@@ -479,7 +474,6 @@ func CleanTargetDisks(targetDisks []string) error {
 	}
 
 
-	// Step 4: Wipe target disks (wipe and format - reverse of MountDrive)
 	LogMessage(Info, "Step 4: Wiping and formatting target disks")
 	var successfullyWiped []string
 	for _, disk := range successfulUnmounts {
@@ -495,7 +489,6 @@ func CleanTargetDisks(targetDisks []string) error {
 		return fmt.Errorf("all target disks failed to wipe")
 	}
 
-	// Step 5: Remove mount point directories
 	LogMessage(Info, "Step 5: Removing mount point directories")
 	for _, mountPoint := range mountPointsToRemove {
 		if err := RemoveMountPointDirectories([]string{mountPoint}); err != nil {
@@ -512,7 +505,6 @@ func CleanFstab(targetDisks []string) error {
 		return nil
 	}
 
-	// Create timestamped backup of fstab
 	backupTimestamp := time.Now().Format("060102-15:04")
 	backupFile := fmt.Sprintf("/etc/fstab.bak-%s", backupTimestamp)
 
@@ -521,7 +513,6 @@ func CleanFstab(targetDisks []string) error {
 	}
 	LogMessage(Info, fmt.Sprintf("Created fstab backup: %s", backupFile))
 
-	// Get UUIDs from target disks
 	var targetUUIDs []string
 	for _, disk := range targetDisks {
 		cmd := exec.Command("blkid", "-s", "UUID", "-o", "value", disk)
@@ -542,13 +533,11 @@ func CleanFstab(targetDisks []string) error {
 		return nil
 	}
 
-	// Read current fstab content
 	fstabContent, err := os.ReadFile("/etc/fstab")
 	if err != nil {
 		return fmt.Errorf("failed to read fstab file: %w", err)
 	}
 
-	// Clean fstab entries
 	lines := strings.Split(string(fstabContent), "\n")
 	var cleanedLines []string
 	removedCount := 0
@@ -568,7 +557,6 @@ func CleanFstab(targetDisks []string) error {
 		}
 	}
 
-	// Write cleaned fstab back
 	cleanedContent := strings.Join(cleanedLines, "\n")
 	tempFile := "/tmp/fstab.clean"
 	if err := os.WriteFile(tempFile, []byte(cleanedContent), 0644); err != nil {
@@ -593,7 +581,6 @@ func GetMountPoints(targetDisks []string) ([]string, error) {
 		return nil, nil
 	}
 
-	// Get mount points before unmounting
 	var mountPointsToRemove []string
 	for _, disk := range targetDisks {
 		cmd := exec.Command("lsblk", "-no", "MOUNTPOINT", disk)
@@ -619,7 +606,6 @@ func UnmountTargetDisks(targetDisks []string) error {
 		return nil
 	}
 
-	// Unmount target disks
 	for _, disk := range targetDisks {
 		cmd := exec.Command("lsblk", "-no", "MOUNTPOINT", disk)
 		output, err := cmd.Output()
@@ -657,7 +643,6 @@ func WipeTargetDisks(targetDisks []string) error {
 		return nil
 	}
 
-	// Clean target disks
 	for _, disk := range targetDisks {
 		cmd := exec.Command("lsblk", "-no", "MOUNTPOINT", disk)
 		output, _ := cmd.Output()

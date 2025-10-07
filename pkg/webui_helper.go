@@ -62,7 +62,7 @@ func GetPriorLonghornDisks() ([]string, error) {
 
 func GetDisksFromLonghornConfig() ([]string, error) {
     if !viper.IsSet("LONGHORN_DISKS") || viper.GetString("LONGHORN_DISKS") == "" {
-        return nil, nil // No LONGHORN_DISKS config found
+        return nil, nil
     }
     
     LogMessage(Info, "Found LONGHORN_DISKS configuration")
@@ -75,7 +75,6 @@ func GetDisksFromLonghornConfig() ([]string, error) {
             continue
         }
         
-        // Convert mount path to device path using lsblk
         mountPoint := "/mnt/" + diskPath
         cmd := exec.Command("lsblk", "-no", "NAME,MOUNTPOINT")
         output, err := cmd.Output()
@@ -107,7 +106,7 @@ func GetDisksFromLonghornConfig() ([]string, error) {
 
 func GetDisksFromSelectedConfig() ([]string, error) {
     if !viper.IsSet("SELECTED_DISKS") || viper.GetString("SELECTED_DISKS") == "" {
-        return nil, nil // No SELECTED_DISKS config found
+        return nil, nil
     }
     
     LogMessage(Info, "Found SELECTED_DISKS configuration")
@@ -125,8 +124,7 @@ func GetDisksFromSelectedConfig() ([]string, error) {
         LogMessage(Info, "No valid disks found in SELECTED_DISKS")
         return nil, nil
     }
-    
-    // Get disk information for display
+
     diskInfo := ""
     for _, disk := range targetDisks {
         cmd := exec.Command("lsblk", "-no", "SIZE,MODEL", disk)
@@ -145,7 +143,7 @@ func GetDisksFromSelectedConfig() ([]string, error) {
 
 func GetDisksFromBloomLog() ([]string, error) {
     LogMessage(Info, "Searching bloom.log for selected disks")
-    logFile := "bloom.log" // Adjust path as needed
+    logFile := "bloom.log"
     content, err := os.ReadFile(logFile)
     if err != nil {
         LogMessage(Warn, fmt.Sprintf("Failed to read bloom.log: %v", err))
@@ -153,16 +151,13 @@ func GetDisksFromBloomLog() ([]string, error) {
     }
     
     lines := strings.Split(string(content), "\n")
-    // Read in reverse order (bottom to top)
     for i := len(lines) - 1; i >= 0; i-- {
         line := lines[i]
         if strings.Contains(line, "[blue]Message: Selected disks:") {
-            // Extract disk list using regex
             re := regexp.MustCompile(`\[blue\]Message: Selected disks: \[(.*?)\]`)
             matches := re.FindStringSubmatch(line)
             if len(matches) > 1 {
                 diskListStr := matches[1]
-                // Parse the disk list
                 targetDisks := strings.Fields(diskListStr)
                 
                 if len(targetDisks) == 0 {
