@@ -215,3 +215,133 @@ func TestAppendToFile(t *testing.T) {
 		t.Errorf("Expected %s, got %s", content, string(data))
 	}
 }
+
+func TestCleanTargetDisks(t *testing.T) {
+	tests := []struct {
+		name        string
+		targetDisks []string
+		shouldError bool
+	}{
+		{"empty disks list", []string{}, false},
+		{"single disk", []string{"/dev/sda1"}, false},
+		{"multiple disks", []string{"/dev/sda1", "/dev/sdb1"}, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := CleanTargetDisks(tt.targetDisks)
+			if (err != nil) != tt.shouldError {
+				t.Errorf("CleanTargetDisks() error = %v, shouldError %v", err, tt.shouldError)
+			}
+		})
+	}
+}
+
+func TestCleanFstab(t *testing.T) {
+	tests := []struct {
+		name        string
+		targetDisks []string
+		shouldError bool
+	}{
+		{"empty disks list", []string{}, false},
+		{"single disk", []string{"/dev/sda1"}, false},
+		{"multiple disks", []string{"/dev/sda1", "/dev/sdb1"}, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := CleanFstab(tt.targetDisks)
+			if (err != nil) != tt.shouldError {
+				t.Errorf("CleanFstab() error = %v, shouldError %v", err, tt.shouldError)
+			}
+		})
+	}
+}
+
+func TestGetMountPoints(t *testing.T) {
+	tests := []struct {
+		name        string
+		targetDisks []string
+		shouldError bool
+	}{
+		{"empty disks list", []string{}, false},
+		{"single disk", []string{"/dev/sda1"}, false},
+		{"multiple disks", []string{"/dev/sda1", "/dev/sdb1"}, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mountPoints, err := GetMountPoints(tt.targetDisks)
+			if (err != nil) != tt.shouldError {
+				t.Errorf("GetMountPoints() error = %v, shouldError %v", err, tt.shouldError)
+			}
+			if tt.targetDisks == nil && mountPoints != nil {
+				t.Errorf("Expected nil mount points for empty disks list")
+			}
+		})
+	}
+}
+
+func TestUnmountTargetDisks(t *testing.T) {
+	tests := []struct {
+		name        string
+		targetDisks []string
+		shouldError bool
+	}{
+		{"empty disks list", []string{}, false},
+		{"single disk", []string{"/dev/sda1"}, false},
+		{"multiple disks", []string{"/dev/sda1", "/dev/sdb1"}, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := UnmountTargetDisks(tt.targetDisks)
+			if (err != nil) != tt.shouldError {
+				t.Errorf("UnmountTargetDisks() error = %v, shouldError %v", err, tt.shouldError)
+			}
+		})
+	}
+}
+
+func TestWipeTargetDisks(t *testing.T) {
+	tests := []struct {
+		name        string
+		targetDisks []string
+		shouldError bool
+	}{
+		{"empty disks list", []string{}, false},
+		{"single disk", []string{"/dev/sda1"}, false},
+		{"multiple disks", []string{"/dev/sda1", "/dev/sdb1"}, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := WipeTargetDisks(tt.targetDisks)
+			if (err != nil) != tt.shouldError {
+				t.Errorf("WipeTargetDisks() error = %v, shouldError %v", err, tt.shouldError)
+			}
+		})
+	}
+}
+
+func TestRemoveMountPointDirectories(t *testing.T) {
+	tests := []struct {
+		name               string
+		mountPointsToRemove []string
+		shouldError        bool
+	}{
+		{"empty mount points list", []string{}, false},
+		{"single mount point", []string{"/mnt/disk1"}, false},
+		{"multiple mount points", []string{"/mnt/disk1", "/mnt/disk2"}, false},
+		{"non-standard mount point", []string{"/tmp/test"}, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := RemoveMountPointDirectories(tt.mountPointsToRemove)
+			if (err != nil) != tt.shouldError {
+				t.Errorf("RemoveMountPointDirectories() error = %v, shouldError %v", err, tt.shouldError)
+			}
+		})
+	}
+}
