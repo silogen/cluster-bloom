@@ -331,24 +331,9 @@ func initConfig() {
 		viper.SetConfigName(".bloom")
 	}
 
-	viper.SetDefault("FIRST_NODE", true)
-	viper.SetDefault("CONTROL_PLANE", false)
-	viper.SetDefault("GPU_NODE", true)
-	viper.SetDefault("OIDC_URL", "")
-	viper.SetDefault("SKIP_DISK_CHECK", "false")
-	viper.SetDefault("LONGHORN_DISKS", "")
-	viper.SetDefault("CLUSTERFORGE_RELEASE", "https://github.com/silogen/cluster-forge/releases/download/deploy/deploy-release.tar.gz")
-	viper.SetDefault("ROCM_BASE_URL", "https://repo.radeon.com/amdgpu-install/6.3.2/ubuntu/")
-	viper.SetDefault("ROCM_DEB_PACKAGE", "amdgpu-install_6.3.60302-1_all.deb")
-	viper.SetDefault("RKE2_INSTALLATION_URL", "https://get.rke2.io")
-	viper.SetDefault("DISABLED_STEPS", "")
-	viper.SetDefault("ENABLED_STEPS", "")
-	viper.SetDefault("SELECTED_DISKS", "")
-	viper.SetDefault("DOMAIN", "")
-	viper.SetDefault("TLS_CERT", "")
-	viper.SetDefault("TLS_KEY", "")
-	viper.SetDefault("USE_CERT_MANAGER", false)
-	viper.SetDefault("CERT_OPTION", "")
+	for _, arg := range Arguments {
+		viper.SetDefault(arg.Key, arg.Default)
+	}
 	viper.AutomaticEnv()
 	if err := viper.ReadInConfig(); err == nil {
 		log.Infof("Using config file: %s", viper.ConfigFileUsed())
