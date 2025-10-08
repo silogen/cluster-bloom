@@ -23,6 +23,28 @@ import (
 	"github.com/spf13/viper"
 )
 
+func init() {
+	// Initialize test arguments
+	SetArguments([]Arg{
+		{Key: "FIRST_NODE", Default: true, Description: "Set to true if this is the first node in the cluster.", Type: "bool"},
+		{Key: "GPU_NODE", Default: true, Description: "Set to true if this node has GPUs.", Type: "bool"},
+		{Key: "CONTROL_PLANE", Default: false, Description: "Set to true if this node should be a control plane node (only applies when FIRST_NODE is false).", Type: "bool", Dependencies: []UsedWhen{{Arg: "FIRST_NODE", Type: "equals_false"}}},
+		{Key: "SERVER_IP", Default: "", Description: "IP address of the RKE2 server. Required for non-first nodes.", Type: "non-empty-ip-address", Dependencies: []UsedWhen{{Arg: "FIRST_NODE", Type: "equals_false"}}},
+		{Key: "JOIN_TOKEN", Default: "", Description: "Token for joining additional nodes to the cluster. Required for non-first nodes.", Type: "non-empty-string", Dependencies: []UsedWhen{{Arg: "FIRST_NODE", Type: "equals_false"}}, Validators: []func(value string) error{ValidateJoinTokenArg}},
+		{Key: "DOMAIN", Default: "", Description: "The domain name for the cluster (e.g., \"cluster.example.com\"). Required.", Type: "non-empty-string", Dependencies: []UsedWhen{{Arg: "FIRST_NODE", Type: "equals_true"}}},
+		{Key: "USE_CERT_MANAGER", Default: false, Description: "Use cert-manager with Let's Encrypt for automatic TLS certificates.", Type: "bool", Dependencies: []UsedWhen{{Arg: "FIRST_NODE", Type: "equals_true"}}},
+		{Key: "CERT_OPTION", Default: "", Description: "Certificate option when USE_CERT_MANAGER is false. Choose 'existing' or 'generate'.", Type: "enum", Options: []string{"existing", "generate"}, Dependencies: []UsedWhen{{Arg: "USE_CERT_MANAGER", Type: "equals_false"}, {Arg: "FIRST_NODE", Type: "equals_true"}}},
+		{Key: "TLS_CERT", Default: "", Description: "Path to TLS certificate file for ingress. Required if CERT_OPTION is 'existing'.", Type: "file", Dependencies: []UsedWhen{{Arg: "CERT_OPTION", Type: "equals_existing"}}},
+		{Key: "TLS_KEY", Default: "", Description: "Path to TLS private key file for ingress. Required if CERT_OPTION is 'existing'.", Type: "file", Dependencies: []UsedWhen{{Arg: "CERT_OPTION", Type: "equals_existing"}}},
+		{Key: "OIDC_URL", Default: "", Description: "The URL of the OIDC provider.", Type: "url"},
+		{Key: "ROCM_BASE_URL", Default: "https://repo.radeon.com/amdgpu-install/6.3.2/ubuntu/", Description: "ROCm base repository URL.", Type: "non-empty-url", Dependencies: []UsedWhen{{Arg: "GPU_NODE", Type: "equals_true"}}},
+		{Key: "RKE2_INSTALLATION_URL", Default: "https://get.rke2.io", Description: "RKE2 installation script URL.", Type: "non-empty-url"},
+		{Key: "CLUSTERFORGE_RELEASE", Default: "https://github.com/silogen/cluster-forge/releases/download/deploy/deploy-release.tar.gz", Description: "The version of Cluster-Forge to install. Pass the URL for a specific release, or 'none' to not install ClusterForge.", Type: "url"},
+		{Key: "DISABLED_STEPS", Default: "", Description: "Comma-separated list of steps to skip. Example: \"SetupLonghornStep,SetupMetallbStep\".", Type: "string", Validators: []func(value string) error{ValidateStepNamesArg, ValidateDisabledStepsWarnings, ValidateDisabledStepsConflict}},
+		{Key: "ENABLED_STEPS", Default: "", Description: "Comma-separated list of steps to perform. If empty, perform all. Example: \"SetupLonghornStep,SetupMetallbStep\".", Type: "string", Validators: []func(value string) error{ValidateStepNamesArg}},
+	})
+}
+
 func TestSetAndGetAllSteps(t *testing.T) {
 	testSteps := []string{"Step1", "Step2", "Step3"}
 
@@ -164,9 +186,9 @@ func TestValidateJoinTokenArg(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateJoinTokenArg(tt.token)
+			err := ValidateJoinTokenArg(tt.token)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("validateJoinTokenArg() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("ValidateJoinTokenArg() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}
@@ -195,9 +217,9 @@ func TestValidateStepNamesArg(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateStepNamesArg(tt.stepNames)
+			err := ValidateStepNamesArg(tt.stepNames)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("validateStepNamesArg() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("ValidateStepNamesArg() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}
@@ -232,9 +254,9 @@ func TestValidateDisabledStepsWarnings(t *testing.T) {
 			viper.Reset()
 			viper.Set("GPU_NODE", tt.gpuNode)
 
-			err := validateDisabledStepsWarnings(tt.stepNames)
+			err := ValidateDisabledStepsWarnings(tt.stepNames)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("validateDisabledStepsWarnings() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("ValidateDisabledStepsWarnings() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}
@@ -267,9 +289,9 @@ func TestValidateDisabledStepsConflict(t *testing.T) {
 			viper.Reset()
 			viper.Set("ENABLED_STEPS", tt.enabledSteps)
 
-			err := validateDisabledStepsConflict(tt.disabledSteps)
+			err := ValidateDisabledStepsConflict(tt.disabledSteps)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("validateDisabledStepsConflict() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("ValidateDisabledStepsConflict() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}
@@ -305,9 +327,9 @@ func TestValidateSkipDiskCheckConsistency(t *testing.T) {
 			viper.Set("LONGHORN_DISKS", tt.longhornDisks)
 			viper.Set("SELECTED_DISKS", tt.selectedDisks)
 
-			err := validateSkipDiskCheckConsistency("")
+			err := ValidateSkipDiskCheckConsistency("")
 			if (err != nil) != tt.wantErr {
-				t.Errorf("validateSkipDiskCheckConsistency() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("ValidateSkipDiskCheckConsistency() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}
@@ -337,6 +359,7 @@ func TestValidateArgs(t *testing.T) {
 				"FIRST_NODE":            true,
 				"GPU_NODE":              true,
 				"DOMAIN":                "cluster.example.com",
+				"USE_CERT_MANAGER":      true,
 				"OIDC_URL":              "https://auth.example.com",
 				"ROCM_BASE_URL":         "https://repo.radeon.com/amdgpu-install/6.3.2/ubuntu/",
 				"RKE2_INSTALLATION_URL": "https://get.rke2.io",
@@ -347,10 +370,11 @@ func TestValidateArgs(t *testing.T) {
 		{
 			name: "Valid additional node config",
 			config: map[string]interface{}{
-				"FIRST_NODE": false,
-				"GPU_NODE":   false,
-				"SERVER_IP":  "192.168.1.100",
-				"JOIN_TOKEN": "K10831EXAMPLE::server:aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789",
+				"FIRST_NODE":            false,
+				"GPU_NODE":              false,
+				"SERVER_IP":             "192.168.1.100",
+				"JOIN_TOKEN":            "K10831EXAMPLE::server:aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789",
+				"RKE2_INSTALLATION_URL": "https://get.rke2.io",
 			},
 			wantErr: false,
 		},

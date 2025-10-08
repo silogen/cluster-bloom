@@ -38,158 +38,10 @@ func GetAllStepIDs() []string {
 	return allStepIDs
 }
 
-var Arguments = []Arg{
-	// Core cluster configuration
-	{
-		Key:         "FIRST_NODE",
-		Default:     true,
-		Description: "Set to true if this is the first node in the cluster.",
-		Type:        "bool",
-	},
-	{
-		Key:         "GPU_NODE",
-		Default:     true,
-		Description: "Set to true if this node has GPUs.",
-		Type:        "bool",
-	},
-	{
-		Key:          "CONTROL_PLANE",
-		Default:      false,
-		Description:  "Set to true if this node should be a control plane node (only applies when FIRST_NODE is false).",
-		Type:         "bool",
-		Dependencies: []UsedWhen{{"FIRST_NODE", "equals_false"}},
-	},
-	{
-		Key:          "SERVER_IP",
-		Default:      "",
-		Description:  "IP address of the RKE2 server. Required for non-first nodes.",
-		Type:         "non-empty-ip-address",
-		Dependencies: []UsedWhen{{"FIRST_NODE", "equals_false"}},
-	},
-	{
-		Key:          "JOIN_TOKEN",
-		Default:      "",
-		Description:  "Token for joining additional nodes to the cluster. Required for non-first nodes.",
-		Type:         "non-empty-string",
-		Dependencies: []UsedWhen{{"FIRST_NODE", "equals_false"}},
-		Validators:   []func(value string) error{validateJoinTokenArg},
-	},
+var Arguments []Arg
 
-	// Network and domain configuration
-	{
-		Key:          "DOMAIN",
-		Default:      "",
-		Description:  "The domain name for the cluster (e.g., \"cluster.example.com\"). Required.",
-		Type:         "non-empty-string",
-		Dependencies: []UsedWhen{{"FIRST_NODE", "equals_true"}},
-	},
-
-	// TLS/Certificate configuration
-	{
-		Key:          "USE_CERT_MANAGER",
-		Default:      false,
-		Description:  "Use cert-manager with Let's Encrypt for automatic TLS certificates.",
-		Type:         "bool",
-		Dependencies: []UsedWhen{{"FIRST_NODE", "equals_true"}},
-	},
-	{
-		Key:          "CERT_OPTION",
-		Default:      "",
-		Description:  "Certificate option when USE_CERT_MANAGER is false. Choose 'existing' or 'generate'.",
-		Type:         "enum",
-		Options:      []string{"existing", "generate"},
-		Dependencies: []UsedWhen{{"USE_CERT_MANAGER", "equals_false"}, UsedWhen{"FIRST_NODE", "equals_true"}},
-	},
-	{
-		Key:          "TLS_CERT",
-		Default:      "",
-		Description:  "Path to TLS certificate file for ingress. Required if CERT_OPTION is 'existing'.",
-		Type:         "file",
-		Dependencies: []UsedWhen{{"CERT_OPTION", "equals_existing"}},
-	},
-	{
-		Key:          "TLS_KEY",
-		Default:      "",
-		Description:  "Path to TLS private key file for ingress. Required if CERT_OPTION is 'existing'.",
-		Type:         "file",
-		Dependencies: []UsedWhen{{"CERT_OPTION", "equals_existing"}},
-	},
-
-	// Authentication
-	{
-		Key:         "OIDC_URL",
-		Default:     "",
-		Description: "The URL of the OIDC provider.",
-		Type:        "url",
-	},
-
-	// ROCm configuration (depends on GPU_NODE)
-	{
-		Key:          "ROCM_BASE_URL",
-		Default:      "https://repo.radeon.com/amdgpu-install/6.3.2/ubuntu/",
-		Description:  "ROCm base repository URL.",
-		Type:         "non-empty-url",
-		Dependencies: []UsedWhen{{"GPU_NODE", "equals_true"}},
-	},
-	{
-		Key:          "ROCM_DEB_PACKAGE",
-		Default:      "amdgpu-install_6.3.60302-1_all.deb",
-		Description:  "ROCm DEB package name.",
-		Type:         "non-empty-string",
-		Dependencies: []UsedWhen{{"GPU_NODE", "equals_true"}},
-	},
-
-	// Disk and storage configuration
-	{
-		Key:         "SKIP_DISK_CHECK",
-		Default:     false,
-		Description: "Set to true to skip disk-related operations.",
-		Type:        "bool",
-		Validators:  []func(value string) error{validateSkipDiskCheckConsistency},
-	},
-	{
-		Key:         "LONGHORN_DISKS",
-		Default:     "",
-		Description: "Comma-separated list of disk paths to use for Longhorn.",
-		Type:        "string",
-		Validators:  []func(value string) error{validateLonghornDisksArg},
-	},
-	{
-		Key:         "SELECTED_DISKS",
-		Default:     "",
-		Description: "Comma-separated list of disk devices. Example: \"/dev/sdb,/dev/sdc\".",
-		Type:        "string",
-	},
-
-	// External component URLs
-	{
-		Key:         "RKE2_INSTALLATION_URL",
-		Default:     "https://get.rke2.io",
-		Description: "RKE2 installation script URL.",
-		Type:        "non-empty-url",
-	},
-	{
-		Key:         "CLUSTERFORGE_RELEASE",
-		Default:     "https://github.com/silogen/cluster-forge/releases/download/deploy/deploy-release.tar.gz",
-		Description: "The version of Cluster-Forge to install. Pass the URL for a specific release, or 'none' to not install ClusterForge.",
-		Type:        "url",
-	},
-
-	// Step control
-	{
-		Key:         "DISABLED_STEPS",
-		Default:     "",
-		Description: "Comma-separated list of steps to skip. Example: \"SetupLonghornStep,SetupMetallbStep\".",
-		Type:        "string",
-		Validators:  []func(value string) error{validateStepNamesArg, validateDisabledStepsWarnings, validateDisabledStepsConflict},
-	},
-	{
-		Key:         "ENABLED_STEPS",
-		Default:     "",
-		Description: "Comma-separated list of steps to perform. If empty, perform all. Example: \"SetupLonghornStep,SetupMetallbStep\".",
-		Type:        "string",
-		Validators:  []func(value string) error{validateStepNamesArg},
-	},
+func SetArguments(args []Arg) {
+	Arguments = args
 }
 
 func evaluateDependency(dep UsedWhen) bool {
@@ -220,8 +72,8 @@ func IsArgUsed(arg Arg) bool {
 	return true
 }
 
-// validateJoinTokenArg validates RKE2/K3s join token format
-func validateJoinTokenArg(token string) error {
+// ValidateJoinTokenArg validates RKE2/K3s join token format
+func ValidateJoinTokenArg(token string) error {
 	// RKE2/K3s tokens are typically:
 	// - Base64-encoded or hex strings
 	// - Usually 64+ characters long
@@ -249,8 +101,8 @@ func validateJoinTokenArg(token string) error {
 	return nil
 }
 
-// validateStepNamesArg validates that step names are valid against the steps from rootSteps
-func validateStepNamesArg(stepNames string) error {
+// ValidateStepNamesArg validates that step names are valid against the steps from rootSteps
+func ValidateStepNamesArg(stepNames string) error {
 	if stepNames == "" {
 		return nil // Empty step lists are allowed
 	}
@@ -281,8 +133,8 @@ func validateStepNamesArg(stepNames string) error {
 	return nil
 }
 
-// validateDisabledStepsWarnings warns about disabling essential steps
-func validateDisabledStepsWarnings(stepNames string) error {
+// ValidateDisabledStepsWarnings warns about disabling essential steps
+func ValidateDisabledStepsWarnings(stepNames string) error {
 	if stepNames == "" {
 		return nil
 	}
@@ -304,8 +156,8 @@ func validateDisabledStepsWarnings(stepNames string) error {
 	return nil
 }
 
-// validateDisabledStepsConflict ensures DISABLED_STEPS and ENABLED_STEPS are not both set
-func validateDisabledStepsConflict(stepNames string) error {
+// ValidateDisabledStepsConflict ensures DISABLED_STEPS and ENABLED_STEPS are not both set
+func ValidateDisabledStepsConflict(stepNames string) error {
 	if stepNames == "" {
 		return nil
 	}
@@ -318,8 +170,8 @@ func validateDisabledStepsConflict(stepNames string) error {
 	return nil
 }
 
-// validateSkipDiskCheckConsistency warns about inconsistencies with SKIP_DISK_CHECK
-func validateSkipDiskCheckConsistency(skipDiskCheckStr string) error {
+// ValidateSkipDiskCheckConsistency warns about inconsistencies with SKIP_DISK_CHECK
+func ValidateSkipDiskCheckConsistency(skipDiskCheckStr string) error {
 	skipDiskCheck := viper.GetBool("SKIP_DISK_CHECK")
 	longhornDisks := viper.GetString("LONGHORN_DISKS")
 	selectedDisks := viper.GetString("SELECTED_DISKS")
@@ -335,8 +187,8 @@ func validateSkipDiskCheckConsistency(skipDiskCheckStr string) error {
 	return nil
 }
 
-// validateLonghornDisksArg validates LONGHORN_DISKS configuration
-func validateLonghornDisksArg(disks string) error {
+// ValidateLonghornDisksArg validates LONGHORN_DISKS configuration
+func ValidateLonghornDisksArg(disks string) error {
 	// Use the same logic as the existing validation in root.go
 	// longhornDiskString := pkg.ParseLonghornDiskConfig()
 	// if len(longhornDiskString) > 63 {
@@ -418,7 +270,7 @@ func ValidateURL(urlStr string) error {
 
 // ValidateToken validates a token string (currently supports JOIN_TOKEN format)
 func ValidateToken(token string) error {
-	return validateJoinTokenArg(token)
+	return ValidateJoinTokenArg(token)
 }
 
 // ValidateBool validates a boolean input string

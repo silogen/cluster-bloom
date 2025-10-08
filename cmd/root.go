@@ -129,6 +129,7 @@ func initConfig() {
 		}
 	}
 
+	SetArguments()
 	// Set defaults from args package
 	for _, arg := range args.Arguments {
 		viper.SetDefault(arg.Key, arg.Default)
