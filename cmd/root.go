@@ -41,43 +41,7 @@ import (
 var rootCmd = &cobra.Command{
 	Use:   "bloom",
 	Short: "Cluster-Bloom creates a cluster",
-	Long: `
-Cluster-Bloom installs and configures a Kubernetes cluster.
-It installs ROCm and other needed settings to prepare a (primarily AMD GPU) node to be part of a Kubernetes cluster,
-and ready to be deployed with Cluster-Forge.
-
-By default, running without arguments will:
-- Start the web-based configuration interface if no bloom.log exists
-- Display status and start monitoring interface if bloom.log exists
-
-Use --config to specify a configuration file that will pre-fill the web interface.
-Use --one-shot with --config to auto-proceed after loading configuration (useful for automation).
-Use --reconfigure to archive existing bloom.log and start fresh configuration.
-Use 'bloom cli --config <file>' for terminal-only mode.
-
-Available Configuration Variables:
-  - FIRST_NODE: Set to true if this is the first node in the cluster (default: true).
-  - CONTROL_PLANE: Set to true if this node should be a control plane node (default: false, only applies when FIRST_NODE is false).
-  - GPU_NODE: Set to true if this node has GPUs (default: true).
-  - OIDC_URL: The URL of the OIDC provider (default: "").
-  - SERVER_IP: The IP address of the RKE2 server (required for additional nodes).
-  - JOIN_TOKEN: The token used to join additional nodes to the cluster (required for additional nodes).
-  - SKIP_DISK_CHECK: Set to true to skip disk-related operations (default: false).
-  - LONGHORN_DISKS: Comma-separated list of disk paths to use for Longhorn (default: "").
-  - CLUSTERFORGE_RELEASE: The version of Cluster-Forge to install (default: "https://github.com/silogen/cluster-forge/releases/download/deploy/deploy-release.tar.gz"). Pass the URL for a specific release, or 'none' to not install ClusterForge.
-  - DISABLED_STEPS: Comma-separated list of steps to skip. Example "SetupLonghornStep,SetupMetallbStep" (default: "").
-  - ENABLED_STEPS: Comma-separated list of steps to perform. If empty, perform all. Example "SetupLonghornStep,SetupMetallbStep" (default: "").
-  - SELECTED_DISKS: Comma-separated list of disk devices. Example "/dev/sdb,/dev/sdc" (default: "").
-  - DOMAIN: The domain name for the cluster (e.g., "cluster.example.com") (required).
-  - USE_CERT_MANAGER: Use cert-manager with Let's Encrypt for automatic TLS certificates (default: false).
-  - CERT_OPTION: Certificate option when USE_CERT_MANAGER is false. Choose 'existing' or 'generate' (default: "").
-  - TLS_CERT: Path to TLS certificate file for ingress (required if CERT_OPTION is 'existing').
-  - TLS_KEY: Path to TLS private key file for ingress (required if CERT_OPTION is 'existing').
-
-Usage:
-  Use the --config flag to specify a configuration file that will pre-fill the web interface, or set the above variables in the environment or a Viper-compatible config file.
-  Use --one-shot with --config to auto-proceed after loading configuration for automated deployments.
-`,
+	Long:  displayHelp(),
 	Run: func(cmd *cobra.Command, args []string) {
 		// Handle reconfigure flag
 		if reconfigure {
@@ -688,34 +652,29 @@ func rootSteps() []pkg.Step {
 	return combinedSteps
 }
 
-func displayHelp() {
+func displayHelp() string {
 	helpContent := `
-Cluster-Bloom Help:
+Cluster-Bloom installs and configures a Kubernetes cluster.
+It installs ROCm and other needed settings to prepare a (primarily AMD GPU) node to be part of a Kubernetes cluster,
+and ready to be deployed with Cluster-Forge.
+
+By default, running without arguments will:
+- Start the web-based configuration interface if no bloom.log exists
+- Display status and start monitoring interface if bloom.log exists
+
+Use --config to specify a configuration file that will pre-fill the web interface.
+Use --one-shot with --config to auto-proceed after loading configuration (useful for automation).
+Use --reconfigure to archive existing bloom.log and start fresh configuration.
+Use 'bloom cli --config <file>' for terminal-only mode.
 
 Available Configuration Variables:
-  - FIRST_NODE: Set to true if this is the first node in the cluster (default: true).
-  - CONTROL_PLANE: Set to true if this node should be a control plane node (default: false, only applies when FIRST_NODE is false).
-  - GPU_NODE: Set to true if this node has GPUs (default: true).
-  - OIDC_URL: The URL of the OIDC provider (default: "").
-  - SERVER_IP: The IP address of the RKE2 server (required for additional nodes).
-  - JOIN_TOKEN: The token used to join additional nodes to the cluster (required for additional nodes).
-  - SKIP_DISK_CHECK: Set to true to skip disk-related operations (default: false).
-  - LONGHORN_DISKS: Comma-separated list of disk paths to use for Longhorn (default: "").
-  - CLUSTERFORGE_RELEASE: The version of Cluster-Forge to install (default: "https://github.com/silogen/cluster-forge/releases/download/deploy/deploy-release.tar.gz"). Pass the URL for a specific release, or 'none' to not install ClusterForge.
-  - DISABLED_STEPS: Comma-separated list of steps to skip. Example "SetupLonghornStep,SetupMetallbStep" (default: "").
-  - ENABLED_STEPS: Comma-separated list of steps to perform. If empty, perform all. Example "SetupLonghornStep,SetupMetallbStep" (default: "").
-  - SELECTED_DISKS: Comma-separated list of disk devices. Example "/dev/sdb,/dev/sdc" (default: "").
-  - DOMAIN: The domain name for the cluster (e.g., "cluster.example.com") (required).
-  - USE_CERT_MANAGER: Use cert-manager with Let's Encrypt for automatic TLS certificates (default: false).
-  - CERT_OPTION: Certificate option when USE_CERT_MANAGER is false. Choose 'existing' or 'generate' (default: "").
-  - TLS_CERT: Path to TLS certificate file for ingress (required if CERT_OPTION is 'existing').
-  - TLS_KEY: Path to TLS private key file for ingress (required if CERT_OPTION is 'existing').
+` + args.GenerateArgsHelp() + `
 
 Usage:
   Use the --config flag to specify a configuration file that will pre-fill the web interface, or set the above variables in the environment or a Viper-compatible config file.
   Use --one-shot with --config to auto-proceed after loading configuration for automated deployments.
 `
-	fmt.Println(helpContent)
+	return helpContent
 }
 
 func findAvailablePort(startPort int) int {
@@ -998,6 +957,6 @@ var helpCmd = &cobra.Command{
 	Use:   "help",
 	Short: "Display help information",
 	Run: func(cmd *cobra.Command, args []string) {
-		displayHelp()
+		rootCmd.Help()
 	},
 }
