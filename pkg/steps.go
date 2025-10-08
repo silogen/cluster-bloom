@@ -26,6 +26,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/silogen/cluster-bloom/pkg/args"
+	"github.com/silogen/cluster-bloom/pkg/sysvalidation"
 	"github.com/spf13/viper"
 )
 
@@ -36,6 +38,34 @@ var manifestFiles embed.FS
 
 //go:embed templates/*.yaml
 var templateFiles embed.FS
+
+var ValidateArgsStep = Step{
+	Id:          "ValidateArgsStep",
+	Name:        "Validate Configuration",
+	Description: "Validate all configuration arguments",
+	Action: func() StepResult {
+		if err := args.ValidateArgs(); err != nil {
+			return StepResult{
+				Error: fmt.Errorf("configuration validation failed: %v", err),
+			}
+		}
+		return StepResult{Error: nil}
+	},
+}
+
+var ValidateSystemRequirementsStep = Step{
+	Id:          "ValidateSystemRequirementsStep",
+	Name:        "Validate System Requirements",
+	Description: "Validate system resources (disk, memory, CPU, OS version, kernel modules)",
+	Action: func() StepResult {
+		if err := sysvalidation.ValidateResourceRequirements(); err != nil {
+			return StepResult{
+				Error: fmt.Errorf("system requirements validation failed: %v", err),
+			}
+		}
+		return StepResult{Error: nil}
+	},
+}
 
 var CheckUbuntuStep = Step{
 	Id:          "CheckUbuntuStep",
