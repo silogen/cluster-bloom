@@ -29,6 +29,40 @@ import (
 	"github.com/spf13/viper"
 )
 
+// Disk space requirements (in GB)
+const (
+	MinRootPartitionSizeGB      = 20
+	MinRootAvailableSpaceGB     = 10
+	MinVarAvailableSpaceGB      = 5
+	RecommendedRootPartitionGB  = 20
+)
+
+// Memory requirements (in GB)
+const (
+	MinMemoryGB         = 4
+	RecommendedMemoryGB = 8
+)
+
+// CPU requirements
+const (
+	MinCPUCores         = 2
+	RecommendedCPUCores = 4
+)
+
+// Supported Ubuntu versions
+var SupportedUbuntuVersions = []string{"20.04", "22.04", "24.04"}
+
+// Required kernel modules
+var (
+	RequiredKernelModules = []string{
+		"overlay",      // Required for container runtimes
+		"br_netfilter", // Required for Kubernetes networking
+	}
+	RequiredGPUModules = []string{
+		"amdgpu", // AMD GPU driver
+	}
+)
+
 // ValidateResourceRequirements validates system resource requirements and compatibility
 func ValidateResourceRequirements() error {
 	// Validate partition sizes and disk space
@@ -65,19 +99,19 @@ func validateDiskSpace() error {
 	availableGB := float64(stat.Bavail*uint64(stat.Bsize)) / (1024 * 1024 * 1024)
 	totalGB := float64(stat.Blocks*uint64(stat.Bsize)) / (1024 * 1024 * 1024)
 
-	if totalGB < 20 {
-		log.Warnf("Root partition size is %.1fGB, recommended minimum is 20GB for Kubernetes", totalGB)
+	if totalGB < MinRootPartitionSizeGB {
+		log.Warnf("Root partition size is %.1fGB, recommended minimum is %dGB for Kubernetes", totalGB, RecommendedRootPartitionGB)
 	}
 
-	if availableGB < 10 {
-		return fmt.Errorf("insufficient disk space: %.1fGB available, minimum 10GB required", availableGB)
+	if availableGB < MinRootAvailableSpaceGB {
+		return fmt.Errorf("insufficient disk space: %.1fGB available, minimum %dGB required", availableGB, MinRootAvailableSpaceGB)
 	}
 
 	// Check /var partition if it exists separately
 	if err := syscall.Statfs("/var", &stat); err == nil {
 		varAvailableGB := float64(stat.Bavail*uint64(stat.Bsize)) / (1024 * 1024 * 1024)
-		if varAvailableGB < 5 {
-			log.Warnf("/var partition has only %.1fGB available, recommend at least 5GB for container images", varAvailableGB)
+		if varAvailableGB < MinVarAvailableSpaceGB {
+			log.Warnf("/var partition has only %.1fGB available, recommend at least %dGB for container images", varAvailableGB, MinVarAvailableSpaceGB)
 		}
 	}
 
@@ -111,11 +145,11 @@ func validateSystemResources() error {
 
 	if totalMemKB > 0 {
 		totalMemGB := float64(totalMemKB) / (1024 * 1024)
-		if totalMemGB < 4 {
-			return fmt.Errorf("insufficient memory: %.1fGB available, minimum 4GB required for Kubernetes", totalMemGB)
+		if totalMemGB < MinMemoryGB {
+			return fmt.Errorf("insufficient memory: %.1fGB available, minimum %dGB required for Kubernetes", totalMemGB, MinMemoryGB)
 		}
-		if totalMemGB < 8 {
-			log.Warnf("Memory is %.1fGB, recommend at least 8GB for optimal performance", totalMemGB)
+		if totalMemGB < RecommendedMemoryGB {
+			log.Warnf("Memory is %.1fGB, recommend at least %dGB for optimal performance", totalMemGB, RecommendedMemoryGB)
 		}
 	}
 
@@ -136,11 +170,11 @@ func validateSystemResources() error {
 		}
 	}
 
-	if cpuCount < 2 {
-		return fmt.Errorf("insufficient CPU cores: %d available, minimum 2 cores required for Kubernetes", cpuCount)
+	if cpuCount < MinCPUCores {
+		return fmt.Errorf("insufficient CPU cores: %d available, minimum %d cores required for Kubernetes", cpuCount, MinCPUCores)
 	}
-	if cpuCount < 4 {
-		log.Warnf("CPU has %d cores, recommend at least 4 cores for optimal performance", cpuCount)
+	if cpuCount < RecommendedCPUCores {
+		log.Warnf("CPU has %d cores, recommend at least %d cores for optimal performance", cpuCount, RecommendedCPUCores)
 	}
 
 	return nil
@@ -174,10 +208,9 @@ func validateUbuntuVersion() error {
 		return nil
 	}
 
-	// Validate Ubuntu version (support 20.04, 22.04, 24.04)
-	supportedVersions := []string{"20.04", "22.04", "24.04"}
+	// Validate Ubuntu version
 	supported := false
-	for _, version := range supportedVersions {
+	for _, version := range SupportedUbuntuVersions {
 		if versionID == version {
 			supported = true
 			break
@@ -186,7 +219,7 @@ func validateUbuntuVersion() error {
 
 	if !supported {
 		log.Warnf("Ubuntu version %s may not be fully supported. Supported versions: %s",
-			versionID, strings.Join(supportedVersions, ", "))
+			versionID, strings.Join(SupportedUbuntuVersions, ", "))
 	}
 
 	return nil
@@ -195,12 +228,7 @@ func validateUbuntuVersion() error {
 // validateKernelModules checks for required kernel modules and drivers
 func validateKernelModules() {
 	// Check for required kernel modules (non-fatal, just warnings)
-	requiredModules := []string{
-		"overlay",      // Required for container runtimes
-		"br_netfilter", // Required for Kubernetes networking
-	}
-
-	for _, module := range requiredModules {
+	for _, module := range RequiredKernelModules {
 		if !isModuleLoaded(module) && !isModuleAvailable(module) {
 			log.Warnf("Kernel module '%s' is not loaded and may not be available - this could cause issues", module)
 		}
@@ -208,11 +236,7 @@ func validateKernelModules() {
 
 	// Check for GPU-related modules if GPU_NODE is true
 	if viper.GetBool("GPU_NODE") {
-		gpuModules := []string{
-			"amdgpu", // AMD GPU driver
-		}
-
-		for _, module := range gpuModules {
+		for _, module := range RequiredGPUModules {
 			if !isModuleLoaded(module) && !isModuleAvailable(module) {
 				log.Warnf("GPU module '%s' is not loaded - GPU functionality may not work", module)
 			}
