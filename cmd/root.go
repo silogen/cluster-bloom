@@ -35,6 +35,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/silogen/cluster-bloom/pkg"
+	"github.com/silogen/cluster-bloom/pkg/args"
 )
 
 var rootCmd = &cobra.Command{
@@ -582,24 +583,10 @@ func initConfig() {
 		}
 	}
 
-	viper.SetDefault("FIRST_NODE", true)
-	viper.SetDefault("CONTROL_PLANE", false)
-	viper.SetDefault("GPU_NODE", true)
-	viper.SetDefault("OIDC_URL", "")
-	viper.SetDefault("SKIP_DISK_CHECK", "false")
-	viper.SetDefault("LONGHORN_DISKS", "")
-	viper.SetDefault("CLUSTERFORGE_RELEASE", "https://github.com/silogen/cluster-forge/releases/download/deploy/deploy-release.tar.gz")
-	viper.SetDefault("ROCM_BASE_URL", "https://repo.radeon.com/amdgpu-install/6.3.2/ubuntu/")
-	viper.SetDefault("ROCM_DEB_PACKAGE", "amdgpu-install_6.3.60302-1_all.deb")
-	viper.SetDefault("RKE2_INSTALLATION_URL", "https://get.rke2.io")
-	viper.SetDefault("DISABLED_STEPS", "")
-	viper.SetDefault("ENABLED_STEPS", "")
-	viper.SetDefault("SELECTED_DISKS", "")
-	viper.SetDefault("DOMAIN", "")
-	viper.SetDefault("TLS_CERT", "")
-	viper.SetDefault("TLS_KEY", "")
-	viper.SetDefault("USE_CERT_MANAGER", false)
-	viper.SetDefault("CERT_OPTION", "")
+	// Set defaults from args package
+	for _, arg := range args.Arguments {
+		viper.SetDefault(arg.Key, arg.Default)
+	}
 	viper.AutomaticEnv()
 	if err := viper.ReadInConfig(); err == nil {
 		log.Infof("Using config file: %s", viper.ConfigFileUsed())
@@ -608,92 +595,7 @@ func initConfig() {
 	// Log config BEFORE any validation that might exit
 	logConfigValues()
 
-	if viper.GetBool("FIRST_NODE") { // leaving the loop expecting more default options
-		requiredConfigs := []string{"DOMAIN"}
-		for _, config := range requiredConfigs {
-			if !viper.IsSet(config) || viper.GetString(config) == "" {
-				log.Fatalf("Required configuration item '%s' is not set", config)
-			}
-		}
-	}
-
-	if !viper.GetBool("FIRST_NODE") {
-		requiredConfigs := []string{"SERVER_IP", "JOIN_TOKEN"}
-		for _, config := range requiredConfigs {
-			if !viper.IsSet(config) {
-				log.Fatalf("Required configuration item '%s' is not set", config)
-			}
-		}
-	}
-
-	// Validate TLS configuration on FIRST_NODE when USE_CERT_MANAGER is false
-	if viper.GetBool("FIRST_NODE") {
-		if !viper.GetBool("USE_CERT_MANAGER") {
-			certOption := viper.GetString("CERT_OPTION")
-
-			// Only validate TLS_CERT and TLS_KEY if using existing certificates
-			if certOption == "existing" {
-				tlsCert := viper.GetString("TLS_CERT")
-				tlsKey := viper.GetString("TLS_KEY")
-
-				if tlsCert == "" || tlsKey == "" {
-					log.Fatalf("When CERT_OPTION is 'existing', both TLS_CERT and TLS_KEY must be provided")
-				}
-
-				// Verify the files exist
-				if _, err := os.Stat(tlsCert); os.IsNotExist(err) {
-					log.Fatalf("TLS_CERT file does not exist: %s", tlsCert)
-				}
-				if _, err := os.Stat(tlsKey); os.IsNotExist(err) {
-					log.Fatalf("TLS_KEY file does not exist: %s", tlsKey)
-				}
-			} else if certOption == "generate" {
-				// No validation needed for generate option - certificates will be created automatically
-				log.Println("Self-signed certificates will be generated during setup")
-			} else if certOption != "" {
-				log.Fatalf("Invalid CERT_OPTION value: %s. Must be 'existing' or 'generate'", certOption)
-			} else {
-				log.Fatalf("When USE_CERT_MANAGER is false, CERT_OPTION must be set to either 'existing' or 'generate'")
-			}
-		}
-	}
-
-	if viper.IsSet("LONGHORN_DISKS") && viper.GetString("LONGHORN_DISKS") != "" {
-		longhornDiskString := pkg.ParseLonghornDiskConfig()
-		if len(longhornDiskString) > 63 {
-			log.Fatalf("Too many disks, %s is longer than 63", pkg.ParseLonghornDiskConfig())
-		}
-	}
-
-	// Validate URL parameters
-	if err := validateAllURLs(); err != nil {
-		log.Fatalf("Configuration validation failed: %v", err)
-	}
-
-	// Validate IP address parameters (SERVER_IP if required)
-	if !viper.GetBool("FIRST_NODE") {
-		serverIP := viper.GetString("SERVER_IP")
-		if err := validateIPAddress(serverIP, "SERVER_IP"); err != nil {
-			log.Fatalf("Configuration validation failed: %v", err)
-		}
-	}
-
-	// Validate token parameters
-	if err := validateAllTokens(); err != nil {
-		log.Fatalf("Configuration validation failed: %v", err)
-	}
-
-	// Validate step name parameters
-	if err := validateAllStepNames(); err != nil {
-		log.Fatalf("Configuration validation failed: %v", err)
-	}
-
-	// Validate configuration conflicts
-	if err := validateConfigurationConflicts(); err != nil {
-		log.Fatalf("Configuration validation failed: %v", err)
-	}
-
-	// Validate system resource requirements
+	// Validate system resource requirements (args validation happens as first step)
 	if err := validateResourceRequirements(); err != nil {
 		log.Fatalf("System requirements validation failed: %v", err)
 	}
@@ -739,6 +641,7 @@ func logConfigValues() {
 
 func rootSteps() []pkg.Step {
 	preK8Ssteps := []pkg.Step{
+		pkg.ValidateArgsStep,
 		pkg.CheckUbuntuStep,
 		pkg.HasSufficientRancherPartitionStep,
 		pkg.NVMEDrivesAvailableStep,
@@ -774,6 +677,14 @@ func rootSteps() []pkg.Step {
 
 	postK8Ssteps = append(postK8Ssteps, pkg.FinalOutput)
 	combinedSteps := append(append(preK8Ssteps, k8Ssteps...), postK8Ssteps...)
+
+	// Set step IDs in args package for validation
+	stepIDs := make([]string, len(combinedSteps))
+	for i, step := range combinedSteps {
+		stepIDs[i] = step.Id
+	}
+	args.SetAllSteps(stepIDs)
+
 	return combinedSteps
 }
 
@@ -817,7 +728,6 @@ func findAvailablePort(startPort int) int {
 	}
 	return startPort // fallback to original port if nothing available
 }
-
 
 func startWebUIMonitoring() {
 	// Setup logging early
@@ -1052,7 +962,6 @@ func runWebInterfaceWithConfig() {
 	}
 }
 
-
 var cliCmd = &cobra.Command{
 	Use:   "cli",
 	Short: "Run with CLI-only interface (logs only)",
@@ -1092,4 +1001,3 @@ var helpCmd = &cobra.Command{
 		displayHelp()
 	},
 }
-

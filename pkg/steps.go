@@ -26,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/silogen/cluster-bloom/pkg/args"
 	"github.com/spf13/viper"
 )
 
@@ -36,6 +37,20 @@ var manifestFiles embed.FS
 
 //go:embed templates/*.yaml
 var templateFiles embed.FS
+
+var ValidateArgsStep = Step{
+	Id:          "ValidateArgsStep",
+	Name:        "Validate Configuration",
+	Description: "Validate all configuration arguments",
+	Action: func() StepResult {
+		if err := args.ValidateArgs(); err != nil {
+			return StepResult{
+				Error: fmt.Errorf("configuration validation failed: %v", err),
+			}
+		}
+		return StepResult{Error: nil}
+	},
+}
 
 var CheckUbuntuStep = Step{
 	Id:          "CheckUbuntuStep",
