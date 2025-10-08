@@ -25,21 +25,22 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/silogen/cluster-bloom/pkg/args"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v2"
 )
 
 // Wrapper functions to match ConfigOption validator signature
 func validateURLWrapper(input string) error {
-	return validateURL(input, "URL")
+	return args.ValidateURL(input)
 }
 
 func validateTokenWrapper(input string) error {
-	return validateToken(input, "TOKEN")
+	return args.ValidateToken(input)
 }
 
 func validateIPWrapper(input string) error {
-	return validateIPAddress(input, "IP_ADDRESS")
+	return args.ValidateIPAddress(input)
 }
 
 func validateDiskList(input string) error {
@@ -107,7 +108,7 @@ func validateClusterForgeRelease(input string) error {
 		return nil // Special value to skip installation
 	}
 	// Must be a valid URL
-	return validateURL(input, "CLUSTERFORGE_RELEASE")
+	return args.ValidateURL(input)
 }
 
 func validateDomain(input string) error {
@@ -159,7 +160,7 @@ var configOptions = []ConfigOption{
 		Description: "Is this the first node in the cluster? Set to false for additional nodes joining an existing cluster.",
 		Default:     true,
 		Required:    true,
-		Validator:   validateBool,
+		Validator:   args.ValidateBool,
 	},
 	{
 		Key:         "CONTROL_PLANE",
@@ -167,14 +168,14 @@ var configOptions = []ConfigOption{
 		Default:     false,
 		Required:    false,
 		Conditional: "FIRST_NODE=false",
-		Validator:   validateBool,
+		Validator:   args.ValidateBool,
 	},
 	{
 		Key:         "GPU_NODE",
 		Description: "Does this node have GPUs? Set to false for CPU-only nodes. When true, ROCm will be installed and configured.",
 		Default:     true,
 		Required:    true,
-		Validator:   validateBool,
+		Validator:   args.ValidateBool,
 	},
 	{
 		Key:         "SERVER_IP",
@@ -204,7 +205,7 @@ var configOptions = []ConfigOption{
 		Description: "Skip disk-related operations. Set to true if you don't want automatic disk setup.",
 		Default:     false,
 		Required:    false,
-		Validator:   validateBool,
+		Validator:   args.ValidateBool,
 	},
 	{
 		Key:         "SELECTED_DISKS",
@@ -253,7 +254,7 @@ var configOptions = []ConfigOption{
 		Description: "Use cert-manager with Let's Encrypt for automatic TLS certificates. Set to false to provide your own certificates.",
 		Default:     false,
 		Required:    false,
-		Validator:   validateBool,
+		Validator:   args.ValidateBool,
 	},
 	{
 		Key:         "CERT_OPTION",

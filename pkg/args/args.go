@@ -367,6 +367,72 @@ func GenerateArgsHelp() string {
 	return strings.Join(helpLines, "\n")
 }
 
+// ValidateIPAddress validates an IP address string
+func ValidateIPAddress(ipStr string) error {
+	if ipStr == "" {
+		return nil // Empty IPs are allowed for optional parameters
+	}
+
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return fmt.Errorf("invalid IP address: %s", ipStr)
+	}
+
+	if ip.IsLoopback() {
+		return fmt.Errorf("loopback IP address not allowed: %s", ipStr)
+	}
+
+	if ip.IsUnspecified() {
+		return fmt.Errorf("unspecified IP address (0.0.0.0 or ::) not allowed: %s", ipStr)
+	}
+
+	return nil
+}
+
+// ValidateURL validates a URL string
+func ValidateURL(urlStr string) error {
+	if urlStr == "" {
+		return nil // Empty URLs are allowed for optional parameters
+	}
+
+	// Handle special case for CLUSTERFORGE_RELEASE
+	if strings.ToLower(urlStr) == "none" {
+		return nil
+	}
+
+	parsedURL, err := url.Parse(urlStr)
+	if err != nil {
+		return fmt.Errorf("invalid URL format: %v", err)
+	}
+
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+		return fmt.Errorf("invalid URL scheme: must be http or https, got %s", parsedURL.Scheme)
+	}
+
+	if parsedURL.Host == "" {
+		return fmt.Errorf("invalid URL: missing host")
+	}
+
+	return nil
+}
+
+// ValidateToken validates a token string (currently supports JOIN_TOKEN format)
+func ValidateToken(token string) error {
+	return validateJoinTokenArg(token)
+}
+
+// ValidateBool validates a boolean input string
+func ValidateBool(input string) error {
+	lower := strings.ToLower(strings.TrimSpace(input))
+	validValues := []string{"true", "false", "t", "f", "yes", "no", "y", "n", "1", "0"}
+	for _, v := range validValues {
+		if lower == v {
+			return nil
+		}
+	}
+	return fmt.Errorf("invalid boolean value. Please enter: true/false, yes/no, y/n, or 1/0")
+}
+
 func ValidateArgs() error {
 	var errors []string
 
@@ -391,12 +457,8 @@ func ValidateArgs() error {
 		case "bool":
 			// viper.GetBool handles string-to-bool conversion, so we're good
 		case "url":
-			if value != "" && value != "none" {
-				if u, err := url.Parse(value); err != nil {
-					errors = append(errors, fmt.Sprintf("%s: invalid URL format: %v", arg.Key, err))
-				} else if u.Scheme == "" || u.Host == "" {
-					errors = append(errors, fmt.Sprintf("%s: invalid URL format: missing scheme or host", arg.Key))
-				}
+			if err := ValidateURL(value); err != nil {
+				errors = append(errors, fmt.Sprintf("%s: %v", arg.Key, err))
 			}
 		case "file":
 			if value != "" {
@@ -421,15 +483,8 @@ func ValidateArgs() error {
 				}
 			}
 		case "ip-address":
-			if value != "" {
-				ip := net.ParseIP(value)
-				if ip == nil {
-					errors = append(errors, fmt.Sprintf("%s: invalid IP address: %s", arg.Key, value))
-				} else if ip.IsLoopback() {
-					errors = append(errors, fmt.Sprintf("%s: loopback IP address not allowed: %s", arg.Key, value))
-				} else if ip.IsUnspecified() {
-					errors = append(errors, fmt.Sprintf("%s: unspecified IP address (0.0.0.0 or ::) not allowed: %s", arg.Key, value))
-				}
+			if err := ValidateIPAddress(value); err != nil {
+				errors = append(errors, fmt.Sprintf("%s: %v", arg.Key, err))
 			}
 		case "string":
 			// Basic string validation can be added here if needed
