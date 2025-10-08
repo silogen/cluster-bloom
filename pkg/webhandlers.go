@@ -40,30 +40,30 @@ const (
 )
 
 type WebHandlerService struct {
-	monitor          *WebMonitor
-	configMode       bool
-	config           map[string]interface{}
-	lastError        string
-	errorType        ErrorType
-	configVersion    int
-	prefilledConfig  map[string]interface{}
-	oneShot          bool
-	validationFailed bool
-	validationErrors []string
-	steps            []Step
+	monitor           *WebMonitor
+	configMode        bool
+	config            map[string]interface{}
+	lastError         string
+	errorType         ErrorType
+	configVersion     int
+	prefilledConfig   map[string]interface{}
+	oneShot           bool
+	validationFailed  bool
+	validationErrors  []string
+	steps             []Step
 	startInstallation func() error
 }
 
 func NewWebHandlerService(monitor *WebMonitor) *WebHandlerService {
 	return &WebHandlerService{
-		monitor:         monitor,
-		configMode:      false,
-		config:          make(map[string]interface{}),
-		errorType:       ErrorTypeGeneral,
-		configVersion:   0,
-		prefilledConfig: make(map[string]interface{}),
-		oneShot:         false,
-		steps:           nil,
+		monitor:           monitor,
+		configMode:        false,
+		config:            make(map[string]interface{}),
+		errorType:         ErrorTypeGeneral,
+		configVersion:     0,
+		prefilledConfig:   make(map[string]interface{}),
+		oneShot:           false,
+		steps:             nil,
 		startInstallation: nil,
 	}
 }
@@ -176,7 +176,7 @@ func (h *WebHandlerService) PrefilledConfigAPIHandler(w http.ResponseWriter, r *
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
 	// Debug logging
-	log.Infof("PrefilledConfigAPIHandler called - config has %d entries", len(h.prefilledConfig))
+	log.Debugf("PrefilledConfigAPIHandler called - config has %d entries", len(h.prefilledConfig))
 	if len(h.prefilledConfig) > 0 {
 		for key, value := range h.prefilledConfig {
 			log.Debugf("  %s: %v", key, value)
@@ -184,8 +184,8 @@ func (h *WebHandlerService) PrefilledConfigAPIHandler(w http.ResponseWriter, r *
 	}
 
 	response := map[string]interface{}{
-		"config":   h.prefilledConfig,
-		"oneShot":  h.oneShot,
+		"config":       h.prefilledConfig,
+		"oneShot":      h.oneShot,
 		"hasPrefilled": len(h.prefilledConfig) > 0,
 	}
 
@@ -194,7 +194,7 @@ func (h *WebHandlerService) PrefilledConfigAPIHandler(w http.ResponseWriter, r *
 
 func (h *WebHandlerService) DashboardHandler(w http.ResponseWriter, r *http.Request) {
 	if h.configMode {
-		log.Info("DashboardHandler: In config mode, redirecting to ConfigWizardHandler")
+		log.Debug("DashboardHandler: In config mode, redirecting to ConfigWizardHandler")
 		h.ConfigWizardHandler(w, r)
 		return
 	}
@@ -1875,7 +1875,7 @@ func (h *WebHandlerService) ReconfigureHandler(w http.ResponseWriter, r *http.Re
 	// Send success response
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
-		"status": "success",
+		"status":  "success",
 		"message": "Log archived, ready to reconfigure",
 	})
 }
