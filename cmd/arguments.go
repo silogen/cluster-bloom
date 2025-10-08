@@ -24,21 +24,21 @@ func SetArguments() {
 			Default:      false,
 			Description:  "Set to true if this node should be a control plane node (only applies when FIRST_NODE is false).",
 			Type:         "bool",
-			Dependencies: []args.UsedWhen{{Arg: "FIRST_NODE", Type: "equals_false"}},
+			Dependencies: "FIRST_NODE=false",
 		},
 		{
 			Key:          "SERVER_IP",
 			Default:      "",
 			Description:  "IP address of the RKE2 server. Required for non-first nodes.",
 			Type:         "non-empty-ip-address",
-			Dependencies: []args.UsedWhen{{Arg: "FIRST_NODE", Type: "equals_false"}},
+			Dependencies: "FIRST_NODE=false",
 		},
 		{
 			Key:          "JOIN_TOKEN",
 			Default:      "",
 			Description:  "Token for joining additional nodes to the cluster. Required for non-first nodes.",
 			Type:         "non-empty-string",
-			Dependencies: []args.UsedWhen{{Arg: "FIRST_NODE", Type: "equals_false"}},
+			Dependencies: "FIRST_NODE=false",
 			Validators:   []func(value string) error{args.ValidateJoinTokenArg},
 		},
 
@@ -48,7 +48,7 @@ func SetArguments() {
 			Default:      "",
 			Description:  "The domain name for the cluster (e.g., \"cluster.example.com\"). Required.",
 			Type:         "non-empty-string",
-			Dependencies: []args.UsedWhen{{Arg: "FIRST_NODE", Type: "equals_true"}},
+			Dependencies: "FIRST_NODE=true",
 		},
 
 		// TLS/Certificate configuration
@@ -57,7 +57,7 @@ func SetArguments() {
 			Default:      false,
 			Description:  "Use cert-manager with Let's Encrypt for automatic TLS certificates.",
 			Type:         "bool",
-			Dependencies: []args.UsedWhen{{Arg: "FIRST_NODE", Type: "equals_true"}},
+			Dependencies: "FIRST_NODE=true",
 		},
 		{
 			Key:          "CERT_OPTION",
@@ -65,21 +65,21 @@ func SetArguments() {
 			Description:  "Certificate option when USE_CERT_MANAGER is false. Choose 'existing' or 'generate'.",
 			Type:         "enum",
 			Options:      []string{"existing", "generate"},
-			Dependencies: []args.UsedWhen{{Arg: "USE_CERT_MANAGER", Type: "equals_false"}, {Arg: "FIRST_NODE", Type: "equals_true"}},
+			Dependencies: "USE_CERT_MANAGER=false,FIRST_NODE=true",
 		},
 		{
 			Key:          "TLS_CERT",
 			Default:      "",
 			Description:  "Path to TLS certificate file for ingress. Required if CERT_OPTION is 'existing'.",
 			Type:         "file",
-			Dependencies: []args.UsedWhen{{Arg: "CERT_OPTION", Type: "equals_existing"}},
+			Dependencies: "CERT_OPTION=existing",
 		},
 		{
 			Key:          "TLS_KEY",
 			Default:      "",
 			Description:  "Path to TLS private key file for ingress. Required if CERT_OPTION is 'existing'.",
 			Type:         "file",
-			Dependencies: []args.UsedWhen{{Arg: "CERT_OPTION", Type: "equals_existing"}},
+			Dependencies: "CERT_OPTION=existing",
 		},
 
 		// Authentication
@@ -96,14 +96,14 @@ func SetArguments() {
 			Default:      "https://repo.radeon.com/amdgpu-install/6.3.2/ubuntu/",
 			Description:  "ROCm base repository URL.",
 			Type:         "non-empty-url",
-			Dependencies: []args.UsedWhen{{Arg: "GPU_NODE", Type: "equals_true"}},
+			Dependencies: "GPU_NODE=true",
 		},
 		{
 			Key:          "ROCM_DEB_PACKAGE",
 			Default:      "amdgpu-install_6.3.60302-1_all.deb",
 			Description:  "ROCm DEB package name.",
 			Type:         "non-empty-string",
-			Dependencies: []args.UsedWhen{{Arg: "GPU_NODE", Type: "equals_true"}},
+			Dependencies: "GPU_NODE=true",
 		},
 
 		// Disk and storage configuration

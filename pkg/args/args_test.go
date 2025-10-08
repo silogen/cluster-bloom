@@ -28,16 +28,16 @@ func init() {
 	SetArguments([]Arg{
 		{Key: "FIRST_NODE", Default: true, Description: "Set to true if this is the first node in the cluster.", Type: "bool"},
 		{Key: "GPU_NODE", Default: true, Description: "Set to true if this node has GPUs.", Type: "bool"},
-		{Key: "CONTROL_PLANE", Default: false, Description: "Set to true if this node should be a control plane node (only applies when FIRST_NODE is false).", Type: "bool", Dependencies: []UsedWhen{{Arg: "FIRST_NODE", Type: "equals_false"}}},
-		{Key: "SERVER_IP", Default: "", Description: "IP address of the RKE2 server. Required for non-first nodes.", Type: "non-empty-ip-address", Dependencies: []UsedWhen{{Arg: "FIRST_NODE", Type: "equals_false"}}},
-		{Key: "JOIN_TOKEN", Default: "", Description: "Token for joining additional nodes to the cluster. Required for non-first nodes.", Type: "non-empty-string", Dependencies: []UsedWhen{{Arg: "FIRST_NODE", Type: "equals_false"}}, Validators: []func(value string) error{ValidateJoinTokenArg}},
-		{Key: "DOMAIN", Default: "", Description: "The domain name for the cluster (e.g., \"cluster.example.com\"). Required.", Type: "non-empty-string", Dependencies: []UsedWhen{{Arg: "FIRST_NODE", Type: "equals_true"}}},
-		{Key: "USE_CERT_MANAGER", Default: false, Description: "Use cert-manager with Let's Encrypt for automatic TLS certificates.", Type: "bool", Dependencies: []UsedWhen{{Arg: "FIRST_NODE", Type: "equals_true"}}},
-		{Key: "CERT_OPTION", Default: "", Description: "Certificate option when USE_CERT_MANAGER is false. Choose 'existing' or 'generate'.", Type: "enum", Options: []string{"existing", "generate"}, Dependencies: []UsedWhen{{Arg: "USE_CERT_MANAGER", Type: "equals_false"}, {Arg: "FIRST_NODE", Type: "equals_true"}}},
-		{Key: "TLS_CERT", Default: "", Description: "Path to TLS certificate file for ingress. Required if CERT_OPTION is 'existing'.", Type: "file", Dependencies: []UsedWhen{{Arg: "CERT_OPTION", Type: "equals_existing"}}},
-		{Key: "TLS_KEY", Default: "", Description: "Path to TLS private key file for ingress. Required if CERT_OPTION is 'existing'.", Type: "file", Dependencies: []UsedWhen{{Arg: "CERT_OPTION", Type: "equals_existing"}}},
+		{Key: "CONTROL_PLANE", Default: false, Description: "Set to true if this node should be a control plane node (only applies when FIRST_NODE is false).", Type: "bool", Dependencies: "FIRST_NODE=false"},
+		{Key: "SERVER_IP", Default: "", Description: "IP address of the RKE2 server. Required for non-first nodes.", Type: "non-empty-ip-address", Dependencies: "FIRST_NODE=false"},
+		{Key: "JOIN_TOKEN", Default: "", Description: "Token for joining additional nodes to the cluster. Required for non-first nodes.", Type: "non-empty-string", Dependencies: "FIRST_NODE=false", Validators: []func(value string) error{ValidateJoinTokenArg}},
+		{Key: "DOMAIN", Default: "", Description: "The domain name for the cluster (e.g., \"cluster.example.com\"). Required.", Type: "non-empty-string", Dependencies: "FIRST_NODE=true"},
+		{Key: "USE_CERT_MANAGER", Default: false, Description: "Use cert-manager with Let's Encrypt for automatic TLS certificates.", Type: "bool", Dependencies: "FIRST_NODE=true"},
+		{Key: "CERT_OPTION", Default: "", Description: "Certificate option when USE_CERT_MANAGER is false. Choose 'existing' or 'generate'.", Type: "enum", Options: []string{"existing", "generate"}, Dependencies: "USE_CERT_MANAGER=false,FIRST_NODE=true"},
+		{Key: "TLS_CERT", Default: "", Description: "Path to TLS certificate file for ingress. Required if CERT_OPTION is 'existing'.", Type: "file", Dependencies: "CERT_OPTION=existing"},
+		{Key: "TLS_KEY", Default: "", Description: "Path to TLS private key file for ingress. Required if CERT_OPTION is 'existing'.", Type: "file", Dependencies: "CERT_OPTION=existing"},
 		{Key: "OIDC_URL", Default: "", Description: "The URL of the OIDC provider.", Type: "url"},
-		{Key: "ROCM_BASE_URL", Default: "https://repo.radeon.com/amdgpu-install/6.3.2/ubuntu/", Description: "ROCm base repository URL.", Type: "non-empty-url", Dependencies: []UsedWhen{{Arg: "GPU_NODE", Type: "equals_true"}}},
+		{Key: "ROCM_BASE_URL", Default: "https://repo.radeon.com/amdgpu-install/6.3.2/ubuntu/", Description: "ROCm base repository URL.", Type: "non-empty-url", Dependencies: "GPU_NODE=true"},
 		{Key: "RKE2_INSTALLATION_URL", Default: "https://get.rke2.io", Description: "RKE2 installation script URL.", Type: "non-empty-url"},
 		{Key: "CLUSTERFORGE_RELEASE", Default: "https://github.com/silogen/cluster-forge/releases/download/deploy/deploy-release.tar.gz", Description: "The version of Cluster-Forge to install. Pass the URL for a specific release, or 'none' to not install ClusterForge.", Type: "url"},
 		{Key: "DISABLED_STEPS", Default: "", Description: "Comma-separated list of steps to skip. Example: \"SetupLonghornStep,SetupMetallbStep\".", Type: "string", Validators: []func(value string) error{ValidateStepNamesArg, ValidateDisabledStepsWarnings, ValidateDisabledStepsConflict}},
@@ -82,16 +82,16 @@ func TestIsArgUsed(t *testing.T) {
 			name: "No dependencies - always used",
 			arg: Arg{
 				Key:          "FIRST_NODE",
-				Dependencies: []UsedWhen{},
+				Dependencies: "",
 			},
 			viperSetup: map[string]interface{}{},
 			wantUsed:   true,
 		},
 		{
-			name: "Dependency satisfied - equals_true",
+			name: "Dependency satisfied - equals false",
 			arg: Arg{
 				Key:          "CONTROL_PLANE",
-				Dependencies: []UsedWhen{{"FIRST_NODE", "equals_false"}},
+				Dependencies: "FIRST_NODE=false",
 			},
 			viperSetup: map[string]interface{}{
 				"FIRST_NODE": false,
@@ -99,10 +99,10 @@ func TestIsArgUsed(t *testing.T) {
 			wantUsed: true,
 		},
 		{
-			name: "Dependency not satisfied - equals_true",
+			name: "Dependency not satisfied - equals false",
 			arg: Arg{
 				Key:          "CONTROL_PLANE",
-				Dependencies: []UsedWhen{{"FIRST_NODE", "equals_false"}},
+				Dependencies: "FIRST_NODE=false",
 			},
 			viperSetup: map[string]interface{}{
 				"FIRST_NODE": true,
@@ -110,10 +110,10 @@ func TestIsArgUsed(t *testing.T) {
 			wantUsed: false,
 		},
 		{
-			name: "Dependency satisfied - equals_specific_value",
+			name: "Dependency satisfied - equals specific value",
 			arg: Arg{
 				Key:          "TLS_CERT",
-				Dependencies: []UsedWhen{{"CERT_OPTION", "equals_existing"}},
+				Dependencies: "CERT_OPTION=existing",
 			},
 			viperSetup: map[string]interface{}{
 				"CERT_OPTION": "existing",
@@ -123,11 +123,8 @@ func TestIsArgUsed(t *testing.T) {
 		{
 			name: "Multiple dependencies - all satisfied",
 			arg: Arg{
-				Key: "TLS_CERT",
-				Dependencies: []UsedWhen{
-					{"USE_CERT_MANAGER", "equals_false"},
-					{"CERT_OPTION", "equals_existing"},
-				},
+				Key:          "TLS_CERT",
+				Dependencies: "USE_CERT_MANAGER=false,CERT_OPTION=existing",
 			},
 			viperSetup: map[string]interface{}{
 				"USE_CERT_MANAGER": false,
@@ -138,11 +135,8 @@ func TestIsArgUsed(t *testing.T) {
 		{
 			name: "Multiple dependencies - one not satisfied",
 			arg: Arg{
-				Key: "TLS_CERT",
-				Dependencies: []UsedWhen{
-					{"USE_CERT_MANAGER", "equals_false"},
-					{"CERT_OPTION", "equals_existing"},
-				},
+				Key:          "TLS_CERT",
+				Dependencies: "USE_CERT_MANAGER=false,CERT_OPTION=existing",
 			},
 			viperSetup: map[string]interface{}{
 				"USE_CERT_MANAGER": true,

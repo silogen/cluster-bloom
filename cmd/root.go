@@ -89,6 +89,12 @@ var oneShot bool
 var reconfigure bool
 
 func init() {
+	// Ensure arguments are initialized before help is displayed
+	SetArguments()
+
+	// Update help text after arguments are initialized
+	rootCmd.Long = displayHelp()
+
 	cobra.OnInitialize(initConfig)
 
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is ./config.yaml)")

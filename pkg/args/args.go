@@ -13,18 +13,13 @@ import (
 	"github.com/spf13/viper"
 )
 
-type UsedWhen struct {
-	Arg  string
-	Type string
-}
-
 type Arg struct {
 	Key          string
 	Default      interface{}
 	Description  string
 	Type         string
 	Options      []string
-	Dependencies []UsedWhen
+	Dependencies string // Comma-separated conditions like "GPU_NODE=true,CERT_OPTION=existing"
 	Validators   []func(value string) error
 }
 
@@ -44,27 +39,46 @@ func SetArguments(args []Arg) {
 	Arguments = args
 }
 
-func evaluateDependency(dep UsedWhen) bool {
-	switch {
-	case dep.Type == "equals_true":
-		return viper.GetBool(dep.Arg)
-	case dep.Type == "equals_false":
-		return !viper.GetBool(dep.Arg)
-	case strings.HasPrefix(dep.Type, "equals_"):
-		expectedValue := strings.TrimPrefix(dep.Type, "equals_")
-		return viper.GetString(dep.Arg) == expectedValue
-	default:
+// parseDependency parses a single dependency string like "GPU_NODE=true" or "CERT_OPTION=existing"
+func parseDependency(depStr string) (argName string, expectedValue string, ok bool) {
+	parts := strings.SplitN(depStr, "=", 2)
+	if len(parts) != 2 {
+		return "", "", false
+	}
+	return strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]), true
+}
+
+// evaluateDependency checks if a dependency condition is met
+func evaluateDependency(depStr string) bool {
+	argName, expectedValue, ok := parseDependency(depStr)
+	if !ok {
 		return false
 	}
+
+	// Check boolean values
+	if expectedValue == "true" {
+		return viper.GetBool(argName)
+	}
+	if expectedValue == "false" {
+		return !viper.GetBool(argName)
+	}
+
+	// Check string values
+	return viper.GetString(argName) == expectedValue
 }
 
 func IsArgUsed(arg Arg) bool {
-	if len(arg.Dependencies) == 0 {
+	if arg.Dependencies == "" {
 		return true
 	}
 
-	// All dependencies must be satisfied for the arg to be used
-	for _, dep := range arg.Dependencies {
+	// Split by comma and evaluate each dependency
+	deps := strings.Split(arg.Dependencies, ",")
+	for _, dep := range deps {
+		dep = strings.TrimSpace(dep)
+		if dep == "" {
+			continue
+		}
 		if !evaluateDependency(dep) {
 			return false
 		}

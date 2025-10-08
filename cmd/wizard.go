@@ -42,39 +42,50 @@ func isArgRequired(arg args.Arg) bool {
 	return strings.HasPrefix(arg.Type, "non-empty-")
 }
 
-// Helper to convert args.UsedWhen dependencies to conditional string for display
+// Helper to get dependency string for display
 func getDependencyString(arg args.Arg) string {
-	if len(arg.Dependencies) == 0 {
-		return ""
-	}
-	// For wizard display, just show the first dependency
-	dep := arg.Dependencies[0]
-	return fmt.Sprintf("%s=%s", dep.Arg, strings.TrimPrefix(dep.Type, "equals_"))
+	return arg.Dependencies
 }
 
 // Check if arg dependencies are satisfied based on config map
 func checkDependencies(arg args.Arg, config map[string]interface{}) bool {
-	if len(arg.Dependencies) == 0 {
+	if arg.Dependencies == "" {
 		return true
 	}
 
-	for _, dep := range arg.Dependencies {
-		value, exists := config[dep.Arg]
+	// Split by comma and check each dependency
+	deps := strings.Split(arg.Dependencies, ",")
+	for _, dep := range deps {
+		dep = strings.TrimSpace(dep)
+		if dep == "" {
+			continue
+		}
+
+		// Parse dependency
+		parts := strings.SplitN(dep, "=", 2)
+		if len(parts) != 2 {
+			return false
+		}
+
+		argName := strings.TrimSpace(parts[0])
+		expectedValue := strings.TrimSpace(parts[1])
+
+		value, exists := config[argName]
 		if !exists {
 			return false
 		}
 
-		switch {
-		case dep.Type == "equals_true":
+		// Check boolean values
+		if expectedValue == "true" {
 			if boolVal, ok := value.(bool); !ok || !boolVal {
 				return false
 			}
-		case dep.Type == "equals_false":
+		} else if expectedValue == "false" {
 			if boolVal, ok := value.(bool); !ok || boolVal {
 				return false
 			}
-		case strings.HasPrefix(dep.Type, "equals_"):
-			expectedValue := strings.TrimPrefix(dep.Type, "equals_")
+		} else {
+			// Check string values
 			if fmt.Sprintf("%v", value) != expectedValue {
 				return false
 			}
