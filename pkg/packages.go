@@ -72,6 +72,8 @@ func InstallDependentPackages() error {
 		"jq",
 		"nfs-common",
 		"chrony",
+		"helm",
+		"yq",
 	}
 
 	for _, pkg := range packagesToInstall {
@@ -196,7 +198,8 @@ func SetupClusterForge() error {
 		LogMessage(Info, "Successfully unzipped clusterforge.tar.gz")
 	}
 
-	cmd = exec.Command("sudo", "bash", "cluster-forge/scripts/bootstrap.sh")
+	domain := viper.GetString("DOMAIN")
+	cmd = exec.Command("bash", "cluster-forge/scripts/bootstrap.sh", domain)
 	output, err = cmd.Output()
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to install ClusterForge: %v", err))
