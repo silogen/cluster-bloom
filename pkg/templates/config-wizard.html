@@ -227,6 +227,7 @@
                                pattern="^(/dev/[a-zA-Z0-9]+)(,/dev/[a-zA-Z0-9]+)*$|^$"
                                title="Format: /dev/xxx or comma-separated /dev/xxx,/dev/yyy">
                         <small class="help-text" style="color: #666; font-size: 12px; margin-top: 4px; display: block;">
+                            🛈 Previous Target Info: {{ .LonghornPreviousDisks }}<br>
                             ✓ Format: /dev/sdb or /dev/sdb,/dev/sdc<br>
                             ✓ Must be valid block device paths<br>
                             ✓ Leave empty for auto-detection<br>
@@ -238,10 +239,10 @@
                         <label for="LONGHORN_DISKS">Longhorn Mount Points</label>
                         <div class="description">Comma-separated list of disk paths for Longhorn storage (used as-is without formatting). Leave empty for automatic configuration.</div>
                         <input type="text" id="LONGHORN_DISKS" name="LONGHORN_DISKS" placeholder="/dev/sdb,/dev/sdc"
-                               pattern="^(/dev/[a-zA-Z0-9]+)(,/dev/[a-zA-Z0-9]+)*$|^$"
-                               title="Format: /dev/xxx or comma-separated /dev/xxx,/dev/yyy">
+                               pattern="^(disk[0-9]+)(,disk[0-9]+)*$|^$"
+                               title="Format: diskx or comma-separated diskx,disky">
                         <small class="help-text" style="color: #666; font-size: 12px; margin-top: 4px; display: block;">
-                            🛈 Previous Longhorn Disks: {{ .LonghornPreviousDisks }}<br>
+                            🛈 Previous Mountpoints: {{ .LonghornPreviousMountpoints }}<br>
                             ✓ Format: disk0 or disk0,disk1,...<br>
                             ✓ Must be existing block devices<br>
                             ✓ Will be formatted for Longhorn storage<br>

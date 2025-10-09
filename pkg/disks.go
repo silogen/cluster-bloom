@@ -30,7 +30,7 @@ import (
 func CleanDisks() error {
 	LogMessage(Info, "Disks cleanup started.")
 
-	disks, _, err := GetPriorLonghornDisks("")
+	disks, _, err := GetPriorLonghornDisks(make(map[string]interface{}))
 	if err != nil {
 		LogMessage(Warn, fmt.Sprintf("Failed to get prior Longhorn disks: %v", err))
 	} else if disks != nil && len(disks) > 0 {

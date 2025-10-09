@@ -26,11 +26,11 @@ import (
 	"github.com/spf13/viper"
 )
 
-func GetPriorLonghornDisks(longhornFromConfig string) (disks []string, mountPoints map[string]string, err error) {
+func GetPriorLonghornDisks(longhornFromConfig map[string]interface{}) (disks []string, mountPoints map[string]string, err error) {
 	mountPoints = make(map[string]string)
 
 	// Step 1: Try LONGHORN_DISKS first
-	disks, mountPoints, err = GetDisksFromLonghornConfig(longhornFromConfig)
+	disks, mountPoints, err = GetDisksFromLonghornConfig(longhornFromConfig["longhorn_disks"].(string))
 	if err != nil {
 		LogMessage(Warn, fmt.Sprintf("GetDisksFromLonghornConfig failed: %v", err))
 	} else if len(disks) > 0 {
@@ -39,16 +39,18 @@ func GetPriorLonghornDisks(longhornFromConfig string) (disks []string, mountPoin
 	}
 
 	// Step 2: Try SELECTED_DISKS if Step 1 failed or returned no disks
-	disks, err = GetDisksFromSelectedConfig()
+	selectedDisksMountpoints := ""
+	disks, selectedDisksMountpoints, err = GetDisksFromSelectedConfig(longhornFromConfig["selected_disks"].(string))
 	if err != nil {
 		LogMessage(Warn, fmt.Sprintf("GetDisksFromSelectedConfig failed: %v", err))
 	} else if len(disks) > 0 {
 		LogMessage(Info, "Successfully found disks from SELECTED_DISKS configuration")
+		mountPoints["all_disks"] = selectedDisksMountpoints
 		return disks, mountPoints, nil
 	}
 
 	// Step 3: Try bloom.log if Step 1 and 2 failed or returned no disks
-	disks, err = GetDisksFromBloomLog()
+	disks, mountPoints, err = GetDisksFromBloomLog()
 	if err != nil {
 		LogMessage(Warn, fmt.Sprintf("GetDisksFromBloomLog failed: %v", err))
 	} else if len(disks) > 0 {
@@ -96,25 +98,9 @@ func GetDisksFromLonghornConfig(longhornFromConfig string) (disks []string, moun
 			continue
 		}
 
-		mountPoint := "/mnt/" + diskPath
-		cmd := exec.Command("lsblk", "-no", "NAME,MOUNTPOINT")
-		output, err := cmd.Output()
-		if err != nil {
-			LogMessage(Warn, fmt.Sprintf("Failed to run lsblk: %v", err))
-			continue
-		}
-
-		scanner := bufio.NewScanner(strings.NewReader(string(output)))
-		for scanner.Scan() {
-			fields := strings.Fields(scanner.Text())
-			if len(fields) >= 2 && fields[1] == mountPoint {
-				devicePath := "/dev/" + fields[0]
-				targetDisks = append(targetDisks, devicePath)
-				mountPoints[devicePath] = mountPoint
-				LogMessage(Debug, fmt.Sprintf("Found device %s for mount path %s", devicePath, mountPoint))
-				break
-			}
-		}
+		device, mountPoint := getDeviceFromMountpoint(diskPath)
+		targetDisks = append(targetDisks, device)
+		mountPoints[device] = mountPoint
 	}
 
 	if len(targetDisks) > 0 {
@@ -126,30 +112,87 @@ func GetDisksFromLonghornConfig(longhornFromConfig string) (disks []string, moun
 	return nil, nil, nil
 }
 
-func GetDisksFromSelectedConfig() ([]string, error) {
-	if !viper.IsSet("SELECTED_DISKS") || viper.GetString("SELECTED_DISKS") == "" {
-		return nil, nil
+func getDeviceFromMountpoint(diskPath string) (device string, mountPoint string) {
+	mountPoint = "/mnt/" + diskPath
+	cmd := exec.Command("lsblk", "-no", "NAME,MOUNTPOINT")
+	output, err := cmd.Output()
+	if err != nil {
+		LogMessage(Warn, fmt.Sprintf("Failed to run lsblk: %v", err))
+		return "", ""
 	}
 
-	LogMessage(Info, "Found SELECTED_DISKS configuration")
-	disks := strings.Split(viper.GetString("SELECTED_DISKS"), ",")
-	var targetDisks []string
+	scanner := bufio.NewScanner(strings.NewReader(string(output)))
+	devicePath := ""
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) >= 2 && fields[1] == mountPoint {
+			devicePath = "/dev/" + fields[0]
+			//targetDisks = append(targetDisks, devicePath)
+			LogMessage(Debug, fmt.Sprintf("Found device %s for mount path %s", devicePath, mountPoint))
+			break
+		}
+	}
+	return devicePath, mountPoint
+}
 
-	for _, disk := range disks {
-		disk = strings.TrimSpace(disk)
-		if disk != "" {
-			targetDisks = append(targetDisks, disk)
+func getMountpointsFromDevice(device string) string {
+	cmd := exec.Command("lsblk", "-no", "MOUNTPOINT", device)
+	output, err := cmd.Output()
+	if err != nil {
+		LogMessage(Warn, fmt.Sprintf("Failed to run lsblk for device %s: %v", device, err))
+		return ""
+	}
+
+	// lsblk returns multiple lines, one for each partition/mountpoint
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	var mountpoints []string
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" && line != "[SWAP]" {
+			mountpoints = append(mountpoints, line)
 		}
 	}
 
-	if len(targetDisks) == 0 {
-		LogMessage(Info, "No valid disks found in SELECTED_DISKS")
-		return nil, nil
+	mountString := ""
+	if len(mountpoints) > 0 {
+		mountString = strings.Join(mountpoints, ",")
+		mountString = device + " => " + mountString
+	}
+
+	return mountString
+}
+
+func GetDisksFromSelectedConfig(longhornFromConfig string) (disks []string, mountPoints string, e error) {
+	var targetDisks []string
+	mountPoints = ""
+
+	if longhornFromConfig == "" {
+		if !viper.IsSet("SELECTED_DISKS") || viper.GetString("SELECTED_DISKS") == "" {
+			return nil, "", nil
+		}
+
+		LogMessage(Info, "Found SELECTED_DISKS configuration")
+		disks := strings.Split(viper.GetString("SELECTED_DISKS"), ",")
+
+		for _, disk := range disks {
+			disk = strings.TrimSpace(disk)
+			if disk != "" {
+				targetDisks = append(targetDisks, disk)
+			}
+		}
+
+		if len(targetDisks) == 0 {
+			LogMessage(Info, "No valid disks found in SELECTED_DISKS")
+			return nil, "", nil
+		}
+	} else {
+		targetDisks = strings.Split(longhornFromConfig, ",")
 	}
 
 	diskInfo := ""
 	for _, disk := range targetDisks {
-		cmd := exec.Command("lsblk", "-no", "SIZE,MODEL", disk)
+		cmd := exec.Command("lsblk", "-no", "SIZE,MODEL,MOUNTPOINT", disk)
 		output, err := cmd.Output()
 		if err != nil {
 			diskInfo += fmt.Sprintf("%s: (Unable to get info)\n", disk)
@@ -157,19 +200,20 @@ func GetDisksFromSelectedConfig() ([]string, error) {
 			info := strings.TrimSpace(string(output))
 			diskInfo += fmt.Sprintf("%s: %s\n", disk, info)
 		}
+		mountPoints += getMountpointsFromDevice(disk)
 	}
 
 	LogMessage(Info, fmt.Sprintf("Found %d disks from SELECTED_DISKS:\n%s", len(targetDisks), diskInfo))
-	return targetDisks, nil
+	return targetDisks, mountPoints, nil
 }
 
-func GetDisksFromBloomLog() ([]string, error) {
+func GetDisksFromBloomLog() (disks []string, mountPoints map[string]string, e error) {
 	LogMessage(Info, "Searching bloom.log for selected disks")
 	logFile := "bloom.log"
 	content, err := os.ReadFile(logFile)
 	if err != nil {
 		LogMessage(Warn, fmt.Sprintf("Failed to read bloom.log: %v", err))
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	lines := strings.Split(string(content), "\n")
@@ -184,16 +228,16 @@ func GetDisksFromBloomLog() ([]string, error) {
 
 				if len(targetDisks) == 0 {
 					LogMessage(Info, "Found bloom.log entry but no disks listed")
-					return nil, nil
+					return nil, nil, nil
 				}
 
 				LogMessage(Info, fmt.Sprintf("Found %d disks from bloom.log", len(targetDisks)))
-				return targetDisks, nil
+				return targetDisks, mountPoints, nil
 			}
 			break
 		}
 	}
 
 	LogMessage(Info, "No '[blue]Message: Selected disks:' found in bloom.log")
-	return nil, nil
+	return nil, nil, nil
 }

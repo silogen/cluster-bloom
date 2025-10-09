@@ -268,26 +268,32 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
 	// }
 
 	//_, longhornMountPoints, err := GetPriorLonghornDisks(longhornDisksStr)
-	_, longhornMountPoints, err := GetPriorLonghornDisks(h.prefilledConfig)
+	_, longhornPreviousDisks, err := GetDisksFromSelectedConfig(h.prefilledConfig["selected_disks"].(string))
+	if err != nil {
+		LogMessage(Error, fmt.Sprintf("Error getting prior Longhorn previous format targets: %v", err))
+	}
 
+	_, longhornPreviousMountpoints, err := GetDisksFromLonghornConfig(h.prefilledConfig["longhorn_disks"].(string))
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Error getting prior Longhorn mount points: %v", err))
 	}
 
-	log.Infof("ConfigWizardHandler: Previous Longhorn disks: %v", longhornMountPoints)
+	log.Infof("ConfigWizardHandler: Previous Longhorn mountpoints: %v", longhornPreviousMountpoints)
 
-	longhornDisplayString := ""
-	for key, value := range longhornMountPoints {
-		longhornDisplayString += key + " => " + value + ", "
+	longhornPreviousMountpointsString := generateDisplayString(longhornPreviousMountpoints)
+
+	if strings.TrimSpace(longhornPreviousMountpointsString) == "" {
+		longhornPreviousMountpointsString = "unused"
 	}
-	// remove trailing comma
-	longhornDisplayString = strings.TrimSuffix(longhornDisplayString, ", ")
 
 	type pageData struct {
-		LonghornPreviousDisks string
+		LonghornPreviousDisks       string
+		LonghornPreviousMountpoints string
 	}
+
 	data := pageData{
-		LonghornPreviousDisks: longhornDisplayString,
+		LonghornPreviousDisks:       longhornPreviousDisks,
+		LonghornPreviousMountpoints: longhornPreviousMountpointsString,
 	}
 
 	w.Header().Set("Content-Type", "text/html")
@@ -298,7 +304,17 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	//fmt.Fprint(w, html)
+}
+
+func generateDisplayString(mountPoints map[string]string) string {
+	displayString := ""
+	for key, value := range mountPoints {
+		displayString += key + " => " + value + ", "
+	}
+	// remove trailing comma
+	displayString = strings.TrimSuffix(displayString, ", ")
+
+	return displayString
 }
 
 func (h *WebHandlerService) ConfigAPIHandler(w http.ResponseWriter, r *http.Request) {
