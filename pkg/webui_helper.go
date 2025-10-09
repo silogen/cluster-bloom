@@ -26,14 +26,16 @@ import (
 	"github.com/spf13/viper"
 )
 
-func GetPriorLonghornDisks() ([]string, error) {
+func GetPriorLonghornDisks(longhornFromConfig string) (disks []string, mountPoints map[string]string, err error) {
+	mountPoints = make(map[string]string)
+
 	// Step 1: Try LONGHORN_DISKS first
-	disks, err := GetDisksFromLonghornConfig()
+	disks, mountPoints, err = GetDisksFromLonghornConfig(longhornFromConfig)
 	if err != nil {
 		LogMessage(Warn, fmt.Sprintf("GetDisksFromLonghornConfig failed: %v", err))
 	} else if len(disks) > 0 {
 		LogMessage(Info, "Successfully found disks from LONGHORN_DISKS configuration")
-		return disks, nil
+		return disks, mountPoints, nil
 	}
 
 	// Step 2: Try SELECTED_DISKS if Step 1 failed or returned no disks
@@ -42,7 +44,7 @@ func GetPriorLonghornDisks() ([]string, error) {
 		LogMessage(Warn, fmt.Sprintf("GetDisksFromSelectedConfig failed: %v", err))
 	} else if len(disks) > 0 {
 		LogMessage(Info, "Successfully found disks from SELECTED_DISKS configuration")
-		return disks, nil
+		return disks, mountPoints, nil
 	}
 
 	// Step 3: Try bloom.log if Step 1 and 2 failed or returned no disks
@@ -51,31 +53,37 @@ func GetPriorLonghornDisks() ([]string, error) {
 		LogMessage(Warn, fmt.Sprintf("GetDisksFromBloomLog failed: %v", err))
 	} else if len(disks) > 0 {
 		LogMessage(Info, "Successfully found disks from bloom.log")
-		return disks, nil
+		return disks, mountPoints, nil
 	}
 
 	// All functions failed or returned no disks
 	LogMessage(Error, "No longhorn disks found from any source (LONGHORN_DISKS, SELECTED_DISKS, bloom.log)")
-	return nil, fmt.Errorf("no longhorn disks found from any configuration source")
+	return nil, nil, fmt.Errorf("no longhorn disks found from any configuration source")
 }
 
-func GetDisksFromLonghornConfig() ([]string, error) {
+func GetDisksFromLonghornConfig(longhornFromConfig string) (disks []string, mountPoints map[string]string, e error) {
 	// Accept LONGHORN_DISKS in any case (e.g., longhorn_disks, Longhorn_Disks)
 	var val string
-	for _, k := range viper.AllKeys() {
-		if strings.ToLower(k) == "longhorn_disks" {
-			val = viper.GetString(k)
-			// ensure canonical key exists for the rest of the function
-			viper.Set("LONGHORN_DISKS", val)
-			break
+	mountPoints = make(map[string]string)
+
+	if longhornFromConfig == "" {
+		for _, k := range viper.AllKeys() {
+			if strings.ToLower(k) == "longhorn_disks" {
+				val = viper.GetString(k)
+				// ensure canonical key exists for the rest of the function
+				viper.Set("LONGHORN_DISKS", val)
+				break
+			}
 		}
-	}
-	// fallback: try direct lookup (covers env-style keys)
-	if val == "" {
-		val = viper.GetString("LONGHORN_DISKS")
-	}
-	if val == "" {
-		return nil, nil
+		// fallback: try direct lookup (covers env-style keys)
+		if val == "" {
+			val = viper.GetString("LONGHORN_DISKS")
+		}
+		if val == "" {
+			return nil, nil, nil
+		}
+	} else {
+		val = longhornFromConfig
 	}
 
 	LogMessage(Info, "Found LONGHORN_DISKS configuration")
@@ -102,6 +110,7 @@ func GetDisksFromLonghornConfig() ([]string, error) {
 			if len(fields) >= 2 && fields[1] == mountPoint {
 				devicePath := "/dev/" + fields[0]
 				targetDisks = append(targetDisks, devicePath)
+				mountPoints[devicePath] = mountPoint
 				LogMessage(Debug, fmt.Sprintf("Found device %s for mount path %s", devicePath, mountPoint))
 				break
 			}
@@ -110,11 +119,11 @@ func GetDisksFromLonghornConfig() ([]string, error) {
 
 	if len(targetDisks) > 0 {
 		LogMessage(Info, fmt.Sprintf("Found %d longhorn disks from LONGHORN_DISKS", len(targetDisks)))
-		return targetDisks, nil
+		return targetDisks, mountPoints, nil
 	}
 
 	LogMessage(Info, "No valid devices found from LONGHORN_DISKS")
-	return nil, nil
+	return nil, nil, nil
 }
 
 func GetDisksFromSelectedConfig() ([]string, error) {

@@ -249,7 +249,6 @@ func (h *WebHandlerService) StepsAPIHandler(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.Request) {
-	//tmpl, err := template.ParseFiles("templates/config-wizard.html")
 	tmpl, err := template.ParseFS(templateFS, "templates/config-wizard.html")
 
 	if err != nil {
@@ -257,17 +256,38 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	longhornPreviousDisks, err := GetPriorLonghornDisks()
+	// // Safely extract LONGHORN_DISKS from prefilledConfig (it may be absent or not a string)
+	// var longhornDisksStr string
+	// if v, ok := h.prefilledConfig["LONGHORN_DISKS"].(string); ok {
+	// 	longhornDisksStr = v
+	// } else if v, ok := h.prefilledConfig["longhorn_disks"].(string); ok {
+	// 	// accept lowercase key as well
+	// 	longhornDisksStr = v
+	// } else {
+	// 	longhornDisksStr = ""
+	// }
+
+	//_, longhornMountPoints, err := GetPriorLonghornDisks(longhornDisksStr)
+	_, longhornMountPoints, err := GetPriorLonghornDisks(h.prefilledConfig)
+
 	if err != nil {
-		longhornPreviousDisks = []string{"none"}
+		LogMessage(Error, fmt.Sprintf("Error getting prior Longhorn mount points: %v", err))
 	}
-	log.Infof("ConfigWizardHandler: Previous Longhorn disks: %s", longhornPreviousDisks)
+
+	log.Infof("ConfigWizardHandler: Previous Longhorn disks: %v", longhornMountPoints)
+
+	longhornDisplayString := ""
+	for key, value := range longhornMountPoints {
+		longhornDisplayString += key + " => " + value + ", "
+	}
+	// remove trailing comma
+	longhornDisplayString = strings.TrimSuffix(longhornDisplayString, ", ")
 
 	type pageData struct {
 		LonghornPreviousDisks string
 	}
 	data := pageData{
-		LonghornPreviousDisks: strings.Join(longhornPreviousDisks, ","),
+		LonghornPreviousDisks: longhornDisplayString,
 	}
 
 	w.Header().Set("Content-Type", "text/html")
