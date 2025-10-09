@@ -39,13 +39,11 @@ func GetPriorLonghornDisks(longhornFromConfig map[string]interface{}) (disks []s
 	}
 
 	// Step 2: Try SELECTED_DISKS if Step 1 failed or returned no disks
-	selectedDisksMountpoints := ""
-	disks, selectedDisksMountpoints, err = GetDisksFromSelectedConfig(longhornFromConfig["selected_disks"].(string))
+	disks, mountPoints, err = GetDisksFromSelectedConfig(longhornFromConfig["selected_disks"].(string))
 	if err != nil {
 		LogMessage(Warn, fmt.Sprintf("GetDisksFromSelectedConfig failed: %v", err))
 	} else if len(disks) > 0 {
 		LogMessage(Info, "Successfully found disks from SELECTED_DISKS configuration")
-		mountPoints["all_disks"] = selectedDisksMountpoints
 		return disks, mountPoints, nil
 	}
 
@@ -136,40 +134,24 @@ func getDeviceFromMountpoint(diskPath string) (device string, mountPoint string)
 }
 
 func getMountpointsFromDevice(device string) string {
-	cmd := exec.Command("lsblk", "-no", "MOUNTPOINT", device)
+	shellCmd := fmt.Sprintf("awk '$1 == \"%s\" {print $2}' /proc/mounts | paste -sd,", device)
+	cmd := exec.Command("sh", "-c", shellCmd)
+
 	output, err := cmd.Output()
 	if err != nil {
-		LogMessage(Warn, fmt.Sprintf("Failed to run lsblk for device %s: %v", device, err))
+		LogMessage(Error, fmt.Sprintf("Failed to awk /proc/mounts for device %s: %v", device, err))
 		return ""
 	}
-
-	// lsblk returns multiple lines, one for each partition/mountpoint
-	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-	var mountpoints []string
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line != "" && line != "[SWAP]" {
-			mountpoints = append(mountpoints, line)
-		}
-	}
-
-	mountString := ""
-	if len(mountpoints) > 0 {
-		mountString = strings.Join(mountpoints, ",")
-		mountString = device + " => " + mountString
-	}
-
-	return mountString
+	return strings.TrimSpace(string(output))
 }
 
-func GetDisksFromSelectedConfig(longhornFromConfig string) (disks []string, mountPoints string, e error) {
+func GetDisksFromSelectedConfig(longhornFromConfig string) (disks []string, mountPoints map[string]string, e error) {
 	var targetDisks []string
-	mountPoints = ""
+	mountPoints = make(map[string]string)
 
 	if longhornFromConfig == "" {
 		if !viper.IsSet("SELECTED_DISKS") || viper.GetString("SELECTED_DISKS") == "" {
-			return nil, "", nil
+			return nil, nil, nil
 		}
 
 		LogMessage(Info, "Found SELECTED_DISKS configuration")
@@ -184,7 +166,7 @@ func GetDisksFromSelectedConfig(longhornFromConfig string) (disks []string, moun
 
 		if len(targetDisks) == 0 {
 			LogMessage(Info, "No valid disks found in SELECTED_DISKS")
-			return nil, "", nil
+			return nil, nil, nil
 		}
 	} else {
 		targetDisks = strings.Split(longhornFromConfig, ",")
@@ -200,7 +182,7 @@ func GetDisksFromSelectedConfig(longhornFromConfig string) (disks []string, moun
 			info := strings.TrimSpace(string(output))
 			diskInfo += fmt.Sprintf("%s: %s\n", disk, info)
 		}
-		mountPoints += getMountpointsFromDevice(disk)
+		mountPoints[disk] = getMountpointsFromDevice(disk)
 	}
 
 	LogMessage(Info, fmt.Sprintf("Found %d disks from SELECTED_DISKS:\n%s", len(targetDisks), diskInfo))

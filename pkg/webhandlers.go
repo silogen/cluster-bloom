@@ -280,6 +280,7 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
 
 	log.Infof("ConfigWizardHandler: Previous Longhorn mountpoints: %v", longhornPreviousMountpoints)
 
+	longhornPreviousDisksString := generateDisplayString(longhornPreviousDisks)
 	longhornPreviousMountpointsString := generateDisplayString(longhornPreviousMountpoints)
 
 	if strings.TrimSpace(longhornPreviousMountpointsString) == "" {
@@ -292,7 +293,7 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
 	}
 
 	data := pageData{
-		LonghornPreviousDisks:       longhornPreviousDisks,
+		LonghornPreviousDisks:       longhornPreviousDisksString,
 		LonghornPreviousMountpoints: longhornPreviousMountpointsString,
 	}
 
