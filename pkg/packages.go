@@ -72,7 +72,6 @@ func InstallDependentPackages() error {
 		"jq",
 		"nfs-common",
 		"chrony",
-		"helm",
 		"yq",
 	}
 
@@ -108,6 +107,7 @@ func installK8sTools() error {
 	cmds := [][]string{
 		{"snap", "install", "kubectl", "--classic"},
 		{"snap", "install", "k9s"},
+		{"snap", "install", "helm", "--classic"},
 	}
 
 	for _, cmd := range cmds {
