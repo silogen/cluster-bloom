@@ -922,7 +922,12 @@ var FinalOutput = Step{
 				return StepResult{Error: fmt.Errorf("failed to get main IP: %w", err)}
 			}
 			mainIP := strings.TrimSpace(string(mainIPOutput))
-			oneLineScript := fmt.Sprintf("echo -e 'FIRST_NODE: false\\nJOIN_TOKEN: %s\\nSERVER_IP: %s' > bloom.yaml && sudo ./bloom --config bloom.yaml", joinToken, mainIP)
+
+			controlPlaneCommand := fmt.Sprintf("echo -e 'FIRST_NODE: false\\nCONTROL_PLANE: true\\nJOIN_TOKEN: %s\\nSERVER_IP: %s' > bloom.yaml && sudo ./bloom --config bloom.yaml", joinToken, mainIP)
+			workerNodeCommand := fmt.Sprintf("echo -e 'FIRST_NODE: false\\nGPU_NODE: true\\nJOIN_TOKEN: %s\\nSERVER_IP: %s' > bloom.yaml && sudo ./bloom --config bloom.yaml", joinToken, mainIP)
+
+			commandsContent := fmt.Sprintf("# Additional Control Plane Node Command:\n%s\n\n# GPU Worker Node Command:\n%s\n", controlPlaneCommand, workerNodeCommand)
+
 			file, err := os.Create("additional_node_command.txt")
 			if err != nil {
 				LogMessage(Error, fmt.Sprintf("Failed to create additional_node_command.txt: %v", err))
@@ -930,14 +935,14 @@ var FinalOutput = Step{
 			}
 			defer file.Close()
 
-			_, err = file.WriteString(oneLineScript)
+			_, err = file.WriteString(commandsContent)
 			if err != nil {
 				LogMessage(Error, fmt.Sprintf("Failed to write to additional_node_command.txt: %v", err))
 				return StepResult{Error: fmt.Errorf("failed to write to additional_node_command.txt: %w", err)}
 			}
 
-			LogMessage(Info, "To setup additional nodes to join the cluster, copy and run the command from additional_node_command.txt")
-			return StepResult{Message: "To setup additional nodes to join the cluster, copy and run the command from additional_node_command.txt"}
+			LogMessage(Info, "To setup additional nodes to join the cluster, copy and run the appropriate command from additional_node_command.txt")
+			return StepResult{Message: "To setup additional nodes to join the cluster, copy and run the appropriate command from additional_node_command.txt"}
 		} else {
 			message := "The content of longhorn_drive_setup.txt must be run in order to mount drives properly. " +
 				"This can be done in the control node, which was installed first, or with a valid kubeconfig for the cluster."
