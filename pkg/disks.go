@@ -29,8 +29,8 @@ import (
 
 func CleanDisks() error {
 	LogMessage(Info, "Disks cleanup started.")
-	
-	disks, err := GetPriorLonghornDisks()
+
+	disks, _, err := GetPriorLonghornDisks(make(map[string]interface{}))
 	if err != nil {
 		LogMessage(Warn, fmt.Sprintf("Failed to get prior Longhorn disks: %v", err))
 	} else if disks != nil && len(disks) > 0 {
@@ -41,7 +41,7 @@ func CleanDisks() error {
 	} else {
 		LogMessage(Info, "No prior Longhorn disks found to clean.")
 	}
-	
+
 	cmd := exec.Command("mount")
 	output, err := cmd.Output()
 	if err != nil {
@@ -472,7 +472,6 @@ func CleanTargetDisks(targetDisks []string) error {
 		LogMessage(Error, "No disks could be successfully unmounted. Aborting cleanup.")
 		return fmt.Errorf("all target disks failed to unmount")
 	}
-
 
 	LogMessage(Info, "Step 4: Wiping and formatting target disks")
 	var successfullyWiped []string
