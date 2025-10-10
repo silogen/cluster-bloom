@@ -233,6 +233,7 @@ func RunWebInterfaceWithConfig(port string, steps []Step, configFile string, one
 	if configFile != "" {
 		handlerService.LoadConfigFromFile(configFile, oneShot)
 	}
+	handlerService.AddRootDeviceToConfig()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", handlerService.DashboardHandler)
@@ -778,4 +779,3 @@ func parseSelection(s string) int {
 	}
 	return -1
 }
-
