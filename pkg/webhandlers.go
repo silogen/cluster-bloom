@@ -346,7 +346,9 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
 func generateDisplayString(mountPoints map[string]string) string {
 	displayString := ""
 	for key, value := range mountPoints {
-		displayString += key + " => " + value + ", "
+		if strings.TrimSpace(value) != "" {
+			displayString += key + " => " + value + ", "
+		}
 	}
 	// remove trailing comma
 	displayString = strings.TrimSuffix(displayString, ", ")

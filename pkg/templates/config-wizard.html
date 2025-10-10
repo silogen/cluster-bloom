@@ -227,7 +227,7 @@
                                pattern="^(/dev/[a-zA-Z0-9]+)(,/dev/[a-zA-Z0-9]+)*$|^$"
                                title="Format: /dev/xxx or comma-separated /dev/xxx,/dev/yyy">
                         <small class="help-text" style="color: #666; font-size: 12px; margin-top: 4px; display: block;">
-                            🛈 Previous Target Info: <span id="longhorn-previous-disks">{{ .LonghornPreviousDisks }}</span><br>
+                            <span id="longhorn-target-info-line">🛈 Target Info: <span id="longhorn-previous-disks">{{ .LonghornPreviousDisks }}</span></span><br>
                             ✓ Format: /dev/sdb or /dev/sdb,/dev/sdc<br>
                             ✓ Must be valid block device paths<br>
                             ✓ Leave empty for auto-detection<br>
@@ -242,7 +242,7 @@
                                pattern="^(disk[0-9]+)(,disk[0-9]+)*$|^$"
                                title="Format: diskx or comma-separated diskx,disky">
                         <small class="help-text" style="color: #666; font-size: 12px; margin-top: 4px; display: block;">
-                            🛈 Previous Mountpoints: {{ .LonghornPreviousMountpoints }}<br>
+                            🛈 Disk => Mountpoint: {{ .LonghornPreviousMountpoints }}<br>
                             ✓ Format: disk0 or disk0,disk1,...<br>
                             ✓ Must be existing block devices<br>
                             ✓ Will be formatted for Longhorn storage<br>
@@ -1066,28 +1066,46 @@
         // Style Longhorn disk info to highlight root partition
         function styleLonghornDiskInfo() {
             const diskInfoSpan = document.getElementById("longhorn-previous-disks");
+            const targetInfoLine = document.getElementById("longhorn-target-info-line");
+            
             if (!diskInfoSpan) return;
             
             const content = diskInfoSpan.textContent.trim();
-            if (!content || content === "unused") return;
             
-            // Parse format: "/dev/sdd => /,/mnt/wslg/distro,/snap"
-            const parts = content.split(/s*=>s*/);
+            // Hide entire line if no content or "unused"
+            if (!content || content === "" || content === "unused") {
+                if (targetInfoLine) targetInfoLine.style.display = "none";
+                return;
+            }
+            
+            // Show the line since we have content
+            if (targetInfoLine) targetInfoLine.style.display = "inline";
+            
+            // Parse format: "/dev/sdd => /,/mnt/wslg/distro,/snap,[swap]"
+            const parts = content.split(/\s*=>\s*/);
             if (parts.length !== 2) return;
             
             const device = parts[0];
             const mountPoints = parts[1].split(",");
             
-            // Check if root partition "/" is in mount points
+            // Check for dangerous mount points
             const hasRoot = mountPoints.some(mp => mp.trim() === "/");
+            const hasSwap = mountPoints.some(mp => mp.trim().includes("[swap]"));
             
-            if (hasRoot) {
-                // Replace just the root partition "/" with styled version
-                // Replace just the root partition "/" with styled version
-                const styledMountPoints = mountPoints.map(mp =>
-                    mp.trim() === "/" ? "<b style=\"color: red;\">/</b>" : mp.trim()
-                ).join(",");
-                diskInfoSpan.innerHTML = device + " => 🚨 " + styledMountPoints;
+            if (hasRoot || hasSwap) {
+                // Style root partition and swap partitions
+                const styledMountPoints = mountPoints.map(mp => {
+                    const trimmed = mp.trim();
+                    if (trimmed === "/") {
+                        return "<b style=\"color: red;\">/</b>";
+                    } else if (trimmed.includes("[swap]")) {
+                        return "<b style=\"color: orange;\">" + trimmed + "</b>";
+                    }
+                    return trimmed;
+                }).join(",");
+                
+                const emoji = hasRoot ? "🚨" : (hasSwap ? "⚠️" : "");
+                diskInfoSpan.innerHTML = device + " => " + emoji + " " + styledMountPoints;
             }
         }
         // Initialize when DOM is ready

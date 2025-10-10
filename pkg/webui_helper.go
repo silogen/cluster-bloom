@@ -134,15 +134,46 @@ func getDeviceFromMountpoint(diskPath string) (device string, mountPoint string)
 }
 
 func getMountpointsFromDevice(device string) string {
-	shellCmd := fmt.Sprintf("awk '$1 == \"%s\" {print $2}' /proc/mounts | paste -sd,", device)
+	var mountPoints []string
+	
+	// Check for regular mount points from /proc/mounts
+	shellCmd := fmt.Sprintf("awk '$1 == \"%s\" {print $2}' /proc/mounts", device)
 	cmd := exec.Command("sh", "-c", shellCmd)
-
 	output, err := cmd.Output()
-	if err != nil {
-		LogMessage(Error, fmt.Sprintf("Failed to awk /proc/mounts for device %s: %v", device, err))
-		return ""
+	if err == nil {
+		mounts := strings.TrimSpace(string(output))
+		if mounts != "" {
+			mountPoints = append(mountPoints, strings.Split(mounts, "\n")...)
+		}
 	}
-	return strings.TrimSpace(string(output))
+	
+	// Check if device is used as swap
+	swapCmd := fmt.Sprintf("awk '$1 == \"%s\" {print \"[swap]\"}' /proc/swaps", device)
+	cmd = exec.Command("sh", "-c", swapCmd)
+	swapOutput, err := cmd.Output()
+	if err == nil {
+		swap := strings.TrimSpace(string(swapOutput))
+		if swap != "" {
+			mountPoints = append(mountPoints, swap)
+		}
+	}
+	
+	// Check partitions of the device for swap
+	lsblkCmd := fmt.Sprintf("lsblk -no NAME,FSTYPE %s 2>/dev/null | awk '$2 == \"swap\" {print \"/dev/\" $1 \" [swap]\"}'", device)
+	cmd = exec.Command("sh", "-c", lsblkCmd)
+	lsblkOutput, err := cmd.Output()
+	if err == nil {
+		partitionSwaps := strings.TrimSpace(string(lsblkOutput))
+		if partitionSwaps != "" {
+			for _, line := range strings.Split(partitionSwaps, "\n") {
+				if line != "" {
+					mountPoints = append(mountPoints, line)
+				}
+			}
+		}
+	}
+	
+	return strings.Join(mountPoints, ",")
 }
 
 func GetDisksFromSelectedConfig(longhornFromConfig string) (disks []string, mountPoints map[string]string, e error) {
