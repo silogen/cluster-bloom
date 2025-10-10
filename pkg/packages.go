@@ -199,10 +199,20 @@ func SetupClusterForge() error {
 	}
 
 	domain := viper.GetString("DOMAIN")
-	cmd = exec.Command("bash", "cluster-forge/scripts/bootstrap.sh", domain)
-	output, err = cmd.Output()
+	
+	// Get the original user when running with sudo
+	originalUser := os.Getenv("SUDO_USER")
+	if originalUser != "" {
+		// Run as the original user to avoid sudo issues with bootstrap script
+		cmd = exec.Command("sudo", "-u", originalUser, "bash", "cluster-forge/scripts/bootstrap.sh", domain)
+	} else {
+		// Fallback if not running with sudo
+		cmd = exec.Command("bash", "cluster-forge/scripts/bootstrap.sh", domain)
+	}
+	output, err = cmd.CombinedOutput()
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to install ClusterForge: %v", err))
+		LogMessage(Error, fmt.Sprintf("ClusterForge bootstrap script output: %s", string(output)))
 		return err
 	} else {
 		LogMessage(Info, fmt.Sprintf("ClusterForge deployment output: %s", output))
