@@ -227,7 +227,7 @@
                                pattern="^(/dev/[a-zA-Z0-9]+)(,/dev/[a-zA-Z0-9]+)*$|^$"
                                title="Format: /dev/xxx or comma-separated /dev/xxx,/dev/yyy">
                         <small class="help-text" style="color: #666; font-size: 12px; margin-top: 4px; display: block;">
-                            🛈 Previous Target Info: {{ .LonghornPreviousDisks }}<br>
+                            🛈 Previous Target Info: <span id="longhorn-previous-disks">{{ .LonghornPreviousDisks }}</span><br>
                             ✓ Format: /dev/sdb or /dev/sdb,/dev/sdc<br>
                             ✓ Must be valid block device paths<br>
                             ✓ Leave empty for auto-detection<br>
@@ -464,6 +464,48 @@
 
         document.getElementById('config-form').addEventListener('submit', function(e) {
             e.preventDefault();
+            // Check if any selected disk is the root device
+            const selectedDisksValue = document.getElementById("SELECTED_DISKS").value.trim();
+            if (selectedDisksValue && window.prefilledData?.root_device) {
+                const selectedDisks = selectedDisksValue.split(",").map(d => d.trim());
+                const rootDevice = window.prefilledData.root_device;
+                
+                const conflictingDisk = selectedDisks.find(disk => disk === rootDevice);
+                if (conflictingDisk) {
+                    // Show error modal for root device conflict
+                    const errorDiv = document.createElement("div");
+                    errorDiv.innerHTML = "<h3 style='color: #d32f2f;'>❌ Cannot Use Root Device</h3>" +
+                        "<p style='color: #666;'>You cannot select the root device <strong>" + rootDevice + "</strong> for Longhorn storage.</p>" +
+                        "<p style='color: #666;'>The root device contains your operating system and cannot be used for data storage.</p>" +
+                        "<p style='color: #666; font-style: italic;'>Please select different disk devices for Longhorn storage.</p>";
+                    
+                    const modal = document.createElement("div");
+                    modal.style.cssText = "position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); " +
+                        "background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); " +
+                        "z-index: 10000; max-width: 500px; max-height: 80vh; overflow-y: auto;";
+                    modal.appendChild(errorDiv);
+                    
+                    const closeBtn = document.createElement("button");
+                    closeBtn.textContent = "OK";
+                    closeBtn.style.cssText = "background: #4CAF50; color: white; border: none; padding: 10px 20px; " +
+                        "border-radius: 4px; cursor: pointer; margin-top: 15px; font-size: 16px;";
+                    closeBtn.onclick = () => {
+                        document.body.removeChild(modal);
+                        document.body.removeChild(overlay);
+                        document.getElementById("SELECTED_DISKS").focus();
+                    };
+                    modal.appendChild(closeBtn);
+                    
+                    const overlay = document.createElement("div");
+                    overlay.style.cssText = "position: fixed; top: 0; left: 0; right: 0; bottom: 0; " +
+                        "background: rgba(0,0,0,0.5); z-index: 9999;";
+                    
+                    document.body.appendChild(overlay);
+                    document.body.appendChild(modal);
+                    return;
+                }
+            }
+
 
             // First check if the form is valid according to HTML5 validation
             const form = e.target;
@@ -1021,6 +1063,33 @@
                 });
         }
 
+        // Style Longhorn disk info to highlight root partition
+        function styleLonghornDiskInfo() {
+            const diskInfoSpan = document.getElementById("longhorn-previous-disks");
+            if (!diskInfoSpan) return;
+            
+            const content = diskInfoSpan.textContent.trim();
+            if (!content || content === "unused") return;
+            
+            // Parse format: "/dev/sdd => /,/mnt/wslg/distro,/snap"
+            const parts = content.split(/s*=>s*/);
+            if (parts.length !== 2) return;
+            
+            const device = parts[0];
+            const mountPoints = parts[1].split(",");
+            
+            // Check if root partition "/" is in mount points
+            const hasRoot = mountPoints.some(mp => mp.trim() === "/");
+            
+            if (hasRoot) {
+                // Replace just the root partition "/" with styled version
+                // Replace just the root partition "/" with styled version
+                const styledMountPoints = mountPoints.map(mp =>
+                    mp.trim() === "/" ? "<b style=\"color: red;\">/</b>" : mp.trim()
+                ).join(",");
+                diskInfoSpan.innerHTML = device + " => 🚨 " + styledMountPoints;
+            }
+        }
         // Initialize when DOM is ready
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', function() {
@@ -1028,6 +1097,7 @@
                 // Don't call updateConditionals here - it's called inside loadPrefilledConfig
                 loadPrefilledConfig();
                 checkForErrors();
+                styleLonghornDiskInfo();
                 // updateProgress is called inside loadPrefilledConfig
             });
         } else {
@@ -1036,6 +1106,7 @@
             // Don't call updateConditionals here - it's called inside loadPrefilledConfig
             loadPrefilledConfig();
             checkForErrors();
+                styleLonghornDiskInfo();
             // updateProgress is called inside loadPrefilledConfig
         }
     </script>

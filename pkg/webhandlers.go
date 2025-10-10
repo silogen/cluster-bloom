@@ -23,6 +23,7 @@ import (
 	"html/template"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -127,6 +128,41 @@ func categorizeError(errorMsg string) ErrorType {
 	}
 
 	return ErrorTypeGeneral
+}
+
+func (h *WebHandlerService) AddRootDeviceToConfig() {
+	rootDisk, err := getRootDiskCmd()
+	if err != nil {
+		LogMessage(Error, fmt.Sprintf("error trying to get disk where root partition is: %v", err))
+	} else {
+		h.prefilledConfig["root_device"] = rootDisk
+	}
+}
+
+func getRootDiskCmd() (string, error) {
+	// Get the source device for root mount
+	cmd := exec.Command("findmnt", "-no", "SOURCE", "/")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+
+	device := strings.TrimSpace(string(output))
+
+	// Get the parent disk using lsblk
+	cmd = exec.Command("lsblk", "-no", "PKNAME", device)
+	output, err = cmd.Output()
+	if err != nil {
+		// If no parent, the device itself is the disk
+		return device, nil
+	}
+
+	parentDisk := strings.TrimSpace(string(output))
+	if parentDisk == "" {
+		return device, nil
+	}
+
+	return "/dev/" + parentDisk, nil
 }
 
 func (h *WebHandlerService) LoadConfigFromFile(configFile string, oneShot bool) {
