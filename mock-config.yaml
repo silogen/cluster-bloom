@@ -1,0 +1,34 @@
+# Mock Configuration for Cluster-Bloom
+# This configuration can be used with: bloom mock --config mock-config.yaml
+
+# Basic Node Configuration
+FIRST_NODE: true          # Set to true for first node, false for additional nodes
+GPU_NODE: true            # Set to true if this is a GPU node
+CONTROL_PLANE: false      # Set to true for control plane nodes (when not first node)
+
+# Join Configuration (for additional nodes)
+# JOIN_TOKEN: "K10abc123xyz456def789ghi012jkl345::server:mock-token-data"
+# SERVER_IP: "10.0.100.50"
+
+# Domain and TLS Configuration
+DOMAIN: "cluster.example.com"
+USE_CERT_MANAGER: false   # Use cert-manager for TLS certificates
+CERT_OPTION: "generate"   # Options: "generate" or "existing"
+# TLS_CERT: "/path/to/tls.crt"  # Required if CERT_OPTION is "existing"
+# TLS_KEY: "/path/to/tls.key"   # Required if CERT_OPTION is "existing"
+
+# Network Configuration
+METALLB_IP_RANGE: "192.168.1.240-192.168.1.250"
+
+# Disk Configuration
+SKIP_DISK_CHECK: false
+# SELECTED_DISKS: "/dev/nvme0n1,/dev/nvme1n1"  # Pre-select specific disks
+# LONGHORN_DISKS: "/mnt/disk1,/mnt/disk2"      # Pre-configured Longhorn disk paths
+
+# Optional: Step Control
+# DISABLED_STEPS: "SetupClusterForgeStep,CreateDomainConfigStep"  # Disable specific steps
+# ENABLED_STEPS: "ValidateArgsStep,CheckUbuntuStep"               # Only run specific steps
+
+# Optional: Advanced Configuration
+# OIDC_ENABLED: false
+# CLUSTER_FORGE_ENABLED: true
