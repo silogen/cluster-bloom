@@ -99,6 +99,7 @@ func RunStepsWithUI(steps []Step) error {
 	mux.HandleFunc("/api/steps", handlerService.StepsAPIHandler)
 	mux.HandleFunc("/api/error", handlerService.ErrorAPIHandler)
 	mux.HandleFunc("/api/config", handlerService.ConfigAPIHandler)
+	mux.HandleFunc("/api/completion-info", handlerService.CompletionInfoAPIHandler)
 	mux.HandleFunc("/configure", handlerService.ConfigWizardHandler)
 
 	handler := LocalhostOnly(mux)
@@ -217,12 +218,24 @@ func RunStepsWithUI(steps []Step) error {
 	fmt.Println()
 	if finalErr != nil {
 		fmt.Printf("Execution failed: %v\n", finalErr)
-		return finalErr
 	} else {
 		fmt.Println("Execution completed. Restart your session to enable k9s.")
 		fmt.Println("All steps completed successfully!")
 	}
 
+	fmt.Printf("\n📊 Web interface still available at %s\n", url)
+	fmt.Println("Press Ctrl+C to stop the web server and exit...")
+
+	select {
+	case err := <-serverErr:
+		if err != http.ErrServerClosed {
+			return fmt.Errorf("web server error: %v", err)
+		}
+	}
+
+	if finalErr != nil {
+		return finalErr
+	}
 	return nil
 }
 
@@ -305,6 +318,7 @@ func RunWebInterfaceWithConfig(port string, steps []Step, configFile string, one
 			mux.HandleFunc("/api/logs", handlerService.LogsAPIHandler)
 			mux.HandleFunc("/api/variables", handlerService.VariablesAPIHandler)
 			mux.HandleFunc("/api/steps", handlerService.StepsAPIHandler)
+			mux.HandleFunc("/api/completion-info", handlerService.CompletionInfoAPIHandler)
 
 			// Run installation
 			installErr := runStepsInBackground(steps, monitor)
@@ -675,6 +689,13 @@ func LogCommand(commandName string, output string) {
 	if globalWebMonitor != nil {
 		globalWebMonitor.AddLog("INFO", header, "command")
 		globalWebMonitor.AddLog("INFO", output, "command")
+	}
+}
+
+func SetVariable(name string, value interface{}) {
+	viper.Set(name, value)
+	if globalWebMonitor != nil {
+		globalWebMonitor.SetVariable(name, value)
 	}
 }
 

@@ -16,6 +16,8 @@
 package pkg
 
 import (
+	"fmt"
+	"os"
 	"time"
 
 	"github.com/spf13/viper"
@@ -141,8 +143,8 @@ var MockSetupAndCheckRocmStep = Step{
 		time.Sleep(800 * time.Millisecond)
 		LogMessage(Info, "Mock: ROCm 6.0.2 installed successfully")
 		LogMessage(Info, "Mock: Detected GPUs:\n      8   AMD Instinct MI250X")
-		viper.Set("gpu_count", 8)
-		viper.Set("gpu_model", "AMD Instinct MI250X")
+		SetVariable("gpu_count", 8)
+		SetVariable("gpu_model", "AMD Instinct MI250X")
 		return StepResult{Error: nil}
 	},
 }
@@ -156,7 +158,7 @@ var MockSetupRKE2Step = Step{
 		if viper.GetBool("FIRST_NODE") {
 			LogMessage(Info, "Mock: RKE2 v1.28.3+rke2r1 server setup complete")
 			LogMessage(Info, "Mock: Generated cluster token: K10abc123xyz...")
-			viper.Set("join_token", "K10abc123xyz456def789ghi012jkl345::server:mock-token-data")
+			SetVariable("join_token", "K10abc123xyz456def789ghi012jkl345::server:mock-token-data")
 		} else if viper.GetBool("CONTROL_PLANE") {
 			LogMessage(Info, "Mock: RKE2 control plane joined to cluster")
 		} else {
@@ -209,7 +211,7 @@ var MockSelectDrivesStep = Step{
 		// If SELECTED_DISKS is already set, use it
 		if viper.IsSet("SELECTED_DISKS") && viper.GetString("SELECTED_DISKS") != "" {
 			LogMessage(Info, "Mock: Using pre-configured disk selection")
-			viper.Set("selected_disks", []string{"/dev/nvme0n1", "/dev/nvme1n1"})
+			SetVariable("selected_disks", []string{"/dev/nvme0n1", "/dev/nvme1n1"})
 			return StepResult{Error: nil}
 		}
 
@@ -218,7 +220,7 @@ var MockSelectDrivesStep = Step{
 		LogMessage(Info, "Mock: Found unmounted disks: /dev/nvme0n1, /dev/nvme1n1, /dev/nvme2n1, /dev/nvme3n1")
 		LogMessage(Info, "Mock: Auto-selected disks for testing: /dev/nvme0n1, /dev/nvme1n1")
 
-		viper.Set("selected_disks", mockDisks[:2])
+		SetVariable("selected_disks", mockDisks[:2])
 		return StepResult{Message: "Selected disks: /dev/nvme0n1, /dev/nvme1n1"}
 	},
 }
@@ -243,7 +245,7 @@ var MockMountSelectedDrivesStep = Step{
 		LogMessage(Info, "Mock: Formatted and mounted /dev/nvme0n1 to /mnt/disk1")
 		LogMessage(Info, "Mock: Formatted and mounted /dev/nvme1n1 to /mnt/disk2")
 		LogMessage(Info, "Mock: Updated /etc/fstab for persistent mounts")
-		viper.Set("mounted_disks", []string{"/mnt/disk1", "/mnt/disk2"})
+		SetVariable("mounted_disks", []string{"/mnt/disk1", "/mnt/disk2"})
 		return StepResult{Error: nil}
 	},
 }
@@ -397,7 +399,7 @@ var MockSetupKubeConfig = Step{
 		LogMessage(Info, "Mock: Configured kubeconfig with server IP: "+mockIP)
 		LogMessage(Info, "Mock: Created ~/.kube/config for current user")
 		LogMessage(Info, "Mock: Updated PATH to include k9s")
-		viper.Set("server_ip", mockIP)
+		SetVariable("server_ip", mockIP)
 		return StepResult{Error: nil}
 	},
 }
@@ -485,22 +487,75 @@ var MockFinalOutput = Step{
 		time.Sleep(300 * time.Millisecond)
 
 		if viper.GetBool("FIRST_NODE") {
-			// Mock join token
 			mockToken := "K10abc123xyz456def789ghi012jkl345::server:mock-token-data-very-long-string"
 			mockIP := viper.GetString("server_ip")
 			if mockIP == "" {
 				mockIP = "10.0.100.50"
 			}
 
+			domain := viper.GetString("DOMAIN")
+			if domain == "" {
+				domain = "cluster.example.com"
+			}
+
+			controlPlaneCommand := fmt.Sprintf("echo -e 'FIRST_NODE: false\\nCONTROL_PLANE: true\\nJOIN_TOKEN: %s\\nSERVER_IP: %s' > bloom.yaml && sudo ./bloom --config bloom.yaml", mockToken, mockIP)
+			workerNodeCommand := fmt.Sprintf("echo -e 'FIRST_NODE: false\\nGPU_NODE: true\\nJOIN_TOKEN: %s\\nSERVER_IP: %s' > bloom.yaml && sudo ./bloom --config bloom.yaml", mockToken, mockIP)
+
+			commandsContent := fmt.Sprintf("# Additional Control Plane Node Command:\n%s\n\n# GPU Worker Node Command:\n%s\n", controlPlaneCommand, workerNodeCommand)
+
+			file, err := os.Create("additional_node_command.txt")
+			if err != nil {
+				LogMessage(Error, fmt.Sprintf("Mock: Failed to create additional_node_command.txt: %v", err))
+			} else {
+				defer file.Close()
+				_, err = file.WriteString(commandsContent)
+				if err != nil {
+					LogMessage(Error, fmt.Sprintf("Mock: Failed to write to additional_node_command.txt: %v", err))
+				}
+			}
+
+			kubeconfigContent := fmt.Sprintf(`apiVersion: v1
+clusters:
+- cluster:
+    certificate-authority-data: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJkekNDQVIyZ0F3SUJBZ0lCQURBS0JnZ3Foa2pPUFFRREFqQWpNU0V3SHdZRFZRUUREQmhyTTNNdGMyVnkKZG1WeUxXTmhRREUyT0RNME16RTFNRGN3SGhjTk1qUXhNVEUwTURjeU5UQTNXaGNOTXpReE1URXlNRGN5TlRBMwpXakFqTVNFd0h3WURWUVFEREJock0zTXRjMlZ5ZG1WeUxXTmhRREUyT0RNME16RTFNRGN3V1RBVEJnY3Foa2pPClBRSUJCZ2dxaGtqT1BRTUJCd05DQUFSNlpqUHZtcXBXRlg4WE5DQndGY0FLNHFXMXNZNmlBK0N4UzlzbDdETmMKMnJ1cTdPWk43WDNaMkwrNGlMa29vNGVXN2lSU0kwbk9URFE4eGdqcVJsbG5vMEl3UURBT0JnTlZIUThCQWY4RQpCQU1DQXFRd0R3WURWUjBUQVFIL0JBVXdBd0VCL3pBZEJnTlZIUTRFRmdRVVdHVlFGb1FhMTg4ZkNKRjZGbkZHCkxNdEduZGd3Q2dZSUtvWkl6ajBFQXdJRFNBQXdSUUloQU5HK0JlTExsZTg3eEJWdURKTHBuOGVBdEI0eUJ3emwKWlF4UU5zL1VQdTdCQWlBcGpDM2FDZmQ3SjZ3M2pYYlRKc3dvd1M4alRrSkhtb1V5SnFpdGNydjNtdz09Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0K
+    server: https://%s:6443
+  name: default
+contexts:
+- context:
+    cluster: default
+    user: default
+  name: default
+current-context: default
+kind: Config
+preferences: {}
+users:
+- name: default
+  user:
+    client-certificate-data: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJrakNDQVRlZ0F3SUJBZ0lJUVRBS0JnZ3Foa2pPUFFRREFqQWpNU0V3SHdZRFZRUUREQmhyCk0zTXRZMnhwWlc1MExXTmhRREUyT0RNME16RTFNRGN3SGhjTk1qUXhNVEUwTURjeU5UQTNXaGNOTWpVeE1URTAKTURjeU5UQTNXakFmTVIwd0d3WURWUVFERXhSeWEyVXlMV0ZrYldsdU1UWTRNelF6TVRVd056QlpNQk1HQnlxRwpTTTQ5QWdFR0NDcUdTTTQ5QXdFSEEwSUFCSDd6Z0tCNnZZNHdOeWNmUldEZ0s3ejZIaUtMSytWelNGOGFRYkpZClp5R21VRnpQWGZFdnFqRGE3bU9zb1ZQSG1zUzdZbTBZYmZRQzd1UkhnUVhqT2lpalNEQkdNQTRHQTFVZER3RUIKL3dRRUF3SUZvREFUQmdOVkhTVUVEREFLQmdnckJnRUZCUWNEQWpBZkJnTlZIU01FR0RBV2dCUVdHVlFGb1FhMQo4OGZDSkY2Rm5GR0xNdEduZGpBS0JnZ3Foa2pPUFFRREFnTkpBREJHQWlFQW5XNHFsajBGNFVrM0ZYaTRmZndCCjdkNXZLZmlSQVRnOVdSdVhGSjhOek5VQ0lRRGJSbk9NdHE2YmJQRTdMcjdoa1ZGM2VNMWVqMkRGVTdPZXE2QkYKMlRIUGc9PQotLS0tLUVORCBDRVJUSUZJQ0FURS0tLS0tCg==
+    client-key-data: LS0tLS1CRUdJTiBFQyBQUklWQVRFIEtFWS0tLS0tCk1IY0NBUUVFSUJaMjdBdlBHWG9rSzJnbmpLNkZGTzV0WjJqNXBjOGNnMUtOcFVacFBONERvQW9HQ0NxR1NNNDkKQXdFSG9VUURRZ0FFZnZPQW9IcTlqakEzSng5RllPQXJ2UG9lSW9zcjVYTklYeHBCc2xobklhWlFYTTlkOFMrcQpNTnJ1WTZ5aFU4ZWF4THRpYlJodDlBTHU1RWVCQmVNNktBPT0KLS0tLS1FTkQgRUMgUFJJVkFURSBLRVktLS0tLQo=
+`, mockIP)
+
+			kubeconfigFile, err := os.Create("mock_rke2.yaml")
+			if err != nil {
+				LogMessage(Error, fmt.Sprintf("Mock: Failed to create mock kubeconfig: %v", err))
+			} else {
+				defer kubeconfigFile.Close()
+				_, err = kubeconfigFile.WriteString(kubeconfigContent)
+				if err != nil {
+					LogMessage(Error, fmt.Sprintf("Mock: Failed to write mock kubeconfig: %v", err))
+				} else {
+					LogMessage(Info, "Mock: Generated mock kubeconfig at mock_rke2.yaml")
+				}
+			}
+
 			LogMessage(Info, "Mock: Generated join token for additional nodes")
 			LogMessage(Info, "Mock: Server IP: "+mockIP)
-			LogMessage(Info, "Mock: Additional nodes should use JOIN_TOKEN and SERVER_IP from additional_node_command.txt")
+			LogMessage(Info, "Mock: Additional nodes should use appropriate command from additional_node_command.txt")
 
-			// Set variables for the final output display
-			viper.Set("join_token", mockToken)
-			viper.Set("server_ip", mockIP)
+			SetVariable("join_token", mockToken)
+			SetVariable("server_ip", mockIP)
 
-			return StepResult{Message: "Mock: To setup additional nodes, use the command in additional_node_command.txt"}
+			return StepResult{Message: "Mock: To setup additional nodes, use the appropriate command in additional_node_command.txt"}
 		} else {
 			message := "Mock: Longhorn drive setup instructions available in longhorn_drive_setup.txt"
 			LogMessage(Info, message)
