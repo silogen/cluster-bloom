@@ -605,6 +605,77 @@ func (h *WebHandlerService) ValidationErrorAPIHandler(w http.ResponseWriter, r *
 	})
 }
 
+func (h *WebHandlerService) CompletionInfoAPIHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	currentDir, _ := os.Getwd()
+
+	controlPlaneCommand := ""
+	workerNodeCommand := ""
+	additionalNodeFile := filepath.Join(currentDir, "additional_node_command.txt")
+	if data, err := os.ReadFile(additionalNodeFile); err == nil {
+		content := string(data)
+		lines := strings.Split(content, "\n")
+
+		for i, line := range lines {
+			if strings.Contains(line, "# Additional Control Plane Node Command:") && i+1 < len(lines) {
+				controlPlaneCommand = lines[i+1]
+			} else if strings.Contains(line, "# GPU Worker Node Command:") && i+1 < len(lines) {
+				workerNodeCommand = lines[i+1]
+			}
+		}
+	}
+
+	kubeconfig := ""
+	kubeconfigPath := "/etc/rancher/rke2/rke2.yaml"
+	if data, err := os.ReadFile(kubeconfigPath); err == nil {
+		kubeconfig = string(data)
+	} else {
+		mockKubeconfigPath := filepath.Join(currentDir, "mock_rke2.yaml")
+		if data, err := os.ReadFile(mockKubeconfigPath); err == nil {
+			kubeconfig = string(data)
+		}
+	}
+
+	domain := viper.GetString("DOMAIN")
+	loginURL := ""
+	loginUser := ""
+	if domain != "" {
+		loginURL = fmt.Sprintf("https://kc.%s", domain)
+		loginUser = fmt.Sprintf("devuser@%s", domain)
+	}
+
+	initialPassword := ""
+	cmd := exec.Command("kubectl", "get", "secret", "-n", "keycloak", "keycloak-credential",
+		"-o", "jsonpath={.data.KEYCLOAK_INITIAL_ADMIN_PASSWORD}")
+	if output, err := cmd.Output(); err == nil {
+		encodedPassword := strings.TrimSpace(string(output))
+		if encodedPassword != "" {
+			decodeCmd := exec.Command("base64", "-d")
+			decodeCmd.Stdin = strings.NewReader(encodedPassword)
+			if decodedOutput, err := decodeCmd.Output(); err == nil {
+				initialPassword = strings.TrimSpace(string(decodedOutput))
+			}
+		}
+	} else {
+		initialPassword = "mock-admin-password-123"
+	}
+
+	response := map[string]interface{}{
+		"control_plane_command": controlPlaneCommand,
+		"worker_node_command":   workerNodeCommand,
+		"kubeconfig":            kubeconfig,
+		"login_url":             loginURL,
+		"login_user":            loginUser,
+		"initial_password":      initialPassword,
+		"domain":                domain,
+		"first_node":            viper.GetBool("FIRST_NODE"),
+	}
+
+	json.NewEncoder(w).Encode(response)
+}
+
 func LocalhostOnly(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		host := r.Host
