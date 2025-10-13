@@ -402,7 +402,7 @@
                         }
                     }
                     if (tlsKeyInput) {
-                        tlsKeyInput.setAttribute('pattern', '^(/[^/]+)+\\.(pem|key)$|^$');
+                        tlsKeyInput.setAttribute('pattern', '^(/[a-zA-Z0-9._-]+)+\.(pem|key)$|^$');
                         if (window.prefilledData?.tls_key) {
                             tlsKeyInput.value = window.prefilledData.tls_key;
                         }
