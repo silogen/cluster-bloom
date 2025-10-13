@@ -106,6 +106,8 @@ func installK8sTools() error {
 	cmds := [][]string{
 		{"snap", "install", "kubectl", "--classic"},
 		{"snap", "install", "k9s"},
+		{"snap", "install", "helm", "--classic"},
+		{"snap", "install", "yq"},
 	}
 
 	for _, cmd := range cmds {
@@ -196,10 +198,24 @@ func SetupClusterForge() error {
 		LogMessage(Info, "Successfully unzipped clusterforge.tar.gz")
 	}
 
-	cmd = exec.Command("sudo", "bash", "clusterforge/deploy.sh")
-	output, err = cmd.Output()
+	domain := viper.GetString("DOMAIN")
+	
+	// Get the original user when running with sudo
+	originalUser := os.Getenv("SUDO_USER")
+	
+	scriptsDir := "cluster-forge/scripts"
+	if originalUser != "" {
+		// Run as the original user to avoid sudo issues with bootstrap script
+		cmd = exec.Command("sudo", "-u", originalUser, "bash", "./bootstrap.sh", domain)
+	} else {
+		// Fallback if not running with sudo
+		cmd = exec.Command("bash", "./bootstrap.sh", domain)
+	}
+	cmd.Dir = scriptsDir
+	output, err = cmd.CombinedOutput()
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to install ClusterForge: %v", err))
+		LogMessage(Error, fmt.Sprintf("ClusterForge bootstrap script output: %s", string(output)))
 		return err
 	} else {
 		LogMessage(Info, fmt.Sprintf("ClusterForge deployment output: %s", output))

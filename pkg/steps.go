@@ -26,6 +26,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/silogen/cluster-bloom/pkg/args"
+	"github.com/silogen/cluster-bloom/pkg/sysvalidation"
 	"github.com/spf13/viper"
 )
 
@@ -36,6 +38,34 @@ var manifestFiles embed.FS
 
 //go:embed templates/*.yaml
 var templateFiles embed.FS
+
+var ValidateArgsStep = Step{
+	Id:          "ValidateArgsStep",
+	Name:        "Validate Configuration",
+	Description: "Validate all configuration arguments",
+	Action: func() StepResult {
+		if err := args.ValidateArgs(); err != nil {
+			return StepResult{
+				Error: fmt.Errorf("configuration validation failed: %v", err),
+			}
+		}
+		return StepResult{Error: nil}
+	},
+}
+
+var ValidateSystemRequirementsStep = Step{
+	Id:          "ValidateSystemRequirementsStep",
+	Name:        "Validate System Requirements",
+	Description: "Validate system resources (disk, memory, CPU, OS version, kernel modules)",
+	Action: func() StepResult {
+		if err := sysvalidation.ValidateResourceRequirements(); err != nil {
+			return StepResult{
+				Error: fmt.Errorf("system requirements validation failed: %v", err),
+			}
+		}
+		return StepResult{Error: nil}
+	},
+}
 
 var CheckUbuntuStep = Step{
 	Id:          "CheckUbuntuStep",
@@ -68,21 +98,21 @@ var InstallDependentPackagesStep = Step{
 }
 
 var CreateChronyConfigStep = Step{
-  Id:          "CreateChronyConfigStep",
-  Name:        "Create Chrony Config",
-  Description: "Create chrony config for first node and additional node cases",
-  Action: func() StepResult {
-    var err error
-    if viper.GetBool("FIRST_NODE") {
-      err = GenerateChronyConfFirst()
-    } else if viper.GetString("SERVER_IP") !="" {
-      err = GenerateChronyConfAdditional()
-    }
+	Id:          "CreateChronyConfigStep",
+	Name:        "Create Chrony Config",
+	Description: "Create chrony config for first node and additional node cases",
+	Action: func() StepResult {
+		var err error
+		if viper.GetBool("FIRST_NODE") {
+			err = GenerateChronyConfFirst()
+		} else if viper.GetString("SERVER_IP") != "" {
+			err = GenerateChronyConfAdditional()
+		}
 		if err != nil {
-          return StepResult{Error: err}
-    }
-    return StepResult{Error: nil}
-  },
+			return StepResult{Error: err}
+		}
+		return StepResult{Error: nil}
+	},
 }
 
 var OpenPortsStep = Step{
@@ -410,6 +440,24 @@ var SetupLonghornStep = Step{
 			if err != nil {
 				return StepResult{Error: err}
 			}
+			cmd := exec.Command("/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "wait", "--for=create", "--timeout=600s", "cronjob/label-and-annotate-nodes")
+			output, err := cmd.CombinedOutput()
+			if err != nil {
+				LogMessage(Error, fmt.Sprintf("Failed waiting for node annotation: %v, output: %s", err, string(output)))
+				return StepResult{Error: fmt.Errorf("failed waiting for node annotation: %w", err)}
+			}
+			cmd = exec.Command("/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "create", "job", "--from=cronjob/label-and-annotate-nodes", "label-and-annotate-nodes-initial", "-n", "default")
+			output, err = cmd.CombinedOutput()
+			if err != nil {
+				LogMessage(Error, fmt.Sprintf("Failed to trigger node annotator: %v, output: %s", err, string(output)))
+				return StepResult{Error: fmt.Errorf("failed to trigger node annotator: %w", err)}
+			}
+			cmd = exec.Command("/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "wait", "--for=jsonpath={.status.lastSuccessfulTime}", "--timeout=600s", "cronjob/label-and-annotate-nodes")
+			output, err = cmd.CombinedOutput()
+			if err != nil {
+				LogMessage(Error, fmt.Sprintf("Failed waiting for node annotation: %v, output: %s", err, string(output)))
+				return StepResult{Error: fmt.Errorf("failed waiting for node annotation: %w", err)}
+			}
 		} else {
 			return StepResult{Error: nil}
 		}
@@ -623,31 +671,34 @@ var SetupKubeConfig = Step{
 	},
 }
 
-var CreateBloomConfigMapStep = Step{
-	Id:          "CreateBloomConfigMapStep",
-	Name:        "Create Bloom ConfigMap",
-	Description: "Create a ConfigMap with bloom configuration in the default namespace",
-	Action: func() StepResult {
-		// Wait for the cluster to be ready
-		if viper.GetBool("FIRST_NODE") {
-			LogMessage(Info, "Waiting for cluster to be ready...")
-			time.Sleep(10 * time.Second)
-			err := CreateConfigMap()
-			if err != nil {
-				LogMessage(Error, fmt.Sprintf("Failed to create bloom ConfigMap: %v", err))
-				return StepResult{Error: fmt.Errorf("failed to create bloom ConfigMap: %w", err)}
+func CreateBloomConfigMapStepFunc(version string) Step {
+	return Step{
+		Id:          "CreateBloomConfigMapStep",
+		Name:        "Create Bloom ConfigMap",
+		Description: "Create a ConfigMap with bloom configuration in the default namespace",
+		Action: func() StepResult {
+			// Wait for the cluster to be ready
+			if viper.GetBool("FIRST_NODE") {
+				LogMessage(Info, "Waiting for cluster to be ready...")
+
+				time.Sleep(10 * time.Second)
+				err := CreateConfigMap(version)
+				if err != nil {
+					LogMessage(Error, fmt.Sprintf("Failed to create bloom ConfigMap: %v", err))
+					return StepResult{Error: fmt.Errorf("failed to create bloom ConfigMap: %w", err)}
+				}
+				LogMessage(Info, "Successfully created bloom ConfigMap in default namespace")
+				return StepResult{Message: "Bloom ConfigMap created successfully"}
+			} else {
+				err := CreateConfigMapPod()
+				if err != nil {
+					LogMessage(Error, fmt.Sprintf("Failed to create bloom ConfigMap Pod: %v", err))
+					return StepResult{Error: fmt.Errorf("failed to create bloom ConfigMap Pod: %w", err)}
+				}
+				return StepResult{Error: nil}
 			}
-			LogMessage(Info, "Successfully created bloom ConfigMap in default namespace")
-			return StepResult{Message: "Bloom ConfigMap created successfully"}
-		} else {
-			err := CreateConfigMapPod()
-			if err != nil {
-				LogMessage(Error, fmt.Sprintf("Failed to create bloom ConfigMap Pod: %v", err))
-				return StepResult{Error: fmt.Errorf("failed to create bloom ConfigMap Pod: %w", err)}
-			}
-			return StepResult{Error: nil}
-		}
-	},
+		},
+	}
 }
 
 var CreateDomainConfigStep = Step{
