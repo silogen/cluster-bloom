@@ -279,7 +279,7 @@
                         <label for="TLS_CERT">TLS Certificate Path *</label>
                         <div class="description">Path to TLS certificate file for ingress (PEM format).</div>
                         <input type="text" id="TLS_CERT" name="TLS_CERT" placeholder="/path/to/cert.pem"
-                               pattern="^(/[^/]+)+\.(pem|crt|cert)$|^$"
+                               pattern="^(/[a-zA-Z0-9._-]+)+\.(pem|crt|cert)$|^$"
                                title="Must be an absolute path to a .pem, .crt, or .cert file">
                         <small class="help-text" style="color: #666; font-size: 12px; margin-top: 4px; display: block;">
                             ✓ Format: Absolute path (starts with /)<br>
@@ -292,7 +292,7 @@
                         <label for="TLS_KEY">TLS Private Key Path *</label>
                         <div class="description">Path to TLS private key file for ingress (PEM format).</div>
                         <input type="text" id="TLS_KEY" name="TLS_KEY" placeholder="/path/to/key.pem"
-                               pattern="^(/[^/]+)+\.(pem|key)$|^$"
+                               pattern="^(/[a-zA-Z0-9._-]+)+\.(pem|crt|cert)$|^$"
                                title="Must be an absolute path to a .pem or .key file">
                         <small class="help-text" style="color: #666; font-size: 12px; margin-top: 4px; display: block;">
                             ✓ Format: Absolute path (starts with /)<br>
