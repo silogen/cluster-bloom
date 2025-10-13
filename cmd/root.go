@@ -63,7 +63,7 @@ var rootCmd = &cobra.Command{
 		}
 
 		// Check if bloom.log exists when no config provided
-		if cfgFile == "" {
+		if _, err := os.Stat(cfgFile); err != nil {
 			currentDir, _ := os.Getwd()
 			logPath := filepath.Join(currentDir, "bloom.log")
 			if _, err := os.Stat(logPath); err == nil {
@@ -105,11 +105,6 @@ func init() {
 }
 
 func initConfig() {
-	// Skip validation if no config file specified
-	if cfgFile == "" {
-		return
-	}
-
 	// Setup logging first so we can capture any errors
 	setupLogging()
 
@@ -460,15 +455,13 @@ func runWebInterfaceWithConfig() {
 	port := fmt.Sprintf(":%d", portNum)
 	url := fmt.Sprintf("http://127.0.0.1%s", port)
 
-	if cfgFile != "" {
-		fmt.Printf("📄 Configuration file: %s\n", cfgFile)
-		if oneShot {
-			fmt.Println("⚡ One-shot mode: will auto-proceed after loading configuration")
-		} else {
-			fmt.Println("🔄 Pre-filled configuration ready for review and confirmation")
-		}
-		fmt.Println()
+	fmt.Printf("📄 Configuration file: %s\n", cfgFile)
+	if oneShot {
+		fmt.Println("⚡ One-shot mode: will auto-proceed after loading configuration")
+	} else {
+		fmt.Println("🔄 Pre-filled configuration ready for review and confirmation")
 	}
+	fmt.Println()
 
 	fmt.Printf("🌐 Web interface starting on %s\n", url)
 	fmt.Println("📊 Configuration interface accessible only from localhost")
