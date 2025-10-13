@@ -396,7 +396,7 @@
                     tlsKeySection.classList.add('show');
                     // Restore pattern validation for visible certificate fields
                     if (tlsCertInput) {
-                        tlsCertInput.setAttribute('pattern', '^(/[^/]+)+\\.(pem|crt|cert)$|^$');
+                        tlsCertInput.setAttribute('pattern', '^(/[a-zA-Z0-9._-]+)+\.(pem|crt|cert)$|^$');
                         if (window.prefilledData?.tls_cert) {
                             tlsCertInput.value = window.prefilledData.tls_cert;
                         }
