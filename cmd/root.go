@@ -63,7 +63,7 @@ var rootCmd = &cobra.Command{
 		}
 
 		// Check if bloom.log exists when no config provided
-		if cfgFile == "" {
+		if _, err := os.Stat(cfgFile); err != nil {
 			currentDir, _ := os.Getwd()
 			logPath := filepath.Join(currentDir, "bloom.log")
 			if _, err := os.Stat(logPath); err == nil {
@@ -97,7 +97,7 @@ func init() {
 
 	cobra.OnInitialize(initConfig)
 
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is ./config.yaml)")
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "bloom.yaml", "config file (default is ./bloom.yaml)")
 	rootCmd.PersistentFlags().BoolVar(&oneShot, "one-shot", false, "skip confirmation when using --config (useful for automation)")
 	rootCmd.PersistentFlags().BoolVar(&reconfigure, "reconfigure", false, "archive existing bloom.log and start fresh configuration")
 	rootCmd.AddCommand(helpCmd)
@@ -105,36 +105,11 @@ func init() {
 }
 
 func initConfig() {
-	// Skip validation if no config file specified
-	if cfgFile == "" {
-		return
-	}
-
 	// Setup logging first so we can capture any errors
 	setupLogging()
 
-	if cfgFile != "" {
-		if _, err := os.Stat(cfgFile); os.IsNotExist(err) {
-			log.Fatalf("Config file does not exist: %s", cfgFile)
-		}
-		viper.SetConfigFile(cfgFile)
-	} else {
-		// Check for bloom.yaml in current directory first (created by webui)
-		if _, err := os.Stat("bloom.yaml"); err == nil {
-			viper.SetConfigFile("bloom.yaml")
-			log.Info("Using config file: bloom.yaml")
-		} else {
-			// Fall back to home directory config
-			home, err := os.UserHomeDir()
-			if err != nil {
-				log.Fatalf("Could not determine home directory: %v", err)
-			}
-			viper.AddConfigPath(home)
-			viper.SetConfigType("yaml")
-			viper.SetConfigName(".bloom")
-		}
-	}
-
+	viper.SetConfigFile(cfgFile)
+	viper.WatchConfig()
 	SetArguments()
 	// Set defaults from args package
 	for _, arg := range args.Arguments {
@@ -480,15 +455,13 @@ func runWebInterfaceWithConfig() {
 	port := fmt.Sprintf(":%d", portNum)
 	url := fmt.Sprintf("http://127.0.0.1%s", port)
 
-	if cfgFile != "" {
-		fmt.Printf("📄 Configuration file: %s\n", cfgFile)
-		if oneShot {
-			fmt.Println("⚡ One-shot mode: will auto-proceed after loading configuration")
-		} else {
-			fmt.Println("🔄 Pre-filled configuration ready for review and confirmation")
-		}
-		fmt.Println()
+	fmt.Printf("📄 Configuration file: %s\n", cfgFile)
+	if oneShot {
+		fmt.Println("⚡ One-shot mode: will auto-proceed after loading configuration")
+	} else {
+		fmt.Println("🔄 Pre-filled configuration ready for review and confirmation")
 	}
+	fmt.Println()
 
 	fmt.Printf("🌐 Web interface starting on %s\n", url)
 	fmt.Println("📊 Configuration interface accessible only from localhost")
@@ -520,8 +493,9 @@ This mode is useful for:
 - Users who prefer terminal-only interfaces
 `,
 	Run: func(cmd *cobra.Command, args []string) {
-		if cfgFile == "" {
-			fmt.Println("❌ CLI mode requires a configuration file. Use --config flag to specify one.")
+
+		if _, err := os.Stat(cfgFile); os.IsNotExist(err) {
+			fmt.Printf("❌ Configuration file %s does not exist. Use --config flag to specify a config file.\n", cfgFile)
 			fmt.Println("💡 Run 'bloom' without arguments to use the web interface for configuration.")
 			os.Exit(1)
 		}
