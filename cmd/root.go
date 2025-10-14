@@ -175,7 +175,6 @@ func rootSteps() []pkg.Step {
 		pkg.CleanDisksStep,
 		pkg.SetupMultipathStep,
 		pkg.UpdateModprobeStep,
-		pkg.SelectDrivesStep,
 		pkg.MountSelectedDrivesStep,
 		pkg.PrepareRKE2Step,
 		pkg.GenerateNodeLabelsStep,

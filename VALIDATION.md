@@ -75,7 +75,7 @@ The validation system runs in `initConfig()` in the following order:
 **Valid Step IDs**:
 - CheckUbuntuStep, InstallDependentPackagesStep, OpenPortsStep
 - InstallK8SToolsStep, SetupAndCheckRocmStep, SetupRKE2Step
-- CleanDisksStep, SetupMultipathStep, SelectDrivesStep
+- CleanDisksStep, SetupMultipathStep, MountSelectedDrivesStep
 - SetupLonghornStep, SetupMetallbStep, SetupClusterForgeStep
 - And 15+ additional steps (see `validStepIDs` in code)
 

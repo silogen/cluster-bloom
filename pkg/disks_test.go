@@ -114,30 +114,6 @@ func TestIsVirtualDisk(t *testing.T) {
 	}
 }
 
-func TestGetUnmountedPhysicalDisks(t *testing.T) {
-	t.Run("with SKIP_DISK_CHECK", func(t *testing.T) {
-		viper.Set("SKIP_DISK_CHECK", true)
-		disks, err := GetUnmountedPhysicalDisks()
-		if err != nil {
-			t.Errorf("Expected no error, got: %v", err)
-		}
-		if disks != nil {
-			t.Errorf("Expected nil disks with SKIP_DISK_CHECK, got: %v", disks)
-		}
-		viper.Set("SKIP_DISK_CHECK", false)
-	})
-
-	t.Run("normal operation", func(t *testing.T) {
-		disks, err := GetUnmountedPhysicalDisks()
-		if err != nil {
-			t.Errorf("Expected no error, got: %v", err)
-		}
-		if disks == nil {
-			t.Errorf("Expected non-nil disks slice")
-		}
-	})
-}
-
 func TestMountDrives(t *testing.T) {
 	if os.Getuid() != 0 {
 		t.Skip("Skipping test that requires root privileges")

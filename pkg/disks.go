@@ -225,57 +225,6 @@ func isVirtualDisk(udevOut []byte) bool {
 	return false
 }
 
-func GetUnmountedPhysicalDisks() ([]string, error) {
-	if viper.GetBool("SKIP_DISK_CHECK") == true {
-		LogMessage(Info, "Skipping disk check as SKIP_DISK_CHECK is set.")
-		return nil, nil
-	}
-	var result []string
-
-	lsblkCmd := exec.Command("lsblk", "-dn", "-o", "NAME,TYPE")
-	out, err := lsblkCmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("lsblk failed: %w", err)
-	}
-
-	scanner := bufio.NewScanner(bytes.NewReader(out))
-	for scanner.Scan() {
-		fields := strings.Fields(scanner.Text())
-		if len(fields) != 2 || fields[1] != "disk" {
-			continue
-		}
-		name := fields[0]
-		if !strings.HasPrefix(name, "nvme") && !strings.HasPrefix(name, "sd") {
-			continue
-		}
-		devPath := "/dev/" + name
-		mountCheck := exec.Command("lsblk", "-no", "MOUNTPOINT", devPath)
-		mountOut, err := mountCheck.Output()
-		if err != nil {
-			continue
-		}
-		if strings.Contains(string(mountOut), "/") {
-			continue
-		}
-		if strings.HasPrefix(name, "sd") {
-			udevCmd := exec.Command("udevadm", "info", "--query=property", "--name", devPath)
-			udevOut, err := udevCmd.Output()
-			if err != nil {
-				continue
-			}
-			if isVirtualDisk(udevOut) {
-				continue
-			}
-		}
-
-		result = append(result, devPath)
-	}
-
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("scanner error: %w", err)
-	}
-	return result, nil
-}
 func MountDrives(drives []string) error {
 	if viper.IsSet("LONGHORN_DISKS") && viper.GetString("LONGHORN_DISKS") != "" {
 		LogMessage(Info, "Skipping drive mounting as LONGHORN_DISKS is set.")

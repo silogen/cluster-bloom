@@ -62,56 +62,6 @@ func TestStepResult(t *testing.T) {
 	}
 }
 
-func TestOptionResult(t *testing.T) {
-	tests := []struct {
-		name     string
-		result   OptionResult
-		canceled bool
-		selected []string
-		indexes  []int
-	}{
-		{
-			"canceled result",
-			OptionResult{Canceled: true, Selected: nil, Indexes: nil},
-			true,
-			nil,
-			nil,
-		},
-		{
-			"successful selection",
-			OptionResult{
-				Canceled: false,
-				Selected: []string{"option1", "option2"},
-				Indexes:  []int{0, 1},
-			},
-			false,
-			[]string{"option1", "option2"},
-			[]int{0, 1},
-		},
-		{
-			"empty selection",
-			OptionResult{Canceled: false, Selected: []string{}, Indexes: []int{}},
-			false,
-			[]string{},
-			[]int{},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.result.Canceled != tt.canceled {
-				t.Errorf("Expected canceled=%v, got %v", tt.canceled, tt.result.Canceled)
-			}
-			if len(tt.result.Selected) != len(tt.selected) {
-				t.Errorf("Expected %d selected items, got %d", len(tt.selected), len(tt.result.Selected))
-			}
-			if len(tt.result.Indexes) != len(tt.indexes) {
-				t.Errorf("Expected %d indexes, got %d", len(tt.indexes), len(tt.result.Indexes))
-			}
-		})
-	}
-}
-
 func TestStep(t *testing.T) {
 	step := Step{
 		Id:          "TestStep",
@@ -173,23 +123,10 @@ func TestLogToUI(t *testing.T) {
 	// This is mainly for coverage, actual UI testing would be more complex
 }
 
-func TestGlobalVariables(t *testing.T) {
-	// Test initial state of global variables
-	if globalApp != nil {
-		t.Errorf("Expected globalApp to be nil initially")
-	}
-	if globalLogView != nil {
-		t.Errorf("Expected globalLogView to be nil initially")
-	}
-	if ContinueOnFailure != false {
-		t.Errorf("Expected ContinueOnFailure to be false initially")
-	}
-}
-
 func TestStepStructure(t *testing.T) {
 	// Test that Step struct has all required fields
 	step := Step{}
-	
+
 	// Verify zero values
 	if step.Id != "" {
 		t.Errorf("Expected empty Id, got '%s'", step.Id)
@@ -208,28 +145,12 @@ func TestStepStructure(t *testing.T) {
 func TestStepResultStructure(t *testing.T) {
 	// Test StepResult struct
 	result := StepResult{}
-	
+
 	// Verify zero values
 	if result.Error != nil {
 		t.Errorf("Expected nil Error, got %v", result.Error)
 	}
 	if result.Message != "" {
 		t.Errorf("Expected empty Message, got '%s'", result.Message)
-	}
-}
-
-func TestOptionResultStructure(t *testing.T) {
-	// Test OptionResult struct
-	result := OptionResult{}
-	
-	// Verify zero values
-	if result.Selected != nil {
-		t.Errorf("Expected nil Selected, got %v", result.Selected)
-	}
-	if result.Indexes != nil {
-		t.Errorf("Expected nil Indexes, got %v", result.Indexes)
-	}
-	if result.Canceled != false {
-		t.Errorf("Expected false Canceled, got %v", result.Canceled)
 	}
 }

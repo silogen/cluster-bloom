@@ -18,7 +18,6 @@ package pkg
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -690,92 +689,4 @@ const (
 type StepResult struct {
 	Error   error
 	Message string
-}
-type OptionResult struct {
-	Selected []string
-	Indexes  []int
-	Canceled bool
-}
-
-func ShowOptionsScreen(title string, message string, options []string, preSelected []string) (OptionResult, error) {
-	if globalWebMonitor == nil {
-		return OptionResult{Canceled: true}, errors.New("web monitor not initialized")
-	}
-
-	globalWebMonitor.AddLog("INFO", fmt.Sprintf("User selection required: %s", title), "user-input")
-	globalWebMonitor.AddLog("INFO", fmt.Sprintf("Options: %s", strings.Join(options, ", ")), "user-input")
-
-	fmt.Printf("\n=== %s ===\n", title)
-	if message != "" {
-		fmt.Printf("%s\n\n", message)
-	}
-
-	fmt.Println("Available options:")
-	for i, option := range options {
-		isPreSelected := false
-		for _, preSelect := range preSelected {
-			if option == preSelect {
-				isPreSelected = true
-				break
-			}
-		}
-		marker := " "
-		if isPreSelected {
-			marker = "✓"
-		}
-		fmt.Printf("  %d) [%s] %s\n", i+1, marker, option)
-	}
-
-	fmt.Printf("\nEnter your selections (comma-separated numbers, e.g., 1,3,5) or press Enter for pre-selected: ")
-
-	scanner := bufio.NewScanner(os.Stdin)
-	if !scanner.Scan() {
-		return OptionResult{Canceled: true}, errors.New("user canceled the selection")
-	}
-
-	input := strings.TrimSpace(scanner.Text())
-
-	var selectedItems []string
-	var selectedIndexes []int
-
-	if input == "" {
-		selectedItems = preSelected
-		for i, option := range options {
-			for _, preSelect := range preSelected {
-				if option == preSelect {
-					selectedIndexes = append(selectedIndexes, i)
-					break
-				}
-			}
-		}
-	} else {
-		parts := strings.Split(input, ",")
-		for _, part := range parts {
-			part = strings.TrimSpace(part)
-			if part == "" {
-				continue
-			}
-			if index := parseSelection(part); index >= 0 && index < len(options) {
-				selectedItems = append(selectedItems, options[index])
-				selectedIndexes = append(selectedIndexes, index)
-			}
-		}
-	}
-
-	globalWebMonitor.AddLog("INFO", fmt.Sprintf("User selected: %s", strings.Join(selectedItems, ", ")), "user-input")
-
-	return OptionResult{
-		Selected: selectedItems,
-		Indexes:  selectedIndexes,
-		Canceled: false,
-	}, nil
-}
-
-func parseSelection(s string) int {
-	if i, err := fmt.Sscanf(s, "%d", new(int)); err == nil && i == 1 {
-		var num int
-		fmt.Sscanf(s, "%d", &num)
-		return num - 1
-	}
-	return -1
 }

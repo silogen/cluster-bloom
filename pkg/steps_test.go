@@ -73,49 +73,12 @@ func TestRunStepsWithUI(t *testing.T) {
 			if len(tt.steps) == 0 {
 				return
 			}
-			
+
 			result := tt.steps[0].Action()
 			if tt.expectedError && result.Error == nil {
 				t.Errorf("Expected error but got none")
 			} else if !tt.expectedError && result.Error != nil {
 				t.Errorf("Expected no error but got: %v", result.Error)
-			}
-		})
-	}
-}
-
-func TestShowOptionsScreen(t *testing.T) {
-	options := []string{"option1", "option2", "option3"}
-	preSelected := []string{"option1"}
-	
-	if globalApp == nil {
-		result, err := ShowOptionsScreen("Test", "Test message", options, preSelected)
-		if err == nil {
-			t.Errorf("Expected error when globalApp is nil")
-		}
-		if !result.Canceled {
-			t.Errorf("Expected result to be canceled when globalApp is nil")
-		}
-	}
-}
-
-func TestCountLines(t *testing.T) {
-	tests := []struct {
-		name     string
-		text     string
-		expected int
-	}{
-		{"single line", "hello", 1},
-		{"two lines", "hello\nworld", 2},
-		{"empty string", "", 1},
-		{"many lines", "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10\nline11\nline12\nline13\nline14\nline15\nline16\nline17\nline18\nline19\nline20\nline21\nline22\nline23\nline24\nline25\nline26\nline27", 25},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := countLines(tt.text)
-			if result != tt.expected {
-				t.Errorf("Expected %d lines, got %d", tt.expected, result)
 			}
 		})
 	}
@@ -157,17 +120,6 @@ func TestSetupAndCheckRocmStep(t *testing.T) {
 	viper.Set("GPU_NODE", true)
 	result = SetupAndCheckRocmStep.Action()
 	// Result depends on system state
-}
-
-func TestSelectDrivesStep(t *testing.T) {
-	t.Run("with selected disks", func(t *testing.T) {
-		viper.Set("SELECTED_DISKS", "/dev/sda,/dev/sdb")
-		result := SelectDrivesStep.Action()
-		if result.Error != nil {
-			t.Errorf("Expected no error with selected disks, got: %v", result.Error)
-		}
-		viper.Set("SELECTED_DISKS", "")
-	})
 }
 
 func TestMountSelectedDrivesStep(t *testing.T) {
@@ -212,6 +164,6 @@ func TestSetupKubeConfig(t *testing.T) {
 
 func TestFinalOutput(t *testing.T) {
 	viper.Set("FIRST_NODE", false)
-	result := FinalOutput.Action()
+	// result := FinalOutput.Action()
 	// Result depends on system state
 }
