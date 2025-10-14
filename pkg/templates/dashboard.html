@@ -310,7 +310,7 @@
             const runningSteps = stepsArray.filter(s => s.status === 'running').length;
 
             const container = document.getElementById('overview');
-            container.innerHTML = ` + "`" + `
+            container.innerHTML = `
                 <div class="overview-card">
                     <div class="overview-number">${totalSteps}</div>
                     <div class="overview-label">Total Steps</div>
@@ -327,7 +327,7 @@
                     <div class="overview-number" style="color: #d32f2f">${failedSteps}</div>
                     <div class="overview-label">Failed</div>
                 </div>
-            ` + "`" + `;
+            `;
         }
 
         function updateSteps(steps) {
@@ -338,13 +338,13 @@
 
             // Update progress bar
             document.getElementById('overall-progress').style.width = progress + '%';
-            document.getElementById('progress-text').textContent = ` + "`" + `${completedSteps} of ${totalSteps} steps completed (${Math.round(progress)}%)` + "`" + `;
+            document.getElementById('progress-text').textContent = `${completedSteps} of ${totalSteps} steps completed (${Math.round(progress)}%)`;
 
             const container = document.getElementById('steps');
             container.innerHTML = stepsArray.map(step => {
                 const duration = step.duration || '';
-                const errorMsg = step.error ? ` + "`" + `<div class="error-msg">Error: ${step.error}</div>` + "`" + ` : '';
-                return ` + "`" + `<div class="step-entry">
+                const errorMsg = step.error ? `<div class="error-msg">Error: ${step.error}</div>` : '';
+                return `<div class="step-entry">
                     <div class="step-main">
                         <div class="step-name">${step.name}</div>
                         <div class="step-description">${step.description}</div>
@@ -352,9 +352,9 @@
                     </div>
                     <div class="step-info">
                         <span class="status ${step.status}">${step.status}</span>
-                        ${duration ? ` + "`" + `<div class="duration">${duration}</div>` + "`" + ` : ''}
+                        ${duration ? `<div class="duration">${duration}</div>` : ''}
                     </div>
-                </div>` + "`" + `;
+                </div>`;
             }).join('');
         }
 
@@ -362,23 +362,23 @@
             const container = document.getElementById('logs');
             container.innerHTML = logs.slice(0, 50).map(log => {
                 const timestamp = new Date(log.timestamp).toLocaleTimeString();
-                return ` + "`" + `<div class="log-entry">
+                return `<div class="log-entry">
                     <span class="timestamp">${timestamp}</span>
                     <span class="log-level ${log.level}">${log.level}</span>
                     <span class="step-name-log">[${log.step}]</span>
                     ${log.message}
-                </div>` + "`" + `;
+                </div>`;
             }).join('');
         }
 
         function updateVariables(variables) {
             const container = document.getElementById('variables');
             container.innerHTML = Object.values(variables).map(variable => {
-                return ` + "`" + `<div class="variable-entry">
+                return `<div class="variable-entry">
                     <span class="variable-name">${variable.name}</span>
                     <span class="variable-type">(${variable.type})</span>
                     = ${JSON.stringify(variable.value)}
-                </div>` + "`" + `;
+                </div>`;
             }).join('');
         }
 
