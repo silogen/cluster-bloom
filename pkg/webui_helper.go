@@ -30,25 +30,33 @@ func GetPriorLonghornDisks(longhornFromConfig map[string]interface{}) (disks []s
 	mountPoints = make(map[string]string)
 
 	// Step 1: Try LONGHORN_DISKS first
-	disks, mountPoints, err = GetDisksFromLonghornConfig(longhornFromConfig["longhorn_disks"].(string))
-	if err != nil {
-		LogMessage(Warn, fmt.Sprintf("GetDisksFromLonghornConfig failed: %v", err))
-	} else if len(disks) > 0 {
-		LogMessage(Info, "Successfully found disks from LONGHORN_DISKS configuration")
-		return disks, mountPoints, nil
+	if longhornDisksValue, ok := longhornFromConfig["longhorn_disks"]; ok && longhornDisksValue != nil {
+		if longhornDisksStr, ok := longhornDisksValue.(string); ok && longhornDisksStr != "" {
+			disks, mountPoints, err = GetDisksFromLonghornConfig(longhornDisksStr)
+			if err != nil {
+				LogMessage(Warn, fmt.Sprintf("GetDisksFromLonghornConfig failed: %v", err))
+			} else if len(disks) > 0 {
+				LogMessage(Info, "Successfully found disks from LONGHORN_DISKS configuration")
+				return disks, mountPoints, nil
+			}
+		}
 	}
 
 	// Step 2: Try SELECTED_DISKS if Step 1 failed or returned no disks
-	disks, mountPoints, err = GetDisksFromSelectedConfig(longhornFromConfig["selected_disks"].(string))
-	if err != nil {
-		LogMessage(Warn, fmt.Sprintf("GetDisksFromSelectedConfig failed: %v", err))
-	} else if len(disks) > 0 {
-		LogMessage(Info, "Successfully found disks from SELECTED_DISKS configuration")
-		return disks, mountPoints, nil
+	if selectedDisksValue, ok := longhornFromConfig["selected_disks"]; ok && selectedDisksValue != nil {
+		if selectedDisksStr, ok := selectedDisksValue.(string); ok && selectedDisksStr != "" {
+			disks, mountPoints, err = GetDisksFromSelectedConfig(selectedDisksStr)
+			if err != nil {
+				LogMessage(Warn, fmt.Sprintf("GetDisksFromSelectedConfig failed: %v", err))
+			} else if len(disks) > 0 {
+				LogMessage(Info, "Successfully found disks from SELECTED_DISKS configuration")
+				return disks, mountPoints, nil
+			}
+		}
 	}
 
 	// Step 3: Try bloom.log if Step 1 and 2 failed or returned no disks
-	disks, mountPoints, err = GetDisksFromBloomLog()
+	 disks, mountPoints, err = GetDisksFromBloomLog()
 	if err != nil {
 		LogMessage(Warn, fmt.Sprintf("GetDisksFromBloomLog failed: %v", err))
 	} else if len(disks) > 0 {
