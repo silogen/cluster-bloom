@@ -676,6 +676,13 @@ func CreateBloomConfigMapStepFunc(version string) Step {
 		Id:          "CreateBloomConfigMapStep",
 		Name:        "Create Bloom ConfigMap",
 		Description: "Create a ConfigMap with bloom configuration in the default namespace",
+		Skip: func() bool {
+			if !viper.GetBool("FIRST_NODE") {
+				LogMessage(Info, "Skipped for additional node")
+				return true
+			}
+			return false
+		},
 		Action: func() StepResult {
 			// Wait for the cluster to be ready
 			if viper.GetBool("FIRST_NODE") {
@@ -689,14 +696,8 @@ func CreateBloomConfigMapStepFunc(version string) Step {
 				}
 				LogMessage(Info, "Successfully created bloom ConfigMap in default namespace")
 				return StepResult{Message: "Bloom ConfigMap created successfully"}
-			} else {
-				err := CreateConfigMapPod()
-				if err != nil {
-					LogMessage(Error, fmt.Sprintf("Failed to create bloom ConfigMap Pod: %v", err))
-					return StepResult{Error: fmt.Errorf("failed to create bloom ConfigMap Pod: %w", err)}
-				}
-				return StepResult{Error: nil}
 			}
+			return StepResult{Error: nil}
 		},
 	}
 }
