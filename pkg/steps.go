@@ -1007,13 +1007,22 @@ var CleanLonghornMountsStep = Step{
 
 		// Stop Longhorn services first if they exist
 		cmd := exec.Command("sh", "-c", "sudo systemctl stop longhorn-* 2>/dev/null || true")
-		cmd.CombinedOutput()
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			LogMessage(Error, fmt.Sprintf("Failed to stop Longhorn: %v, output: %s", err, string(output)))
+			return StepResult{Error: fmt.Errorf("failed to stop Longhorn: %w", err)}
+		}
 
 		// Find and unmount all Longhorn-related mounts
 		for i := 0; i < 3; i++ {
 			// Unmount Longhorn device files
 			cmd = exec.Command("sh", "-c", "sudo umount -lf /dev/longhorn/pvc* 2>/dev/null || true")
 			cmd.CombinedOutput()
+			output, err = cmd.CombinedOutput()
+			if err != nil {
+				LogMessage(Error, fmt.Sprintf("0: %v, output: %s", err, string(output)))
+				return StepResult{Error: fmt.Errorf("0: %w", err)}
+			}
 
 			// Find /mnt/disk* mount points that contain longhorn-disk.cfg and unmount them
 			cmd = exec.Command("sh", "-c", `
@@ -1025,33 +1034,74 @@ var CleanLonghornMountsStep = Step{
 				done
 			`)
 			cmd.CombinedOutput()
+			output, err = cmd.CombinedOutput()
+			if err != nil {
+				LogMessage(Error, fmt.Sprintf("1: %v, output: %s", err, string(output)))
+				return StepResult{Error: fmt.Errorf("1: %w", err)}
+			}
 
 			// Find and unmount CSI volume mounts
 			cmd = exec.Command("sh", "-c", "sudo umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/pvc-* 2>/dev/null || true")
 			cmd.CombinedOutput()
+			output, err = cmd.CombinedOutput()
+			if err != nil {
+				LogMessage(Error, fmt.Sprintf("2: %v, output: %s", err, string(output)))
+				return StepResult{Error: fmt.Errorf("2: %w", err)}
+			}
+
 			cmd = exec.Command("sh", "-c", "sudo umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/*/mount 2>/dev/null || true")
 			cmd.CombinedOutput()
+			output, err = cmd.CombinedOutput()
+			if err != nil {
+				LogMessage(Error, fmt.Sprintf("3: %v, output: %s", err, string(output)))
+				return StepResult{Error: fmt.Errorf("3: %w", err)}
+			}
 
 			// Find and unmount CSI plugin mounts
 			cmd = exec.Command("sh", "-c", "mount | grep 'driver.longhorn.io' | awk '{print $3}' | xargs -r sudo umount -lf 2>/dev/null || true")
 			cmd.CombinedOutput()
+			output, err = cmd.CombinedOutput()
+			if err != nil {
+				LogMessage(Error, fmt.Sprintf("4: %v, output: %s", err, string(output)))
+				return StepResult{Error: fmt.Errorf("4: %w", err)}
+			}
 
 			// Find and unmount any remaining kubelet plugin mounts
 			cmd = exec.Command("sh", "-c", "sudo umount -Af /var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/* 2>/dev/null || true")
 			cmd.CombinedOutput()
+			output, err = cmd.CombinedOutput()
+			if err != nil {
+				LogMessage(Error, fmt.Sprintf("5: %v, output: %s", err, string(output)))
+				return StepResult{Error: fmt.Errorf("5: %w", err)}
+			}
 		}
 
 		// Force kill any processes using Longhorn mounts
 		cmd = exec.Command("sh", "-c", "sudo fuser -km /dev/longhorn/ 2>/dev/null || true")
 		cmd.CombinedOutput()
+		output, err = cmd.CombinedOutput()
+		if err != nil {
+			LogMessage(Error, fmt.Sprintf("6: %v, output: %s", err, string(output)))
+			return StepResult{Error: fmt.Errorf("6: %w", err)}
+		}
 
 		// Clean up device files
 		cmd = exec.Command("sh", "-c", "sudo rm -rf /dev/longhorn/pvc-* 2>/dev/null || true")
 		cmd.CombinedOutput()
+		output, err = cmd.CombinedOutput()
+		if err != nil {
+			LogMessage(Error, fmt.Sprintf("7: %v, output: %s", err, string(output)))
+			return StepResult{Error: fmt.Errorf("7: %w", err)}
+		}
 
 		// Clean up kubelet CSI mounts
 		cmd = exec.Command("sh", "-c", "sudo rm -rf /var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/* 2>/dev/null || true")
 		cmd.CombinedOutput()
+		output, err = cmd.CombinedOutput()
+		if err != nil {
+			LogMessage(Error, fmt.Sprintf("8: %v, output: %s", err, string(output)))
+			return StepResult{Error: fmt.Errorf("8: %w", err)}
+		}
 
 		LogMessage(Info, "Longhorn cleanup completed")
 		return StepResult{Error: nil}
