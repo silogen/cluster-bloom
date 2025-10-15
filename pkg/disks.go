@@ -359,7 +359,7 @@ func PersistMountedDisks(mountedMap map[string]string) error {
 			LogMessage(Debug, fmt.Sprintf("%s is already in /etc/fstab.", mountPoint))
 			continue
 		}
-		entry := fmt.Sprintf("UUID=%s %s ext4 defaults,nofail 0 2\n", uuid, mountPoint)
+		entry := fmt.Sprintf("UUID=%s %s ext4 defaults,nofail 0 2 # Added by bloom\n", uuid, mountPoint)
 		cmd = exec.Command("sudo", "tee", "-a", fstabFile)
 		cmd.Stdin = strings.NewReader(entry)
 		if err := cmd.Run(); err != nil {
@@ -479,14 +479,24 @@ func CleanFstab(targetDisks []string) error {
 
 	for _, line := range lines {
 		shouldRemove := false
-		for _, uuid := range targetUUIDs {
-			if strings.Contains(line, fmt.Sprintf("UUID=%s", uuid)) {
-				LogMessage(Info, fmt.Sprintf("Removing fstab entry: %s", strings.TrimSpace(line)))
-				shouldRemove = true
-				removedCount++
-				break
+
+		// Remove lines ending with "# Added by bloom"
+		if strings.HasSuffix(strings.TrimSpace(line), "# Added by bloom") {
+			LogMessage(Info, fmt.Sprintf("Removing bloom-added fstab entry: %s", strings.TrimSpace(line)))
+			shouldRemove = true
+			removedCount++
+		} else {
+			// Check for UUID matches
+			for _, uuid := range targetUUIDs {
+				if strings.Contains(line, fmt.Sprintf("UUID=%s", uuid)) {
+					LogMessage(Info, fmt.Sprintf("Removing fstab entry: %s", strings.TrimSpace(line)))
+					shouldRemove = true
+					removedCount++
+					break
+				}
 			}
 		}
+
 		if !shouldRemove {
 			cleanedLines = append(cleanedLines, line)
 		}
