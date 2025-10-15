@@ -1017,7 +1017,6 @@ var CleanLonghornMountsStep = Step{
 		for i := 0; i < 3; i++ {
 			// Unmount Longhorn device files
 			cmd = exec.Command("sh", "-c", "sudo umount -lf /dev/longhorn/pvc* 2>/dev/null || true")
-			cmd.CombinedOutput()
 			output, err = cmd.CombinedOutput()
 			if err != nil {
 				LogMessage(Error, fmt.Sprintf("a: %v, output: %s", err, string(output)))
@@ -1033,7 +1032,6 @@ var CleanLonghornMountsStep = Step{
 					fi
 				done
 			`)
-			cmd.CombinedOutput()
 			output, err = cmd.CombinedOutput()
 			if err != nil {
 				LogMessage(Error, fmt.Sprintf("b: %v, output: %s", err, string(output)))
@@ -1042,7 +1040,6 @@ var CleanLonghornMountsStep = Step{
 
 			// Find and unmount CSI volume mounts
 			cmd = exec.Command("sh", "-c", "sudo umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/pvc-* 2>/dev/null || true")
-			cmd.CombinedOutput()
 			output, err = cmd.CombinedOutput()
 			if err != nil {
 				LogMessage(Error, fmt.Sprintf("c: %v, output: %s", err, string(output)))
@@ -1050,7 +1047,6 @@ var CleanLonghornMountsStep = Step{
 			}
 
 			cmd = exec.Command("sh", "-c", "sudo umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/*/mount 2>/dev/null || true")
-			cmd.CombinedOutput()
 			output, err = cmd.CombinedOutput()
 			if err != nil {
 				LogMessage(Error, fmt.Sprintf("d: %v, output: %s", err, string(output)))
@@ -1059,7 +1055,6 @@ var CleanLonghornMountsStep = Step{
 
 			// Find and unmount CSI plugin mounts
 			cmd = exec.Command("sh", "-c", "mount | grep 'driver.longhorn.io' | awk '{print $3}' | xargs -r sudo umount -lf 2>/dev/null || true")
-			cmd.CombinedOutput()
 			output, err = cmd.CombinedOutput()
 			if err != nil {
 				LogMessage(Error, fmt.Sprintf("e: %v, output: %s", err, string(output)))
@@ -1068,7 +1063,6 @@ var CleanLonghornMountsStep = Step{
 
 			// Find and unmount any remaining kubelet plugin mounts
 			cmd = exec.Command("sh", "-c", "sudo umount -Af /var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/* 2>/dev/null || true")
-			cmd.CombinedOutput()
 			output, err = cmd.CombinedOutput()
 			if err != nil {
 				LogMessage(Error, fmt.Sprintf("f: %v, output: %s", err, string(output)))
@@ -1078,7 +1072,6 @@ var CleanLonghornMountsStep = Step{
 
 		// Force kill any processes using Longhorn mounts
 		cmd = exec.Command("sh", "-c", "sudo fuser -km /dev/longhorn/ 2>/dev/null || true")
-		cmd.CombinedOutput()
 		output, err = cmd.CombinedOutput()
 		if err != nil {
 			LogMessage(Error, fmt.Sprintf("g: %v, output: %s", err, string(output)))
@@ -1087,7 +1080,6 @@ var CleanLonghornMountsStep = Step{
 
 		// Clean up device files
 		cmd = exec.Command("sh", "-c", "sudo rm -rf /dev/longhorn/pvc-* 2>/dev/null || true")
-		cmd.CombinedOutput()
 		output, err = cmd.CombinedOutput()
 		if err != nil {
 			LogMessage(Error, fmt.Sprintf("h: %v, output: %s", err, string(output)))
@@ -1096,7 +1088,6 @@ var CleanLonghornMountsStep = Step{
 
 		// Clean up kubelet CSI mounts
 		cmd = exec.Command("sh", "-c", "sudo rm -rf /var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/* 2>/dev/null || true")
-		cmd.CombinedOutput()
 		output, err = cmd.CombinedOutput()
 		if err != nil {
 			LogMessage(Error, fmt.Sprintf("i: %v, output: %s", err, string(output)))
