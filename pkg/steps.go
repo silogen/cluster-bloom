@@ -443,9 +443,17 @@ var SetupLonghornStep = Step{
 			cmd := exec.Command("/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "wait", "--for=create", "--timeout=600s", "cronjob/label-and-annotate-nodes")
 			output, err := cmd.CombinedOutput()
 			if err != nil {
+				LogMessage(Error, fmt.Sprintf("Failed waiting for node annotation to be created: %v, output: %s", err, string(output)))
+				return StepResult{Error: fmt.Errorf("failed waiting for node annotation to be created: %w", err)}
+			}
+
+			cmd = exec.Command("/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "wait", "--for=condition=complete", "--timeout=600s", "cronjob/label-and-annotate-nodes")
+			output, err = cmd.CombinedOutput()
+			if err != nil {
 				LogMessage(Error, fmt.Sprintf("Failed waiting for node annotation: %v, output: %s", err, string(output)))
 				return StepResult{Error: fmt.Errorf("failed waiting for node annotation: %w", err)}
 			}
+
 			cmd = exec.Command("/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "create", "job", "--from=cronjob/label-and-annotate-nodes", "label-and-annotate-nodes-initial", "-n", "default")
 			output, err = cmd.CombinedOutput()
 			if err != nil {
