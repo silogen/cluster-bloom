@@ -1006,97 +1006,90 @@ var CleanLonghornMountsStep = Step{
 		LogMessage(Info, "Cleaning Longhorn mounts and PVCs")
 
 		// Stop Longhorn services first if they exist
-		cmd := exec.Command("sh", "-c", "sudo systemctl stop longhorn-* 2>/dev/null || true")
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			LogMessage(Error, fmt.Sprintf("Failed to stop Longhorn: %v, output: %s", err, string(output)))
-			return StepResult{Error: fmt.Errorf("failed to stop Longhorn: %w", err)}
+		stepResult := shellCmdHelper("sudo systemctl stop longhorn-* 2>/dev/null || true")
+		if stepResult.Error != nil {
+			return stepResult
 		}
 
 		// Find and unmount all Longhorn-related mounts
 		for i := 0; i < 3; i++ {
 			// Unmount Longhorn device files
-			cmd = exec.Command("sh", "-c", "sudo umount -lf /dev/longhorn/pvc* 2>/dev/null || true")
-			output, err = cmd.CombinedOutput()
-			if err != nil {
-				LogMessage(Error, fmt.Sprintf("a: %v, output: %s", err, string(output)))
-				return StepResult{Error: fmt.Errorf("a: %w", err)}
+			stepResult = shellCmdHelper("sudo umount -lf /dev/longhorn/pvc* 2>/dev/null || true")
+			if stepResult.Error != nil {
+				return stepResult
 			}
 
 			// Find /mnt/disk* mount points that contain longhorn-disk.cfg and unmount them
-			cmd = exec.Command("sh", "-c", `
+			shellCmd := `
 				for mount_point in /mnt/disk*; do
 					if [ -d "$mount_point" ] && find "$mount_point" -name "longhorn-disk.cfg" 2>/dev/null | grep -q .; then
 						echo "Found longhorn-disk.cfg in $mount_point, unmounting..."
 						sudo umount -lf "$mount_point" 2>/dev/null || true
 					fi
 				done
-			`)
-			output, err = cmd.CombinedOutput()
-			if err != nil {
-				LogMessage(Error, fmt.Sprintf("b: %v, output: %s", err, string(output)))
-				return StepResult{Error: fmt.Errorf("b: %w", err)}
+			`
+			stepResult = shellCmdHelper(shellCmd)
+			if stepResult.Error != nil {
+				return stepResult
 			}
 
 			// Find and unmount CSI volume mounts
-			cmd = exec.Command("sh", "-c", "sudo umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/pvc-* 2>/dev/null || true")
-			output, err = cmd.CombinedOutput()
-			if err != nil {
-				LogMessage(Error, fmt.Sprintf("c: %v, output: %s", err, string(output)))
-				return StepResult{Error: fmt.Errorf("c: %w", err)}
+			stepResult = shellCmdHelper("sudo umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/pvc-* 2>/dev/null || true")
+			if stepResult.Error != nil {
+				return stepResult
 			}
 
-			cmd = exec.Command("sh", "-c", "sudo umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/*/mount 2>/dev/null || true")
-			output, err = cmd.CombinedOutput()
-			if err != nil {
-				LogMessage(Error, fmt.Sprintf("d: %v, output: %s", err, string(output)))
-				return StepResult{Error: fmt.Errorf("d: %w", err)}
+			stepResult = shellCmdHelper("sudo umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/*/mount 2>/dev/null || true")
+			if stepResult.Error != nil {
+				return stepResult
 			}
 
 			// Find and unmount CSI plugin mounts
-			cmd = exec.Command("sh", "-c", "mount | grep 'driver.longhorn.io' | awk '{print $3}' | xargs -r sudo umount -lf 2>/dev/null || true")
-			output, err = cmd.CombinedOutput()
-			if err != nil {
-				LogMessage(Error, fmt.Sprintf("e: %v, output: %s", err, string(output)))
-				return StepResult{Error: fmt.Errorf("e: %w", err)}
+			stepResult = shellCmdHelper("mount | grep 'driver.longhorn.io' | awk '{print $3}' | xargs -r sudo umount -lf 2>/dev/null || true")
+			if stepResult.Error != nil {
+				return stepResult
 			}
 
 			// Find and unmount any remaining kubelet plugin mounts
-			cmd = exec.Command("sh", "-c", "sudo umount -Af /var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/* 2>/dev/null || true")
-			output, err = cmd.CombinedOutput()
-			if err != nil {
-				LogMessage(Error, fmt.Sprintf("f: %v, output: %s", err, string(output)))
-				return StepResult{Error: fmt.Errorf("f: %w", err)}
+			stepResult = shellCmdHelper("sudo umount -Af /var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/* 2>/dev/null || true")
+			if stepResult.Error != nil {
+				return stepResult
 			}
 		}
 
 		// Force kill any processes using Longhorn mounts
-		cmd = exec.Command("sh", "-c", "sudo fuser -km /dev/longhorn/ 2>/dev/null || true")
-		output, err = cmd.CombinedOutput()
-		if err != nil {
-			LogMessage(Error, fmt.Sprintf("g: %v, output: %s", err, string(output)))
-			return StepResult{Error: fmt.Errorf("g: %w", err)}
+		stepResult = shellCmdHelper("sudo fuser -km /dev/longhorn/ 2>/dev/null || true")
+		if stepResult.Error != nil {
+			return stepResult
 		}
 
 		// Clean up device files
-		cmd = exec.Command("sh", "-c", "sudo rm -rf /dev/longhorn/pvc-* 2>/dev/null || true")
-		output, err = cmd.CombinedOutput()
-		if err != nil {
-			LogMessage(Error, fmt.Sprintf("h: %v, output: %s", err, string(output)))
-			return StepResult{Error: fmt.Errorf("h: %w", err)}
+		stepResult = shellCmdHelper("sudo rm -rf /dev/longhorn/pvc-* 2>/dev/null || true")
+		if stepResult.Error != nil {
+			return stepResult
 		}
 
 		// Clean up kubelet CSI mounts
-		cmd = exec.Command("sh", "-c", "sudo rm -rf /var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/* 2>/dev/null || true")
-		output, err = cmd.CombinedOutput()
-		if err != nil {
-			LogMessage(Error, fmt.Sprintf("i: %v, output: %s", err, string(output)))
-			return StepResult{Error: fmt.Errorf("i: %w", err)}
+		stepResult = shellCmdHelper("sudo rm -rf /var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/* 2>/dev/null || true")
+		if stepResult.Error != nil {
+			return stepResult
 		}
 
 		LogMessage(Info, "Longhorn cleanup completed")
 		return StepResult{Error: nil}
 	},
+}
+
+func shellCmdHelper(shellCmd string) StepResult {
+	cmd := exec.Command("sh", "-c", shellCmd)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		LogMessage(Error, fmt.Sprintf("Error running command %s: %v, output: %s", shellCmd, err, string(output)))
+		return StepResult{Error: fmt.Errorf("error running %s: %w", shellCmd, err)}
+	} else {
+		LogMessage(Debug, fmt.Sprint("Success running %s", shellCmd))
+	}
+	return StepResult{Error: nil}
 }
 
 var UninstallRKE2Step = Step{
