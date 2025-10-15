@@ -121,26 +121,35 @@ func TestMountDrives(t *testing.T) {
 
 	t.Run("with LONGHORN_DISKS set", func(t *testing.T) {
 		viper.Set("LONGHORN_DISKS", "/dev/sda")
-		err := MountDrives([]string{"/dev/sda"})
+		mountedMap, err := MountDrives([]string{"/dev/sda"})
 		if err != nil {
 			t.Errorf("Expected no error with LONGHORN_DISKS set, got: %v", err)
+		}
+		if mountedMap != nil {
+			t.Errorf("Expected nil mountedMap with LONGHORN_DISKS set, got: %v", mountedMap)
 		}
 		viper.Set("LONGHORN_DISKS", "")
 	})
 
 	t.Run("with SKIP_DISK_CHECK", func(t *testing.T) {
 		viper.Set("SKIP_DISK_CHECK", true)
-		err := MountDrives([]string{"/dev/sda"})
+		mountedMap, err := MountDrives([]string{"/dev/sda"})
 		if err != nil {
 			t.Errorf("Expected no error with SKIP_DISK_CHECK, got: %v", err)
+		}
+		if mountedMap != nil {
+			t.Errorf("Expected nil mountedMap with SKIP_DISK_CHECK, got: %v", mountedMap)
 		}
 		viper.Set("SKIP_DISK_CHECK", false)
 	})
 
 	t.Run("empty drives list", func(t *testing.T) {
-		err := MountDrives([]string{})
+		mountedMap, err := MountDrives([]string{})
 		if err != nil {
 			t.Errorf("Expected no error with empty drives list, got: %v", err)
+		}
+		if len(mountedMap) != 0 {
+			t.Errorf("Expected empty mountedMap, got: %v", mountedMap)
 		}
 	})
 }
@@ -152,7 +161,7 @@ func TestPersistMountedDisks(t *testing.T) {
 
 	t.Run("with LONGHORN_DISKS set", func(t *testing.T) {
 		viper.Set("LONGHORN_DISKS", "/dev/sda")
-		err := PersistMountedDisks()
+		err := PersistMountedDisks(map[string]string{})
 		if err != nil {
 			t.Errorf("Expected no error with LONGHORN_DISKS set, got: %v", err)
 		}
@@ -161,11 +170,18 @@ func TestPersistMountedDisks(t *testing.T) {
 
 	t.Run("with SKIP_DISK_CHECK", func(t *testing.T) {
 		viper.Set("SKIP_DISK_CHECK", true)
-		err := PersistMountedDisks()
+		err := PersistMountedDisks(map[string]string{})
 		if err != nil {
 			t.Errorf("Expected no error with SKIP_DISK_CHECK, got: %v", err)
 		}
 		viper.Set("SKIP_DISK_CHECK", false)
+	})
+
+	t.Run("with empty mountedMap", func(t *testing.T) {
+		err := PersistMountedDisks(map[string]string{})
+		if err != nil {
+			t.Errorf("Expected no error with empty mountedMap, got: %v", err)
+		}
 	})
 }
 

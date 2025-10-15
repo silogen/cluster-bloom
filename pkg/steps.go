@@ -304,19 +304,31 @@ var MountSelectedDrivesStep = Step{
 			return StepResult{Error: nil}
 		}
 
-		mountError := MountDrives(selectedDisks)
+		mountedMap, mountError := MountDrives(selectedDisks)
 		if mountError != nil {
 			return StepResult{
 				Error: fmt.Errorf("error mounting disks: %v", mountError),
 			}
 		}
-		persistError := PersistMountedDisks()
+		persistError := PersistMountedDisks(mountedMap)
 		if persistError != nil {
 			return StepResult{
 				Error: fmt.Errorf("error persisting mounted disks: %v", persistError),
 			}
 		}
-		LogMessage(Info, fmt.Sprintf("Mounted and persisted disks: %v", selectedDisks))
+
+		// Set LONGHORN_DISKS to the comma-separated list of mounted directories
+		if len(mountedMap) > 0 {
+			var mountedDirs []string
+			for mountPoint := range mountedMap {
+				mountedDirs = append(mountedDirs, mountPoint)
+			}
+			longhornDisks := strings.Join(mountedDirs, ",")
+			viper.Set("LONGHORN_DISKS", longhornDisks)
+			LogMessage(Info, fmt.Sprintf("Set LONGHORN_DISKS to: %s", longhornDisks))
+		}
+
+		LogMessage(Info, fmt.Sprintf("Mounted %d disks: %v", len(mountedMap), mountedMap))
 		return StepResult{Error: nil}
 	},
 }

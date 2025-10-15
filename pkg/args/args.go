@@ -203,12 +203,16 @@ func ValidateSkipDiskCheckConsistency(skipDiskCheckStr string) error {
 
 // ValidateLonghornDisksArg validates LONGHORN_DISKS configuration
 func ValidateLonghornDisksArg(disks string) error {
-	// If LONGHORN_DISKS is set, SELECTED_DISKS must be empty
-	if disks != "" {
-		selectedDisks := viper.GetString("SELECTED_DISKS")
-		if selectedDisks != "" {
-			return fmt.Errorf("LONGHORN_DISKS and SELECTED_DISKS cannot both be set - use one or the other")
-		}
+	selectedDisks := viper.GetString("SELECTED_DISKS")
+
+	// Both cannot be set
+	if disks != "" && selectedDisks != "" {
+		return fmt.Errorf("LONGHORN_DISKS and SELECTED_DISKS cannot both be set - use one or the other")
+	}
+
+	// At least one must be set
+	if disks == "" && selectedDisks == "" {
+		return fmt.Errorf("either LONGHORN_DISKS or SELECTED_DISKS must be set")
 	}
 
 	return nil

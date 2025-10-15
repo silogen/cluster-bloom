@@ -447,12 +447,14 @@ func TestValidateLonghornDisksArg(t *testing.T) {
 		longhornDisks string
 		selectedDisks string
 		wantErr       bool
+		errorContains string
 	}{
 		{
-			name:          "Both empty - valid",
+			name:          "Both empty - invalid",
 			longhornDisks: "",
 			selectedDisks: "",
-			wantErr:       false,
+			wantErr:       true,
+			errorContains: "either LONGHORN_DISKS or SELECTED_DISKS must be set",
 		},
 		{
 			name:          "LONGHORN_DISKS set, SELECTED_DISKS empty - valid",
@@ -471,12 +473,14 @@ func TestValidateLonghornDisksArg(t *testing.T) {
 			longhornDisks: "/mnt/disk1",
 			selectedDisks: "/dev/sdb",
 			wantErr:       true,
+			errorContains: "LONGHORN_DISKS and SELECTED_DISKS cannot both be set",
 		},
 		{
 			name:          "Both set with multiple disks - invalid",
 			longhornDisks: "/mnt/disk1,/mnt/disk2",
 			selectedDisks: "/dev/sdb,/dev/sdc",
 			wantErr:       true,
+			errorContains: "LONGHORN_DISKS and SELECTED_DISKS cannot both be set",
 		},
 	}
 
@@ -490,10 +494,9 @@ func TestValidateLonghornDisksArg(t *testing.T) {
 				t.Errorf("ValidateLonghornDisksArg() error = %v, wantErr %v", err, tt.wantErr)
 			}
 
-			if err != nil && tt.wantErr {
-				expectedMsg := "LONGHORN_DISKS and SELECTED_DISKS cannot both be set"
-				if !strings.Contains(err.Error(), expectedMsg) {
-					t.Errorf("ValidateLonghornDisksArg() error message = %v, should contain %v", err.Error(), expectedMsg)
+			if err != nil && tt.wantErr && tt.errorContains != "" {
+				if !strings.Contains(err.Error(), tt.errorContains) {
+					t.Errorf("ValidateLonghornDisksArg() error message = %v, should contain %v", err.Error(), tt.errorContains)
 				}
 			}
 		})
