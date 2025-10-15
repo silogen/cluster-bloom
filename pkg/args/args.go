@@ -203,15 +203,13 @@ func ValidateSkipDiskCheckConsistency(skipDiskCheckStr string) error {
 
 // ValidateLonghornDisksArg validates LONGHORN_DISKS configuration
 func ValidateLonghornDisksArg(disks string) error {
-	// Use the same logic as the existing validation in root.go
-	// longhornDiskString := pkg.ParseLonghornDiskConfig()
-	// if len(longhornDiskString) > 63 {
-	// 	return fmt.Errorf("LONGHORN_DISKS configuration too long (%d characters), maximum 63 characters allowed. Parsed string: %s",
-	// 		len(longhornDiskString), longhornDiskString)
-	// }
-	// if strings.Contains(longhornDiskString, "/") {
-	// 	return fmt.Errorf("LONGHORN_DISKS must not contain slashes. Parsed string: %s", longhornDiskString)
-	// }
+	// If LONGHORN_DISKS is set, SELECTED_DISKS must be empty
+	if disks != "" {
+		selectedDisks := viper.GetString("SELECTED_DISKS")
+		if selectedDisks != "" {
+			return fmt.Errorf("LONGHORN_DISKS and SELECTED_DISKS cannot both be set - use one or the other")
+		}
+	}
 
 	return nil
 }

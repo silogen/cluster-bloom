@@ -115,17 +115,19 @@ func SetArguments() {
 			Validators:  []func(value string) error{args.ValidateSkipDiskCheckConsistency},
 		},
 		{
-			Key:         "LONGHORN_DISKS",
-			Default:     "",
-			Description: "Comma-separated list of disk paths to use for Longhorn.",
-			Type:        "string",
-			Validators:  []func(value string) error{args.ValidateLonghornDisksArg},
+			Key:          "LONGHORN_DISKS",
+			Default:      "",
+			Description:  "Comma-separated list of disk paths to use for Longhorn.",
+			Type:         "string",
+			Validators:   []func(value string) error{args.ValidateLonghornDisksArg},
+			Dependencies: "SKIP_DISK_CHECK=false",
 		},
 		{
-			Key:         "SELECTED_DISKS",
-			Default:     "",
-			Description: "Comma-separated list of disk devices. Example: \"/dev/sdb,/dev/sdc\".",
-			Type:        "string",
+			Key:          "SELECTED_DISKS",
+			Default:      "",
+			Description:  "Comma-separated list of disk devices. Example: \"/dev/sdb,/dev/sdc\".",
+			Type:         "string",
+			Dependencies: "SKIP_DISK_CHECK=false",
 		},
 
 		// External component URLs

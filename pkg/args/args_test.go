@@ -432,6 +432,74 @@ func TestValidateArgs(t *testing.T) {
 	}
 }
 
+func TestValidateLonghornDisksArg(t *testing.T) {
+	// Save original config
+	originalViper := viper.AllSettings()
+	defer func() {
+		viper.Reset()
+		for k, v := range originalViper {
+			viper.Set(k, v)
+		}
+	}()
+
+	tests := []struct {
+		name          string
+		longhornDisks string
+		selectedDisks string
+		wantErr       bool
+	}{
+		{
+			name:          "Both empty - valid",
+			longhornDisks: "",
+			selectedDisks: "",
+			wantErr:       false,
+		},
+		{
+			name:          "LONGHORN_DISKS set, SELECTED_DISKS empty - valid",
+			longhornDisks: "/mnt/disk1,/mnt/disk2",
+			selectedDisks: "",
+			wantErr:       false,
+		},
+		{
+			name:          "LONGHORN_DISKS empty, SELECTED_DISKS set - valid",
+			longhornDisks: "",
+			selectedDisks: "/dev/sdb,/dev/sdc",
+			wantErr:       false,
+		},
+		{
+			name:          "Both set - invalid",
+			longhornDisks: "/mnt/disk1",
+			selectedDisks: "/dev/sdb",
+			wantErr:       true,
+		},
+		{
+			name:          "Both set with multiple disks - invalid",
+			longhornDisks: "/mnt/disk1,/mnt/disk2",
+			selectedDisks: "/dev/sdb,/dev/sdc",
+			wantErr:       true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			viper.Reset()
+			viper.Set("SELECTED_DISKS", tt.selectedDisks)
+
+			err := ValidateLonghornDisksArg(tt.longhornDisks)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateLonghornDisksArg() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			if err != nil && tt.wantErr {
+				expectedMsg := "LONGHORN_DISKS and SELECTED_DISKS cannot both be set"
+				if !strings.Contains(err.Error(), expectedMsg) {
+					t.Errorf("ValidateLonghornDisksArg() error message = %v, should contain %v", err.Error(), expectedMsg)
+				}
+			}
+		})
+	}
+}
+
 func TestGenerateArgsHelp(t *testing.T) {
 	help := GenerateArgsHelp()
 

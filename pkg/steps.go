@@ -298,7 +298,7 @@ var MountSelectedDrivesStep = Step{
 		return false
 	},
 	Action: func() StepResult {
-		selectedDisks := viper.GetStringSlice("selected_disks")
+		selectedDisks := strings.Split(viper.GetString("SELECTED_DISKS"), ",")
 		if len(selectedDisks) == 0 {
 			LogMessage(Info, "No disks selected for mounting")
 			return StepResult{Error: nil}
