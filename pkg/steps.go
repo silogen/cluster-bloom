@@ -1020,8 +1020,8 @@ var CleanLonghornMountsStep = Step{
 			cmd.CombinedOutput()
 			output, err = cmd.CombinedOutput()
 			if err != nil {
-				LogMessage(Error, fmt.Sprintf("0: %v, output: %s", err, string(output)))
-				return StepResult{Error: fmt.Errorf("0: %w", err)}
+				LogMessage(Error, fmt.Sprintf("a: %v, output: %s", err, string(output)))
+				return StepResult{Error: fmt.Errorf("a: %w", err)}
 			}
 
 			// Find /mnt/disk* mount points that contain longhorn-disk.cfg and unmount them
@@ -1036,8 +1036,8 @@ var CleanLonghornMountsStep = Step{
 			cmd.CombinedOutput()
 			output, err = cmd.CombinedOutput()
 			if err != nil {
-				LogMessage(Error, fmt.Sprintf("1: %v, output: %s", err, string(output)))
-				return StepResult{Error: fmt.Errorf("1: %w", err)}
+				LogMessage(Error, fmt.Sprintf("b: %v, output: %s", err, string(output)))
+				return StepResult{Error: fmt.Errorf("b: %w", err)}
 			}
 
 			// Find and unmount CSI volume mounts
@@ -1045,16 +1045,16 @@ var CleanLonghornMountsStep = Step{
 			cmd.CombinedOutput()
 			output, err = cmd.CombinedOutput()
 			if err != nil {
-				LogMessage(Error, fmt.Sprintf("2: %v, output: %s", err, string(output)))
-				return StepResult{Error: fmt.Errorf("2: %w", err)}
+				LogMessage(Error, fmt.Sprintf("c: %v, output: %s", err, string(output)))
+				return StepResult{Error: fmt.Errorf("c: %w", err)}
 			}
 
 			cmd = exec.Command("sh", "-c", "sudo umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/*/mount 2>/dev/null || true")
 			cmd.CombinedOutput()
 			output, err = cmd.CombinedOutput()
 			if err != nil {
-				LogMessage(Error, fmt.Sprintf("3: %v, output: %s", err, string(output)))
-				return StepResult{Error: fmt.Errorf("3: %w", err)}
+				LogMessage(Error, fmt.Sprintf("d: %v, output: %s", err, string(output)))
+				return StepResult{Error: fmt.Errorf("d: %w", err)}
 			}
 
 			// Find and unmount CSI plugin mounts
@@ -1062,8 +1062,8 @@ var CleanLonghornMountsStep = Step{
 			cmd.CombinedOutput()
 			output, err = cmd.CombinedOutput()
 			if err != nil {
-				LogMessage(Error, fmt.Sprintf("4: %v, output: %s", err, string(output)))
-				return StepResult{Error: fmt.Errorf("4: %w", err)}
+				LogMessage(Error, fmt.Sprintf("e: %v, output: %s", err, string(output)))
+				return StepResult{Error: fmt.Errorf("e: %w", err)}
 			}
 
 			// Find and unmount any remaining kubelet plugin mounts
@@ -1071,8 +1071,8 @@ var CleanLonghornMountsStep = Step{
 			cmd.CombinedOutput()
 			output, err = cmd.CombinedOutput()
 			if err != nil {
-				LogMessage(Error, fmt.Sprintf("5: %v, output: %s", err, string(output)))
-				return StepResult{Error: fmt.Errorf("5: %w", err)}
+				LogMessage(Error, fmt.Sprintf("f: %v, output: %s", err, string(output)))
+				return StepResult{Error: fmt.Errorf("f: %w", err)}
 			}
 		}
 
@@ -1081,8 +1081,8 @@ var CleanLonghornMountsStep = Step{
 		cmd.CombinedOutput()
 		output, err = cmd.CombinedOutput()
 		if err != nil {
-			LogMessage(Error, fmt.Sprintf("6: %v, output: %s", err, string(output)))
-			return StepResult{Error: fmt.Errorf("6: %w", err)}
+			LogMessage(Error, fmt.Sprintf("g: %v, output: %s", err, string(output)))
+			return StepResult{Error: fmt.Errorf("g: %w", err)}
 		}
 
 		// Clean up device files
@@ -1090,8 +1090,8 @@ var CleanLonghornMountsStep = Step{
 		cmd.CombinedOutput()
 		output, err = cmd.CombinedOutput()
 		if err != nil {
-			LogMessage(Error, fmt.Sprintf("7: %v, output: %s", err, string(output)))
-			return StepResult{Error: fmt.Errorf("7: %w", err)}
+			LogMessage(Error, fmt.Sprintf("h: %v, output: %s", err, string(output)))
+			return StepResult{Error: fmt.Errorf("h: %w", err)}
 		}
 
 		// Clean up kubelet CSI mounts
@@ -1099,8 +1099,8 @@ var CleanLonghornMountsStep = Step{
 		cmd.CombinedOutput()
 		output, err = cmd.CombinedOutput()
 		if err != nil {
-			LogMessage(Error, fmt.Sprintf("8: %v, output: %s", err, string(output)))
-			return StepResult{Error: fmt.Errorf("8: %w", err)}
+			LogMessage(Error, fmt.Sprintf("i: %v, output: %s", err, string(output)))
+			return StepResult{Error: fmt.Errorf("i: %w", err)}
 		}
 
 		LogMessage(Info, "Longhorn cleanup completed")
