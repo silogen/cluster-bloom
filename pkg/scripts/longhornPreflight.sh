@@ -1,5 +1,4 @@
 #!/bin/bash
-set -e  # Exit on error for all commands except the preflight check
 
 # Configuration variables
 LonghornVersion=v1.10.0
