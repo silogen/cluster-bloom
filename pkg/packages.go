@@ -183,7 +183,7 @@ func SetupClusterForge() error {
 	cmd := exec.Command("wget", url, "-O", "clusterforge.tar.gz")
 	output, err := cmd.Output()
 	if err != nil {
-		LogMessage(Error, fmt.Sprintf("Failed to download ClusterForge: %v", err))
+		LogMessage(Error, fmt.Sprintf("Failed to download ClusterForge: %v, output: %v", err, output))
 		return err
 	} else {
 		LogMessage(Info, "Successfully downloaded ClusterForge")
@@ -192,17 +192,26 @@ func SetupClusterForge() error {
 	cmd = exec.Command("tar", "-xzvf", "clusterforge.tar.gz")
 	output, err = cmd.Output()
 	if err != nil {
-		LogMessage(Error, fmt.Sprintf("Failed to unzip clusterforge.tar.gz: %v", err))
+		LogMessage(Error, fmt.Sprintf("Failed to unzip clusterforge.tar.gz: %v, output %v", err, output))
 		return err
 	} else {
 		LogMessage(Info, "Successfully unzipped clusterforge.tar.gz")
 	}
 
 	domain := viper.GetString("DOMAIN")
-	
+
 	// Get the original user when running with sudo
 	originalUser := os.Getenv("SUDO_USER")
-	
+
+	cmd = exec.Command("sudo", "chown", "-R", fmt.Sprintf("%s:%s", originalUser, originalUser), "cluster-forge")
+	output, err = cmd.Output()
+	if err != nil {
+		LogMessage(Error, fmt.Sprintf("Failed to change ownership of Clusterforge folder: %v, output %v", err, output))
+		return err
+	} else {
+		LogMessage(Info, fmt.Sprintf("Successfully updated ownership of Clusterforge folder to %s", originalUser))
+	}
+
 	scriptsDir := "cluster-forge/scripts"
 	if originalUser != "" {
 		// Run as the original user to avoid sudo issues with bootstrap script
@@ -220,5 +229,23 @@ func SetupClusterForge() error {
 	} else {
 		LogMessage(Info, fmt.Sprintf("ClusterForge deployment output: %s", output))
 	}
+	return nil
+}
+
+func LonghornPreflightCheck() error {
+	scriptPath := filepath.Join("pkg", "scripts", "longhornPreflight.sh")
+
+	cmd := exec.Command("bash", scriptPath)
+	cmd.Env = os.Environ()
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	err := cmd.Run()
+	if err != nil {
+		LogMessage(Error, fmt.Sprintf("Longhorn preflight check failed: %v", err))
+		return err
+	}
+
+	LogMessage(Info, "Longhorn preflight check completed successfully")
 	return nil
 }
