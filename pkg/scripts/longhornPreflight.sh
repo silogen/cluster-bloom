@@ -60,7 +60,7 @@ while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
     
     # Run the preflight check (don't exit on failure due to set -e)
     set +e
-    longhornctl check preflight
+    longhornctl check preflight --namespace=longhorn --kubeconfig=$HOME/.kube/config
     PREFLIGHT_EXIT_CODE=$?
     set -e
     
