@@ -203,7 +203,7 @@ func SetupClusterForge() error {
 	// Get the original user when running with sudo
 	originalUser := os.Getenv("SUDO_USER")
 
-	cmd = exec.Command(fmt.Sprintf("sudo chown -R %s:%s cluster-forge", originalUser, originalUser))
+	cmd = exec.Command("sudo", "chown", "-R", fmt.Sprintf("%s:%s", originalUser, originalUser), "cluster-forge")
 	output, err = cmd.Output()
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to change ownership of Clusterforge folder: %v, output %v", err, output))
