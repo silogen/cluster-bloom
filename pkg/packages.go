@@ -27,6 +27,9 @@ import (
 	"github.com/spf13/viper"
 )
 
+//go:embed scripts/longhornPreflight.sh
+var longhornPreflightScript []byte
+
 func CheckPackageInstallConnections() error {
 	cmd := exec.Command("apt-get", "update")
 	cmd.Env = os.Environ()
@@ -233,14 +236,34 @@ func SetupClusterForge() error {
 }
 
 func LonghornPreflightCheck() error {
-	scriptPath := filepath.Join("pkg", "scripts", "longhornPreflight.sh")
+	// Create a temporary file with the embedded script content
+	tmpFile, err := os.CreateTemp("", "longhornPreflight-*.sh")
+	if err != nil {
+		LogMessage(Error, fmt.Sprintf("Failed to create temporary script file: %v", err))
+		return err
+	}
+	defer os.Remove(tmpFile.Name()) // Clean up the temporary file
 
-	cmd := exec.Command("bash", scriptPath)
+	// Write the embedded script content to the temporary file
+	if _, err := tmpFile.Write(longhornPreflightScript); err != nil {
+		LogMessage(Error, fmt.Sprintf("Failed to write script content: %v", err))
+		tmpFile.Close()
+		return err
+	}
+	tmpFile.Close()
+
+	// Make the script executable
+	if err := os.Chmod(tmpFile.Name(), 0755); err != nil {
+		LogMessage(Error, fmt.Sprintf("Failed to make script executable: %v", err))
+		return err
+	}
+
+	cmd := exec.Command("bash", tmpFile.Name())
 	cmd.Env = os.Environ()
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	err := cmd.Run()
+	err = cmd.Run()
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Longhorn preflight check failed: %v", err))
 		return err
