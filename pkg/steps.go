@@ -883,6 +883,26 @@ metadata:
 	},
 }
 
+var WaitForClusterReady = Step{
+	Id:          "WaitForClusterReady",
+	Name:        "Wait for cluster to be ready to run workloads",
+	Description: "A wait step to ensure the cluster is ready",
+	Skip: func() bool {
+		if !viper.GetBool("FIRST_NODE") {
+			LogMessage(Info, "Skipping for additional nodes.")
+			return true
+		}
+		return false
+	},
+	Action: func() StepResult {
+		err := LonghornPreflightCheck()
+		if err != nil {
+			return StepResult{Error: fmt.Errorf("failed to run Longhorn preflight check: %v", err)}
+		}
+		return StepResult{Error: nil}
+	},
+}
+
 var SetupClusterForgeStep = Step{
 	Id:          "SetupClusterForgeStep",
 	Name:        "Setup Cluster Forge",
@@ -902,6 +922,7 @@ var SetupClusterForgeStep = Step{
 		return StepResult{Error: nil}
 	},
 }
+
 var FinalOutput = Step{
 	Id:          "FinalOutput",
 	Name:        "Output",

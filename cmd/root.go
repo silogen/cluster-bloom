@@ -196,6 +196,7 @@ func rootSteps() []pkg.Step {
 		pkg.SetupKubeConfig,
 		pkg.CreateDomainConfigStep,
 		pkg.CreateBloomConfigMapStepFunc(Version),
+		pkg.WaitForClusterReady,
 		pkg.SetupClusterForgeStep,
 	}
 
