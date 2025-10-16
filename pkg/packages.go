@@ -17,6 +17,7 @@
 package pkg
 
 import (
+	_ "embed"
 	"fmt"
 	"io/fs"
 	"os"
