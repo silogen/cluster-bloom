@@ -303,4 +303,5 @@ func injectTLS_SAN(rke2ConfigPath string) error {
 
 		LogMessage(Info, "Successfully added TLS SAN configuration to RKE2 config")
 	}
+	return nil
 }
