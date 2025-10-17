@@ -649,9 +649,35 @@ var SetupKubeConfig = Step{
 
 		// Store the path to k9s in a variable
 		k9sPath := "/snap/k9s/current/bin"
-
-		// Check if k9s path is already in bashrc
+		bashProfilePath := fmt.Sprintf("%s/.bash_profile", userHomeDir)
 		bashrcPath := fmt.Sprintf("%s/.bashrc", userHomeDir)
+
+		// Execute once for current shell (to avoid logout & login cycle):
+		addK9sPath := fmt.Sprintf("export PATH=$PATH:%s", k9sPath)
+		if err = exec.Command("sh", "-c", addK9sPath).Run(); err != nil {
+			LogMessage(Error, fmt.Sprintf("Failed to update PATH in .bash_profile: %v", err))
+		} else {
+			LogMessage(Info, fmt.Sprintf("Path in .bash_profile updated to contain %s", string(k9sPath)))
+		}
+
+		// Update k9s path in .bash_profile
+		bashProfileContent, err := os.ReadFile(bashProfilePath)
+		if err != nil {
+			LogMessage(Error, fmt.Sprintf("Failed to read .bash_profile: %v", err))
+		} else {
+			// Check if k9s path already exists in .bash_profile
+			if !strings.Contains(string(bashProfileContent), k9sPath) {
+				// Add k9s path to .bash_profile if not found
+				pathCmd := fmt.Sprintf("echo 'export PATH=$PATH:%s' >> %s", k9sPath, bashProfilePath)
+				if err = exec.Command("sh", "-c", pathCmd).Run(); err != nil {
+					LogMessage(Error, fmt.Sprintf("Failed to update PATH in .bash_profile: %v", err))
+				} else {
+					LogMessage(Info, fmt.Sprintf("Path in .bash_profile updated to contain %s", string(k9sPath)))
+				}
+			}
+		}
+
+		// Update k9s path in .bashrc
 		bashrcContent, err := os.ReadFile(bashrcPath)
 		if err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to read .bashrc: %v", err))
