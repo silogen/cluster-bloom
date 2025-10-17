@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/spf13/viper"
@@ -114,6 +115,12 @@ func PrepareRKE2() error {
 			return fmt.Errorf("failed to append to %s: %v", rke2ConfigPath, err)
 		}
 	}
+
+	err = injectTLS_SAN(rke2ConfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to add tls-san to %s : %v", rke2ConfigPath, err)
+	}
+
 	return nil
 }
 
@@ -263,4 +270,37 @@ func SetupRKE2ControlPlane() error {
 	}
 
 	return nil
+}
+
+func injectTLS_SAN(rke2ConfigPath string) error {
+	// Handle TLS SAN configuration
+	tlsSAN := viper.GetString("TLS_SAN")
+	if tlsSAN != "" {
+		LogMessage(Info, fmt.Sprintf("Processing TLS_SAN configuration: %s", tlsSAN))
+
+		// Split the comma-separated list and trim whitespace
+		domains := strings.Split(tlsSAN, ",")
+		var tlsSANConfig strings.Builder
+		tlsSANConfig.WriteString("\ntls-san:\n")
+
+		for _, domain := range domains {
+			domain = strings.TrimSpace(domain)
+			if domain != "" {
+				tlsSANConfig.WriteString(fmt.Sprintf("  - \"%s\"\n", domain))
+			}
+		}
+
+		// Append to config.yaml
+		file, err := os.OpenFile(rke2ConfigPath, os.O_APPEND|os.O_WRONLY, 0644)
+		if err != nil {
+			return fmt.Errorf("failed to open %s for appending TLS SAN: %v", rke2ConfigPath, err)
+		}
+		defer file.Close()
+
+		if _, err := file.WriteString(tlsSANConfig.String()); err != nil {
+			return fmt.Errorf("failed to append TLS SAN to %s: %v", rke2ConfigPath, err)
+		}
+
+		LogMessage(Info, "Successfully added TLS SAN configuration to RKE2 config")
+	}
 }

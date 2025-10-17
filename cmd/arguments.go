@@ -81,6 +81,12 @@ func SetArguments() {
 			Type:         "file",
 			Dependencies: "CERT_OPTION=existing",
 		},
+		{
+			Key:         "TLS_SAN",
+			Default:     "",
+			Description: "Comma-separated list of additional domains for TLS Subject Alternative Names. Example: \"a.com,b.com\".",
+			Type:        "string",
+		},
 
 		// Authentication
 		{

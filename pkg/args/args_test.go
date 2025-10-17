@@ -36,6 +36,7 @@ func init() {
 		{Key: "CERT_OPTION", Default: "", Description: "Certificate option when USE_CERT_MANAGER is false. Choose 'existing' or 'generate'.", Type: "enum", Options: []string{"existing", "generate"}, Dependencies: "USE_CERT_MANAGER=false,FIRST_NODE=true"},
 		{Key: "TLS_CERT", Default: "", Description: "Path to TLS certificate file for ingress. Required if CERT_OPTION is 'existing'.", Type: "file", Dependencies: "CERT_OPTION=existing"},
 		{Key: "TLS_KEY", Default: "", Description: "Path to TLS private key file for ingress. Required if CERT_OPTION is 'existing'.", Type: "file", Dependencies: "CERT_OPTION=existing"},
+		{Key: "TLS_SAN", Default: "", Description: "Comma-separated list of additional domains for TLS Subject Alternative Names. Example: \"a.com,b.com\".", Type: "string"},
 		{Key: "OIDC_URL", Default: "", Description: "The URL of the OIDC provider.", Type: "url"},
 		{Key: "ROCM_BASE_URL", Default: "https://repo.radeon.com/amdgpu-install/6.3.2/ubuntu/", Description: "ROCm base repository URL.", Type: "non-empty-url", Dependencies: "GPU_NODE=true"},
 		{Key: "RKE2_INSTALLATION_URL", Default: "https://get.rke2.io", Description: "RKE2 installation script URL.", Type: "non-empty-url"},
