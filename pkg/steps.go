@@ -137,7 +137,7 @@ var CheckPortsBeforeOpeningStep = Step{
 		err := CheckPortsBeforeOpening()
 		if err != nil {
 			return StepResult{
-				Error: fmt.Errorf("Checking ports failed: %s", err.Error()),
+				Error: fmt.Errorf("checking ports failed: %s", err.Error()),
 			}
 		}
 		return StepResult{Error: nil}
@@ -146,7 +146,7 @@ var CheckPortsBeforeOpeningStep = Step{
 
 var InstallK8SToolsStep = Step{
 	Id:          "InstallK8SToolsStep",
-	Name:        "Install Kubernetes tools",
+	Name:        "Install Kubernetes Tools",
 	Description: "Install kubectl and k9s",
 	Action: func() StepResult {
 		err := installK8sTools()
@@ -161,7 +161,7 @@ var InstallK8SToolsStep = Step{
 
 var InotifyInstancesStep = Step{
 	Id:          "InotifyInstancesStep",
-	Name:        "Verify inotify instances",
+	Name:        "Verify inotify Instances",
 	Description: "Verify, or update, inotify instances",
 	Action: func() StepResult {
 		if !VerifyInotifyInstances() {
@@ -241,7 +241,7 @@ var SetupRKE2Step = Step{
 
 var CleanDisksStep = Step{
 	Id:          "CleanDisksStep",
-	Name:        "Clean disks",
+	Name:        "Clean Disks",
 	Description: "remove any previous longhorn temp drives",
 	Action: func() StepResult {
 		err := CleanDisks()
@@ -317,9 +317,7 @@ var SelectDrivesStep = Step{
 		}
 		diskinfo := string(output)
 		options := make([]string, len(disks))
-		for i, disk := range disks {
-			options[i] = disk
-		}
+		copy(options, disks)
 
 		result, err := ShowOptionsScreen(
 			"Unmounted Disks",
@@ -388,7 +386,7 @@ var MountSelectedDrivesStep = Step{
 
 var GenerateNodeLabelsStep = Step{
 	Id:          "GenerateNodeLabelsStep",
-	Name:        "Generate node Labels",
+	Name:        "Generate Node Labels",
 	Description: "Generate labels for the node based on its configuration",
 	Action: func() StepResult {
 		err := GenerateNodeLabels()
@@ -401,10 +399,10 @@ var GenerateNodeLabelsStep = Step{
 
 var SetupMetallbStep = Step{
 	Id:          "SetupMetallbStep",
-	Name:        "Setup MetalLB manifests",
+	Name:        "Setup MetalLB Manifests",
 	Description: "Copy MetalLB YAML files to the RKE2 manifests directory",
 	Skip: func() bool {
-		if viper.GetBool("FIRST_NODE") == false {
+		if !viper.GetBool("FIRST_NODE") {
 			LogMessage(Info, "Skipping GenerateLonghornDiskString as SKIP_DISK_CHECK is set.")
 			return true
 		}
@@ -425,7 +423,7 @@ var SetupMetallbStep = Step{
 
 var SetupLonghornStep = Step{
 	Id:          "SetupLonghornStep",
-	Name:        "Setup Longhorn manifests",
+	Name:        "Setup Longhorn Manifests",
 	Description: "Copy Longhorn YAML files to the RKE2 manifests directory",
 	Skip: func() bool {
 		if viper.GetBool("SKIP_DISK_CHECK") {
@@ -886,7 +884,7 @@ metadata:
 var WaitForClusterReady = Step{
 	Id:          "WaitForClusterReady",
 	Name:        "Wait for Cluster to be Ready",
-	Description: "A wait step to ensure the cluster is ready to run workloads",
+	Description: "A wait step to ensure the cluster is ready",
 	Skip: func() bool {
 		if !viper.GetBool("FIRST_NODE") {
 			LogMessage(Info, "Skipping for additional nodes.")
@@ -993,19 +991,19 @@ var UpdateUdevRulesStep = Step{
 		err := cmd.Run()
 		if err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to write to file: %v", err))
-			return StepResult{Error: fmt.Errorf("Failed to write to file: %v", err)}
+			return StepResult{Error: fmt.Errorf("failed to write to file: %v", err)}
 		}
 
 		err = exec.Command("sudo", "udevadm", "control", "--reload-rules").Run()
 		if err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to reload udev rules: %v", err))
-			return StepResult{Error: fmt.Errorf("Failed to reload udev rules: %v", err)}
+			return StepResult{Error: fmt.Errorf("failed to reload udev rules: %v", err)}
 		}
 
 		err = exec.Command("sudo", "udevadm", "trigger").Run()
 		if err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to trigger udev: %v", err))
-			return StepResult{Error: fmt.Errorf("Failed to trigger udev: %v", err)}
+			return StepResult{Error: fmt.Errorf("failed to trigger udev: %v", err)}
 		}
 
 		return StepResult{Error: nil}
