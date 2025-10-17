@@ -885,8 +885,8 @@ metadata:
 
 var WaitForClusterReady = Step{
 	Id:          "WaitForClusterReady",
-	Name:        "Wait for cluster to be ready to run workloads",
-	Description: "A wait step to ensure the cluster is ready",
+	Name:        "Wait for Cluster to be Ready",
+	Description: "A wait step to ensure the cluster is ready to run workloads",
 	Skip: func() bool {
 		if !viper.GetBool("FIRST_NODE") {
 			LogMessage(Info, "Skipping for additional nodes.")
