@@ -203,11 +203,11 @@ The system executes a sequential pipeline of installation steps:
 - `CONTROL_PLANE`: Indicates if additional node should be control plane (when FIRST_NODE is false)
 - `GPU_NODE`: Enables/disables GPU-specific configurations
 - `SERVER_IP`/`JOIN_TOKEN`: Required for additional node joining
-- `SKIP_DISK_CHECK`: Bypasses disk-related operations
-- `LONGHORN_DISKS`: Manual disk specification
+- `NO_DISKS_FOR_CLUSTER`: Bypasses disk-related operations
+- `CLUSTER_PREMOUNTED_DISKS`: Manual disk specification
 - `CLUSTERFORGE_RELEASE`: ClusterForge version specification
 - `DISABLED_STEPS`/`ENABLED_STEPS`: Step execution control
-- `SELECTED_DISKS`: Pre-selected disk devices (also skips NVME drive checks)
+- `CLUSTER_DISKS`: Pre-selected disk devices (also skips NVME drive checks)
 - `DOMAIN`: Domain name for cluster ingress configuration
 - `USE_CERT_MANAGER`: Enable cert-manager with Let's Encrypt for TLS
 - `CERT_OPTION`: Certificate handling when cert-manager disabled ('existing' or 'generate')

@@ -168,7 +168,6 @@ func rootSteps() []pkg.Step {
 		pkg.ValidateSystemRequirementsStep,
 		pkg.CheckUbuntuStep,
 		pkg.HasSufficientRancherPartitionStep,
-		pkg.NVMEDrivesAvailableStep,
 		pkg.InstallDependentPackagesStep,
 		pkg.CleanLonghornMountsStep,
 		pkg.UninstallRKE2Step,

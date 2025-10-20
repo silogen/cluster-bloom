@@ -317,9 +317,9 @@ func TestValidateSkipDiskCheckConsistency(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			viper.Reset()
-			viper.Set("SKIP_DISK_CHECK", tt.skipDiskCheck)
-			viper.Set("LONGHORN_DISKS", tt.longhornDisks)
-			viper.Set("SELECTED_DISKS", tt.selectedDisks)
+			viper.Set("NO_DISKS_FOR_CLUSTER", tt.skipDiskCheck)
+			viper.Set("CLUSTER_PREMOUNTED_DISKS", tt.longhornDisks)
+			viper.Set("CLUSTER_DISKS", tt.selectedDisks)
 
 			err := ValidateSkipDiskCheckConsistency("")
 			if (err != nil) != tt.wantErr {
@@ -454,16 +454,16 @@ func TestValidateLonghornDisksArg(t *testing.T) {
 			longhornDisks: "",
 			selectedDisks: "",
 			wantErr:       true,
-			errorContains: "either LONGHORN_DISKS or SELECTED_DISKS must be set",
+			errorContains: "either CLUSTER_PREMOUNTED_DISKS or CLUSTER_DISKS must be set",
 		},
 		{
-			name:          "LONGHORN_DISKS set, SELECTED_DISKS empty - valid",
+			name:          "CLUSTER_PREMOUNTED_DISKS set, CLUSTER_DISKS empty - valid",
 			longhornDisks: "/mnt/disk1,/mnt/disk2",
 			selectedDisks: "",
 			wantErr:       false,
 		},
 		{
-			name:          "LONGHORN_DISKS empty, SELECTED_DISKS set - valid",
+			name:          "CLUSTER_PREMOUNTED_DISKS empty, CLUSTER_DISKS set - valid",
 			longhornDisks: "",
 			selectedDisks: "/dev/sdb,/dev/sdc",
 			wantErr:       false,
@@ -473,21 +473,21 @@ func TestValidateLonghornDisksArg(t *testing.T) {
 			longhornDisks: "/mnt/disk1",
 			selectedDisks: "/dev/sdb",
 			wantErr:       true,
-			errorContains: "LONGHORN_DISKS and SELECTED_DISKS cannot both be set",
+			errorContains: "CLUSTER_PREMOUNTED_DISKS and CLUSTER_DISKS cannot both be set",
 		},
 		{
 			name:          "Both set with multiple disks - invalid",
 			longhornDisks: "/mnt/disk1,/mnt/disk2",
 			selectedDisks: "/dev/sdb,/dev/sdc",
 			wantErr:       true,
-			errorContains: "LONGHORN_DISKS and SELECTED_DISKS cannot both be set",
+			errorContains: "CLUSTER_PREMOUNTED_DISKS and CLUSTER_DISKS cannot both be set",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			viper.Reset()
-			viper.Set("SELECTED_DISKS", tt.selectedDisks)
+			viper.Set("CLUSTER_DISKS", tt.selectedDisks)
 
 			err := ValidateLonghornDisksArg(tt.longhornDisks)
 			if (err != nil) != tt.wantErr {

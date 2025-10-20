@@ -108,26 +108,26 @@ func SetArguments() {
 
 		// Disk and storage configuration
 		{
-			Key:         "SKIP_DISK_CHECK",
+			Key:         "NO_DISKS_FOR_CLUSTER",
 			Default:     false,
 			Description: "Set to true to skip disk-related operations.",
 			Type:        "bool",
 			Validators:  []func(value string) error{args.ValidateSkipDiskCheckConsistency},
 		},
 		{
-			Key:          "LONGHORN_DISKS",
+			Key:          "CLUSTER_PREMOUNTED_DISKS",
 			Default:      "",
 			Description:  "Comma-separated list of disk paths to use for Longhorn.",
 			Type:         "string",
 			Validators:   []func(value string) error{args.ValidateLonghornDisksArg},
-			Dependencies: "SKIP_DISK_CHECK=false",
+			Dependencies: "NO_DISKS_FOR_CLUSTER=false",
 		},
 		{
-			Key:          "SELECTED_DISKS",
+			Key:          "CLUSTER_DISKS",
 			Default:      "",
 			Description:  "Comma-separated list of disk devices. Example: \"/dev/sdb,/dev/sdc\".",
 			Type:         "string",
-			Dependencies: "SKIP_DISK_CHECK=false",
+			Dependencies: "NO_DISKS_FOR_CLUSTER=false",
 		},
 
 		// External component URLs

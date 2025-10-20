@@ -184,35 +184,35 @@ func ValidateDisabledStepsConflict(stepNames string) error {
 	return nil
 }
 
-// ValidateSkipDiskCheckConsistency warns about inconsistencies with SKIP_DISK_CHECK
+// ValidateSkipDiskCheckConsistency warns about inconsistencies with NO_DISKS_FOR_CLUSTER
 func ValidateSkipDiskCheckConsistency(skipDiskCheckStr string) error {
-	skipDiskCheck := viper.GetBool("SKIP_DISK_CHECK")
-	longhornDisks := viper.GetString("LONGHORN_DISKS")
-	selectedDisks := viper.GetString("SELECTED_DISKS")
+	skipDiskCheck := viper.GetBool("NO_DISKS_FOR_CLUSTER")
+	longhornDisks := viper.GetString("CLUSTER_PREMOUNTED_DISKS")
+	selectedDisks := viper.GetString("CLUSTER_DISKS")
 
 	if skipDiskCheck && (longhornDisks != "" || selectedDisks != "") {
-		log.Warnf("SKIP_DISK_CHECK=true but disk parameters are set (LONGHORN_DISKS or SELECTED_DISKS) - disk operations will be skipped")
+		log.Warnf("NO_DISKS_FOR_CLUSTER=true but disk parameters are set (CLUSTER_PREMOUNTED_DISKS or CLUSTER_DISKS) - disk operations will be skipped")
 	}
 
 	if !skipDiskCheck && longhornDisks == "" && selectedDisks == "" {
-		log.Warnf("SKIP_DISK_CHECK=false but no disk parameters specified - automatic disk detection will be used")
+		log.Warnf("NO_DISKS_FOR_CLUSTER=false but no disk parameters specified - automatic disk detection will be used")
 	}
 
 	return nil
 }
 
-// ValidateLonghornDisksArg validates LONGHORN_DISKS configuration
+// ValidateLonghornDisksArg validates CLUSTER_PREMOUNTED_DISKS configuration
 func ValidateLonghornDisksArg(disks string) error {
-	selectedDisks := viper.GetString("SELECTED_DISKS")
+	selectedDisks := viper.GetString("CLUSTER_DISKS")
 
 	// Both cannot be set
 	if disks != "" && selectedDisks != "" {
-		return fmt.Errorf("LONGHORN_DISKS and SELECTED_DISKS cannot both be set - use one or the other")
+		return fmt.Errorf("CLUSTER_PREMOUNTED_DISKS and CLUSTER_DISKS cannot both be set - use one or the other")
 	}
 
 	// At least one must be set
 	if disks == "" && selectedDisks == "" {
-		return fmt.Errorf("either LONGHORN_DISKS or SELECTED_DISKS must be set")
+		return fmt.Errorf("either CLUSTER_PREMOUNTED_DISKS or CLUSTER_DISKS must be set")
 	}
 
 	return nil

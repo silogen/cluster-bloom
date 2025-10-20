@@ -82,7 +82,7 @@ func ParseBloomLog(logPath string) (*BloomStatus, error) {
 	failedRegex := regexp.MustCompile(`msg="Execution failed:\s+([^"]*)"`)
 	osErrorRegex := regexp.MustCompile(`(OS compatibility error|Ubuntu version not supported|This server is not supported)`)
 	kubeconfigRegex := regexp.MustCompile(`(KUBECONFIG=.*|export KUBECONFIG=.*)`)
-	selectedDisksRegex := regexp.MustCompile(`selected_disks:\s*\[(.*)\]|SELECTED_DISKS:\s*(.*)`)
+	selectedDisksRegex := regexp.MustCompile(`selected_disks:\s*\[(.*)\]|CLUSTER_DISKS:\s*(.*)`)
 	longhornDisksRegex := regexp.MustCompile(`longhorn_disks:\s*(.*)`)
 	totalStepsRegex := regexp.MustCompile(`msg="Total steps to execute:\s*(\d+)"`)
 

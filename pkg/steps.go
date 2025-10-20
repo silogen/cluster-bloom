@@ -285,21 +285,21 @@ var UpdateModprobeStep = Step{
 var PrepareLonghornDisksStep = Step{
 	Id:          "PrepareLonghornDisksStep",
 	Name:        "Prepare Longhorn Disks",
-	Description: "Mount selected disks or populate disk map from LONGHORN_DISKS configuration",
+	Description: "Mount selected disks or populate disk map from CLUSTER_PREMOUNTED_DISKS configuration",
 	Skip: func() bool {
-		if viper.GetBool("SKIP_DISK_CHECK") {
-			LogMessage(Info, "Skipping drive mounting as SKIP_DISK_CHECK is set.")
+		if viper.GetBool("NO_DISKS_FOR_CLUSTER") {
+			LogMessage(Info, "Skipping drive mounting as NO_DISKS_FOR_CLUSTER is set.")
 			return true
 		}
 		return false
 	},
 	Action: func() StepResult {
-		// Check if LONGHORN_DISKS is already set
-		if viper.IsSet("LONGHORN_DISKS") && viper.GetString("LONGHORN_DISKS") != "" {
-			LogMessage(Info, "LONGHORN_DISKS is already set, populating mounted disk map from mount points")
+		// Check if CLUSTER_PREMOUNTED_DISKS is already set
+		if viper.IsSet("CLUSTER_PREMOUNTED_DISKS") && viper.GetString("CLUSTER_PREMOUNTED_DISKS") != "" {
+			LogMessage(Info, "CLUSTER_PREMOUNTED_DISKS is already set, populating mounted disk map from mount points")
 
-			// Parse LONGHORN_DISKS and create map from current mount state
-			longhornDisks := viper.GetString("LONGHORN_DISKS")
+			// Parse CLUSTER_PREMOUNTED_DISKS and create map from current mount state
+			longhornDisks := viper.GetString("CLUSTER_PREMOUNTED_DISKS")
 			mountDirs := strings.Split(longhornDisks, ",")
 			mountedDiskMap := make(map[string]string)
 
@@ -311,11 +311,11 @@ var PrepareLonghornDisksStep = Step{
 			// Store in viper for use by other steps
 			viper.Set("mounted_disk_map", mountedDiskMap)
 
-			LogMessage(Info, fmt.Sprintf("Populated mounted disk map with %d entries from LONGHORN_DISKS", len(mountedDiskMap)))
+			LogMessage(Info, fmt.Sprintf("Populated mounted disk map with %d entries from CLUSTER_PREMOUNTED_DISKS", len(mountedDiskMap)))
 			return StepResult{Error: nil}
 		}
 
-		selectedDisks := strings.Split(viper.GetString("SELECTED_DISKS"), ",")
+		selectedDisks := strings.Split(viper.GetString("CLUSTER_DISKS"), ",")
 		if len(selectedDisks) == 0 {
 			return StepResult{
 				Error: fmt.Errorf("no disks selected for mounting"),
@@ -397,7 +397,7 @@ var SetupMetallbStep = Step{
 	Description: "Copy MetalLB YAML files to the RKE2 manifests directory",
 	Skip: func() bool {
 		if viper.GetBool("FIRST_NODE") == false {
-			LogMessage(Info, "Skipping GenerateLonghornDiskString as SKIP_DISK_CHECK is set.")
+			LogMessage(Info, "Skipping GenerateLonghornDiskString as NO_DISKS_FOR_CLUSTER is set.")
 			return true
 		}
 		return false
@@ -420,8 +420,8 @@ var SetupLonghornStep = Step{
 	Name:        "Setup Longhorn manifests",
 	Description: "Copy Longhorn YAML files to the RKE2 manifests directory",
 	Skip: func() bool {
-		if viper.GetBool("SKIP_DISK_CHECK") {
-			LogMessage(Info, "Skipping GenerateLonghornDiskString as SKIP_DISK_CHECK is set.")
+		if viper.GetBool("NO_DISKS_FOR_CLUSTER") {
+			LogMessage(Info, "Skipping GenerateLonghornDiskString as NO_DISKS_FOR_CLUSTER is set.")
 			return true
 		}
 		return false
@@ -510,33 +510,6 @@ var HasSufficientRancherPartitionStep = Step{
 	},
 }
 
-var NVMEDrivesAvailableStep = Step{
-	Id:          "NVMEDrivesAvailableStep",
-	Name:        "Check NVMe Drives",
-	Description: "Check if NVMe drives are available",
-	Skip: func() bool {
-		if !viper.GetBool("GPU_NODE") {
-			LogMessage(Info, "Skipped for non-GPU node")
-			return true
-		}
-		if viper.GetBool("SKIP_DISK_CHECK") {
-			LogMessage(Info, "Skipping NVME drive check as SKIP_DISK_CHECK is set.")
-			return true
-		}
-		if viper.GetString("SELECTED_DISKS") != "" {
-			LogMessage(Info, "Skipping NVME drive check as SELECTED_DISKS is set.")
-			return true
-		}
-
-		return false
-	},
-	Action: func() StepResult {
-		if NVMEDrivesAvailable() {
-			return StepResult{Error: nil}
-		}
-		return StepResult{Error: fmt.Errorf("no NVMe drives available (either unmounted or mounted at /mnt/disk*)")}
-	},
-}
 
 var SetupKubeConfig = Step{
 	Id:          "SetupKubeConfig",

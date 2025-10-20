@@ -27,7 +27,7 @@ import (
 )
 
 func GetDisksFromLonghornConfig(longhornFromConfig string) (disks []string, mountPoints map[string]string, e error) {
-	// Accept LONGHORN_DISKS in any case (e.g., longhorn_disks, Longhorn_Disks)
+	// Accept CLUSTER_PREMOUNTED_DISKS in any case (e.g., longhorn_disks, Longhorn_Disks)
 	var val string
 	mountPoints = make(map[string]string)
 
@@ -36,13 +36,13 @@ func GetDisksFromLonghornConfig(longhornFromConfig string) (disks []string, moun
 			if strings.ToLower(k) == "longhorn_disks" {
 				val = viper.GetString(k)
 				// ensure canonical key exists for the rest of the function
-				viper.Set("LONGHORN_DISKS", val)
+				viper.Set("CLUSTER_PREMOUNTED_DISKS", val)
 				break
 			}
 		}
 		// fallback: try direct lookup (covers env-style keys)
 		if val == "" {
-			val = viper.GetString("LONGHORN_DISKS")
+			val = viper.GetString("CLUSTER_PREMOUNTED_DISKS")
 		}
 		if val == "" {
 			return nil, nil, nil
@@ -51,7 +51,7 @@ func GetDisksFromLonghornConfig(longhornFromConfig string) (disks []string, moun
 		val = longhornFromConfig
 	}
 
-	LogMessage(Info, "Found LONGHORN_DISKS configuration")
+	LogMessage(Info, "Found CLUSTER_PREMOUNTED_DISKS configuration")
 	longhornDiskPaths := strings.Split(val, ",")
 	var targetDisks []string
 
@@ -67,11 +67,11 @@ func GetDisksFromLonghornConfig(longhornFromConfig string) (disks []string, moun
 	}
 
 	if len(targetDisks) > 0 {
-		LogMessage(Info, fmt.Sprintf("Found %d longhorn disks from LONGHORN_DISKS", len(targetDisks)))
+		LogMessage(Info, fmt.Sprintf("Found %d longhorn disks from CLUSTER_PREMOUNTED_DISKS", len(targetDisks)))
 		return targetDisks, mountPoints, nil
 	}
 
-	LogMessage(Info, "No valid devices found from LONGHORN_DISKS")
+	LogMessage(Info, "No valid devices found from CLUSTER_PREMOUNTED_DISKS")
 	return nil, nil, nil
 }
 
@@ -146,12 +146,12 @@ func GetDisksFromSelectedConfig(longhornFromConfig string) (disks []string, moun
 	mountPoints = make(map[string]string)
 
 	if longhornFromConfig == "" {
-		if !viper.IsSet("SELECTED_DISKS") || viper.GetString("SELECTED_DISKS") == "" {
+		if !viper.IsSet("CLUSTER_DISKS") || viper.GetString("CLUSTER_DISKS") == "" {
 			return nil, nil, nil
 		}
 
-		LogMessage(Info, "Found SELECTED_DISKS configuration")
-		disks := strings.Split(viper.GetString("SELECTED_DISKS"), ",")
+		LogMessage(Info, "Found CLUSTER_DISKS configuration")
+		disks := strings.Split(viper.GetString("CLUSTER_DISKS"), ",")
 
 		for _, disk := range disks {
 			disk = strings.TrimSpace(disk)
@@ -161,7 +161,7 @@ func GetDisksFromSelectedConfig(longhornFromConfig string) (disks []string, moun
 		}
 
 		if len(targetDisks) == 0 {
-			LogMessage(Info, "No valid disks found in SELECTED_DISKS")
+			LogMessage(Info, "No valid disks found in CLUSTER_DISKS")
 			return nil, nil, nil
 		}
 	} else {
@@ -181,7 +181,7 @@ func GetDisksFromSelectedConfig(longhornFromConfig string) (disks []string, moun
 		mountPoints[disk] = getMountpointsFromDevice(disk)
 	}
 
-	LogMessage(Info, fmt.Sprintf("Found %d disks from SELECTED_DISKS:\n%s", len(targetDisks), diskInfo))
+	LogMessage(Info, fmt.Sprintf("Found %d disks from CLUSTER_DISKS:\n%s", len(targetDisks), diskInfo))
 	return targetDisks, mountPoints, nil
 }
 

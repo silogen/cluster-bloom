@@ -198,12 +198,6 @@ var longhornDiskTemplate = `
   - node.longhorn.io/instance-manager=true
 `
 
-func ParseLonghornDiskConfig() string {
-	disks := strings.Split(viper.GetString("LONGHORN_DISKS"), ",")
-	diskList := strings.Join(disks, "xxx")
-	return diskList
-}
-
 func GenerateNodeLabels(mountedDiskMap map[string]string) error {
 	rke2ConfigPath := "/etc/rancher/rke2/config.yaml"
 	// Fill the template with the GPU_NODE setting, leave longhor for later
@@ -212,8 +206,8 @@ func GenerateNodeLabels(mountedDiskMap map[string]string) error {
 		return fmt.Errorf("failed to append Longhorn configuration to %s: %w", rke2ConfigPath, err)
 	}
 
-	if viper.GetBool("SKIP_DISK_CHECK") {
-		LogMessage(Info, "Skipping GenerateLonghornDiskString as SKIP_DISK_CHECK is set.")
+	if viper.GetBool("NO_DISKS_FOR_CLUSTER") {
+		LogMessage(Info, "Skipping GenerateLonghornDiskString as NO_DISKS_FOR_CLUSTER is set.")
 		return nil
 	}
 
@@ -270,12 +264,12 @@ func isVirtualDisk(udevOut []byte) bool {
 }
 
 func MountDrives(drives []string) (map[string]string, error) {
-	if viper.IsSet("LONGHORN_DISKS") && viper.GetString("LONGHORN_DISKS") != "" {
-		LogMessage(Info, "Skipping drive mounting as LONGHORN_DISKS is set.")
+	if viper.IsSet("CLUSTER_PREMOUNTED_DISKS") && viper.GetString("CLUSTER_PREMOUNTED_DISKS") != "" {
+		LogMessage(Info, "Skipping drive mounting as CLUSTER_PREMOUNTED_DISKS is set.")
 		return nil, nil
 	}
-	if viper.GetBool("SKIP_DISK_CHECK") == true {
-		LogMessage(Info, "Skipping drive mounting as SKIP_DISK_CHECK is set.")
+	if viper.GetBool("NO_DISKS_FOR_CLUSTER") == true {
+		LogMessage(Info, "Skipping drive mounting as NO_DISKS_FOR_CLUSTER is set.")
 		return nil, nil
 	}
 
@@ -358,12 +352,12 @@ func MountDrives(drives []string) (map[string]string, error) {
 }
 
 func PersistMountedDisks(mountedMap map[string]string) error {
-	if viper.IsSet("LONGHORN_DISKS") && viper.GetString("LONGHORN_DISKS") != "" {
-		LogMessage(Info, "Skipping drive mounting as LONGHORN_DISKS is set.")
+	if viper.IsSet("CLUSTER_PREMOUNTED_DISKS") && viper.GetString("CLUSTER_PREMOUNTED_DISKS") != "" {
+		LogMessage(Info, "Skipping drive mounting as CLUSTER_PREMOUNTED_DISKS is set.")
 		return nil
 	}
-	if viper.GetBool("SKIP_DISK_CHECK") == true {
-		LogMessage(Info, "Skipping drive mounting as SKIP_DISK_CHECK is set.")
+	if viper.GetBool("NO_DISKS_FOR_CLUSTER") == true {
+		LogMessage(Info, "Skipping drive mounting as NO_DISKS_FOR_CLUSTER is set.")
 		return nil
 	}
 

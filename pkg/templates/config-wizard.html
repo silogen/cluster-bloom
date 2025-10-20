@@ -212,18 +212,18 @@
                 <div class="section-header">💾 Storage Configuration</div>
                 <div class="section-content">
                     <div class="form-group">
-                        <label for="SKIP_DISK_CHECK">Skip Disk Operations</label>
+                        <label for="NO_DISKS_FOR_CLUSTER">Skip Disk Operations</label>
                         <div class="description">Skip disk-related operations if you don't want automatic disk setup.</div>
                         <div class="checkbox-group">
-                            <input type="checkbox" id="SKIP_DISK_CHECK" name="SKIP_DISK_CHECK">
-                            <label for="SKIP_DISK_CHECK">Skip disk operations</label>
+                            <input type="checkbox" id="NO_DISKS_FOR_CLUSTER" name="NO_DISKS_FOR_CLUSTER">
+                            <label for="NO_DISKS_FOR_CLUSTER">Skip disk operations</label>
                         </div>
                     </div>
 
                     <div class="form-group">
-                        <label for="SELECTED_DISKS">Longhorn Format & Mount Targets</label>
+                        <label for="CLUSTER_DISKS">Longhorn Format & Mount Targets</label>
                         <div class="description">Comma-separated list of specific disk devices to format and use with Longhorn (e.g., /dev/sdb,/dev/sdc). Leave empty for automatic selection.</div>
-                        <input type="text" id="SELECTED_DISKS" name="SELECTED_DISKS" placeholder="/dev/sdb,/dev/sdc"
+                        <input type="text" id="CLUSTER_DISKS" name="CLUSTER_DISKS" placeholder="/dev/sdb,/dev/sdc"
                                pattern="^(/dev/[a-zA-Z0-9]+)(,/dev/[a-zA-Z0-9]+)*$|^$"
                                title="Format: /dev/xxx or comma-separated /dev/xxx,/dev/yyy">
                         <small class="help-text" style="color: #666; font-size: 12px; margin-top: 4px; display: block;">
@@ -236,9 +236,9 @@
                     </div>
 
                     <div class="form-group">
-                        <label for="LONGHORN_DISKS">Longhorn Mount Points</label>
+                        <label for="CLUSTER_PREMOUNTED_DISKS">Longhorn Mount Points</label>
                         <div class="description">Comma-separated list of disk paths for Longhorn storage (used as-is without formatting). Leave empty for automatic configuration.</div>
-                        <input type="text" id="LONGHORN_DISKS" name="LONGHORN_DISKS" placeholder="/dev/sdb,/dev/sdc"
+                        <input type="text" id="CLUSTER_PREMOUNTED_DISKS" name="CLUSTER_PREMOUNTED_DISKS" placeholder="/dev/sdb,/dev/sdc"
                                pattern="^(disk[0-9]+)(,disk[0-9]+)*$|^$"
                                title="Format: diskx or comma-separated diskx,disky">
                         <small class="help-text" style="color: #666; font-size: 12px; margin-top: 4px; display: block;">
@@ -465,7 +465,7 @@
         document.getElementById('config-form').addEventListener('submit', function(e) {
             e.preventDefault();
             // Check if any selected disk is the root device
-            const selectedDisksValue = document.getElementById("SELECTED_DISKS").value.trim();
+            const selectedDisksValue = document.getElementById("CLUSTER_DISKS").value.trim();
             if (selectedDisksValue && window.prefilledData?.root_device) {
                 const selectedDisks = selectedDisksValue.split(",").map(d => d.trim());
                 const rootDevice = window.prefilledData.root_device;
@@ -492,7 +492,7 @@
                     closeBtn.onclick = () => {
                         document.body.removeChild(modal);
                         document.body.removeChild(overlay);
-                        document.getElementById("SELECTED_DISKS").focus();
+                        document.getElementById("CLUSTER_DISKS").focus();
                     };
                     modal.appendChild(closeBtn);
                     
@@ -672,15 +672,15 @@
             }
 
             // Validate disk paths if provided
-            if (config.SELECTED_DISKS) {
-                validateField('SELECTED_DISKS', 'SELECTED_DISKS');
-                if (!document.getElementById('SELECTED_DISKS').validity.valid) {
+            if (config.CLUSTER_DISKS) {
+                validateField('CLUSTER_DISKS', 'CLUSTER_DISKS');
+                if (!document.getElementById('CLUSTER_DISKS').validity.valid) {
                     errors.push('❌ Invalid disk format - Must be /dev/xxx or comma-separated list like /dev/sdb,/dev/sdc');
                 }
             }
-            if (config.LONGHORN_DISKS) {
-                validateField('LONGHORN_DISKS', 'LONGHORN_DISKS');
-                if (!document.getElementById('LONGHORN_DISKS').validity.valid) {
+            if (config.CLUSTER_PREMOUNTED_DISKS) {
+                validateField('CLUSTER_PREMOUNTED_DISKS', 'CLUSTER_PREMOUNTED_DISKS');
+                if (!document.getElementById('CLUSTER_PREMOUNTED_DISKS').validity.valid) {
                     errors.push('❌ Invalid Longhorn disk format - Must be /dev/xxx or comma-separated list. Note: specified disks must exist on the system');
                 }
             }
@@ -982,7 +982,7 @@
                             'FIRST_NODE': 'first_node',
                             'GPU_NODE': 'gpu_node',
                             'CONTROL_PLANE': 'control_plane',
-                            'SKIP_DISK_CHECK': 'skip_disk_check',
+                            'NO_DISKS_FOR_CLUSTER': 'skip_disk_check',
                             'USE_CERT_MANAGER': 'use_cert_manager'
                         };
 
@@ -1004,8 +1004,8 @@
                             'DOMAIN': 'domain',
                             'SERVER_IP': 'server_ip',
                             'JOIN_TOKEN': 'join_token',
-                            'SELECTED_DISKS': 'selected_disks',
-                            'LONGHORN_DISKS': 'longhorn_disks',
+                            'CLUSTER_DISKS': 'selected_disks',
+                            'CLUSTER_PREMOUNTED_DISKS': 'longhorn_disks',
                             'OIDC_URL': 'oidc_url',
                             'CLUSTERFORGE_RELEASE': 'clusterforge_release',
                             'DISABLED_STEPS': 'disabled_steps',

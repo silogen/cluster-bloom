@@ -18,7 +18,6 @@ package pkg
 
 import (
 	"os"
-	"strings"
 	"testing"
 
 	"github.com/spf13/viper"
@@ -35,52 +34,25 @@ func TestCleanDisks(t *testing.T) {
 	}
 }
 
-func TestParseLonghornDiskConfig(t *testing.T) {
-	tests := []struct {
-		name     string
-		disks    string
-		expected string
-	}{
-		{"single disk", "/dev/sda", "/dev/sda"},
-		{"multiple disks", "/dev/sda,/dev/sdb", "/dev/sdaXXX/dev/sdb"},
-		{"empty string", "", ""},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			viper.Set("LONGHORN_DISKS", tt.disks)
-			result := ParseLonghornDiskConfig()
-			if tt.disks == "" && result != "" {
-				t.Errorf("Expected empty result for empty disks, got: %s", result)
-			} else if tt.disks != "" && !strings.Contains(result, "xxx") {
-				// For multiple disks, should contain 'xxx' separator
-				if strings.Contains(tt.disks, ",") && !strings.Contains(result, "xxx") {
-					t.Errorf("Expected result to contain 'xxx' separator for multiple disks")
-				}
-			}
-		})
-	}
-}
-
 func TestGenerateNodeLabels(t *testing.T) {
-	t.Run("with LONGHORN_DISKS set", func(t *testing.T) {
-		viper.Set("LONGHORN_DISKS", "/dev/sda")
+	t.Run("with CLUSTER_PREMOUNTED_DISKS set", func(t *testing.T) {
+		viper.Set("CLUSTER_PREMOUNTED_DISKS", "/dev/sda")
 
 		err := GenerateNodeLabels(map[string]string{})
 		// Expected to fail due to permission/path issues in test
 		if err == nil {
 			t.Log("Function succeeded unexpectedly")
 		}
-		viper.Set("LONGHORN_DISKS", "")
+		viper.Set("CLUSTER_PREMOUNTED_DISKS", "")
 	})
 
-	t.Run("with SKIP_DISK_CHECK", func(t *testing.T) {
-		viper.Set("SKIP_DISK_CHECK", true)
+	t.Run("with NO_DISKS_FOR_CLUSTER", func(t *testing.T) {
+		viper.Set("NO_DISKS_FOR_CLUSTER", true)
 		err := GenerateNodeLabels(map[string]string{})
 		if err != nil {
-			t.Errorf("Expected no error with SKIP_DISK_CHECK, got: %v", err)
+			t.Errorf("Expected no error with NO_DISKS_FOR_CLUSTER, got: %v", err)
 		}
-		viper.Set("SKIP_DISK_CHECK", false)
+		viper.Set("NO_DISKS_FOR_CLUSTER", false)
 	})
 
 	t.Run("with no selected disks", func(t *testing.T) {
@@ -119,28 +91,28 @@ func TestMountDrives(t *testing.T) {
 		t.Skip("Skipping test that requires root privileges")
 	}
 
-	t.Run("with LONGHORN_DISKS set", func(t *testing.T) {
-		viper.Set("LONGHORN_DISKS", "/dev/sda")
+	t.Run("with CLUSTER_PREMOUNTED_DISKS set", func(t *testing.T) {
+		viper.Set("CLUSTER_PREMOUNTED_DISKS", "/dev/sda")
 		mountedMap, err := MountDrives([]string{"/dev/sda"})
 		if err != nil {
-			t.Errorf("Expected no error with LONGHORN_DISKS set, got: %v", err)
+			t.Errorf("Expected no error with CLUSTER_PREMOUNTED_DISKS set, got: %v", err)
 		}
 		if mountedMap != nil {
-			t.Errorf("Expected nil mountedMap with LONGHORN_DISKS set, got: %v", mountedMap)
+			t.Errorf("Expected nil mountedMap with CLUSTER_PREMOUNTED_DISKS set, got: %v", mountedMap)
 		}
-		viper.Set("LONGHORN_DISKS", "")
+		viper.Set("CLUSTER_PREMOUNTED_DISKS", "")
 	})
 
-	t.Run("with SKIP_DISK_CHECK", func(t *testing.T) {
-		viper.Set("SKIP_DISK_CHECK", true)
+	t.Run("with NO_DISKS_FOR_CLUSTER", func(t *testing.T) {
+		viper.Set("NO_DISKS_FOR_CLUSTER", true)
 		mountedMap, err := MountDrives([]string{"/dev/sda"})
 		if err != nil {
-			t.Errorf("Expected no error with SKIP_DISK_CHECK, got: %v", err)
+			t.Errorf("Expected no error with NO_DISKS_FOR_CLUSTER, got: %v", err)
 		}
 		if mountedMap != nil {
-			t.Errorf("Expected nil mountedMap with SKIP_DISK_CHECK, got: %v", mountedMap)
+			t.Errorf("Expected nil mountedMap with NO_DISKS_FOR_CLUSTER, got: %v", mountedMap)
 		}
-		viper.Set("SKIP_DISK_CHECK", false)
+		viper.Set("NO_DISKS_FOR_CLUSTER", false)
 	})
 
 	t.Run("empty drives list", func(t *testing.T) {
@@ -159,22 +131,22 @@ func TestPersistMountedDisks(t *testing.T) {
 		t.Skip("Skipping test that requires root privileges")
 	}
 
-	t.Run("with LONGHORN_DISKS set", func(t *testing.T) {
-		viper.Set("LONGHORN_DISKS", "/dev/sda")
+	t.Run("with CLUSTER_PREMOUNTED_DISKS set", func(t *testing.T) {
+		viper.Set("CLUSTER_PREMOUNTED_DISKS", "/dev/sda")
 		err := PersistMountedDisks(map[string]string{})
 		if err != nil {
-			t.Errorf("Expected no error with LONGHORN_DISKS set, got: %v", err)
+			t.Errorf("Expected no error with CLUSTER_PREMOUNTED_DISKS set, got: %v", err)
 		}
-		viper.Set("LONGHORN_DISKS", "")
+		viper.Set("CLUSTER_PREMOUNTED_DISKS", "")
 	})
 
-	t.Run("with SKIP_DISK_CHECK", func(t *testing.T) {
-		viper.Set("SKIP_DISK_CHECK", true)
+	t.Run("with NO_DISKS_FOR_CLUSTER", func(t *testing.T) {
+		viper.Set("NO_DISKS_FOR_CLUSTER", true)
 		err := PersistMountedDisks(map[string]string{})
 		if err != nil {
-			t.Errorf("Expected no error with SKIP_DISK_CHECK, got: %v", err)
+			t.Errorf("Expected no error with NO_DISKS_FOR_CLUSTER, got: %v", err)
 		}
-		viper.Set("SKIP_DISK_CHECK", false)
+		viper.Set("NO_DISKS_FOR_CLUSTER", false)
 	})
 
 	t.Run("with empty mountedMap", func(t *testing.T) {
@@ -318,9 +290,9 @@ func TestWipeTargetDisks(t *testing.T) {
 
 func TestRemoveMountPointDirectories(t *testing.T) {
 	tests := []struct {
-		name               string
+		name                string
 		mountPointsToRemove []string
-		shouldError        bool
+		shouldError         bool
 	}{
 		{"empty mount points list", []string{}, false},
 		{"single mount point", []string{"/mnt/disk1"}, false},
