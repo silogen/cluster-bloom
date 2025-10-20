@@ -26,49 +26,6 @@ import (
 	"github.com/spf13/viper"
 )
 
-func GetPriorLonghornDisks(longhornFromConfig map[string]interface{}) (disks []string, mountPoints map[string]string, err error) {
-	mountPoints = make(map[string]string)
-
-	// Step 1: Try LONGHORN_DISKS first
-	if longhornDisksValue, ok := longhornFromConfig["longhorn_disks"]; ok && longhornDisksValue != nil {
-		if longhornDisksStr, ok := longhornDisksValue.(string); ok && longhornDisksStr != "" {
-			disks, mountPoints, err = GetDisksFromLonghornConfig(longhornDisksStr)
-			if err != nil {
-				LogMessage(Warn, fmt.Sprintf("GetDisksFromLonghornConfig failed: %v", err))
-			} else if len(disks) > 0 {
-				LogMessage(Info, "Successfully found disks from LONGHORN_DISKS configuration")
-				return disks, mountPoints, nil
-			}
-		}
-	}
-
-	// Step 2: Try SELECTED_DISKS if Step 1 failed or returned no disks
-	if selectedDisksValue, ok := longhornFromConfig["selected_disks"]; ok && selectedDisksValue != nil {
-		if selectedDisksStr, ok := selectedDisksValue.(string); ok && selectedDisksStr != "" {
-			disks, mountPoints, err = GetDisksFromSelectedConfig(selectedDisksStr)
-			if err != nil {
-				LogMessage(Warn, fmt.Sprintf("GetDisksFromSelectedConfig failed: %v", err))
-			} else if len(disks) > 0 {
-				LogMessage(Info, "Successfully found disks from SELECTED_DISKS configuration")
-				return disks, mountPoints, nil
-			}
-		}
-	}
-
-	// Step 3: Try bloom.log if Step 1 and 2 failed or returned no disks
-	 disks, mountPoints, err = GetDisksFromBloomLog()
-	if err != nil {
-		LogMessage(Warn, fmt.Sprintf("GetDisksFromBloomLog failed: %v", err))
-	} else if len(disks) > 0 {
-		LogMessage(Info, "Successfully found disks from bloom.log")
-		return disks, mountPoints, nil
-	}
-
-	// All functions failed or returned no disks
-	LogMessage(Error, "No longhorn disks found from any source (LONGHORN_DISKS, SELECTED_DISKS, bloom.log)")
-	return nil, nil, fmt.Errorf("no longhorn disks found from any configuration source")
-}
-
 func GetDisksFromLonghornConfig(longhornFromConfig string) (disks []string, mountPoints map[string]string, e error) {
 	// Accept LONGHORN_DISKS in any case (e.g., longhorn_disks, Longhorn_Disks)
 	var val string
@@ -143,7 +100,7 @@ func getDeviceFromMountpoint(diskPath string) (device string, mountPoint string)
 
 func getMountpointsFromDevice(device string) string {
 	var mountPoints []string
-	
+
 	// Check for regular mount points from /proc/mounts
 	shellCmd := fmt.Sprintf("awk '$1 == \"%s\" {print $2}' /proc/mounts", device)
 	cmd := exec.Command("sh", "-c", shellCmd)
@@ -154,7 +111,7 @@ func getMountpointsFromDevice(device string) string {
 			mountPoints = append(mountPoints, strings.Split(mounts, "\n")...)
 		}
 	}
-	
+
 	// Check if device is used as swap
 	swapCmd := fmt.Sprintf("awk '$1 == \"%s\" {print \"[swap]\"}' /proc/swaps", device)
 	cmd = exec.Command("sh", "-c", swapCmd)
@@ -165,7 +122,7 @@ func getMountpointsFromDevice(device string) string {
 			mountPoints = append(mountPoints, swap)
 		}
 	}
-	
+
 	// Check partitions of the device for swap
 	lsblkCmd := fmt.Sprintf("lsblk -no NAME,FSTYPE %s 2>/dev/null | awk '$2 == \"swap\" {print \"/dev/\" $1 \" [swap]\"}'", device)
 	cmd = exec.Command("sh", "-c", lsblkCmd)
@@ -180,7 +137,7 @@ func getMountpointsFromDevice(device string) string {
 			}
 		}
 	}
-	
+
 	return strings.Join(mountPoints, ",")
 }
 

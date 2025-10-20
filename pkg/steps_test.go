@@ -122,9 +122,9 @@ func TestSetupAndCheckRocmStep(t *testing.T) {
 	// Result depends on system state
 }
 
-func TestMountSelectedDrivesStep(t *testing.T) {
+func TestPrepareLonghornDisksStep(t *testing.T) {
 	viper.Set("selected_disks", []string{})
-	result := MountSelectedDrivesStep.Action()
+	result := PrepareLonghornDisksStep.Action()
 	if result.Error != nil {
 		t.Errorf("Expected no error with empty disk list, got: %v", result.Error)
 	}

@@ -292,18 +292,6 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	// // Safely extract LONGHORN_DISKS from prefilledConfig (it may be absent or not a string)
-	// var longhornDisksStr string
-	// if v, ok := h.prefilledConfig["LONGHORN_DISKS"].(string); ok {
-	// 	longhornDisksStr = v
-	// } else if v, ok := h.prefilledConfig["longhorn_disks"].(string); ok {
-	// 	// accept lowercase key as well
-	// 	longhornDisksStr = v
-	// } else {
-	// 	longhornDisksStr = ""
-	// }
-
-	//_, longhornMountPoints, err := GetPriorLonghornDisks(longhornDisksStr)
 	_, longhornPreviousDisks, err := GetDisksFromSelectedConfig(h.prefilledConfig["selected_disks"].(string))
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Error getting prior Longhorn previous format targets: %v", err))

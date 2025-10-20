@@ -282,15 +282,11 @@ var UpdateModprobeStep = Step{
 	},
 }
 
-var MountSelectedDrivesStep = Step{
-	Id:          "MountSelectedDrivesStep",
-	Name:        "Mount Selected Disks",
-	Description: "Mount the selected physical disks",
+var PrepareLonghornDisksStep = Step{
+	Id:          "PrepareLonghornDisksStep",
+	Name:        "Prepare Longhorn Disks",
+	Description: "Mount selected disks or populate disk map from LONGHORN_DISKS configuration",
 	Skip: func() bool {
-		if viper.IsSet("LONGHORN_DISKS") && viper.GetString("LONGHORN_DISKS") != "" {
-			LogMessage(Info, "Skipping drive mounting as LONGHORN_DISKS is set.")
-			return true
-		}
 		if viper.GetBool("SKIP_DISK_CHECK") {
 			LogMessage(Info, "Skipping drive mounting as SKIP_DISK_CHECK is set.")
 			return true
@@ -298,37 +294,51 @@ var MountSelectedDrivesStep = Step{
 		return false
 	},
 	Action: func() StepResult {
-		selectedDisks := strings.Split(viper.GetString("SELECTED_DISKS"), ",")
-		if len(selectedDisks) == 0 {
-			LogMessage(Info, "No disks selected for mounting")
+		// Check if LONGHORN_DISKS is already set
+		if viper.IsSet("LONGHORN_DISKS") && viper.GetString("LONGHORN_DISKS") != "" {
+			LogMessage(Info, "LONGHORN_DISKS is already set, populating mounted disk map from mount points")
+
+			// Parse LONGHORN_DISKS and create map from current mount state
+			longhornDisks := viper.GetString("LONGHORN_DISKS")
+			mountDirs := strings.Split(longhornDisks, ",")
+			mountedDiskMap := make(map[string]string)
+
+			for i, mountDir := range mountDirs {
+				mountDir = strings.TrimSpace(mountDir)
+				mountedDiskMap[mountDir] = fmt.Sprintf("%d", i)
+			}
+
+			// Store in viper for use by other steps
+			viper.Set("mounted_disk_map", mountedDiskMap)
+
+			LogMessage(Info, fmt.Sprintf("Populated mounted disk map with %d entries from LONGHORN_DISKS", len(mountedDiskMap)))
 			return StepResult{Error: nil}
 		}
 
-		mountedMap, mountError := MountDrives(selectedDisks)
+		selectedDisks := strings.Split(viper.GetString("SELECTED_DISKS"), ",")
+		if len(selectedDisks) == 0 {
+			return StepResult{
+				Error: fmt.Errorf("no disks selected for mounting"),
+			}
+		}
+
+		mountedDiskMap, mountError := MountDrives(selectedDisks)
 		if mountError != nil {
 			return StepResult{
 				Error: fmt.Errorf("error mounting disks: %v", mountError),
 			}
 		}
-		persistError := PersistMountedDisks(mountedMap)
+		persistError := PersistMountedDisks(mountedDiskMap)
 		if persistError != nil {
 			return StepResult{
 				Error: fmt.Errorf("error persisting mounted disks: %v", persistError),
 			}
 		}
 
-		// Set LONGHORN_DISKS to the comma-separated list of mounted directories
-		if len(mountedMap) > 0 {
-			var mountedDirs []string
-			for mountPoint := range mountedMap {
-				mountedDirs = append(mountedDirs, mountPoint)
-			}
-			longhornDisks := strings.Join(mountedDirs, ",")
-			viper.Set("LONGHORN_DISKS", longhornDisks)
-			LogMessage(Info, fmt.Sprintf("Set LONGHORN_DISKS to: %s", longhornDisks))
-		}
+		// Store in viper for use by other steps
+		viper.Set("mounted_disk_map", mountedDiskMap)
 
-		LogMessage(Info, fmt.Sprintf("Mounted %d disks: %v", len(mountedMap), mountedMap))
+		LogMessage(Info, fmt.Sprintf("Mounted %d disks: %v", len(mountedDiskMap), mountedDiskMap))
 		return StepResult{Error: nil}
 	},
 }
@@ -338,7 +348,15 @@ var GenerateNodeLabelsStep = Step{
 	Name:        "Generate node Labels",
 	Description: "Generate labels for the node based on its configuration",
 	Action: func() StepResult {
-		err := GenerateNodeLabels()
+		// Get mounted disk map from viper
+		mountedDiskMap := make(map[string]string)
+		if mapInterface := viper.Get("mounted_disk_map"); mapInterface != nil {
+			if m, ok := mapInterface.(map[string]string); ok {
+				mountedDiskMap = m
+			}
+		}
+
+		err := GenerateNodeLabels(mountedDiskMap)
 		if err != nil {
 			return StepResult{Error: err}
 		}
