@@ -115,6 +115,12 @@ func SetArguments() {
 			Validators:  []func(value string) error{args.ValidateSkipDiskCheckConsistency},
 		},
 		{
+			Key:         "SKIP_RANCHER_PARTITION_CHECK",
+			Default:     false,
+			Description: "Set to true to skip /var/lib/rancher partition size check.",
+			Type:        "bool",
+		},
+		{
 			Key:          "CLUSTER_PREMOUNTED_DISKS",
 			Default:      "",
 			Description:  "Comma-separated list of disk paths to use for Longhorn.",

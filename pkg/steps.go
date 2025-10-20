@@ -495,6 +495,10 @@ var HasSufficientRancherPartitionStep = Step{
 	Name:        "Check /var/lib/rancher Partition Size",
 	Description: "Check if the /var/lib/rancher partition size is sufficient",
 	Skip: func() bool {
+		if viper.GetBool("SKIP_RANCHER_PARTITION_CHECK") {
+			LogMessage(Info, "Skipping /var/lib/rancher partition check as SKIP_RANCHER_PARTITION_CHECK is set.")
+			return true
+		}
 		if !viper.GetBool("GPU_NODE") {
 			LogMessage(Info, "Skipping /var/lib/rancher partition check for CPU node.")
 			return true
