@@ -339,6 +339,33 @@ var PrepareLonghornDisksStep = Step{
 		viper.Set("mounted_disk_map", mountedDiskMap)
 
 		LogMessage(Info, fmt.Sprintf("Mounted %d disks: %v", len(mountedDiskMap), mountedDiskMap))
+
+		// Back up longhorn files for all disks in mountedDiskMap
+		timestamp := time.Now().Format("20060102-150405")
+		for mountPoint := range mountedDiskMap {
+			longhornConfigPath := filepath.Join(mountPoint, "longhorn-disk.cfg")
+			if _, err := os.Stat(longhornConfigPath); err == nil {
+				backupPath := filepath.Join(mountPoint, fmt.Sprintf("longhorn-disk.cfg.backup-%s", timestamp))
+				LogMessage(Info, fmt.Sprintf("Found longhorn-disk.cfg at %s, backing up to %s", longhornConfigPath, backupPath))
+				if err := os.Rename(longhornConfigPath, backupPath); err != nil {
+					LogMessage(Warn, fmt.Sprintf("Failed to backup longhorn-disk.cfg: %v", err))
+				} else {
+					LogMessage(Info, fmt.Sprintf("Backed up and removed longhorn-disk.cfg"))
+				}
+			}
+
+			replicasPath := filepath.Join(mountPoint, "replicas")
+			if info, err := os.Stat(replicasPath); err == nil && info.IsDir() {
+				backupPath := filepath.Join(mountPoint, fmt.Sprintf("replicas.backup-%s", timestamp))
+				LogMessage(Info, fmt.Sprintf("Found replicas directory at %s, backing up to %s", replicasPath, backupPath))
+				if err := os.Rename(replicasPath, backupPath); err != nil {
+					LogMessage(Warn, fmt.Sprintf("Failed to backup replicas directory: %v", err))
+				} else {
+					LogMessage(Info, fmt.Sprintf("Backed up and removed replicas directory"))
+				}
+			}
+		}
+
 		return StepResult{Error: nil}
 	},
 }
