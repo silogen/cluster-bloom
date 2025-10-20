@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -76,8 +75,7 @@ func UnmountPriorLonghornDisks() error {
 					LogMessage(Info, fmt.Sprintf("Force unmounting %s", mountPoint))
 					cmd := exec.Command("sudo", "umount", "-lf", mountPoint)
 					if err := cmd.Run(); err != nil {
-						LogMessage(Error, fmt.Sprintf("Failed to force unmount %s: %v", mountPoint, err))
-						return fmt.Errorf("failed to unmount %s: %w", mountPoint, err)
+						LogMessage(Warn, fmt.Sprintf("Failed to force unmount %s: %v", mountPoint, err))
 					}
 					LogMessage(Info, fmt.Sprintf("Successfully unmounted %s", mountPoint))
 				}
@@ -352,6 +350,7 @@ func MountDrives(drives []string) (map[string]string, error) {
 		}
 
 		LogMessage(Info, fmt.Sprintf("Mounted %s at %s", drive, mountPoint))
+		mountedMap[mountPoint] = fmt.Sprintf("%s-%s", drive, uuid)
 
 		i++
 	}

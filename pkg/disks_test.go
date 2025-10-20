@@ -66,7 +66,7 @@ func TestGenerateNodeLabels(t *testing.T) {
 	t.Run("with LONGHORN_DISKS set", func(t *testing.T) {
 		viper.Set("LONGHORN_DISKS", "/dev/sda")
 
-		err := GenerateNodeLabels()
+		err := GenerateNodeLabels(map[string]string{})
 		// Expected to fail due to permission/path issues in test
 		if err == nil {
 			t.Log("Function succeeded unexpectedly")
@@ -76,7 +76,7 @@ func TestGenerateNodeLabels(t *testing.T) {
 
 	t.Run("with SKIP_DISK_CHECK", func(t *testing.T) {
 		viper.Set("SKIP_DISK_CHECK", true)
-		err := GenerateNodeLabels()
+		err := GenerateNodeLabels(map[string]string{})
 		if err != nil {
 			t.Errorf("Expected no error with SKIP_DISK_CHECK, got: %v", err)
 		}
@@ -85,7 +85,7 @@ func TestGenerateNodeLabels(t *testing.T) {
 
 	t.Run("with no selected disks", func(t *testing.T) {
 		viper.Set("selected_disks", []string{})
-		err := GenerateNodeLabels()
+		err := GenerateNodeLabels(map[string]string{})
 		if err != nil {
 			t.Errorf("Expected no error with empty disk list, got: %v", err)
 		}
