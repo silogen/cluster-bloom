@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Configuration variables
-LonghornVersion=v1.10.0
+LonghornVersion=v1.8.0
 OS=linux
 ARCH=amd64
 CHECK_FREQUENCY=${CHECK_FREQUENCY:-5}  # Default: check every 5 seconds
