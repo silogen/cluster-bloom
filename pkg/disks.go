@@ -28,6 +28,8 @@ import (
 	"github.com/spf13/viper"
 )
 
+const bloomFstabTag = "# managed by cluster-bloom"
+
 func UnmountPriorLonghornDisks() error {
 
 	// Create backup first
@@ -41,7 +43,7 @@ func UnmountPriorLonghornDisks() error {
 
 	mountPoints := make(map[string]string)
 
-	// Read /etc/fstab and look for entries tagged with "# Added by bloom"
+	// Read /etc/fstab and look for entries tagged with bloomFstabTag
 	fstabContent, err := os.ReadFile("/etc/fstab")
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to read /etc/fstab: %v", err))
@@ -64,7 +66,7 @@ func UnmountPriorLonghornDisks() error {
 		trimmedLine := strings.TrimSpace(line)
 
 		// Check if this is a bloom entry
-		if strings.HasSuffix(trimmedLine, "# Added by bloom") {
+		if strings.HasSuffix(trimmedLine, bloomFstabTag) {
 			// Extract mount point for unmounting
 			fields := strings.Fields(trimmedLine)
 			if len(fields) >= 2 {
@@ -421,7 +423,7 @@ func PersistMountedDisks(mountedMap map[string]string) error {
 			LogMessage(Debug, fmt.Sprintf("%s is already in /etc/fstab.", mountPoint))
 			continue
 		}
-		entry := fmt.Sprintf("UUID=%s %s ext4 defaults,nofail 0 2 # Added by bloom\n", uuid, mountPoint)
+		entry := fmt.Sprintf("UUID=%s %s ext4 defaults,nofail 0 2 %s\n", uuid, mountPoint, bloomFstabTag)
 		cmd = exec.Command("sudo", "tee", "-a", fstabFile)
 		cmd.Stdin = strings.NewReader(entry)
 		if err := cmd.Run(); err != nil {
@@ -542,8 +544,8 @@ func CleanFstab(targetDisks []string) error {
 	for _, line := range lines {
 		shouldRemove := false
 
-		// Remove lines ending with "# Added by bloom"
-		if strings.HasSuffix(strings.TrimSpace(line), "# Added by bloom") {
+		// Remove lines ending with bloomFstabTag
+		if strings.HasSuffix(strings.TrimSpace(line), bloomFstabTag) {
 			LogMessage(Info, fmt.Sprintf("Removing bloom-added fstab entry: %s", strings.TrimSpace(line)))
 			shouldRemove = true
 			removedCount++
