@@ -294,51 +294,47 @@ var PrepareLonghornDisksStep = Step{
 		return false
 	},
 	Action: func() StepResult {
-		// Check if CLUSTER_PREMOUNTED_DISKS is already set
+		var mountedDiskMap map[string]string
+		// Check if CLUSTER_PREMOUNTED_DISKS is set
 		if viper.IsSet("CLUSTER_PREMOUNTED_DISKS") && viper.GetString("CLUSTER_PREMOUNTED_DISKS") != "" {
-			LogMessage(Info, "CLUSTER_PREMOUNTED_DISKS is already set, populating mounted disk map from mount points")
+			LogMessage(Info, "CLUSTER_PREMOUNTED_DISKS is set, populating mounted disk map from mount points")
 
 			// Parse CLUSTER_PREMOUNTED_DISKS and create map from current mount state
 			longhornDisks := viper.GetString("CLUSTER_PREMOUNTED_DISKS")
 			mountDirs := strings.Split(longhornDisks, ",")
-			mountedDiskMap := make(map[string]string)
+			mountedDiskMap = make(map[string]string)
 
 			for i, mountDir := range mountDirs {
 				mountDir = strings.TrimSpace(mountDir)
+				LogMessage(Info, mountDir)
 				mountedDiskMap[mountDir] = fmt.Sprintf("%d", i)
 			}
+			LogMessage(Info, fmt.Sprintf("%v", mountedDiskMap))
+		} else {
 
-			// Store in viper for use by other steps
-			viper.Set("mounted_disk_map", mountedDiskMap)
-
-			LogMessage(Info, fmt.Sprintf("Populated mounted disk map with %d entries from CLUSTER_PREMOUNTED_DISKS", len(mountedDiskMap)))
-			return StepResult{Error: nil}
-		}
-
-		selectedDisks := strings.Split(viper.GetString("CLUSTER_DISKS"), ",")
-		if len(selectedDisks) == 0 {
-			return StepResult{
-				Error: fmt.Errorf("no disks selected for mounting"),
+			selectedDisks := strings.Split(viper.GetString("CLUSTER_DISKS"), ",")
+			if len(selectedDisks) == 0 {
+				return StepResult{
+					Error: fmt.Errorf("no disks selected for mounting"),
+				}
+			}
+			var mountError error
+			mountedDiskMap, mountError = MountDrives(selectedDisks)
+			if mountError != nil {
+				return StepResult{
+					Error: fmt.Errorf("error mounting disks: %v", mountError),
+				}
+			}
+			persistError := PersistMountedDisks(mountedDiskMap)
+			if persistError != nil {
+				return StepResult{
+					Error: fmt.Errorf("error persisting mounted disks: %v", persistError),
+				}
 			}
 		}
-
-		mountedDiskMap, mountError := MountDrives(selectedDisks)
-		if mountError != nil {
-			return StepResult{
-				Error: fmt.Errorf("error mounting disks: %v", mountError),
-			}
-		}
-		persistError := PersistMountedDisks(mountedDiskMap)
-		if persistError != nil {
-			return StepResult{
-				Error: fmt.Errorf("error persisting mounted disks: %v", persistError),
-			}
-		}
-
+		LogMessage(Info, fmt.Sprintf("Used %d disks: %v", len(mountedDiskMap), mountedDiskMap))
 		// Store in viper for use by other steps
 		viper.Set("mounted_disk_map", mountedDiskMap)
-
-		LogMessage(Info, fmt.Sprintf("Mounted %d disks: %v", len(mountedDiskMap), mountedDiskMap))
 
 		// Back up longhorn files for all disks in mountedDiskMap
 		timestamp := time.Now().Format("20060102-150405")
@@ -513,7 +509,6 @@ var HasSufficientRancherPartitionStep = Step{
 		return StepResult{Error: fmt.Errorf("/var/lib/rancher partition size is less than the recommended 500GB")}
 	},
 }
-
 
 var SetupKubeConfig = Step{
 	Id:          "SetupKubeConfig",

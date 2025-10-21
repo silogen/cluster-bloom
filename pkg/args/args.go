@@ -301,8 +301,38 @@ func ValidateBool(input string) error {
 	return fmt.Errorf("invalid boolean value. Please enter: true/false, yes/no, y/n, or 1/0")
 }
 
+// ValidateDeprecatedArgs checks if any deprecated arguments are being used
+func ValidateDeprecatedArgs() error {
+	var errors []string
+
+	// Map of old argument names to new argument names
+	deprecatedArgs := map[string]string{
+		"SKIP_DISK_CHECK": "NO_DISKS_FOR_CLUSTER",
+		"LONGHORN_DISKS":  "CLUSTER_PREMOUNTED_DISKS",
+		"SELECTED_DISKS":  "CLUSTER_DISKS",
+	}
+
+	// Check if any deprecated arguments are set in viper
+	for oldArg, newArg := range deprecatedArgs {
+		if viper.IsSet(oldArg) {
+			errors = append(errors, fmt.Sprintf("argument '%s' has been renamed to '%s'. Please update your configuration to use '%s' instead", oldArg, newArg, newArg))
+		}
+	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf("deprecated arguments detected:\n- %s", strings.Join(errors, "\n- "))
+	}
+
+	return nil
+}
+
 func ValidateArgs() error {
 	var errors []string
+
+	// Check for deprecated arguments first
+	if err := ValidateDeprecatedArgs(); err != nil {
+		return err
+	}
 
 	for _, arg := range Arguments {
 		value := viper.GetString(arg.Key)

@@ -518,3 +518,101 @@ func TestGenerateArgsHelp(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateDeprecatedArgs(t *testing.T) {
+	tests := []struct {
+		name          string
+		setArgs       map[string]string
+		wantErr       bool
+		errorContains []string
+	}{
+		{
+			name:    "No deprecated args - valid",
+			setArgs: map[string]string{},
+			wantErr: false,
+		},
+		{
+			name: "SKIP_DISK_CHECK used - invalid",
+			setArgs: map[string]string{
+				"SKIP_DISK_CHECK": "true",
+			},
+			wantErr: true,
+			errorContains: []string{
+				"SKIP_DISK_CHECK",
+				"NO_DISKS_FOR_CLUSTER",
+				"has been renamed",
+			},
+		},
+		{
+			name: "LONGHORN_DISKS used - invalid",
+			setArgs: map[string]string{
+				"LONGHORN_DISKS": "/mnt/disk1",
+			},
+			wantErr: true,
+			errorContains: []string{
+				"LONGHORN_DISKS",
+				"CLUSTER_PREMOUNTED_DISKS",
+				"has been renamed",
+			},
+		},
+		{
+			name: "SELECTED_DISKS used - invalid",
+			setArgs: map[string]string{
+				"SELECTED_DISKS": "/dev/sdb",
+			},
+			wantErr: true,
+			errorContains: []string{
+				"SELECTED_DISKS",
+				"CLUSTER_DISKS",
+				"has been renamed",
+			},
+		},
+		{
+			name: "Multiple deprecated args used - invalid",
+			setArgs: map[string]string{
+				"SKIP_DISK_CHECK": "true",
+				"LONGHORN_DISKS":  "/mnt/disk1",
+				"SELECTED_DISKS":  "/dev/sdb",
+			},
+			wantErr: true,
+			errorContains: []string{
+				"deprecated arguments detected",
+				"SKIP_DISK_CHECK",
+				"LONGHORN_DISKS",
+				"SELECTED_DISKS",
+			},
+		},
+		{
+			name: "New args used - valid",
+			setArgs: map[string]string{
+				"NO_DISKS_FOR_CLUSTER":    "false",
+				"CLUSTER_PREMOUNTED_DISKS": "/mnt/disk1",
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			viper.Reset()
+
+			// Set the test arguments
+			for key, value := range tt.setArgs {
+				viper.Set(key, value)
+			}
+
+			err := ValidateDeprecatedArgs()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateDeprecatedArgs() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			if err != nil && tt.wantErr {
+				for _, substring := range tt.errorContains {
+					if !strings.Contains(err.Error(), substring) {
+						t.Errorf("ValidateDeprecatedArgs() error message = %v, should contain %v", err.Error(), substring)
+					}
+				}
+			}
+		})
+	}
+}
