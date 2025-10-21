@@ -544,6 +544,10 @@ func initConfig() {
 	viper.SetDefault("TLS_KEY", "")
 	viper.SetDefault("USE_CERT_MANAGER", false)
 	viper.SetDefault("CERT_OPTION", "")
+	// i want this list as a default
+	// []string{"rocm/pytorch:rocm6.4_ubuntu24.04_py3.12_pytorch_release_2.6.0", "rocm/vllm:rocm6.4.1_vllm_0.9.0.1_20250605"}
+	viper.SetDefault("IMAGE_LIST", []string{"rocm/pytorch:rocm6.4_ubuntu24.04_py3.12_pytorch_release_2.6.0", "rocm/vllm:rocm6.4.1_vllm_0.9.0.1_20250605"})
+
 	viper.AutomaticEnv()
 	if err := viper.ReadInConfig(); err == nil {
 		log.Infof("Using config file: %s", viper.ConfigFileUsed())

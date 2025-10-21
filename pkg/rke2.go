@@ -275,9 +275,8 @@ func PreloadImages() error {
 	if err := os.MkdirAll(imagesDir, 0755); err != nil {
 		return fmt.Errorf("failed to create images directory %s: %v", imagesDir, err)
 	}
-	imageList := []string{"rocm/pytorch:rocm6.4_ubuntu24.04_py3.12_pytorch_release_2.6.0", "rocm/vllm:rocm6.4.1_vllm_0.9.0.1_20250605"}
-	//instead, imageslist should be gotten from viper
-	// write image1, image2 into airm_images.txt
+	imageList := viper.GetStringSlice("IMAGE_LIST")
+
 	preloadImagesFile := "/var/lib/rancher/rke2/agent/images/airm_images.txt"
 	LogMessage(Info, fmt.Sprintf("Caching images to %s", preloadImagesFile))
 	if err := os.WriteFile(preloadImagesFile, []byte(strings.Join(imageList, "\n")), 0644); err != nil {
