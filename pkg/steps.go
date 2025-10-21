@@ -68,21 +68,36 @@ var InstallDependentPackagesStep = Step{
 }
 
 var CreateChronyConfigStep = Step{
-  Id:          "CreateChronyConfigStep",
-  Name:        "Create Chrony Config",
-  Description: "Create chrony config for first node and additional node cases",
-  Action: func() StepResult {
-    var err error
-    if viper.GetBool("FIRST_NODE") {
-      err = GenerateChronyConfFirst()
-    } else if viper.GetString("SERVER_IP") !="" {
-      err = GenerateChronyConfAdditional()
-    }
+	Id:          "CreateChronyConfigStep",
+	Name:        "Create Chrony Config",
+	Description: "Create chrony config for first node and additional node cases",
+	Action: func() StepResult {
+		var err error
+		if viper.GetBool("FIRST_NODE") {
+			err = GenerateChronyConfFirst()
+		} else if viper.GetString("SERVER_IP") != "" {
+			err = GenerateChronyConfAdditional()
+		}
 		if err != nil {
-          return StepResult{Error: err}
-    }
-    return StepResult{Error: nil}
-  },
+			return StepResult{Error: err}
+		}
+		return StepResult{Error: nil}
+	},
+}
+
+var PreloadImagesStep = Step{
+	Id:          "PreloadImagesStep",
+	Name:        "Preload Images",
+	Description: "Preload container images",
+	Action: func() StepResult {
+		if viper.GetBool("FIRST_NODE") {
+			err := PreloadImages()
+			if err != nil {
+				return StepResult{Error: err}
+			}
+		}
+		return StepResult{Error: nil}
+	},
 }
 
 var OpenPortsStep = Step{

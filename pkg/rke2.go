@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/spf13/viper"
@@ -89,6 +90,7 @@ func PrepareRKE2() error {
 		LogMessage(Error, fmt.Sprintf("Failed to write to %s: %v", rke2ConfigPath, err))
 		return err
 	}
+
 	certPath := "/etc/rancher/rke2/oidc-ca.crt"
 	if _, err := os.Stat(certPath); err == nil {
 		if err := os.Remove(certPath); err != nil {
@@ -114,6 +116,7 @@ func PrepareRKE2() error {
 			return fmt.Errorf("failed to append to %s: %v", rke2ConfigPath, err)
 		}
 	}
+
 	return nil
 }
 
@@ -262,5 +265,23 @@ func SetupRKE2ControlPlane() error {
 		return err
 	}
 
+	return nil
+}
+
+func PreloadImages() error {
+
+	imagesDir := "/var/lib/rancher/rke2/agent/images"
+
+	if err := os.MkdirAll(imagesDir, 0755); err != nil {
+		return fmt.Errorf("failed to create images directory %s: %v", imagesDir, err)
+	}
+	imageList := []string{"rocm/pytorch:rocm6.4_ubuntu24.04_py3.12_pytorch_release_2.6.0", "rocm/vllm:rocm6.4.1_vllm_0.9.0.1_20250605"}
+	//instead, imageslist should be gotten from viper
+	// write image1, image2 into airm_images.txt
+	preloadImagesFile := "/var/lib/rancher/rke2/agent/images/airm_images.txt"
+	LogMessage(Info, fmt.Sprintf("Caching images to %s", preloadImagesFile))
+	if err := os.WriteFile(preloadImagesFile, []byte(strings.Join(imageList, "\n")), 0644); err != nil {
+		return fmt.Errorf("failed to write airgapped images file %s: %v", preloadImagesFile, err)
+	}
 	return nil
 }
