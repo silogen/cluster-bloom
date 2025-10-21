@@ -17,6 +17,7 @@
 package pkg
 
 import (
+	_ "embed"
 	"fmt"
 	"io/fs"
 	"os"
@@ -26,6 +27,9 @@ import (
 
 	"github.com/spf13/viper"
 )
+
+//go:embed scripts/longhornPreflight.sh
+var longhornPreflightScript []byte
 
 func CheckPackageInstallConnections() error {
 	cmd := exec.Command("apt-get", "update")
@@ -183,7 +187,7 @@ func SetupClusterForge() error {
 	cmd := exec.Command("wget", url, "-O", "clusterforge.tar.gz")
 	output, err := cmd.Output()
 	if err != nil {
-		LogMessage(Error, fmt.Sprintf("Failed to download ClusterForge: %v", err))
+		LogMessage(Error, fmt.Sprintf("Failed to download ClusterForge: %v, output: %v", err, output))
 		return err
 	} else {
 		LogMessage(Info, "Successfully downloaded ClusterForge")
@@ -192,17 +196,26 @@ func SetupClusterForge() error {
 	cmd = exec.Command("tar", "-xzvf", "clusterforge.tar.gz")
 	output, err = cmd.Output()
 	if err != nil {
-		LogMessage(Error, fmt.Sprintf("Failed to unzip clusterforge.tar.gz: %v", err))
+		LogMessage(Error, fmt.Sprintf("Failed to unzip clusterforge.tar.gz: %v, output %v", err, output))
 		return err
 	} else {
 		LogMessage(Info, "Successfully unzipped clusterforge.tar.gz")
 	}
 
 	domain := viper.GetString("DOMAIN")
-	
+
 	// Get the original user when running with sudo
 	originalUser := os.Getenv("SUDO_USER")
-	
+
+	cmd = exec.Command("sudo", "chown", "-R", fmt.Sprintf("%s:%s", originalUser, originalUser), "cluster-forge")
+	output, err = cmd.Output()
+	if err != nil {
+		LogMessage(Error, fmt.Sprintf("Failed to change ownership of Clusterforge folder: %v, output %v", err, output))
+		return err
+	} else {
+		LogMessage(Info, fmt.Sprintf("Successfully updated ownership of Clusterforge folder to %s", originalUser))
+	}
+
 	scriptsDir := "cluster-forge/scripts"
 	if originalUser != "" {
 		// Run as the original user to avoid sudo issues with bootstrap script
@@ -220,5 +233,43 @@ func SetupClusterForge() error {
 	} else {
 		LogMessage(Info, fmt.Sprintf("ClusterForge deployment output: %s", output))
 	}
+	return nil
+}
+
+func LonghornPreflightCheck() error {
+	// Create a temporary file with the embedded script content
+	tmpFile, err := os.CreateTemp("", "longhornPreflight-*.sh")
+	if err != nil {
+		LogMessage(Error, fmt.Sprintf("Failed to create temporary script file: %v", err))
+		return err
+	}
+	defer os.Remove(tmpFile.Name()) // Clean up the temporary file
+
+	// Write the embedded script content to the temporary file
+	if _, err := tmpFile.Write(longhornPreflightScript); err != nil {
+		LogMessage(Error, fmt.Sprintf("Failed to write script content: %v", err))
+		tmpFile.Close()
+		return err
+	}
+	tmpFile.Close()
+
+	// Make the script executable
+	if err := os.Chmod(tmpFile.Name(), 0755); err != nil {
+		LogMessage(Error, fmt.Sprintf("Failed to make script executable: %v", err))
+		return err
+	}
+
+	cmd := exec.Command("bash", tmpFile.Name())
+	cmd.Env = os.Environ()
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	err = cmd.Run()
+	if err != nil {
+		LogMessage(Error, fmt.Sprintf("Longhorn preflight check failed: %v", err))
+		return err
+	}
+
+	LogMessage(Info, "Longhorn preflight check completed successfully")
 	return nil
 }
