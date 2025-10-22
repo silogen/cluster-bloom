@@ -17,10 +17,10 @@ package pkg
 
 import (
     "fmt"
-    "os"
     "os/exec"
 
-		"github.com/spf13/viper"
+	"github.com/silogen/cluster-bloom/pkg/fsops"
+	"github.com/spf13/viper"
 )
 
 // Define chrony configuration templates as package-level variables
@@ -99,7 +99,7 @@ func writeChronyConf(chronyConf string) error {
     targetPath := "/etc/chrony/chrony.conf"
 		LogMessage(Info, "Original chrony.conf saved as chrony.conf.bak")
 
-    err := os.WriteFile(targetPath, []byte(chronyConf), 0644)
+    err := fsops.WriteFile(targetPath, []byte(chronyConf), 0644)
     if err != nil {
         return fmt.Errorf("failed to write %s: %w", targetPath, err)
     }

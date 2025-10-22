@@ -193,3 +193,23 @@ func WriteString(name string, data string) error {
 
 	return os.WriteFile(name, []byte(data), 0644)
 }
+
+// CreateTemp creates a new temporary file in the directory dir.
+// If dry-run mode is enabled, it logs the operation and returns a nil file.
+func CreateTemp(dir, pattern string) (*os.File, error) {
+	if dryrun.IsDryRun() {
+		log.Infof("[DRY-RUN] CREATE_TEMP: dir=%s, pattern=%s", dir, pattern)
+		return nil, nil
+	}
+	return os.CreateTemp(dir, pattern)
+}
+
+// MkdirTemp creates a new temporary directory in the directory dir.
+// If dry-run mode is enabled, it logs the operation and returns empty string.
+func MkdirTemp(dir, pattern string) (string, error) {
+	if dryrun.IsDryRun() {
+		log.Infof("[DRY-RUN] MKDIR_TEMP: dir=%s, pattern=%s", dir, pattern)
+		return "", nil
+	}
+	return os.MkdirTemp(dir, pattern)
+}

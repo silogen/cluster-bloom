@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/silogen/cluster-bloom/pkg/args"
+	"github.com/silogen/cluster-bloom/pkg/fsops"
 	"github.com/silogen/cluster-bloom/pkg/sysvalidation"
 	"github.com/spf13/viper"
 )
@@ -343,7 +344,7 @@ var PrepareLonghornDisksStep = Step{
 			if _, err := os.Stat(longhornConfigPath); err == nil {
 				backupPath := filepath.Join(mountPoint, fmt.Sprintf("longhorn-disk.cfg.backup-%s", timestamp))
 				LogMessage(Info, fmt.Sprintf("Found longhorn-disk.cfg at %s, backing up to %s", longhornConfigPath, backupPath))
-				if err := os.Rename(longhornConfigPath, backupPath); err != nil {
+				if err := fsops.Rename(longhornConfigPath, backupPath); err != nil {
 					LogMessage(Warn, fmt.Sprintf("Failed to backup longhorn-disk.cfg: %v", err))
 				} else {
 					LogMessage(Info, fmt.Sprintf("Backed up and removed longhorn-disk.cfg"))
@@ -354,7 +355,7 @@ var PrepareLonghornDisksStep = Step{
 			if info, err := os.Stat(replicasPath); err == nil && info.IsDir() {
 				backupPath := filepath.Join(mountPoint, fmt.Sprintf("replicas.backup-%s", timestamp))
 				LogMessage(Info, fmt.Sprintf("Found replicas directory at %s, backing up to %s", replicasPath, backupPath))
-				if err := os.Rename(replicasPath, backupPath); err != nil {
+				if err := fsops.Rename(replicasPath, backupPath); err != nil {
 					LogMessage(Warn, fmt.Sprintf("Failed to backup replicas directory: %v", err))
 				} else {
 					LogMessage(Info, fmt.Sprintf("Backed up and removed replicas directory"))
@@ -548,7 +549,7 @@ var SetupKubeConfig = Step{
 		}
 
 		kubeDir := filepath.Join(userHome, ".kube")
-		if err := os.MkdirAll(kubeDir, 0755); err != nil {
+		if err := fsops.MkdirAll(kubeDir, 0755); err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to create .kube directory: %v", err))
 			return StepResult{Error: fmt.Errorf("failed to create .kube directory: %w", err)}
 		}
@@ -599,7 +600,7 @@ var SetupKubeConfig = Step{
 				userHomeDir = homedir
 			}
 		}
-		if err := os.MkdirAll(fmt.Sprintf("%s/.kube", userHomeDir), 0755); err != nil {
+		if err := fsops.MkdirAll(fmt.Sprintf("%s/.kube", userHomeDir), 0755); err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to create .kube directory for non-sudo user: %v", err))
 		}
 		cpCmd := fmt.Sprintf("sudo cp $HOME/.kube/config %s/.kube/config", userHomeDir)
@@ -725,12 +726,12 @@ data:
 `, domain, useCertManager)
 
 		// Write ConfigMap to temporary file and apply
-		tmpFile, err := os.CreateTemp("", "domain-configmap-*.yaml")
+		tmpFile, err := fsops.CreateTemp("", "domain-configmap-*.yaml")
 		if err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to create temporary file: %v", err))
 			return StepResult{Error: fmt.Errorf("failed to create temporary file: %w", err)}
 		}
-		defer os.Remove(tmpFile.Name())
+		defer fsops.Remove(tmpFile.Name())
 
 		if _, err := tmpFile.WriteString(configMapYAML); err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to write domain ConfigMap: %v", err))
@@ -759,12 +760,12 @@ data:
 				LogMessage(Info, "Generating self-signed certificate for domain: "+domain)
 
 				// Create temporary directory for certificate files
-				tempDir, err := os.MkdirTemp("", "bloom-tls-*")
+				tempDir, err := fsops.MkdirTemp("", "bloom-tls-*")
 				if err != nil {
 					LogMessage(Error, fmt.Sprintf("Failed to create temp directory: %v", err))
 					return StepResult{Error: fmt.Errorf("failed to create temp directory: %w", err)}
 				}
-				defer os.RemoveAll(tempDir)
+				defer fsops.RemoveAll(tempDir)
 
 				tlsCertPath = filepath.Join(tempDir, "tls.crt")
 				tlsKeyPath = filepath.Join(tempDir, "tls.key")
@@ -807,12 +808,12 @@ kind: Namespace
 metadata:
   name: kgateway-system
 `
-			tmpNsFile, err := os.CreateTemp("", "kgateway-namespace-*.yaml")
+			tmpNsFile, err := fsops.CreateTemp("", "kgateway-namespace-*.yaml")
 			if err != nil {
 				LogMessage(Error, fmt.Sprintf("Failed to create temporary namespace file: %v", err))
 				return StepResult{Error: fmt.Errorf("failed to create temporary namespace file: %w", err)}
 			}
-			defer os.Remove(tmpNsFile.Name())
+			defer fsops.Remove(tmpNsFile.Name())
 
 			if _, err := tmpNsFile.WriteString(namespaceYAML); err != nil {
 				LogMessage(Error, fmt.Sprintf("Failed to write namespace YAML: %v", err))
@@ -845,7 +846,7 @@ metadata:
 			}
 
 			// Apply the secret
-			tmpSecretFile, err := os.CreateTemp("", "tls-secret-*.yaml")
+			tmpSecretFile, err := fsops.CreateTemp("", "tls-secret-*.yaml")
 			if err != nil {
 				LogMessage(Error, fmt.Sprintf("Failed to create temporary secret file: %v", err))
 				return StepResult{Error: fmt.Errorf("failed to create temporary secret file: %w", err)}
@@ -936,7 +937,7 @@ var FinalOutput = Step{
 			}
 			mainIP := strings.TrimSpace(string(mainIPOutput))
 			oneLineScript := fmt.Sprintf("echo -e 'FIRST_NODE: false\\nJOIN_TOKEN: %s\\nSERVER_IP: %s' > bloom.yaml && sudo ./bloom --config bloom.yaml", joinToken, mainIP)
-			file, err := os.Create("additional_node_command.txt")
+			file, err := fsops.Create("additional_node_command.txt")
 			if err != nil {
 				LogMessage(Error, fmt.Sprintf("Failed to create additional_node_command.txt: %v", err))
 				return StepResult{Error: fmt.Errorf("failed to create additional_node_command.txt: %w", err)}

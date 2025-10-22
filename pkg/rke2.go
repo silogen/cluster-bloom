@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/silogen/cluster-bloom/pkg/command"
+	"github.com/silogen/cluster-bloom/pkg/fsops"
 	"github.com/spf13/viper"
 )
 
@@ -55,7 +56,7 @@ func FetchAndSaveOIDCCertificate(url string) error {
 	if err != nil {
 		return fmt.Errorf("failed to fetch certificate from %s: %v", url, err)
 	}
-	if err := os.WriteFile("/etc/rancher/rke2/oidc-ca.crt", output, 0644); err != nil {
+	if err := fsops.WriteFile("/etc/rancher/rke2/oidc-ca.crt", output, 0644); err != nil {
 		return fmt.Errorf("failed to write certificate: %v", err)
 	}
 	return nil
@@ -86,13 +87,13 @@ func PrepareRKE2() error {
 		return fmt.Errorf("failed to setup audit policy: %w", err)
 	}
 	rke2ConfigPath := "/etc/rancher/rke2/config.yaml"
-	if err := os.WriteFile(rke2ConfigPath, []byte(rke2ConfigContent), 0644); err != nil {
+	if err := fsops.WriteFile(rke2ConfigPath, []byte(rke2ConfigContent), 0644); err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to write to %s: %v", rke2ConfigPath, err))
 		return err
 	}
 	certPath := "/etc/rancher/rke2/oidc-ca.crt"
 	if _, err := os.Stat(certPath); err == nil {
-		if err := os.Remove(certPath); err != nil {
+		if err := fsops.Remove(certPath); err != nil {
 			return fmt.Errorf("failed to remove existing certificate at %s: %v", certPath, err)
 		}
 		LogMessage(Info, fmt.Sprintf("Removed existing certificate at %s", certPath))
@@ -105,13 +106,7 @@ func PrepareRKE2() error {
 		LogMessage(Info, fmt.Sprintf("Fetched and saved OIDC certificate from %s", oidcURL))
 		configContent := fmt.Sprintf(oidcConfigTemplate, oidcURL)
 
-		file, err := os.OpenFile(rke2ConfigPath, os.O_APPEND|os.O_WRONLY, 0644)
-		if err != nil {
-			return fmt.Errorf("failed to open %s for appending: %v", rke2ConfigPath, err)
-		}
-		defer file.Close()
-
-		if _, err := file.WriteString(configContent); err != nil {
+		if err := fsops.AppendToFile(rke2ConfigPath, []byte(configContent)); err != nil {
 			return fmt.Errorf("failed to append to %s: %v", rke2ConfigPath, err)
 		}
 	}
@@ -180,14 +175,7 @@ func SetupRKE2Additional() error {
 	rke2ConfigPath := "/etc/rancher/rke2/config.yaml"
 
 	configContent := fmt.Sprintf("\nserver: https://%s:9345\ntoken: %s\n", serverIP, joinToken)
-	file, err := os.OpenFile(rke2ConfigPath, os.O_APPEND|os.O_WRONLY, 0644)
-	if err != nil {
-		LogMessage(Error, fmt.Sprintf("Failed to open %s for appending: %v", rke2ConfigPath, err))
-		return err
-	}
-	defer file.Close()
-
-	if _, err := file.WriteString(configContent); err != nil {
+	if err := fsops.AppendToFile(rke2ConfigPath, []byte(configContent)); err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to append to %s: %v", rke2ConfigPath, err))
 		return err
 	}
@@ -229,14 +217,7 @@ func SetupRKE2ControlPlane() error {
 	rke2ConfigPath := "/etc/rancher/rke2/config.yaml"
 
 	configContent := fmt.Sprintf("\nserver: https://%s:9345\ntoken: %s\n", serverIP, joinToken)
-	file, err := os.OpenFile(rke2ConfigPath, os.O_APPEND|os.O_WRONLY, 0644)
-	if err != nil {
-		LogMessage(Error, fmt.Sprintf("Failed to open %s for appending: %v", rke2ConfigPath, err))
-		return err
-	}
-	defer file.Close()
-
-	if _, err := file.WriteString(configContent); err != nil {
+	if err := fsops.AppendToFile(rke2ConfigPath, []byte(configContent)); err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to append to %s: %v", rke2ConfigPath, err))
 		return err
 	}

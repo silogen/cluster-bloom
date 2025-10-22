@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/silogen/cluster-bloom/pkg/fsops"
 	"github.com/spf13/viper"
 )
 
@@ -127,7 +128,7 @@ func installK8sTools() error {
 
 func setupManifests(folder string) error {
 	targetDir := rke2ManifestDirectory
-	if err := os.MkdirAll(targetDir, 0755); err != nil {
+	if err := fsops.MkdirAll(targetDir, 0755); err != nil {
 		return fmt.Errorf("failed to create target directory %s: %w", targetDir, err)
 	}
 	err := fs.WalkDir(manifestFiles, filepath.Join("manifests", folder), func(path string, d fs.DirEntry, err error) error {
@@ -140,7 +141,7 @@ func setupManifests(folder string) error {
 				return fmt.Errorf("failed to read file %s: %w", path, err)
 			}
 			targetPath := filepath.Join(targetDir, filepath.Base(path))
-			if err := os.WriteFile(targetPath, content, 0644); err != nil {
+			if err := fsops.WriteFile(targetPath, content, 0644); err != nil{
 				return fmt.Errorf("failed to write file %s: %w", targetPath, err)
 			}
 			LogMessage(Info, fmt.Sprintf("Copied %s to %s", path, targetPath))
@@ -160,7 +161,7 @@ func setupAudit() error {
 	targetDir := "/etc/rancher/rke2"
 	targetPath := filepath.Join(targetDir, filepath.Base(sourceFile))
 
-	if err := os.MkdirAll(targetDir, 0755); err != nil {
+	if err := fsops.MkdirAll(targetDir, 0755); err != nil {
 		return fmt.Errorf("failed to create target directory %s: %w", targetDir, err)
 	}
 
@@ -238,12 +239,12 @@ func SetupClusterForge() error {
 
 func LonghornPreflightCheck() error {
 	// Create a temporary file with the embedded script content
-	tmpFile, err := os.CreateTemp("", "longhornPreflight-*.sh")
+	tmpFile, err := fsops.CreateTemp("", "longhornPreflight-*.sh")
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to create temporary script file: %v", err))
 		return err
 	}
-	defer os.Remove(tmpFile.Name()) // Clean up the temporary file
+	defer fsops.Remove(tmpFile.Name()) // Clean up the temporary file
 
 	// Write the embedded script content to the temporary file
 	if _, err := tmpFile.Write(longhornPreflightScript); err != nil {
@@ -254,7 +255,7 @@ func LonghornPreflightCheck() error {
 	tmpFile.Close()
 
 	// Make the script executable
-	if err := os.Chmod(tmpFile.Name(), 0755); err != nil {
+	if err := fsops.Chmod(tmpFile.Name(), 0755); err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to make script executable: %v", err))
 		return err
 	}

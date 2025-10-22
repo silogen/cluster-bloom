@@ -28,6 +28,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/silogen/cluster-bloom/pkg/fsops"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v2"
@@ -371,7 +372,7 @@ func (h *WebHandlerService) ConfigAPIHandler(w http.ResponseWriter, r *http.Requ
 	}
 
 	filename := "bloom.yaml"
-	if err := os.WriteFile(filename, yamlData, 0644); err != nil {
+	if err := fsops.WriteFile(filename, yamlData, 0644); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": false,
@@ -518,7 +519,7 @@ func (h *WebHandlerService) ReconfigureHandler(w http.ResponseWriter, r *http.Re
 		timestamp := time.Now().Format("20060102-150405")
 		archivedPath := filepath.Join(currentDir, fmt.Sprintf("bloom-%s.log", timestamp))
 
-		if err := os.Rename(logPath, archivedPath); err != nil {
+		if err := fsops.Rename(logPath, archivedPath); err != nil {
 			log.Errorf("Failed to archive bloom.log: %v", err)
 			http.Error(w, fmt.Sprintf("Failed to archive log: %v", err), http.StatusInternalServerError)
 			return

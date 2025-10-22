@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/silogen/cluster-bloom/pkg/command"
+	"github.com/silogen/cluster-bloom/pkg/fsops"
 	"github.com/spf13/viper"
 )
 
@@ -52,7 +53,7 @@ func UnmountPriorLonghornDisks() error {
 
 	// Open temp file for writing cleaned fstab
 	tempFile := "/tmp/fstab.clean"
-	cleanFile, err := os.OpenFile(tempFile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	cleanFile, err := fsops.OpenFile(tempFile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		return fmt.Errorf("failed to create temporary fstab: %w", err)
 	}
@@ -233,14 +234,8 @@ func GenerateNodeLabels(mountedDiskMap map[string]string) error {
 }
 
 func appendToFile(filePath, content string) error {
-	file, err := os.OpenFile(filePath, os.O_APPEND|os.O_WRONLY, 0644)
-	if err != nil {
-		return fmt.Errorf("failed to open file %s: %w", filePath, err)
-	}
-	defer file.Close()
-
-	if _, err := file.WriteString(content); err != nil {
-		return fmt.Errorf("failed to write to file %s: %w", filePath, err)
+	if err := fsops.AppendToFile(filePath, []byte(content)); err != nil {
+		return fmt.Errorf("failed to append to file %s: %w", filePath, err)
 	}
 	return nil
 }
@@ -335,7 +330,7 @@ func MountDrives(drives []string) (map[string]string, error) {
 		}
 		usedMountPoints[mountPoint] = true
 
-		if err := os.MkdirAll(mountPoint, 0755); err != nil {
+		if err := fsops.MkdirAll(mountPoint, 0755); err != nil {
 			return mountedMap, fmt.Errorf("failed to create mount point %s: %w", mountPoint, err)
 		}
 

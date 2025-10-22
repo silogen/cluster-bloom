@@ -26,6 +26,7 @@ import (
 	"strings"
 
 	"github.com/silogen/cluster-bloom/pkg/command"
+	"github.com/silogen/cluster-bloom/pkg/fsops"
 	"github.com/spf13/viper"
 )
 
@@ -212,7 +213,7 @@ func updateSysctlConf(value int) error {
 		lines = append(lines, fmt.Sprintf("%s=%d", sysctlParam, value))
 	}
 
-	return os.WriteFile(sysctlFile, []byte(strings.Join(lines, "\n")+"\n"), 0644)
+	return fsops.WriteFile(sysctlFile, []byte(strings.Join(lines, "\n")+"\n"), 0644)
 }
 
 func VerifyInotifyInstances() bool {
@@ -312,7 +313,7 @@ metadata:
   namespace: metallb-system
 `, defaultIP)
 	manifestPath := path.Join(rke2ManifestDirectory, "metallb-address.yaml")
-	if err := os.WriteFile(manifestPath, []byte(metallbConfig), 0644); err != nil {
+	if err := fsops.WriteFile(manifestPath, []byte(metallbConfig), 0644); err != nil {
 		return fmt.Errorf("failed to write MetalLB configuration to %s: %v", manifestPath, err)
 	}
 
@@ -347,7 +348,7 @@ func setupMultipath() error {
 	if os.IsNotExist(err) {
 		LogMessage(Info, "Creating default multipath configuration file...")
 
-		err = os.WriteFile(configFile, []byte(configContent), 0644)
+		err = fsops.WriteFile(configFile, []byte(configContent), 0644)
 		if err != nil {
 			return fmt.Errorf("failed to create multipath.conf: %w", err)
 		}
@@ -374,7 +375,7 @@ func setupMultipath() error {
 				newConfigData = string(configData) + configContent
 			}
 
-			err = os.WriteFile(configFile, []byte(newConfigData), 0644)
+			err = fsops.WriteFile(configFile, []byte(newConfigData), 0644)
 			if err != nil {
 				return fmt.Errorf("failed to update multipath.conf: %w", err)
 			}
