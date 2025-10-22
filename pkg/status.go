@@ -39,8 +39,8 @@ type BloomStatus struct {
 	LastModified    time.Time
 	Steps           []StepStatus
 	Kubeconfig      string
-	SelectedDisks   []string
-	LonghornDisks   []string
+	ClusterDisks            []string
+	ClusterPremountedDisks  []string
 	Domain          string
 	FirstNode       bool
 	ControlPlane    bool
@@ -82,8 +82,8 @@ func ParseBloomLog(logPath string) (*BloomStatus, error) {
 	failedRegex := regexp.MustCompile(`msg="Execution failed:\s+([^"]*)"`)
 	osErrorRegex := regexp.MustCompile(`(OS compatibility error|Ubuntu version not supported|This server is not supported)`)
 	kubeconfigRegex := regexp.MustCompile(`(KUBECONFIG=.*|export KUBECONFIG=.*)`)
-	selectedDisksRegex := regexp.MustCompile(`selected_disks:\s*\[(.*)\]|CLUSTER_DISKS:\s*(.*)`)
-	longhornDisksRegex := regexp.MustCompile(`longhorn_disks:\s*(.*)`)
+	clusterDisksRegex := regexp.MustCompile(`cluster_disks:\s*\[(.*)\]|CLUSTER_DISKS:\s*(.*)`)
+	clusterPremountedDisksRegex := regexp.MustCompile(`cluster_premounted_disks:\s*(.*)|CLUSTER_PREMOUNTED_DISKS:\s*(.*)`)
 	totalStepsRegex := regexp.MustCompile(`msg="Total steps to execute:\s*(\d+)"`)
 
 	var currentStep *StepStatus
@@ -195,18 +195,24 @@ func ParseBloomLog(logPath string) (*BloomStatus, error) {
 			status.Kubeconfig = matches[0]
 		}
 
-		if matches := selectedDisksRegex.FindStringSubmatch(line); len(matches) > 0 {
+		if matches := clusterDisksRegex.FindStringSubmatch(line); len(matches) > 0 {
 			disksStr := matches[1]
 			if disksStr == "" && len(matches) > 2 {
 				disksStr = matches[2]
 			}
 			if disksStr != "" {
-				status.SelectedDisks = parseDisks(disksStr)
+				status.ClusterDisks = parseDisks(disksStr)
 			}
 		}
 
-		if matches := longhornDisksRegex.FindStringSubmatch(line); len(matches) > 1 {
-			status.LonghornDisks = parseDisks(matches[1])
+		if matches := clusterPremountedDisksRegex.FindStringSubmatch(line); len(matches) > 1 {
+			disksStr := matches[1]
+			if disksStr == "" && len(matches) > 2 {
+				disksStr = matches[2]
+			}
+			if disksStr != "" {
+				status.ClusterPremountedDisks = parseDisks(disksStr)
+			}
 		}
 
 		// Parse total steps
@@ -292,7 +298,7 @@ func DisplayBloomStatus(status *BloomStatus) {
 
 		// Show important configs first
 		importantKeys := []string{"domain", "first_node", "control_plane", "gpu_node", "server_ip",
-			"skip_disk_check", "selected_disks", "longhorn_disks", "rocm_base_url", "disabled_steps", "enabled_steps"}
+			"no_disks_for_cluster", "cluster_disks", "cluster_premounted_disks", "rocm_base_url", "disabled_steps", "enabled_steps"}
 
 		for _, key := range importantKeys {
 			if val, exists := status.ConfigValues[key]; exists && val != "" {
@@ -336,14 +342,14 @@ func DisplayBloomStatus(status *BloomStatus) {
 		fmt.Println()
 	}
 
-	if len(status.SelectedDisks) > 0 || len(status.LonghornDisks) > 0 {
+	if len(status.ClusterDisks) > 0 || len(status.ClusterPremountedDisks) > 0 {
 		fmt.Println("💾 Disk Configuration:")
 		fmt.Println("════════════════════════════")
-		if len(status.SelectedDisks) > 0 {
-			fmt.Printf("📀 Selected Disks: %s\n", strings.Join(status.SelectedDisks, ", "))
+		if len(status.ClusterDisks) > 0 {
+			fmt.Printf("📀 Cluster Disks: %s\n", strings.Join(status.ClusterDisks, ", "))
 		}
-		if len(status.LonghornDisks) > 0 {
-			fmt.Printf("🗄️  Longhorn Disks: %s\n", strings.Join(status.LonghornDisks, ", "))
+		if len(status.ClusterPremountedDisks) > 0 {
+			fmt.Printf("🗄️  Cluster Premounted Disks: %s\n", strings.Join(status.ClusterPremountedDisks, ", "))
 		}
 		fmt.Println()
 	}

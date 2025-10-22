@@ -123,7 +123,7 @@ func TestSetupAndCheckRocmStep(t *testing.T) {
 }
 
 func TestPrepareLonghornDisksStep(t *testing.T) {
-	viper.Set("selected_disks", []string{})
+	viper.Set("CLUSTER_DISKS", []string{})
 	result := PrepareLonghornDisksStep.Action()
 	if result.Error != nil {
 		t.Errorf("Expected no error with empty disk list, got: %v", result.Error)

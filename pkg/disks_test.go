@@ -55,8 +55,8 @@ func TestGenerateNodeLabels(t *testing.T) {
 		viper.Set("NO_DISKS_FOR_CLUSTER", false)
 	})
 
-	t.Run("with no selected disks", func(t *testing.T) {
-		viper.Set("selected_disks", []string{})
+	t.Run("with no cluster disks", func(t *testing.T) {
+		viper.Set("CLUSTER_DISKS", []string{})
 		err := GenerateNodeLabels(map[string]string{})
 		if err != nil {
 			t.Errorf("Expected no error with empty disk list, got: %v", err)

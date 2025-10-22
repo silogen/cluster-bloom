@@ -33,7 +33,7 @@ func GetDisksFromLonghornConfig(longhornFromConfig string) (disks []string, moun
 
 	if longhornFromConfig == "" {
 		for _, k := range viper.AllKeys() {
-			if strings.ToLower(k) == "longhorn_disks" {
+			if strings.ToLower(k) == "cluster_premounted_disks" {
 				val = viper.GetString(k)
 				// ensure canonical key exists for the rest of the function
 				viper.Set("CLUSTER_PREMOUNTED_DISKS", val)
