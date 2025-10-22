@@ -20,7 +20,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/amd/cluster-bloom/pkg/command"
+	"github.com/silogen/cluster-bloom/pkg/command"
 	"github.com/spf13/viper"
 )
 
@@ -30,11 +30,11 @@ func CheckGPUAvailability() error {
 	output, err := exec.Command("sh", "-c", "lsmod").CombinedOutput()
 
 	if err != nil {
-		return fmt.Errorf("Failed to run lsmod: "+err.Error())
-	} 
+		return fmt.Errorf("Failed to run lsmod: " + err.Error())
+	}
 
 	// grep will give an error if the module is not found, but we want to check the output
-	output, err = exec.Command("sh", "-c", "lsmod | grep '^amdgpu'").CombinedOutput()	
+	output, err = exec.Command("sh", "-c", "lsmod | grep '^amdgpu'").CombinedOutput()
 	if len(output) == 0 {
 		LogMessage(Warn, "WARNING: The amdgpu module is not loaded")
 	} else {
@@ -120,4 +120,3 @@ func printROCMVersion() {
 	}
 	LogMessage(Info, "ROCm Version: "+strings.TrimSpace(string(output)))
 }
-

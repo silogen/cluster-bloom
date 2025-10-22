@@ -24,6 +24,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/silogen/cluster-bloom/pkg/command"
 	"github.com/spf13/viper"
 )
 
@@ -132,7 +133,7 @@ func CleanDisks() error {
 	for scanner.Scan() {
 		fields := strings.Fields(scanner.Text())
 		if len(fields) > 2 && strings.Contains(fields[2], "kubernetes.io/csi/driver.longhorn.io") {
-			_, err := runCommand("sudo", "umount", "-lf", fields[2])
+			_, err := command.Run("sudo", "umount", "-lf", fields[2])
 			if err != nil {
 				LogMessage(Warn, fmt.Sprintf("Failed to unmount %s", fields[2]))
 			} else {
@@ -152,7 +153,7 @@ func CleanDisks() error {
 		fields := strings.Fields(scanner.Text())
 		if len(fields) > 1 && strings.Contains(fields[1], "kubernetes.io/csi/driver.longhorn.io") {
 			dev := "/dev/" + fields[0]
-			_, err := runCommand("sudo", "wipefs", "-a", dev)
+			_, err := command.Run("sudo", "wipefs", "-a", dev)
 			if err != nil {
 				LogMessage(Warn, fmt.Sprintf("Failed to wipe %s", dev))
 			} else {
@@ -161,7 +162,7 @@ func CleanDisks() error {
 		}
 	}
 
-	_, err = runCommand("sudo", "rm", "-rf", "/var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/*")
+	_, err = command.Run("sudo", "rm", "-rf", "/var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/*")
 	if err != nil {
 		LogMessage(Warn, fmt.Sprintf("Failed to remove longhorn plugins directory: %v", err))
 	}

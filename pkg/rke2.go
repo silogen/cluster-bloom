@@ -21,6 +21,7 @@ import (
 	"os/exec"
 	"time"
 
+	"github.com/silogen/cluster-bloom/pkg/command"
 	"github.com/spf13/viper"
 )
 
@@ -72,7 +73,7 @@ func PrepareRKE2() error {
 	}
 
 	for _, cmd := range commands {
-		_, err := runCommand(cmd.command, cmd.args...)
+		_, err := command.Run(cmd.command, cmd.args...)
 		if err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to execute command '%s %v': %v", cmd.command, cmd.args, err))
 			return fmt.Errorf("failed to execute command '%s %v': %w", cmd.command, cmd.args, err)
@@ -127,7 +128,7 @@ func SetupFirstRKE2() error {
 	}
 
 	for _, cmd := range commands {
-		_, err := runCommand(cmd.command, cmd.args...)
+		_, err := command.Run(cmd.command, cmd.args...)
 		if err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to execute command '%s %v': %v", cmd.command, cmd.args, err))
 			return fmt.Errorf("failed to execute command '%s %v': %w", cmd.command, cmd.args, err)
@@ -144,7 +145,7 @@ func SetupFirstRKE2() error {
 }
 
 func startServiceWithTimeout(serviceName string, timeout time.Duration) error {
-	_, err := runCommand("systemctl", "start", serviceName+".service")
+	_, err := command.Run("systemctl", "start", serviceName+".service")
 	LogMessage(Info, fmt.Sprintf("Starting service %s", serviceName))
 	if err != nil {
 		return fmt.Errorf("failed to start service %s: %w", serviceName, err)
@@ -200,7 +201,7 @@ func SetupRKE2Additional() error {
 		{"systemctl", []string{"enable", "rke2-agent.service"}},
 	}
 	for _, cmd := range commands {
-		_, err := runCommand(cmd.command, cmd.args...)
+		_, err := command.Run(cmd.command, cmd.args...)
 		if err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to execute command '%s %v': %v", cmd.command, cmd.args, err))
 			return fmt.Errorf("failed to execute command '%s %v': %w", cmd.command, cmd.args, err)
@@ -249,7 +250,7 @@ func SetupRKE2ControlPlane() error {
 		{"systemctl", []string{"enable", "rke2-server.service"}},
 	}
 	for _, cmd := range commands {
-		_, err := runCommand(cmd.command, cmd.args...)
+		_, err := command.Run(cmd.command, cmd.args...)
 		if err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to execute command '%s %v': %v", cmd.command, cmd.args, err))
 			return fmt.Errorf("failed to execute command '%s %v': %w", cmd.command, cmd.args, err)

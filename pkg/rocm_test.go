@@ -21,6 +21,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/silogen/cluster-bloom/pkg/command"
 	"github.com/spf13/viper"
 )
 
@@ -68,7 +69,7 @@ func TestRunCommand(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			output, err := runCommand(tt.command, tt.args...)
+			output, err := command.Run(tt.command, tt.args...)
 			if tt.expectError && err == nil {
 				t.Errorf("Expected error but got none")
 			} else if !tt.expectError && err != nil {
@@ -84,7 +85,7 @@ func TestRunCommand(t *testing.T) {
 
 func TestRunCommandWithDifferentArgs(t *testing.T) {
 	// Test with different argument combinations
-	output, err := runCommand("echo", "test")
+	output, err := command.Run("echo", "test")
 	if err != nil {
 		t.Errorf("Expected no error, got: %v", err)
 	}
@@ -92,7 +93,7 @@ func TestRunCommandWithDifferentArgs(t *testing.T) {
 		t.Errorf("Expected 'test\\n', got '%s'", output)
 	}
 
-	output, err = runCommand("echo", "-n", "no-newline")
+	output, err = command.Run("echo", "-n", "no-newline")
 	if err != nil {
 		t.Errorf("Expected no error, got: %v", err)
 	}
@@ -101,7 +102,7 @@ func TestRunCommandWithDifferentArgs(t *testing.T) {
 	}
 
 	// Test command that should fail
-	_, err = runCommand("false")
+	_, err = command.Run("false")
 	if err == nil {
 		t.Errorf("Expected error from 'false' command")
 	}
@@ -109,7 +110,7 @@ func TestRunCommandWithDifferentArgs(t *testing.T) {
 
 func TestRunCommandErrorHandling(t *testing.T) {
 	// Test command with stderr output
-	_, err := runCommand("sh", "-c", "echo 'error message' >&2; exit 1")
+	_, err := command.Run("sh", "-c", "echo 'error message' >&2; exit 1")
 	if err == nil {
 		t.Errorf("Expected error from failing command")
 	}
@@ -136,7 +137,7 @@ func TestROCMConfiguration(t *testing.T) {
 
 func TestCommandOutputParsing(t *testing.T) {
 	// Test parsing command output
-	output, err := runCommand("echo", "line1\nline2\nline3")
+	output, err := command.Run("echo", "line1\nline2\nline3")
 	if err != nil {
 		t.Errorf("Expected no error, got: %v", err)
 	}

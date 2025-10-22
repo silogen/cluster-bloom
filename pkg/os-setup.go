@@ -25,6 +25,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/silogen/cluster-bloom/pkg/command"
 	"github.com/spf13/viper"
 )
 
@@ -380,14 +381,14 @@ func setupMultipath() error {
 
 			// Restart multipath service
 			LogMessage(Info, "Restarting multipathd.service...")
-			_, err = runCommand("systemctl", "restart", "multipathd.service")
+			_, err = command.Run("systemctl", "restart", "multipathd.service")
 			if err != nil {
 				return fmt.Errorf("failed to restart multipathd service: %w", err)
 			}
 
 			// Verify configuration
 			LogMessage(Info, "Verifying multipath configuration...")
-			output, err := runCommand("multipath", "-t")
+			output, err := command.Run("multipath", "-t")
 			if err != nil {
 				LogMessage(Warn, fmt.Sprintf("Multipath verification returned: %s", output))
 				return fmt.Errorf("multipath configuration verification failed: %w", err)
