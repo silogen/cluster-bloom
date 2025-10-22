@@ -31,6 +31,7 @@ import (
 
 	"github.com/silogen/cluster-bloom/pkg"
 	"github.com/silogen/cluster-bloom/pkg/args"
+	"github.com/silogen/cluster-bloom/pkg/dryrun"
 )
 
 var rootCmd = &cobra.Command{
@@ -87,6 +88,7 @@ func Execute() {
 var cfgFile string
 var oneShot bool
 var reconfigure bool
+var dryRun bool
 
 func init() {
 	// Ensure arguments are initialized before help is displayed
@@ -100,6 +102,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "bloom.yaml", "config file (default is ./bloom.yaml)")
 	rootCmd.PersistentFlags().BoolVar(&oneShot, "one-shot", false, "skip confirmation when using --config (useful for automation)")
 	rootCmd.PersistentFlags().BoolVar(&reconfigure, "reconfigure", false, "archive existing bloom.log and start fresh configuration")
+	rootCmd.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "run all steps without executing commands or modifying filesystem")
 	rootCmd.AddCommand(helpCmd)
 	rootCmd.AddCommand(cliCmd)
 }
@@ -107,6 +110,9 @@ func init() {
 func initConfig() {
 	// Setup logging first so we can capture any errors
 	setupLogging()
+
+	// Initialize dry-run mode
+	dryrun.SetDryRun(dryRun)
 
 	viper.SetConfigFile(cfgFile)
 	viper.WatchConfig()
