@@ -17,7 +17,6 @@ package pkg
 
 import (
 	"fmt"
-	"os/exec"
 	"strings"
 
 	"github.com/silogen/cluster-bloom/pkg/command"
@@ -27,14 +26,14 @@ import (
 func CheckGPUAvailability() error {
 	LogMessage(Info, "Running lsmod to check for amdgpu module")
 
-	output, err := exec.Command("sh", "-c", "lsmod").CombinedOutput()
+	output, err := command.CombinedOutput("sh", "-c", "lsmod")
 
 	if err != nil {
 		return fmt.Errorf("Failed to run lsmod: " + err.Error())
 	}
 
 	// grep will give an error if the module is not found, but we want to check the output
-	output, err = exec.Command("sh", "-c", "lsmod | grep '^amdgpu'").CombinedOutput()
+	output, err = command.CombinedOutput("sh", "-c", "lsmod | grep '^amdgpu'")
 	if len(output) == 0 {
 		LogMessage(Warn, "WARNING: The amdgpu module is not loaded")
 	} else {
@@ -44,13 +43,13 @@ func CheckGPUAvailability() error {
 }
 
 func CheckAndInstallROCM() bool {
-	_, err := exec.LookPath("rocm-smi")
+	_, err := command.LookPath("rocm-smi")
 	if err == nil {
 		printROCMVersion()
 		return true
 	}
 	LogMessage(Warn, "rocm-smi not found")
-	output, err := exec.Command("sh", "-c", "grep VERSION_CODENAME /etc/os-release | cut -d= -f2").Output()
+	output, err := command.Output("sh", "-c", "grep VERSION_CODENAME /etc/os-release | cut -d= -f2")
 	if err != nil {
 		LogMessage(Error, "Error getting Ubuntu codename: "+err.Error())
 		return false
@@ -62,7 +61,7 @@ func CheckAndInstallROCM() bool {
 		return false
 	}
 
-	unameR, err := exec.Command("uname", "-r").Output()
+	unameR, err := command.Output("uname", "-r")
 	if err != nil {
 		LogMessage(Error, "Error getting kernel version: "+err.Error())
 		return false
@@ -102,7 +101,7 @@ func CheckAndInstallROCM() bool {
 	} else {
 		LogMessage(Info, "Successfully installed ROCm")
 	}
-	_, err = exec.Command("modprobe", "amdgpu").Output()
+	_, err = command.Output("modprobe", "amdgpu")
 	if err != nil {
 		LogMessage(Error, "Error loading modprobe amdgpu: "+err.Error())
 		return false
@@ -113,7 +112,7 @@ func CheckAndInstallROCM() bool {
 }
 
 func printROCMVersion() {
-	output, err := exec.Command("cat", "/opt/rocm/.info/version").Output()
+	output, err := command.Output("cat", "/opt/rocm/.info/version")
 	if err != nil {
 		LogMessage(Error, "Error reading ROCm version: "+err.Error())
 		return

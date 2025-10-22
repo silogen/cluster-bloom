@@ -18,7 +18,6 @@ package pkg
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"time"
 
 	"github.com/silogen/cluster-bloom/pkg/command"
@@ -51,9 +50,8 @@ kube-apiserver-arg:
 `
 
 func FetchAndSaveOIDCCertificate(url string) error {
-	cmd := exec.Command("sh", "-c", fmt.Sprintf("openssl s_client -showcerts -connect %s:443 </dev/null | sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p'", url))
-	output, err := cmd.Output()
-	if err != nil {
+	output, err := command.Output("sh", "-c", fmt.Sprintf("openssl s_client -showcerts -connect %s:443 </dev/null | sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p'", url))
+	if err != nil{
 		return fmt.Errorf("failed to fetch certificate from %s: %v", url, err)
 	}
 	if err := fsops.WriteFile("/etc/rancher/rke2/oidc-ca.crt", output, 0644); err != nil {
@@ -149,9 +147,7 @@ func startServiceWithTimeout(serviceName string, timeout time.Duration) error {
 	LogMessage(Info, fmt.Sprintf("Waiting for service %s to become active (timeout: %v)", serviceName, timeout))
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		// The exec.Command is fine here as it uses CombinedOutput
-		isActiveCmd := exec.Command("systemctl", "is-active", serviceName+".service")
-		output, err := isActiveCmd.CombinedOutput()
+		output, err := command.CombinedOutput("systemctl", "is-active", serviceName+".service")
 		status := string(output)
 		if err == nil && status == "active\n" {
 			LogMessage(Info, fmt.Sprintf("Service %s is now active", serviceName))

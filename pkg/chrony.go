@@ -17,8 +17,8 @@ package pkg
 
 import (
     "fmt"
-    "os/exec"
 
+	"github.com/silogen/cluster-bloom/pkg/command"
 	"github.com/silogen/cluster-bloom/pkg/fsops"
 	"github.com/spf13/viper"
 )
@@ -58,8 +58,7 @@ func GenerateChronyConfFirst() error {
     }
 
     // Restart chronyd service
-    restartCmd := exec.Command("systemctl", "restart", "chronyd")
-    if output, err := restartCmd.CombinedOutput(); err != nil {
+    if output, err := command.CombinedOutput("systemctl", "restart", "chronyd"); err != nil {
         return fmt.Errorf("failed to restart chronyd: %w, output: %s", err, string(output))
     }
 
@@ -81,8 +80,7 @@ func GenerateChronyConfAdditional() error {
     }
 
     // Restart chronyd service
-    restartCmd := exec.Command("systemctl", "restart", "chronyd")
-    if output, err := restartCmd.CombinedOutput(); err != nil {
+    if output, err := command.CombinedOutput("systemctl", "restart", "chronyd"); err != nil {
         return fmt.Errorf("failed to restart chronyd: %w, output: %s", err, string(output))
     }
 
@@ -92,8 +90,7 @@ func GenerateChronyConfAdditional() error {
 
 // writeChronyConf writes the chrony configuration to the specified file.
 func writeChronyConf(chronyConf string) error {
-    backupCmd := exec.Command("cp", "/etc/chrony/chrony.conf", "/etc/chrony/chrony.conf.bak")
-    if err := backupCmd.Run(); err != nil {
+    if err := command.SimpleRun("cp", "/etc/chrony/chrony.conf", "/etc/chrony/chrony.conf.bak"); err != nil {
         return fmt.Errorf("failed to backup chrony.conf: %w", err)
     }
     targetPath := "/etc/chrony/chrony.conf"

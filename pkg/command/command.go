@@ -23,12 +23,18 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/silogen/cluster-bloom/pkg/dryrun"
 	log "github.com/sirupsen/logrus"
 )
 
 // Run executes a command with real-time stderr logging
 // Returns stdout as string and any error
 func Run(command string, args ...string) (string, error) {
+	if dryrun.IsDryRun() {
+		log.Infof("[DRY-RUN] EXEC: %s %s", command, strings.Join(args, " "))
+		return "", nil
+	}
+
 	cmd := exec.Command(command, args...)
 
 	stdout, err := cmd.StdoutPipe()
@@ -63,4 +69,61 @@ func Run(command string, args ...string) (string, error) {
 	}
 
 	return string(stdoutBytes), nil
+}
+
+// CombinedOutput executes a command and returns combined stdout/stderr
+func CombinedOutput(command string, args ...string) ([]byte, error) {
+	if dryrun.IsDryRun() {
+		log.Infof("[DRY-RUN] EXEC: %s %s", command, strings.Join(args, " "))
+		return []byte{}, nil
+	}
+
+	cmd := exec.Command(command, args...)
+	return cmd.CombinedOutput()
+}
+
+// Output executes a command and returns stdout only
+func Output(command string, args ...string) ([]byte, error) {
+	if dryrun.IsDryRun() {
+		log.Infof("[DRY-RUN] EXEC: %s %s", command, strings.Join(args, " "))
+		return []byte{}, nil
+	}
+
+	cmd := exec.Command(command, args...)
+	return cmd.Output()
+}
+
+// SimpleRun executes a command and waits for it to complete
+// Returns only error (no output capture)
+func SimpleRun(command string, args ...string) error {
+	if dryrun.IsDryRun() {
+		log.Infof("[DRY-RUN] EXEC: %s %s", command, strings.Join(args, " "))
+		return nil
+	}
+
+	cmd := exec.Command(command, args...)
+	return cmd.Run()
+}
+
+// Cmd creates a *exec.Cmd that can be customized before execution
+// This is for complex cases where you need to set Stdin, Stdout, Stderr, Dir, Env, etc.
+// Returns nil in dry-run mode
+func Cmd(command string, args ...string) *exec.Cmd {
+	if dryrun.IsDryRun() {
+		log.Infof("[DRY-RUN] CREATE_CMD: %s %s", command, strings.Join(args, " "))
+		return nil
+	}
+
+	return exec.Command(command, args...)
+}
+
+// LookPath searches for an executable named file in the directories named by the PATH environment variable
+// In dry-run mode, returns empty string and nil error to simulate command not found
+func LookPath(file string) (string, error) {
+	if dryrun.IsDryRun() {
+		log.Infof("[DRY-RUN] LOOKPATH: %s", file)
+		return "", nil
+	}
+
+	return exec.LookPath(file)
 }

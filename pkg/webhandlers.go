@@ -23,11 +23,11 @@ import (
 	"html/template"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/silogen/cluster-bloom/pkg/command"
 	"github.com/silogen/cluster-bloom/pkg/fsops"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -142,8 +142,7 @@ func (h *WebHandlerService) AddRootDeviceToConfig() {
 
 func getRootDiskCmd() (string, error) {
 	// Get the source device for root mount
-	cmd := exec.Command("findmnt", "-no", "SOURCE", "/")
-	output, err := cmd.Output()
+	output, err := command.Output("findmnt", "-no", "SOURCE", "/")
 	if err != nil {
 		return "", err
 	}
@@ -151,8 +150,7 @@ func getRootDiskCmd() (string, error) {
 	device := strings.TrimSpace(string(output))
 
 	// Get the parent disk using lsblk
-	cmd = exec.Command("lsblk", "-no", "PKNAME", device)
-	output, err = cmd.Output()
+	output, err = command.Output("lsblk", "-no", "PKNAME", device)
 	if err != nil {
 		// If no parent, the device itself is the disk
 		return device, nil

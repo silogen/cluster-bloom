@@ -20,7 +20,6 @@ import (
 	"bytes"
 	"fmt"
 	"os"
-	"os/exec"
 	"path"
 	"strconv"
 	"strings"
@@ -92,12 +91,18 @@ func CheckPortsBeforeOpening() error {
 		}
 
 		// For specific ports, check with lsof
-		portCmd := exec.Command("lsof", "-i", fmt.Sprintf("%s:%s", strings.ToUpper(protocol), port))
+		portCmd := command.Cmd("lsof", "-i", fmt.Sprintf("%s:%s", strings.ToUpper(protocol), port))
 		var portOutput bytes.Buffer
-		portCmd.Stdout = &portOutput
-		portCmd.Stderr = &portOutput
+		if portCmd != nil {
+			portCmd.Stdout = &portOutput
+			portCmd.Stderr = &portOutput
+		}
 
-		if err := portCmd.Run(); err != nil {
+		var err error
+		if portCmd != nil {
+			err = portCmd.Run()
+		}
+		if err != nil {
 			// lsof returns non-zero if no processes are using the port
 			LogMessage(Info, fmt.Sprintf("Port %s (%s) is not currently in use", port, protocol))
 		} else {
@@ -123,22 +128,20 @@ func OpenPorts() bool {
 		port, protocol := parts[0], parts[1]
 
 		// Check if rule exists first to avoid duplicates
-		checkCmd := exec.Command("sudo", "iptables", "-C", "INPUT", "-p", protocol, "-m", "state", "--state", "NEW", "-m", protocol, "--dport", port, "-j", "ACCEPT")
-		if checkCmd.Run() == nil {
+		if command.SimpleRun("sudo", "iptables", "-C", "INPUT", "-p", protocol, "-m", "state", "--state", "NEW", "-m", protocol, "--dport", port, "-j", "ACCEPT") == nil {
 			// Rule already exists
 			LogMessage(Info, fmt.Sprintf("Rule for %s/%s already exists", port, protocol))
 			continue
 		}
 
 		// Add the rule
-		cmd := exec.Command("sudo", "iptables", "-A", "INPUT", "-p", protocol, "-m", "state", "--state", "NEW", "-m", protocol, "--dport", port, "-j", "ACCEPT")
-		if err := cmd.Run(); err != nil {
+		if err := command.SimpleRun("sudo", "iptables", "-A", "INPUT", "-p", protocol, "-m", "state", "--state", "NEW", "-m", protocol, "--dport", port, "-j", "ACCEPT"); err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to open port %s/%s: %v", port, protocol, err))
 			return false
 		}
 		LogMessage(Info, fmt.Sprintf("Opened port %s/%s", port, protocol))
 	}
-	if err := exec.Command("sudo", "iptables-save").Run(); err != nil {
+	if err := command.SimpleRun("sudo", "iptables-save"); err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to save iptables rules: %v", err))
 		return false
 	}
@@ -154,7 +157,10 @@ const (
 )
 
 func getCurrentInotifyValue() (int, error) {
-	cmd := exec.Command("sysctl", "-n", sysctlParam)
+	cmd := command.Cmd("sysctl", "-n", sysctlParam)
+	if cmd == nil {
+		return targetValue, nil // Return target value in dry-run mode
+	}
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	if err := cmd.Run(); err != nil {
@@ -168,8 +174,7 @@ func getCurrentInotifyValue() (int, error) {
 }
 
 func setInotifyValue(value int) error {
-	cmd := exec.Command("sudo", "sysctl", "-w", fmt.Sprintf("%s=%d", sysctlParam, value))
-	return cmd.Run()
+	return command.SimpleRun("sudo", "sysctl", "-w", fmt.Sprintf("%s=%d", sysctlParam, value))
 }
 
 func CheckInotifyConfig() error {
@@ -249,14 +254,12 @@ func HasSufficientRancherPartition() bool {
 		LogMessage(Info, "Skipping /var/lib/rancher partition check for CPU node.")
 		return true
 	}
-	cmd := exec.Command("mkdir", "-p", "/var/lib/rancher")
-	output, err := cmd.Output()
+	output, err := command.Output("mkdir", "-p", "/var/lib/rancher")
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to create /var/lib/rancher: %v", err))
 		return false
 	}
-	cmd = exec.Command("df", "-BG", "/var/lib/rancher")
-	output, err = cmd.Output()
+	output, err = command.Output("df", "-BG", "/var/lib/rancher")
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to get /var/lib/rancher partition size: %v", err))
 		return false
@@ -287,9 +290,8 @@ func HasSufficientRancherPartition() bool {
 
 
 func CreateMetalLBConfig() error {
-	cmd := exec.Command("sh", "-c", "ip route get 1 | awk '{print $7; exit}'")
-	output, err := cmd.Output()
-	if err != nil {
+	output, err := command.Output("sh", "-c", "ip route get 1 | awk '{print $7; exit}'")
+	if err != nil{
 		return fmt.Errorf("failed to determine default IP: %v", err)
 	}
 	defaultIP := strings.TrimSpace(string(output))
@@ -324,9 +326,8 @@ metadata:
 // GetUserHomeDirViaShell gets a user's home directory using shell tilde expansion
 func GetUserHomeDirViaShell(username string) (string, error) {
 	// Use shell's tilde expansion to get the home directory
-	cmd := exec.Command("sh", "-c", fmt.Sprintf("eval echo ~%s", username))
-	output, err := cmd.Output()
-	if err != nil {
+	output, err := command.Output("sh", "-c", fmt.Sprintf("eval echo ~%s", username))
+	if err != nil{
 		return "", fmt.Errorf("failed to get home directory for user %s: %w", username, err)
 	}
 
@@ -403,17 +404,15 @@ func setupMultipath() error {
 }
 
 func updateModprobe() error {
-	cmd := exec.Command("sh", "-c", "sudo sed -i '/^blacklist amdgpu/s/^/# /' /etc/modprobe.d/*.conf")
-	output, err := cmd.Output()
-	if err != nil {
+	output, err := command.Output("sh", "-c", "sudo sed -i '/^blacklist amdgpu/s/^/# /' /etc/modprobe.d/*.conf")
+	if err != nil{
 		LogMessage(Warn, fmt.Sprintf("Modprobe configuration returned: %s", output))
 		return fmt.Errorf("failed to configure Modprobe: %w", err)
 	} else {
 		LogMessage(Info, "")
 	}
-	cmd = exec.Command("modprobe", "amdgpu")
-	output, err = cmd.Output()
-	if err != nil {
+	output, err = command.Output("modprobe", "amdgpu")
+	if err != nil{
 		LogMessage(Warn, fmt.Sprintf("Modprobe amdgpu returned: %s", output))
 		return fmt.Errorf("failed to modprobe amdgpu: %w", err)
 	} else {

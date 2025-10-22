@@ -20,11 +20,11 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"syscall"
 
+	"github.com/silogen/cluster-bloom/pkg/command"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
@@ -251,8 +251,7 @@ func validateKernelModules() {
 
 // isModuleLoaded checks if a kernel module is currently loaded
 func isModuleLoaded(moduleName string) bool {
-	cmd := exec.Command("lsmod")
-	output, err := cmd.Output()
+	output, err := command.Output("lsmod")
 	if err != nil {
 		return false
 	}
@@ -261,7 +260,6 @@ func isModuleLoaded(moduleName string) bool {
 
 // isModuleAvailable checks if a kernel module is available to load
 func isModuleAvailable(moduleName string) bool {
-	cmd := exec.Command("modinfo", moduleName)
-	err := cmd.Run()
+	err := command.SimpleRun("modinfo", moduleName)
 	return err == nil
 }

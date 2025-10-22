@@ -19,10 +19,10 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"os/exec"
 	"regexp"
 	"strings"
 
+	"github.com/silogen/cluster-bloom/pkg/command"
 	"github.com/spf13/viper"
 )
 
@@ -77,8 +77,7 @@ func GetDisksFromLonghornConfig(longhornFromConfig string) (disks []string, moun
 
 func getDeviceFromMountpoint(diskPath string) (device string, mountPoint string) {
 	mountPoint = "/mnt/" + diskPath
-	cmd := exec.Command("lsblk", "-no", "NAME,MOUNTPOINT")
-	output, err := cmd.Output()
+	output, err := command.Output("lsblk", "-no", "NAME,MOUNTPOINT")
 	if err != nil {
 		LogMessage(Warn, fmt.Sprintf("Failed to run lsblk: %v", err))
 		return "", ""
@@ -103,8 +102,7 @@ func getMountpointsFromDevice(device string) string {
 
 	// Check for regular mount points from /proc/mounts
 	shellCmd := fmt.Sprintf("awk '$1 == \"%s\" {print $2}' /proc/mounts", device)
-	cmd := exec.Command("sh", "-c", shellCmd)
-	output, err := cmd.Output()
+	output, err := command.Output("sh", "-c", shellCmd)
 	if err == nil {
 		mounts := strings.TrimSpace(string(output))
 		if mounts != "" {
@@ -114,8 +112,7 @@ func getMountpointsFromDevice(device string) string {
 
 	// Check if device is used as swap
 	swapCmd := fmt.Sprintf("awk '$1 == \"%s\" {print \"[swap]\"}' /proc/swaps", device)
-	cmd = exec.Command("sh", "-c", swapCmd)
-	swapOutput, err := cmd.Output()
+	swapOutput, err := command.Output("sh", "-c", swapCmd)
 	if err == nil {
 		swap := strings.TrimSpace(string(swapOutput))
 		if swap != "" {
@@ -125,8 +122,7 @@ func getMountpointsFromDevice(device string) string {
 
 	// Check partitions of the device for swap
 	lsblkCmd := fmt.Sprintf("lsblk -no NAME,FSTYPE %s 2>/dev/null | awk '$2 == \"swap\" {print \"/dev/\" $1 \" [swap]\"}'", device)
-	cmd = exec.Command("sh", "-c", lsblkCmd)
-	lsblkOutput, err := cmd.Output()
+	lsblkOutput, err := command.Output("sh", "-c", lsblkCmd)
 	if err == nil {
 		partitionSwaps := strings.TrimSpace(string(lsblkOutput))
 		if partitionSwaps != "" {
@@ -170,8 +166,7 @@ func GetDisksFromSelectedConfig(longhornFromConfig string) (disks []string, moun
 
 	diskInfo := ""
 	for _, disk := range targetDisks {
-		cmd := exec.Command("lsblk", "-no", "SIZE,MODEL,MOUNTPOINT", disk)
-		output, err := cmd.Output()
+		output, err := command.Output("lsblk", "-no", "SIZE,MODEL,MOUNTPOINT", disk)
 		if err != nil {
 			diskInfo += fmt.Sprintf("%s: (Unable to get info)\n", disk)
 		} else {

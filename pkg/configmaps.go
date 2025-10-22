@@ -19,9 +19,9 @@ package pkg
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 
+	"github.com/silogen/cluster-bloom/pkg/command"
 	"github.com/silogen/cluster-bloom/pkg/fsops"
 	"github.com/spf13/viper"
 )
@@ -96,8 +96,7 @@ data:
 	tmpFile.Close()
 
 	// Apply the ConfigMap using kubectl
-	cmd := exec.Command("/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "apply", "-f", tmpFile.Name())
-	output, err := cmd.CombinedOutput()
+	output, err := command.CombinedOutput("/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "apply", "-f", tmpFile.Name())
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to create ConfigMap: %v, output: %s", err, string(output)))
 		return fmt.Errorf("failed to create ConfigMap: %w", err)

@@ -19,7 +19,6 @@ import (
 	"embed"
 	"fmt"
 	"os"
-	"os/exec"
 	"os/user"
 	"path/filepath"
 	"strconv"
@@ -27,6 +26,7 @@ import (
 	"time"
 
 	"github.com/silogen/cluster-bloom/pkg/args"
+	"github.com/silogen/cluster-bloom/pkg/command"
 	"github.com/silogen/cluster-bloom/pkg/fsops"
 	"github.com/silogen/cluster-bloom/pkg/sysvalidation"
 	"github.com/spf13/viper"
@@ -191,8 +191,7 @@ var SetupAndCheckRocmStep = Step{
 				Error: fmt.Errorf("setup of ROCm failed"),
 			}
 		}
-		cmd := exec.Command("sh", "-c", `rocm-smi -i --json | jq -r '.[] | .["Device Name"]' | sort | uniq -c`)
-		output, err := cmd.CombinedOutput()
+		output, err := command.CombinedOutput("sh", "-c", `rocm-smi -i --json | jq -r '.[] | .["Device Name"]' | sort | uniq -c`)
 		if err != nil {
 			LogMessage(Error, "Failed to execute rocm-smi: "+err.Error())
 			return StepResult{
@@ -429,22 +428,19 @@ var SetupLonghornStep = Step{
 			if err != nil {
 				return StepResult{Error: err}
 			}
-			cmd := exec.Command("/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "wait", "--for=create", "--timeout=600s", "cronjob/label-and-annotate-nodes")
-			output, err := cmd.CombinedOutput()
+			output, err := command.CombinedOutput("/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "wait", "--for=create", "--timeout=600s", "cronjob/label-and-annotate-nodes")
 			if err != nil {
 				LogMessage(Error, fmt.Sprintf("Failed waiting for node annotation to be created: %v, output: %s", err, string(output)))
 				return StepResult{Error: fmt.Errorf("failed waiting for node annotation to be created: %w", err)}
 			}
 
-			cmd = exec.Command("/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "create", "job", "--from=cronjob/label-and-annotate-nodes", "label-and-annotate-nodes-initial", "-n", "default")
-			output, err = cmd.CombinedOutput()
-			if err != nil {
+			output, err = command.CombinedOutput("/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "create", "job", "--from=cronjob/label-and-annotate-nodes", "label-and-annotate-nodes-initial", "-n", "default")
+			if err != nil{
 				LogMessage(Error, fmt.Sprintf("Failed to trigger node annotator: %v, output: %s", err, string(output)))
 				return StepResult{Error: fmt.Errorf("failed to trigger node annotator: %w", err)}
 			}
-			cmd = exec.Command("/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "wait", "--for=jsonpath={.status.lastSuccessfulTime}", "--timeout=600s", "cronjob/label-and-annotate-nodes")
-			output, err = cmd.CombinedOutput()
-			if err != nil {
+			output, err = command.CombinedOutput("/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "wait", "--for=jsonpath={.status.lastSuccessfulTime}", "--timeout=600s", "cronjob/label-and-annotate-nodes")
+			if err != nil{
 				LogMessage(Error, fmt.Sprintf("Failed waiting for node annotation: %v, output: %s", err, string(output)))
 				return StepResult{Error: fmt.Errorf("failed waiting for node annotation: %w", err)}
 			}
@@ -524,8 +520,7 @@ var SetupKubeConfig = Step{
 		return false
 	},
 	Action: func() StepResult {
-		cmd := exec.Command("sh", "-c", "ip route get 1.1.1.1 | awk '{print $7; exit}'")
-		output, err := cmd.Output()
+		output, err := command.Output("sh", "-c", "ip route get 1.1.1.1 | awk '{print $7; exit}'")
 		if err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to get main IP: %v", err))
 			return StepResult{Error: fmt.Errorf("failed to get main IP: %w", err)}
@@ -533,7 +528,7 @@ var SetupKubeConfig = Step{
 		mainIP := strings.TrimSpace(string(output))
 
 		sedCmd := fmt.Sprintf("sudo sed -i 's/127\\.0\\.0\\.1/%s/g' /etc/rancher/rke2/rke2.yaml", mainIP)
-		if err := exec.Command("sh", "-c", sedCmd).Run(); err != nil {
+		if err := command.SimpleRun("sh", "-c", sedCmd); err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to update RKE2 config file: %v", err))
 			return StepResult{Error: fmt.Errorf("failed to update RKE2 config file: %w", err)}
 		}
@@ -557,7 +552,7 @@ var SetupKubeConfig = Step{
 		// Change ownership of .kube directory to the actual user if running with sudo
 		if sudoUser := os.Getenv("SUDO_USER"); sudoUser != "" {
 			chownCmd := fmt.Sprintf("sudo chown %s:%s %s", sudoUser, sudoUser, kubeDir)
-			if err := exec.Command("sh", "-c", chownCmd).Run(); err != nil {
+			if err := command.SimpleRun("sh", "-c", chownCmd); err != nil {
 				LogMessage(Error, fmt.Sprintf("Failed to change ownership of .kube directory: %v", err))
 				return StepResult{Error: fmt.Errorf("failed to change ownership of .kube directory: %w", err)}
 			}
@@ -565,7 +560,7 @@ var SetupKubeConfig = Step{
 
 		kubeconfigPath := filepath.Join(userHome, ".kube", "config")
 		sedCmd = fmt.Sprintf("sudo sed 's/127\\.0\\.0\\.1/%s/g' /etc/rancher/rke2/rke2.yaml > %s", mainIP, kubeconfigPath)
-		if err := exec.Command("sh", "-c", sedCmd).Run(); err != nil {
+		if err := command.SimpleRun("sh", "-c", sedCmd); err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to update KUBECONFIG file: %v", err))
 			return StepResult{Error: fmt.Errorf("failed to update KUBECONFIG file: %w", err)}
 		}
@@ -573,13 +568,13 @@ var SetupKubeConfig = Step{
 		// Change ownership to the actual user if running with sudo
 		if sudoUser := os.Getenv("SUDO_USER"); sudoUser != "" {
 			chownCmd := fmt.Sprintf("sudo chown %s:%s %s", sudoUser, sudoUser, kubeconfigPath)
-			if err := exec.Command("sh", "-c", chownCmd).Run(); err != nil {
+			if err := command.SimpleRun("sh", "-c", chownCmd); err != nil {
 				LogMessage(Error, fmt.Sprintf("Failed to change ownership of KUBECONFIG file: %v", err))
 				return StepResult{Error: fmt.Errorf("failed to change ownership of KUBECONFIG file: %w", err)}
 			}
 		}
 
-		if err := exec.Command("chmod", "600", kubeconfigPath).Run(); err != nil {
+		if err := command.SimpleRun("chmod", "600", kubeconfigPath); err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to set permissions on KUBECONFIG file: %v", err))
 			return StepResult{Error: fmt.Errorf("failed to set permissions on KUBECONFIG file: %w", err)}
 		}
@@ -604,11 +599,11 @@ var SetupKubeConfig = Step{
 			LogMessage(Error, fmt.Sprintf("Failed to create .kube directory for non-sudo user: %v", err))
 		}
 		cpCmd := fmt.Sprintf("sudo cp $HOME/.kube/config %s/.kube/config", userHomeDir)
-		if err := exec.Command("sh", "-c", cpCmd).Run(); err != nil {
+		if err := command.SimpleRun("sh", "-c", cpCmd); err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to copy KUBECONFIG file to non-sudo user's home directory: %v", err))
 		}
 
-		if err := exec.Command("sudo", "chown", fmt.Sprintf("%s:%s", os.Getenv("SUDO_USER"), os.Getenv("SUDO_USER")), fmt.Sprintf("%s/.kube/config", userHomeDir)).Run(); err != nil {
+		if err := command.SimpleRun("sudo", "chown", fmt.Sprintf("%s:%s", os.Getenv("SUDO_USER"), os.Getenv("SUDO_USER")), fmt.Sprintf("%s/.kube/config", userHomeDir)); err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to change ownership of KUBECONFIG file: %v", err))
 		}
 
@@ -619,7 +614,7 @@ var SetupKubeConfig = Step{
 
 		// Execute once for current shell (to avoid logout & login cycle):
 		addK9sPath := fmt.Sprintf("export PATH=$PATH:%s", k9sPath)
-		if err = exec.Command("sh", "-c", addK9sPath).Run(); err != nil {
+		if err = command.SimpleRun("sh", "-c", addK9sPath); err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to update PATH in .bash_profile: %v", err))
 		} else {
 			LogMessage(Info, fmt.Sprintf("Path in .bash_profile updated to contain %s", string(k9sPath)))
@@ -634,7 +629,7 @@ var SetupKubeConfig = Step{
 			if !strings.Contains(string(bashProfileContent), k9sPath) {
 				// Add k9s path to .bash_profile if not found
 				pathCmd := fmt.Sprintf("echo 'export PATH=$PATH:%s' >> %s", k9sPath, bashProfilePath)
-				if err = exec.Command("sh", "-c", pathCmd).Run(); err != nil {
+				if err = command.SimpleRun("sh", "-c", pathCmd); err != nil {
 					LogMessage(Error, fmt.Sprintf("Failed to update PATH in .bash_profile: %v", err))
 				} else {
 					LogMessage(Info, fmt.Sprintf("Path in .bash_profile updated to contain %s", string(k9sPath)))
@@ -651,7 +646,7 @@ var SetupKubeConfig = Step{
 			if !strings.Contains(string(bashrcContent), k9sPath) {
 				// Add k9s path to .bashrc if not found
 				pathCmd := fmt.Sprintf("echo 'export PATH=$PATH:%s' >> %s", k9sPath, bashrcPath)
-				if err = exec.Command("sh", "-c", pathCmd).Run(); err != nil {
+				if err = command.SimpleRun("sh", "-c", pathCmd); err != nil {
 					LogMessage(Error, fmt.Sprintf("Failed to update PATH: %v", err))
 				} else {
 					LogMessage(Info, fmt.Sprintf("Path in .bashrc updated to contain %s", string(k9sPath)))
@@ -740,8 +735,7 @@ data:
 		tmpFile.Close()
 
 		// Apply the ConfigMap
-		cmd := exec.Command("/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "apply", "-f", tmpFile.Name())
-		output, err := cmd.CombinedOutput()
+		output, err := command.CombinedOutput("/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "apply", "-f", tmpFile.Name())
 		if err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to create domain ConfigMap: %v, output: %s", err, string(output)))
 			return StepResult{Error: fmt.Errorf("failed to create domain ConfigMap: %w", err)}
@@ -771,13 +765,12 @@ data:
 				tlsKeyPath = filepath.Join(tempDir, "tls.key")
 
 				// Generate self-signed certificate using openssl
-				cmd := exec.Command("openssl", "req", "-x509", "-nodes", "-days", "365", "-newkey", "rsa:2048",
+				output, err := command.CombinedOutput("openssl", "req", "-x509", "-nodes", "-days", "365", "-newkey", "rsa:2048",
 					"-keyout", tlsKeyPath,
 					"-out", tlsCertPath,
 					"-subj", fmt.Sprintf("/CN=%s", domain),
 					"-addext", fmt.Sprintf("subjectAltName=DNS:%s,DNS:*.%s", domain, domain))
 
-				output, err := cmd.CombinedOutput()
 				if err != nil {
 					LogMessage(Error, fmt.Sprintf("Failed to generate self-signed certificate: %v, output: %s", err, string(output)))
 					return StepResult{Error: fmt.Errorf("failed to generate self-signed certificate: %w", err)}
@@ -822,8 +815,7 @@ metadata:
 			tmpNsFile.Close()
 
 			// Apply the namespace
-			cmd := exec.Command("/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "apply", "-f", tmpNsFile.Name())
-			output, err := cmd.CombinedOutput()
+			output, err := command.CombinedOutput("/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "apply", "-f", tmpNsFile.Name())
 			if err != nil {
 				LogMessage(Error, fmt.Sprintf("Failed to create kgateway-system namespace: %v, output: %s", err, string(output)))
 				return StepResult{Error: fmt.Errorf("failed to create kgateway-system namespace: %w", err)}
@@ -831,7 +823,7 @@ metadata:
 			LogMessage(Info, "Successfully created kgateway-system namespace")
 
 			// Create TLS secret using kubectl
-			cmd = exec.Command("/var/lib/rancher/rke2/bin/kubectl",
+			secretYAML, err := command.Output("/var/lib/rancher/rke2/bin/kubectl",
 				"--kubeconfig", "/etc/rancher/rke2/rke2.yaml",
 				"create", "secret", "tls", "cluster-tls",
 				"--cert", tlsCertPath,
@@ -839,7 +831,6 @@ metadata:
 				"-n", "kgateway-system",
 				"--dry-run=client", "-o", "yaml")
 
-			secretYAML, err := cmd.Output()
 			if err != nil {
 				LogMessage(Error, fmt.Sprintf("Failed to generate TLS secret: %v", err))
 				return StepResult{Error: fmt.Errorf("failed to generate TLS secret: %w", err)}
@@ -859,8 +850,7 @@ metadata:
 			}
 			tmpSecretFile.Close()
 
-			cmd = exec.Command("/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "apply", "-f", tmpSecretFile.Name())
-			output, err = cmd.CombinedOutput()
+			output, err = command.CombinedOutput("/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "apply", "-f", tmpSecretFile.Name())
 			if err != nil {
 				LogMessage(Error, fmt.Sprintf("Failed to create TLS secret: %v, output: %s", err, string(output)))
 				return StepResult{Error: fmt.Errorf("failed to create TLS secret: %w", err)}
@@ -921,16 +911,14 @@ var FinalOutput = Step{
 	Description: "Generate output after installation",
 	Action: func() StepResult {
 		if viper.GetBool("FIRST_NODE") {
-			tokenCmd := exec.Command("sh", "-c", "cat /var/lib/rancher/rke2/server/node-token")
-			tokenOutput, err := tokenCmd.Output()
+			tokenOutput, err := command.Output("sh", "-c", "cat /var/lib/rancher/rke2/server/node-token")
 			if err != nil {
 				LogMessage(Error, fmt.Sprintf("Failed to get join token: %v", err))
 				return StepResult{Error: fmt.Errorf("failed to get join token: %w", err)}
 			}
 			joinToken := strings.TrimSpace(string(tokenOutput))
 
-			mainIPCmd := exec.Command("sh", "-c", "ip route get 1.1.1.1 | awk '{print $7; exit}'")
-			mainIPOutput, err := mainIPCmd.Output()
+			mainIPOutput, err := command.Output("sh", "-c", "ip route get 1.1.1.1 | awk '{print $7; exit}'")
 			if err != nil {
 				LogMessage(Error, fmt.Sprintf("Failed to get main IP: %v", err))
 				return StepResult{Error: fmt.Errorf("failed to get main IP: %w", err)}
@@ -980,21 +968,24 @@ var UpdateUdevRulesStep = Step{
 			"SUBSYSTEM==\"drm\", KERNEL==\"renderD*\", MODE=\"0666\"",
 		}, "\n")
 
-		cmd := exec.Command("sudo", "tee", fileName)
-		cmd.Stdin = strings.NewReader(fileContent)
-		err := cmd.Run()
+		cmd := command.Cmd("sudo", "tee", fileName)
+		var err error
+		if cmd != nil {
+			cmd.Stdin = strings.NewReader(fileContent)
+			err = cmd.Run()
+		}
 		if err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to write to file: %v", err))
 			return StepResult{Error: fmt.Errorf("failed to write to file: %v", err)}
 		}
 
-		err = exec.Command("sudo", "udevadm", "control", "--reload-rules").Run()
+		err = command.SimpleRun("sudo", "udevadm", "control", "--reload-rules")
 		if err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to reload udev rules: %v", err))
 			return StepResult{Error: fmt.Errorf("failed to reload udev rules: %v", err)}
 		}
 
-		err = exec.Command("sudo", "udevadm", "trigger").Run()
+		err = command.SimpleRun("sudo", "udevadm", "trigger")
 		if err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to trigger udev: %v", err))
 			return StepResult{Error: fmt.Errorf("failed to trigger udev: %v", err)}
@@ -1087,8 +1078,7 @@ var CleanLonghornMountsStep = Step{
 }
 
 func shellCmdHelper(shellCmd string) StepResult {
-	cmd := exec.Command("sh", "-c", shellCmd)
-	output, err := cmd.CombinedOutput()
+	output, err := command.CombinedOutput("sh", "-c", shellCmd)
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Error running command %s: %v, output: %s", shellCmd, err, string(output)))
 		return StepResult{Error: fmt.Errorf("error running %s: %w", shellCmd, err)}
@@ -1104,8 +1094,7 @@ var UninstallRKE2Step = Step{
 	Description: "Execute the RKE2 uninstall script if it exists",
 	Action: func() StepResult {
 		LogMessage(Info, "Uninstalling RKE2, which takes a couple minutes.")
-		cmd := exec.Command("/usr/local/bin/rke2-uninstall.sh")
-		output, err := cmd.CombinedOutput()
+		output, err := command.CombinedOutput("/usr/local/bin/rke2-uninstall.sh")
 		if err != nil {
 			LogMessage(Info, fmt.Sprintf("RKE2 uninstall script output: %s", string(output)))
 			LogMessage(Info, fmt.Sprintf("RKE2 uninstall script encountered and ignored an error: %v", err))
