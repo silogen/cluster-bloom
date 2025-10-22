@@ -108,24 +108,32 @@ func SetArguments() {
 
 		// Disk and storage configuration
 		{
-			Key:         "SKIP_DISK_CHECK",
+			Key:         "NO_DISKS_FOR_CLUSTER",
 			Default:     false,
 			Description: "Set to true to skip disk-related operations.",
 			Type:        "bool",
 			Validators:  []func(value string) error{args.ValidateSkipDiskCheckConsistency},
 		},
 		{
-			Key:         "LONGHORN_DISKS",
-			Default:     "",
-			Description: "Comma-separated list of disk paths to use for Longhorn.",
-			Type:        "string",
-			Validators:  []func(value string) error{args.ValidateLonghornDisksArg},
+			Key:         "SKIP_RANCHER_PARTITION_CHECK",
+			Default:     false,
+			Description: "Set to true to skip /var/lib/rancher partition size check.",
+			Type:        "bool",
 		},
 		{
-			Key:         "SELECTED_DISKS",
-			Default:     "",
-			Description: "Comma-separated list of disk devices. Example: \"/dev/sdb,/dev/sdc\".",
-			Type:        "string",
+			Key:          "CLUSTER_PREMOUNTED_DISKS",
+			Default:      "",
+			Description:  "Comma-separated list of disk paths to use for Longhorn.",
+			Type:         "string",
+			Validators:   []func(value string) error{args.ValidateLonghornDisksArg},
+			Dependencies: "NO_DISKS_FOR_CLUSTER=false",
+		},
+		{
+			Key:          "CLUSTER_DISKS",
+			Default:      "",
+			Description:  "Comma-separated list of disk devices. Example: \"/dev/sdb,/dev/sdc\".",
+			Type:         "string",
+			Dependencies: "NO_DISKS_FOR_CLUSTER=false",
 		},
 
 		// External component URLs

@@ -282,104 +282,86 @@ var UpdateModprobeStep = Step{
 	},
 }
 
-var SelectDrivesStep = Step{
-	Id:          "SelectDrivesStep",
-	Name:        "Select Unmounted Disks",
-	Description: "Identify and select unmounted physical disks",
-	Action: func() StepResult {
-		if viper.IsSet("SELECTED_DISKS") && viper.GetString("SELECTED_DISKS") != "" {
-			disks := strings.Split(viper.GetString("SELECTED_DISKS"), ",")
-			LogMessage(Info, fmt.Sprintf("Selected disks: %v", disks))
-			for _, disk := range disks {
-				cmd := exec.Command("umount", "-Av", disk)
-				output, _ := cmd.CombinedOutput()
-				LogMessage(Info, fmt.Sprintf("unmounted disk %s: %s", disk, string(output)))
-			}
-			viper.Set("selected_disks", disks)
-			return StepResult{Error: nil}
-		}
-		disks, err := GetUnmountedPhysicalDisks()
-		if err != nil {
-			return StepResult{
-				Error: fmt.Errorf("failed to get unmounted disks: %v", err),
-			}
-		}
-		if len(disks) == 0 {
-			LogMessage(Info, "No unmounted physical disks found")
-			return StepResult{Error: nil}
-		}
-		cmd := exec.Command("sh", "-c", "lsblk |awk '/nvme/ {print $0}'")
-		output, err := cmd.Output()
-		if err != nil {
-			return StepResult{
-				Error: fmt.Errorf("failed to get disk info: %v", err),
-			}
-		}
-		diskinfo := string(output)
-		options := make([]string, len(disks))
-		copy(options, disks)
-
-		result, err := ShowOptionsScreen(
-			"Unmounted Disks",
-			"Select disks to format and mount\n\n"+diskinfo+"\n\nThe suggested drives are pre-selected, arrow keys to navigate, spacebar to select, enter to confirm\n\nd when done, q to quit",
-			options,
-			options,
-		)
-		if err != nil {
-			return StepResult{
-				Error: fmt.Errorf("error selecting disks: %v", err),
-			}
-		}
-
-		if result.Canceled {
-			return StepResult{
-				Error: fmt.Errorf("disk selection canceled"),
-			}
-		}
-		LogMessage(Info, fmt.Sprintf("Selected disks: %v", result.Selected))
-
-		// Store the selected disks for the next step
-		viper.Set("selected_disks", result.Selected)
-
-		return StepResult{Message: fmt.Sprintf("Selected disks: %v", result.Selected)}
-	},
-}
-
-var MountSelectedDrivesStep = Step{
-	Id:          "MountSelectedDrivesStep",
-	Name:        "Mount Selected Disks",
-	Description: "Mount the selected physical disks",
+var PrepareLonghornDisksStep = Step{
+	Id:          "PrepareLonghornDisksStep",
+	Name:        "Prepare Longhorn Disks",
+	Description: "Mount selected disks or populate disk map from CLUSTER_PREMOUNTED_DISKS configuration",
 	Skip: func() bool {
-		if viper.IsSet("LONGHORN_DISKS") && viper.GetString("LONGHORN_DISKS") != "" {
-			LogMessage(Info, "Skipping drive mounting as LONGHORN_DISKS is set.")
-			return true
-		}
-		if viper.GetBool("SKIP_DISK_CHECK") {
-			LogMessage(Info, "Skipping drive mounting as SKIP_DISK_CHECK is set.")
+		if viper.GetBool("NO_DISKS_FOR_CLUSTER") {
+			LogMessage(Info, "Skipping drive mounting as NO_DISKS_FOR_CLUSTER is set.")
 			return true
 		}
 		return false
 	},
 	Action: func() StepResult {
-		selectedDisks := viper.GetStringSlice("selected_disks")
-		if len(selectedDisks) == 0 {
-			LogMessage(Info, "No disks selected for mounting")
-			return StepResult{Error: nil}
+		var mountedDiskMap map[string]string
+		// Check if CLUSTER_PREMOUNTED_DISKS is set
+		if viper.IsSet("CLUSTER_PREMOUNTED_DISKS") && viper.GetString("CLUSTER_PREMOUNTED_DISKS") != "" {
+			LogMessage(Info, "CLUSTER_PREMOUNTED_DISKS is set, populating mounted disk map from mount points")
+
+			// Parse CLUSTER_PREMOUNTED_DISKS and create map from current mount state
+			longhornDisks := viper.GetString("CLUSTER_PREMOUNTED_DISKS")
+			mountDirs := strings.Split(longhornDisks, ",")
+			mountedDiskMap = make(map[string]string)
+
+			for i, mountDir := range mountDirs {
+				mountDir = strings.TrimSpace(mountDir)
+				LogMessage(Info, mountDir)
+				mountedDiskMap[mountDir] = fmt.Sprintf("%d", i)
+			}
+			LogMessage(Info, fmt.Sprintf("%v", mountedDiskMap))
+		} else {
+
+			selectedDisks := strings.Split(viper.GetString("CLUSTER_DISKS"), ",")
+			if len(selectedDisks) == 0 {
+				return StepResult{
+					Error: fmt.Errorf("no disks selected for mounting"),
+				}
+			}
+			var mountError error
+			mountedDiskMap, mountError = MountDrives(selectedDisks)
+			if mountError != nil {
+				return StepResult{
+					Error: fmt.Errorf("error mounting disks: %v", mountError),
+				}
+			}
+			persistError := PersistMountedDisks(mountedDiskMap)
+			if persistError != nil {
+				return StepResult{
+					Error: fmt.Errorf("error persisting mounted disks: %v", persistError),
+				}
+			}
+		}
+		LogMessage(Info, fmt.Sprintf("Used %d disks: %v", len(mountedDiskMap), mountedDiskMap))
+		// Store in viper for use by other steps
+		viper.Set("mounted_disk_map", mountedDiskMap)
+
+		// Back up longhorn files for all disks in mountedDiskMap
+		timestamp := time.Now().Format("20060102-150405")
+		for mountPoint := range mountedDiskMap {
+			longhornConfigPath := filepath.Join(mountPoint, "longhorn-disk.cfg")
+			if _, err := os.Stat(longhornConfigPath); err == nil {
+				backupPath := filepath.Join(mountPoint, fmt.Sprintf("longhorn-disk.cfg.backup-%s", timestamp))
+				LogMessage(Info, fmt.Sprintf("Found longhorn-disk.cfg at %s, backing up to %s", longhornConfigPath, backupPath))
+				if err := os.Rename(longhornConfigPath, backupPath); err != nil {
+					LogMessage(Warn, fmt.Sprintf("Failed to backup longhorn-disk.cfg: %v", err))
+				} else {
+					LogMessage(Info, fmt.Sprintf("Backed up and removed longhorn-disk.cfg"))
+				}
+			}
+
+			replicasPath := filepath.Join(mountPoint, "replicas")
+			if info, err := os.Stat(replicasPath); err == nil && info.IsDir() {
+				backupPath := filepath.Join(mountPoint, fmt.Sprintf("replicas.backup-%s", timestamp))
+				LogMessage(Info, fmt.Sprintf("Found replicas directory at %s, backing up to %s", replicasPath, backupPath))
+				if err := os.Rename(replicasPath, backupPath); err != nil {
+					LogMessage(Warn, fmt.Sprintf("Failed to backup replicas directory: %v", err))
+				} else {
+					LogMessage(Info, fmt.Sprintf("Backed up and removed replicas directory"))
+				}
+			}
 		}
 
-		mountError := MountDrives(selectedDisks)
-		if mountError != nil {
-			return StepResult{
-				Error: fmt.Errorf("error mounting disks: %v", mountError),
-			}
-		}
-		persistError := PersistMountedDisks()
-		if persistError != nil {
-			return StepResult{
-				Error: fmt.Errorf("error persisting mounted disks: %v", persistError),
-			}
-		}
-		LogMessage(Info, fmt.Sprintf("Mounted and persisted disks: %v", selectedDisks))
 		return StepResult{Error: nil}
 	},
 }
@@ -389,7 +371,15 @@ var GenerateNodeLabelsStep = Step{
 	Name:        "Generate Node Labels",
 	Description: "Generate labels for the node based on its configuration",
 	Action: func() StepResult {
-		err := GenerateNodeLabels()
+		// Get mounted disk map from viper
+		mountedDiskMap := make(map[string]string)
+		if mapInterface := viper.Get("mounted_disk_map"); mapInterface != nil {
+			if m, ok := mapInterface.(map[string]string); ok {
+				mountedDiskMap = m
+			}
+		}
+
+		err := GenerateNodeLabels(mountedDiskMap)
 		if err != nil {
 			return StepResult{Error: err}
 		}
@@ -402,8 +392,8 @@ var SetupMetallbStep = Step{
 	Name:        "Setup MetalLB Manifests",
 	Description: "Copy MetalLB YAML files to the RKE2 manifests directory",
 	Skip: func() bool {
-		if !viper.GetBool("FIRST_NODE") {
-			LogMessage(Info, "Skipping GenerateLonghornDiskString as SKIP_DISK_CHECK is set.")
+		if viper.GetBool("FIRST_NODE") == false {
+			LogMessage(Info, "Skipping GenerateLonghornDiskString as NO_DISKS_FOR_CLUSTER is set.")
 			return true
 		}
 		return false
@@ -426,8 +416,8 @@ var SetupLonghornStep = Step{
 	Name:        "Setup Longhorn Manifests",
 	Description: "Copy Longhorn YAML files to the RKE2 manifests directory",
 	Skip: func() bool {
-		if viper.GetBool("SKIP_DISK_CHECK") {
-			LogMessage(Info, "Skipping GenerateLonghornDiskString as SKIP_DISK_CHECK is set.")
+		if viper.GetBool("NO_DISKS_FOR_CLUSTER") {
+			LogMessage(Info, "Skipping GenerateLonghornDiskString as NO_DISKS_FOR_CLUSTER is set.")
 			return true
 		}
 		return false
@@ -502,6 +492,10 @@ var HasSufficientRancherPartitionStep = Step{
 	Name:        "Check /var/lib/rancher Partition Size",
 	Description: "Check if the /var/lib/rancher partition size is sufficient",
 	Skip: func() bool {
+		if viper.GetBool("SKIP_RANCHER_PARTITION_CHECK") {
+			LogMessage(Info, "Skipping /var/lib/rancher partition check as SKIP_RANCHER_PARTITION_CHECK is set.")
+			return true
+		}
 		if !viper.GetBool("GPU_NODE") {
 			LogMessage(Info, "Skipping /var/lib/rancher partition check for CPU node.")
 			return true
@@ -514,34 +508,6 @@ var HasSufficientRancherPartitionStep = Step{
 			return StepResult{Error: nil}
 		}
 		return StepResult{Error: fmt.Errorf("/var/lib/rancher partition size is less than the recommended 500GB")}
-	},
-}
-
-var NVMEDrivesAvailableStep = Step{
-	Id:          "NVMEDrivesAvailableStep",
-	Name:        "Check NVMe Drives",
-	Description: "Check if NVMe drives are available",
-	Skip: func() bool {
-		if !viper.GetBool("GPU_NODE") {
-			LogMessage(Info, "Skipped for non-GPU node")
-			return true
-		}
-		if viper.GetBool("SKIP_DISK_CHECK") {
-			LogMessage(Info, "Skipping NVME drive check as SKIP_DISK_CHECK is set.")
-			return true
-		}
-		if viper.GetString("SELECTED_DISKS") != "" {
-			LogMessage(Info, "Skipping NVME drive check as SELECTED_DISKS is set.")
-			return true
-		}
-
-		return false
-	},
-	Action: func() StepResult {
-		if NVMEDrivesAvailable() {
-			return StepResult{Error: nil}
-		}
-		return StepResult{Error: fmt.Errorf("no NVMe drives available (either unmounted or mounted at /mnt/disk*)")}
 	},
 }
 
@@ -701,6 +667,13 @@ func CreateBloomConfigMapStepFunc(version string) Step {
 		Id:          "CreateBloomConfigMapStep",
 		Name:        "Create Bloom ConfigMap",
 		Description: "Create a ConfigMap with bloom configuration in the default namespace",
+		Skip: func() bool {
+			if !viper.GetBool("FIRST_NODE") {
+				LogMessage(Info, "Skipped for additional node")
+				return true
+			}
+			return false
+		},
 		Action: func() StepResult {
 			// Wait for the cluster to be ready
 			if viper.GetBool("FIRST_NODE") {
@@ -714,14 +687,8 @@ func CreateBloomConfigMapStepFunc(version string) Step {
 				}
 				LogMessage(Info, "Successfully created bloom ConfigMap in default namespace")
 				return StepResult{Message: "Bloom ConfigMap created successfully"}
-			} else {
-				err := CreateConfigMapPod()
-				if err != nil {
-					LogMessage(Error, fmt.Sprintf("Failed to create bloom ConfigMap Pod: %v", err))
-					return StepResult{Error: fmt.Errorf("failed to create bloom ConfigMap Pod: %w", err)}
-				}
-				return StepResult{Error: nil}
 			}
+			return StepResult{Error: nil}
 		},
 	}
 }

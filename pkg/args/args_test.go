@@ -317,9 +317,9 @@ func TestValidateSkipDiskCheckConsistency(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			viper.Reset()
-			viper.Set("SKIP_DISK_CHECK", tt.skipDiskCheck)
-			viper.Set("LONGHORN_DISKS", tt.longhornDisks)
-			viper.Set("SELECTED_DISKS", tt.selectedDisks)
+			viper.Set("NO_DISKS_FOR_CLUSTER", tt.skipDiskCheck)
+			viper.Set("CLUSTER_PREMOUNTED_DISKS", tt.longhornDisks)
+			viper.Set("CLUSTER_DISKS", tt.selectedDisks)
 
 			err := ValidateSkipDiskCheckConsistency("")
 			if (err != nil) != tt.wantErr {
@@ -432,6 +432,77 @@ func TestValidateArgs(t *testing.T) {
 	}
 }
 
+func TestValidateLonghornDisksArg(t *testing.T) {
+	// Save original config
+	originalViper := viper.AllSettings()
+	defer func() {
+		viper.Reset()
+		for k, v := range originalViper {
+			viper.Set(k, v)
+		}
+	}()
+
+	tests := []struct {
+		name          string
+		longhornDisks string
+		selectedDisks string
+		wantErr       bool
+		errorContains string
+	}{
+		{
+			name:          "Both empty - invalid",
+			longhornDisks: "",
+			selectedDisks: "",
+			wantErr:       true,
+			errorContains: "either CLUSTER_PREMOUNTED_DISKS or CLUSTER_DISKS must be set",
+		},
+		{
+			name:          "CLUSTER_PREMOUNTED_DISKS set, CLUSTER_DISKS empty - valid",
+			longhornDisks: "/mnt/disk1,/mnt/disk2",
+			selectedDisks: "",
+			wantErr:       false,
+		},
+		{
+			name:          "CLUSTER_PREMOUNTED_DISKS empty, CLUSTER_DISKS set - valid",
+			longhornDisks: "",
+			selectedDisks: "/dev/sdb,/dev/sdc",
+			wantErr:       false,
+		},
+		{
+			name:          "Both set - invalid",
+			longhornDisks: "/mnt/disk1",
+			selectedDisks: "/dev/sdb",
+			wantErr:       true,
+			errorContains: "CLUSTER_PREMOUNTED_DISKS and CLUSTER_DISKS cannot both be set",
+		},
+		{
+			name:          "Both set with multiple disks - invalid",
+			longhornDisks: "/mnt/disk1,/mnt/disk2",
+			selectedDisks: "/dev/sdb,/dev/sdc",
+			wantErr:       true,
+			errorContains: "CLUSTER_PREMOUNTED_DISKS and CLUSTER_DISKS cannot both be set",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			viper.Reset()
+			viper.Set("CLUSTER_DISKS", tt.selectedDisks)
+
+			err := ValidateLonghornDisksArg(tt.longhornDisks)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateLonghornDisksArg() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			if err != nil && tt.wantErr && tt.errorContains != "" {
+				if !strings.Contains(err.Error(), tt.errorContains) {
+					t.Errorf("ValidateLonghornDisksArg() error message = %v, should contain %v", err.Error(), tt.errorContains)
+				}
+			}
+		})
+	}
+}
+
 func TestGenerateArgsHelp(t *testing.T) {
 	help := GenerateArgsHelp()
 
@@ -445,5 +516,103 @@ func TestGenerateArgsHelp(t *testing.T) {
 		if !strings.Contains(help, arg) {
 			t.Errorf("GenerateArgsHelp() does not contain %s", arg)
 		}
+	}
+}
+
+func TestValidateDeprecatedArgs(t *testing.T) {
+	tests := []struct {
+		name          string
+		setArgs       map[string]string
+		wantErr       bool
+		errorContains []string
+	}{
+		{
+			name:    "No deprecated args - valid",
+			setArgs: map[string]string{},
+			wantErr: false,
+		},
+		{
+			name: "SKIP_DISK_CHECK used - invalid",
+			setArgs: map[string]string{
+				"SKIP_DISK_CHECK": "true",
+			},
+			wantErr: true,
+			errorContains: []string{
+				"SKIP_DISK_CHECK",
+				"NO_DISKS_FOR_CLUSTER",
+				"has been renamed",
+			},
+		},
+		{
+			name: "LONGHORN_DISKS used - invalid",
+			setArgs: map[string]string{
+				"LONGHORN_DISKS": "/mnt/disk1",
+			},
+			wantErr: true,
+			errorContains: []string{
+				"LONGHORN_DISKS",
+				"CLUSTER_PREMOUNTED_DISKS",
+				"has been renamed",
+			},
+		},
+		{
+			name: "SELECTED_DISKS used - invalid",
+			setArgs: map[string]string{
+				"SELECTED_DISKS": "/dev/sdb",
+			},
+			wantErr: true,
+			errorContains: []string{
+				"SELECTED_DISKS",
+				"CLUSTER_DISKS",
+				"has been renamed",
+			},
+		},
+		{
+			name: "Multiple deprecated args used - invalid",
+			setArgs: map[string]string{
+				"SKIP_DISK_CHECK": "true",
+				"LONGHORN_DISKS":  "/mnt/disk1",
+				"SELECTED_DISKS":  "/dev/sdb",
+			},
+			wantErr: true,
+			errorContains: []string{
+				"deprecated arguments detected",
+				"SKIP_DISK_CHECK",
+				"LONGHORN_DISKS",
+				"SELECTED_DISKS",
+			},
+		},
+		{
+			name: "New args used - valid",
+			setArgs: map[string]string{
+				"NO_DISKS_FOR_CLUSTER":    "false",
+				"CLUSTER_PREMOUNTED_DISKS": "/mnt/disk1",
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			viper.Reset()
+
+			// Set the test arguments
+			for key, value := range tt.setArgs {
+				viper.Set(key, value)
+			}
+
+			err := ValidateDeprecatedArgs()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateDeprecatedArgs() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			if err != nil && tt.wantErr {
+				for _, substring := range tt.errorContains {
+					if !strings.Contains(err.Error(), substring) {
+						t.Errorf("ValidateDeprecatedArgs() error message = %v, should contain %v", err.Error(), substring)
+					}
+				}
+			}
+		})
 	}
 }

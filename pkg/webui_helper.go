@@ -26,66 +26,23 @@ import (
 	"github.com/spf13/viper"
 )
 
-func GetPriorLonghornDisks(longhornFromConfig map[string]interface{}) (disks []string, mountPoints map[string]string, err error) {
-	mountPoints = make(map[string]string)
-
-	// Step 1: Try LONGHORN_DISKS first
-	if longhornDisksValue, ok := longhornFromConfig["longhorn_disks"]; ok && longhornDisksValue != nil {
-		if longhornDisksStr, ok := longhornDisksValue.(string); ok && longhornDisksStr != "" {
-			disks, mountPoints, err = GetDisksFromLonghornConfig(longhornDisksStr)
-			if err != nil {
-				LogMessage(Warn, fmt.Sprintf("GetDisksFromLonghornConfig failed: %v", err))
-			} else if len(disks) > 0 {
-				LogMessage(Info, "Successfully found disks from LONGHORN_DISKS configuration")
-				return disks, mountPoints, nil
-			}
-		}
-	}
-
-	// Step 2: Try SELECTED_DISKS if Step 1 failed or returned no disks
-	if selectedDisksValue, ok := longhornFromConfig["selected_disks"]; ok && selectedDisksValue != nil {
-		if selectedDisksStr, ok := selectedDisksValue.(string); ok && selectedDisksStr != "" {
-			disks, mountPoints, err = GetDisksFromSelectedConfig(selectedDisksStr)
-			if err != nil {
-				LogMessage(Warn, fmt.Sprintf("GetDisksFromSelectedConfig failed: %v", err))
-			} else if len(disks) > 0 {
-				LogMessage(Info, "Successfully found disks from SELECTED_DISKS configuration")
-				return disks, mountPoints, nil
-			}
-		}
-	}
-
-	// Step 3: Try bloom.log if Step 1 and 2 failed or returned no disks
-	 disks, mountPoints, err = GetDisksFromBloomLog()
-	if err != nil {
-		LogMessage(Warn, fmt.Sprintf("GetDisksFromBloomLog failed: %v", err))
-	} else if len(disks) > 0 {
-		LogMessage(Info, "Successfully found disks from bloom.log")
-		return disks, mountPoints, nil
-	}
-
-	// All functions failed or returned no disks
-	LogMessage(Error, "No longhorn disks found from any source (LONGHORN_DISKS, SELECTED_DISKS, bloom.log)")
-	return nil, nil, fmt.Errorf("no longhorn disks found from any configuration source")
-}
-
 func GetDisksFromLonghornConfig(longhornFromConfig string) (disks []string, mountPoints map[string]string, e error) {
-	// Accept LONGHORN_DISKS in any case (e.g., longhorn_disks, Longhorn_Disks)
+	// Accept CLUSTER_PREMOUNTED_DISKS in any case (e.g., longhorn_disks, Longhorn_Disks)
 	var val string
 	mountPoints = make(map[string]string)
 
 	if longhornFromConfig == "" {
 		for _, k := range viper.AllKeys() {
-			if strings.ToLower(k) == "longhorn_disks" {
+			if strings.ToLower(k) == "cluster_premounted_disks" {
 				val = viper.GetString(k)
 				// ensure canonical key exists for the rest of the function
-				viper.Set("LONGHORN_DISKS", val)
+				viper.Set("CLUSTER_PREMOUNTED_DISKS", val)
 				break
 			}
 		}
 		// fallback: try direct lookup (covers env-style keys)
 		if val == "" {
-			val = viper.GetString("LONGHORN_DISKS")
+			val = viper.GetString("CLUSTER_PREMOUNTED_DISKS")
 		}
 		if val == "" {
 			return nil, nil, nil
@@ -94,7 +51,7 @@ func GetDisksFromLonghornConfig(longhornFromConfig string) (disks []string, moun
 		val = longhornFromConfig
 	}
 
-	LogMessage(Info, "Found LONGHORN_DISKS configuration")
+	LogMessage(Info, "Found CLUSTER_PREMOUNTED_DISKS configuration")
 	longhornDiskPaths := strings.Split(val, ",")
 	var targetDisks []string
 
@@ -110,11 +67,11 @@ func GetDisksFromLonghornConfig(longhornFromConfig string) (disks []string, moun
 	}
 
 	if len(targetDisks) > 0 {
-		LogMessage(Info, fmt.Sprintf("Found %d longhorn disks from LONGHORN_DISKS", len(targetDisks)))
+		LogMessage(Info, fmt.Sprintf("Found %d longhorn disks from CLUSTER_PREMOUNTED_DISKS", len(targetDisks)))
 		return targetDisks, mountPoints, nil
 	}
 
-	LogMessage(Info, "No valid devices found from LONGHORN_DISKS")
+	LogMessage(Info, "No valid devices found from CLUSTER_PREMOUNTED_DISKS")
 	return nil, nil, nil
 }
 
@@ -143,7 +100,7 @@ func getDeviceFromMountpoint(diskPath string) (device string, mountPoint string)
 
 func getMountpointsFromDevice(device string) string {
 	var mountPoints []string
-	
+
 	// Check for regular mount points from /proc/mounts
 	shellCmd := fmt.Sprintf("awk '$1 == \"%s\" {print $2}' /proc/mounts", device)
 	cmd := exec.Command("sh", "-c", shellCmd)
@@ -154,7 +111,7 @@ func getMountpointsFromDevice(device string) string {
 			mountPoints = append(mountPoints, strings.Split(mounts, "\n")...)
 		}
 	}
-	
+
 	// Check if device is used as swap
 	swapCmd := fmt.Sprintf("awk '$1 == \"%s\" {print \"[swap]\"}' /proc/swaps", device)
 	cmd = exec.Command("sh", "-c", swapCmd)
@@ -165,7 +122,7 @@ func getMountpointsFromDevice(device string) string {
 			mountPoints = append(mountPoints, swap)
 		}
 	}
-	
+
 	// Check partitions of the device for swap
 	lsblkCmd := fmt.Sprintf("lsblk -no NAME,FSTYPE %s 2>/dev/null | awk '$2 == \"swap\" {print \"/dev/\" $1 \" [swap]\"}'", device)
 	cmd = exec.Command("sh", "-c", lsblkCmd)
@@ -180,7 +137,7 @@ func getMountpointsFromDevice(device string) string {
 			}
 		}
 	}
-	
+
 	return strings.Join(mountPoints, ",")
 }
 
@@ -189,12 +146,12 @@ func GetDisksFromSelectedConfig(longhornFromConfig string) (disks []string, moun
 	mountPoints = make(map[string]string)
 
 	if longhornFromConfig == "" {
-		if !viper.IsSet("SELECTED_DISKS") || viper.GetString("SELECTED_DISKS") == "" {
+		if !viper.IsSet("CLUSTER_DISKS") || viper.GetString("CLUSTER_DISKS") == "" {
 			return nil, nil, nil
 		}
 
-		LogMessage(Info, "Found SELECTED_DISKS configuration")
-		disks := strings.Split(viper.GetString("SELECTED_DISKS"), ",")
+		LogMessage(Info, "Found CLUSTER_DISKS configuration")
+		disks := strings.Split(viper.GetString("CLUSTER_DISKS"), ",")
 
 		for _, disk := range disks {
 			disk = strings.TrimSpace(disk)
@@ -204,7 +161,7 @@ func GetDisksFromSelectedConfig(longhornFromConfig string) (disks []string, moun
 		}
 
 		if len(targetDisks) == 0 {
-			LogMessage(Info, "No valid disks found in SELECTED_DISKS")
+			LogMessage(Info, "No valid disks found in CLUSTER_DISKS")
 			return nil, nil, nil
 		}
 	} else {
@@ -224,7 +181,7 @@ func GetDisksFromSelectedConfig(longhornFromConfig string) (disks []string, moun
 		mountPoints[disk] = getMountpointsFromDevice(disk)
 	}
 
-	LogMessage(Info, fmt.Sprintf("Found %d disks from SELECTED_DISKS:\n%s", len(targetDisks), diskInfo))
+	LogMessage(Info, fmt.Sprintf("Found %d disks from CLUSTER_DISKS:\n%s", len(targetDisks), diskInfo))
 	return targetDisks, mountPoints, nil
 }
 

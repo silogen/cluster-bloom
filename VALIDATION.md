@@ -75,7 +75,7 @@ The validation system runs in `initConfig()` in the following order:
 **Valid Step IDs**:
 - CheckUbuntuStep, InstallDependentPackagesStep, OpenPortsStep
 - InstallK8SToolsStep, SetupAndCheckRocmStep, SetupRKE2Step
-- CleanDisksStep, SetupMultipathStep, SelectDrivesStep
+- CleanDisksStep, SetupMultipathStep, MountSelectedDrivesStep
 - SetupLonghornStep, SetupMetallbStep, SetupClusterForgeStep
 - And 15+ additional steps (see `validStepIDs` in code)
 
@@ -99,10 +99,10 @@ The validation system runs in `initConfig()` in the following order:
 - **Warning**: `"GPU_NODE=true but ROCM_BASE_URL is empty - ROCm installation may fail"`
 
 #### Disk Parameter Consistency
-- When `SKIP_DISK_CHECK=true` but disk parameters are set
-- When `SKIP_DISK_CHECK=false` but no disk parameters specified
-- **Warning**: `"SKIP_DISK_CHECK=true but disk parameters are set - disk operations will be skipped"`
-- **Note**: `SELECTED_DISKS` also skips NVME drive availability checks
+- When `NO_DISKS_FOR_CLUSTER=true` but disk parameters are set
+- When `NO_DISKS_FOR_CLUSTER=false` but no disk parameters specified
+- **Warning**: `"NO_DISKS_FOR_CLUSTER=true but disk parameters are set - disk operations will be skipped"`
+- **Note**: `CLUSTER_DISKS` also skips NVME drive availability checks
 
 #### Step Conflicts
 - Same step cannot be both enabled and disabled
