@@ -128,20 +128,20 @@ func OpenPorts() bool {
 		port, protocol := parts[0], parts[1]
 
 		// Check if rule exists first to avoid duplicates
-		if command.SimpleRun(false, "sudo", "iptables", "-C", "INPUT", "-p", protocol, "-m", "state", "--state", "NEW", "-m", protocol, "--dport", port, "-j", "ACCEPT") == nil {
+		if command.SimpleRun("OpenPorts.CheckRule", false, "sudo", "iptables", "-C", "INPUT", "-p", protocol, "-m", "state", "--state", "NEW", "-m", protocol, "--dport", port, "-j", "ACCEPT") == nil {
 			// Rule already exists
 			LogMessage(Info, fmt.Sprintf("Rule for %s/%s already exists", port, protocol))
 			continue
 		}
 
 		// Add the rule
-		if err := command.SimpleRun(false, "sudo", "iptables", "-A", "INPUT", "-p", protocol, "-m", "state", "--state", "NEW", "-m", protocol, "--dport", port, "-j", "ACCEPT"); err != nil {
+		if err := command.SimpleRun("OpenPorts.AddRule", false, "sudo", "iptables", "-A", "INPUT", "-p", protocol, "-m", "state", "--state", "NEW", "-m", protocol, "--dport", port, "-j", "ACCEPT"); err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to open port %s/%s: %v", port, protocol, err))
 			return false
 		}
 		LogMessage(Info, fmt.Sprintf("Opened port %s/%s", port, protocol))
 	}
-	if err := command.SimpleRun(false, "sudo", "iptables-save"); err != nil {
+	if err := command.SimpleRun("OpenPorts.SaveRules", false, "sudo", "iptables-save"); err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to save iptables rules: %v", err))
 		return false
 	}
@@ -174,7 +174,7 @@ func getCurrentInotifyValue() (int, error) {
 }
 
 func setInotifyValue(value int) error {
-	return command.SimpleRun(false, "sudo", "sysctl", "-w", fmt.Sprintf("%s=%d", sysctlParam, value))
+	return command.SimpleRun("SetInotifyValue.SysctlSet", false, "sudo", "sysctl", "-w", fmt.Sprintf("%s=%d", sysctlParam, value))
 }
 
 func CheckInotifyConfig() error {
@@ -254,12 +254,12 @@ func HasSufficientRancherPartition() bool {
 		LogMessage(Info, "Skipping /var/lib/rancher partition check for CPU node.")
 		return true
 	}
-	output, err := command.Output(false, "mkdir", "-p", "/var/lib/rancher")
+	output, err := command.Output("HasSufficientRancherPartition.Mkdir", false, "mkdir", "-p", "/var/lib/rancher")
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to create /var/lib/rancher: %v", err))
 		return false
 	}
-	output, err = command.Output(true, "df", "-BG", "/var/lib/rancher")
+	output, err = command.Output("HasSufficientRancherPartition.Df", true, "df", "-BG", "/var/lib/rancher")
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to get /var/lib/rancher partition size: %v", err))
 		return false
@@ -290,7 +290,7 @@ func HasSufficientRancherPartition() bool {
 
 
 func CreateMetalLBConfig() error {
-	output, err := command.Output(true, "sh", "-c", "ip route get 1 | awk '{print $7; exit}'")
+	output, err := command.Output("CreateMetalLBConfig.GetDefaultIP", true, "sh", "-c", "ip route get 1 | awk '{print $7; exit}'")
 	if err != nil{
 		return fmt.Errorf("failed to determine default IP: %v", err)
 	}
@@ -326,7 +326,7 @@ metadata:
 // GetUserHomeDirViaShell gets a user's home directory using shell tilde expansion
 func GetUserHomeDirViaShell(username string) (string, error) {
 	// Use shell's tilde expansion to get the home directory
-	output, err := command.Output(true, "sh", "-c", fmt.Sprintf("eval echo ~%s", username))
+	output, err := command.Output("GetUserHomeDirViaShell.EvalEcho", true, "sh", "-c", fmt.Sprintf("eval echo ~%s", username))
 	if err != nil{
 		return "", fmt.Errorf("failed to get home directory for user %s: %w", username, err)
 	}
@@ -383,14 +383,14 @@ func setupMultipath() error {
 
 			// Restart multipath service
 			LogMessage(Info, "Restarting multipathd.service...")
-			_, err = command.Run(false, "systemctl", "restart", "multipathd.service")
+			_, err = command.Run("SetupMultipath.RestartService", false, "systemctl", "restart", "multipathd.service")
 			if err != nil {
 				return fmt.Errorf("failed to restart multipathd service: %w", err)
 			}
 
 			// Verify configuration
 			LogMessage(Info, "Verifying multipath configuration...")
-			output, err := command.Run(true, "multipath", "-t")
+			output, err := command.Run("SetupMultipath.VerifyConfig", true, "multipath", "-t")
 			if err != nil {
 				LogMessage(Warn, fmt.Sprintf("Multipath verification returned: %s", output))
 				return fmt.Errorf("multipath configuration verification failed: %w", err)
@@ -404,14 +404,14 @@ func setupMultipath() error {
 }
 
 func updateModprobe() error {
-	output, err := command.Output(true, "sh", "-c", "sudo sed -i '/^blacklist amdgpu/s/^/# /' /etc/modprobe.d/*.conf")
+	output, err := command.Output("UpdateModprobe.CommentBlacklist", true, "sh", "-c", "sudo sed -i '/^blacklist amdgpu/s/^/# /' /etc/modprobe.d/*.conf")
 	if err != nil{
 		LogMessage(Warn, fmt.Sprintf("Modprobe configuration returned: %s", output))
 		return fmt.Errorf("failed to configure Modprobe: %w", err)
 	} else {
 		LogMessage(Info, "")
 	}
-	output, err = command.Output(true, "modprobe", "amdgpu")
+	output, err = command.Output("UpdateModprobe.LoadModule", true, "modprobe", "amdgpu")
 	if err != nil{
 		LogMessage(Warn, fmt.Sprintf("Modprobe amdgpu returned: %s", output))
 		return fmt.Errorf("failed to modprobe amdgpu: %w", err)

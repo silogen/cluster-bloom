@@ -29,10 +29,11 @@ import (
 
 // Run executes a command with real-time stderr logging
 // Returns stdout as string and any error
+// name: identifier for this call site (e.g., "StepName.Operation")
 // runInDryRun: if true, command executes even in dry-run mode (for read-only operations)
-func Run(runInDryRun bool, command string, args ...string) (string, error) {
+func Run(name string, runInDryRun bool, command string, args ...string) (string, error) {
 	if dryrun.IsDryRun() && !runInDryRun {
-		log.Infof("[DRY-RUN] EXEC: %s %s", command, strings.Join(args, " "))
+		log.Infof("[DRY-RUN] %s: %s %s", name, command, strings.Join(args, " "))
 		return "", nil
 	}
 
@@ -73,10 +74,11 @@ func Run(runInDryRun bool, command string, args ...string) (string, error) {
 }
 
 // CombinedOutput executes a command and returns combined stdout/stderr
+// name: identifier for this call site (e.g., "StepName.Operation")
 // runInDryRun: if true, command executes even in dry-run mode (for read-only operations)
-func CombinedOutput(runInDryRun bool, command string, args ...string) ([]byte, error) {
+func CombinedOutput(name string, runInDryRun bool, command string, args ...string) ([]byte, error) {
 	if dryrun.IsDryRun() && !runInDryRun {
-		log.Infof("[DRY-RUN] EXEC: %s %s", command, strings.Join(args, " "))
+		log.Infof("[DRY-RUN] %s: %s %s", name, command, strings.Join(args, " "))
 		return []byte{}, nil
 	}
 
@@ -85,10 +87,11 @@ func CombinedOutput(runInDryRun bool, command string, args ...string) ([]byte, e
 }
 
 // Output executes a command and returns stdout only
+// name: identifier for this call site (e.g., "StepName.Operation")
 // runInDryRun: if true, command executes even in dry-run mode (for read-only operations)
-func Output(runInDryRun bool, command string, args ...string) ([]byte, error) {
+func Output(name string, runInDryRun bool, command string, args ...string) ([]byte, error) {
 	if dryrun.IsDryRun() && !runInDryRun {
-		log.Infof("[DRY-RUN] EXEC: %s %s", command, strings.Join(args, " "))
+		log.Infof("[DRY-RUN] %s: %s %s", name, command, strings.Join(args, " "))
 		return []byte{}, nil
 	}
 
@@ -98,10 +101,11 @@ func Output(runInDryRun bool, command string, args ...string) ([]byte, error) {
 
 // SimpleRun executes a command and waits for it to complete
 // Returns only error (no output capture)
+// name: identifier for this call site (e.g., "StepName.Operation")
 // runInDryRun: if true, command executes even in dry-run mode (for read-only operations)
-func SimpleRun(runInDryRun bool, command string, args ...string) error {
+func SimpleRun(name string, runInDryRun bool, command string, args ...string) error {
 	if dryrun.IsDryRun() && !runInDryRun {
-		log.Infof("[DRY-RUN] EXEC: %s %s", command, strings.Join(args, " "))
+		log.Infof("[DRY-RUN] %s: %s %s", name, command, strings.Join(args, " "))
 		return nil
 	}
 

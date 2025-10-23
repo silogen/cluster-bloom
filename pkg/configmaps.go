@@ -96,7 +96,7 @@ data:
 	tmpFile.Close()
 
 	// Apply the ConfigMap using kubectl
-	output, err := command.CombinedOutput(false, "/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "apply", "-f", tmpFile.Name())
+	output, err := command.CombinedOutput("CreateConfigMap.KubectlApply", false, "/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "apply", "-f", tmpFile.Name())
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to create ConfigMap: %v, output: %s", err, string(output)))
 		return fmt.Errorf("failed to create ConfigMap: %w", err)

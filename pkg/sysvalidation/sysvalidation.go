@@ -251,7 +251,7 @@ func validateKernelModules() {
 
 // isModuleLoaded checks if a kernel module is currently loaded
 func isModuleLoaded(moduleName string) bool {
-	output, err := command.Output(true, "lsmod") // Read-only: run in dry-run
+	output, err := command.Output("IsModuleLoaded.Lsmod", true, "lsmod") // Read-only: run in dry-run
 	if err != nil {
 		return false
 	}
@@ -260,6 +260,6 @@ func isModuleLoaded(moduleName string) bool {
 
 // isModuleAvailable checks if a kernel module is available to load
 func isModuleAvailable(moduleName string) bool {
-	err := command.SimpleRun(true, "modinfo", moduleName) // Read-only: run in dry-run
+	err := command.SimpleRun("IsModuleAvailable.Modinfo", true, "modinfo", moduleName) // Read-only: run in dry-run
 	return err == nil
 }

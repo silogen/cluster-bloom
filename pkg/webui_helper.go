@@ -77,7 +77,7 @@ func GetDisksFromLonghornConfig(longhornFromConfig string) (disks []string, moun
 
 func getDeviceFromMountpoint(diskPath string) (device string, mountPoint string) {
 	mountPoint = "/mnt/" + diskPath
-	output, err := command.Output(true, "lsblk", "-no", "NAME,MOUNTPOINT")
+	output, err := command.Output("GetDeviceFromMountpoint.Lsblk", true, "lsblk", "-no", "NAME,MOUNTPOINT")
 	if err != nil {
 		LogMessage(Warn, fmt.Sprintf("Failed to run lsblk: %v", err))
 		return "", ""
@@ -102,7 +102,7 @@ func getMountpointsFromDevice(device string) string {
 
 	// Check for regular mount points from /proc/mounts
 	shellCmd := fmt.Sprintf("awk '$1 == \"%s\" {print $2}' /proc/mounts", device)
-	output, err := command.Output(true, "sh", "-c", shellCmd)
+	output, err := command.Output("GetMountpointsFromDevice.AwkMounts", true, "sh", "-c", shellCmd)
 	if err == nil {
 		mounts := strings.TrimSpace(string(output))
 		if mounts != "" {
@@ -112,7 +112,7 @@ func getMountpointsFromDevice(device string) string {
 
 	// Check if device is used as swap
 	swapCmd := fmt.Sprintf("awk '$1 == \"%s\" {print \"[swap]\"}' /proc/swaps", device)
-	swapOutput, err := command.Output(true, "sh", "-c", swapCmd)
+	swapOutput, err := command.Output("GetMountpointsFromDevice.AwkSwaps", true, "sh", "-c", swapCmd)
 	if err == nil {
 		swap := strings.TrimSpace(string(swapOutput))
 		if swap != "" {
@@ -122,7 +122,7 @@ func getMountpointsFromDevice(device string) string {
 
 	// Check partitions of the device for swap
 	lsblkCmd := fmt.Sprintf("lsblk -no NAME,FSTYPE %s 2>/dev/null | awk '$2 == \"swap\" {print \"/dev/\" $1 \" [swap]\"}'", device)
-	lsblkOutput, err := command.Output(true, "sh", "-c", lsblkCmd)
+	lsblkOutput, err := command.Output("GetMountpointsFromDevice.LsblkSwap", true, "sh", "-c", lsblkCmd)
 	if err == nil {
 		partitionSwaps := strings.TrimSpace(string(lsblkOutput))
 		if partitionSwaps != "" {
@@ -166,7 +166,7 @@ func GetDisksFromSelectedConfig(longhornFromConfig string) (disks []string, moun
 
 	diskInfo := ""
 	for _, disk := range targetDisks {
-		output, err := command.Output(true, "lsblk", "-no", "SIZE,MODEL,MOUNTPOINT", disk)
+		output, err := command.Output("GetDisksFromSelectedConfig.LsblkInfo", true, "lsblk", "-no", "SIZE,MODEL,MOUNTPOINT", disk)
 		if err != nil {
 			diskInfo += fmt.Sprintf("%s: (Unable to get info)\n", disk)
 		} else {

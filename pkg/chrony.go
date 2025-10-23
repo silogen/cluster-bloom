@@ -58,7 +58,7 @@ func GenerateChronyConfFirst() error {
     }
 
     // Restart chronyd service
-    if output, err := command.CombinedOutput(false, "systemctl", "restart", "chronyd"); err != nil {
+    if output, err := command.CombinedOutput("GenerateChronyConfFirst.RestartChronyd", false, "systemctl", "restart", "chronyd"); err != nil {
         return fmt.Errorf("failed to restart chronyd: %w, output: %s", err, string(output))
     }
 
@@ -80,7 +80,7 @@ func GenerateChronyConfAdditional() error {
     }
 
     // Restart chronyd service
-    if output, err := command.CombinedOutput(false, "systemctl", "restart", "chronyd"); err != nil {
+    if output, err := command.CombinedOutput("GenerateChronyConfAdditional.RestartChronyd", false, "systemctl", "restart", "chronyd"); err != nil {
         return fmt.Errorf("failed to restart chronyd: %w, output: %s", err, string(output))
     }
 
@@ -90,7 +90,7 @@ func GenerateChronyConfAdditional() error {
 
 // writeChronyConf writes the chrony configuration to the specified file.
 func writeChronyConf(chronyConf string) error {
-    if err := command.SimpleRun(false, "cp", "/etc/chrony/chrony.conf", "/etc/chrony/chrony.conf.bak"); err != nil {
+    if err := command.SimpleRun("WriteChronyConf.BackupConfig", false, "cp", "/etc/chrony/chrony.conf", "/etc/chrony/chrony.conf.bak"); err != nil {
         return fmt.Errorf("failed to backup chrony.conf: %w", err)
     }
     targetPath := "/etc/chrony/chrony.conf"
