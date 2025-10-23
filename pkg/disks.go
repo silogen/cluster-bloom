@@ -22,12 +22,106 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/spf13/viper"
 )
 
+const bloomFstabTag = "# managed by cluster-bloom"
+
+func UnmountPriorLonghornDisks() error {
+
+	// Create backup first
+	backupTimestamp := time.Now().Format("060102-15:04")
+	backupFile := fmt.Sprintf("/etc/fstab.bak-%s", backupTimestamp)
+	if err := exec.Command("sudo", "cp", "/etc/fstab", backupFile).Run(); err != nil {
+		LogMessage(Error, fmt.Sprintf("Failed to backup fstab: %v", err))
+		return fmt.Errorf("failed to backup fstab: %w", err)
+	}
+	LogMessage(Info, fmt.Sprintf("Created fstab backup: %s", backupFile))
+
+	mountPoints := make(map[string]string)
+
+	// Read /etc/fstab and look for entries tagged with bloomFstabTag
+	fstabContent, err := os.ReadFile("/etc/fstab")
+	if err != nil {
+		LogMessage(Error, fmt.Sprintf("Failed to read /etc/fstab: %v", err))
+		return fmt.Errorf("failed to read /etc/fstab: %w", err)
+	}
+
+	// Open temp file for writing cleaned fstab
+	tempFile := "/tmp/fstab.clean"
+	cleanFile, err := os.OpenFile(tempFile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to create temporary fstab: %w", err)
+	}
+	defer cleanFile.Close()
+
+	// Parse fstab in a single pass: unmount bloom entries and write non-bloom lines
+	lines := strings.Split(string(fstabContent), "\n")
+	removedCount := 0
+
+	for _, line := range lines {
+		trimmedLine := strings.TrimSpace(line)
+
+		// Check if this is a bloom entry
+		if strings.HasSuffix(trimmedLine, bloomFstabTag) {
+			// Extract mount point for unmounting
+			fields := strings.Fields(trimmedLine)
+			if len(fields) >= 2 {
+				mountPoint := fields[1]
+				if mountPoint != "" {
+					mountPoints[mountPoint] = mountPoint
+					LogMessage(Info, fmt.Sprintf("Force unmounting %s", mountPoint))
+					cmd := exec.Command("sudo", "umount", "-lf", mountPoint)
+					if err := cmd.Run(); err != nil {
+						LogMessage(Warn, fmt.Sprintf("Failed to force unmount %s: %v", mountPoint, err))
+					}
+					LogMessage(Info, fmt.Sprintf("Successfully unmounted %s", mountPoint))
+				}
+			}
+			LogMessage(Info, fmt.Sprintf("Removing fstab entry: %s", trimmedLine))
+			removedCount++
+			continue
+		}
+
+		if _, err := cleanFile.WriteString(line + "\n"); err != nil {
+			return fmt.Errorf("failed to write to temporary fstab: %w", err)
+		}
+	}
+
+	if len(mountPoints) == 0 {
+		LogMessage(Info, "No bloom-tagged mount points found in fstab")
+		return nil
+	}
+
+	LogMessage(Info, fmt.Sprintf("Successfully unmounted and removed %d mount points from fstab", len(mountPoints)))
+
+	// Close file before moving
+	if err := cleanFile.Close(); err != nil {
+		return fmt.Errorf("failed to close temporary fstab: %w", err)
+	}
+
+	// Write cleaned fstab
+	LogMessage(Info, "Writing cleaned /etc/fstab")
+
+	if err := exec.Command("sudo", "mv", tempFile, "/etc/fstab").Run(); err != nil {
+		return fmt.Errorf("failed to update fstab: %w", err)
+	}
+
+	LogMessage(Info, fmt.Sprintf("Removed %d bloom entries from /etc/fstab", removedCount))
+
+	return nil
+}
+
 func CleanDisks() error {
 	LogMessage(Info, "Disks cleanup started.")
+
+	err := UnmountPriorLonghornDisks()
+	if err != nil {
+		LogMessage(Warn, fmt.Sprintf("Failed to unmount prior Longhorn disks: %v", err))
+	}
+
 	cmd := exec.Command("mount")
 	output, err := cmd.Output()
 	if err != nil {
@@ -102,16 +196,9 @@ node-label:
 var longhornDiskTemplate = `
   - node.longhorn.io/create-default-disk=config
   - node.longhorn.io/instance-manager=true
-  - silogen.ai/longhorndisks=%s
 `
 
-func ParseLonghornDiskConfig() string {
-	disks := strings.Split(viper.GetString("LONGHORN_DISKS"), ",")
-	diskList := strings.Join(disks, "xxx")
-	return diskList
-}
-
-func GenerateNodeLabels() error {
+func GenerateNodeLabels(mountedDiskMap map[string]string) error {
 	rke2ConfigPath := "/etc/rancher/rke2/config.yaml"
 	// Fill the template with the GPU_NODE setting, leave longhor for later
 	nodeLabels := fmt.Sprintf(nodeLabelTemplate, viper.GetBool("GPU_NODE"))
@@ -119,62 +206,27 @@ func GenerateNodeLabels() error {
 		return fmt.Errorf("failed to append Longhorn configuration to %s: %w", rke2ConfigPath, err)
 	}
 
-	if viper.IsSet("LONGHORN_DISKS") && viper.GetString("LONGHORN_DISKS") != "" {
-		LogMessage(Info, "Using LONGHORN_DISKS for Longhorn configuration.")
-		diskList := ParseLonghornDiskConfig()
-		configContent := fmt.Sprintf(longhornDiskTemplate, diskList)
-		if err := appendToFile(rke2ConfigPath, configContent); err != nil {
-			return fmt.Errorf("failed to append Longhorn configuration to %s: %w", rke2ConfigPath, err)
+	if viper.GetBool("NO_DISKS_FOR_CLUSTER") {
+		LogMessage(Info, "Skipping GenerateLonghornDiskString as NO_DISKS_FOR_CLUSTER is set.")
+		return nil
+	}
+
+	if len(mountedDiskMap) == 0 {
+		LogMessage(Info, "No mounted disks found in mountedDiskMap, skipping")
+		return nil
+	}
+
+	if err := appendToFile(rke2ConfigPath, longhornDiskTemplate); err != nil {
+		return fmt.Errorf("failed to append Longhorn template to %s: %w", rke2ConfigPath, err)
+	}
+
+	for mountPoint, device := range mountedDiskMap {
+		// Replace slashes with underscores in device name for label
+		diskLabel := fmt.Sprintf("  - bloom.disk%s=disk%s\n", mountPoint, device)
+		diskLabel = strings.ReplaceAll(diskLabel, "/", "___")
+		if err := appendToFile(rke2ConfigPath, diskLabel); err != nil {
+			return fmt.Errorf("failed to append label to %s: %w", rke2ConfigPath, err)
 		}
-		LogMessage(Info, "Appended Longhorn disk configuration to RKE2 config.")
-		return nil
-	}
-	if viper.GetBool("SKIP_DISK_CHECK") == true {
-		LogMessage(Info, "Skipping GenerateLonghornDiskString as SKIP_DISK_CHECK is set.")
-		return nil
-	}
-	selectedDisks := viper.GetStringSlice("selected_disks")
-	if len(selectedDisks) == 0 {
-		LogMessage(Info, "No disks selected for mounting, skipping")
-		return nil
-	}
-
-	cmd := exec.Command("sh", "-c", "mount | grep -oP '/mnt/disk\\d+'")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		LogMessage(Error, fmt.Sprintf("Failed to list mounted disks: %v", err))
-		return fmt.Errorf("failed to list mounted disks: %w", err)
-	}
-
-	disks := strings.Fields(string(output))
-	if len(disks) == 0 {
-		LogMessage(Info, "No /mnt/disk{x} drives found.")
-		return nil
-	}
-	diskNames := []string{}
-	// # Check if GPU_NODE is set or no disks are selected
-	// if viper.GetBool("GPU_NODE") || !selectedDisks {
-	// 	for _, disk := range disks {
-	// 		cmd := exec.Command("sh", "-c", fmt.Sprintf("lsblk -no NAME,MOUNTPOINT | grep '%s' | grep 'nvme'", disk))
-	// 		if err := cmd.Run(); err == nil {
-	// 			diskNames = append(diskNames, strings.TrimPrefix(disk, "/mnt/"))
-	// 		}
-	// 	}
-	// } else {
-	for _, disk := range disks {
-		diskNames = append(diskNames, strings.TrimPrefix(disk, "/mnt/"))
-	}
-	// }
-
-	if len(diskNames) > 0 {
-		diskList := strings.Join(diskNames, "xxx")
-
-		configContent := fmt.Sprintf(longhornDiskTemplate, diskList)
-
-		if err := appendToFile(rke2ConfigPath, configContent); err != nil {
-			return fmt.Errorf("failed to append Longhorn configuration to %s: %w", rke2ConfigPath, err)
-		}
-		LogMessage(Info, "Appended Longhorn disk configuration to RKE2 config.")
 	}
 	return nil
 }
@@ -211,73 +263,23 @@ func isVirtualDisk(udevOut []byte) bool {
 	return false
 }
 
-func GetUnmountedPhysicalDisks() ([]string, error) {
-	if viper.GetBool("SKIP_DISK_CHECK") == true {
-		LogMessage(Info, "Skipping disk check as SKIP_DISK_CHECK is set.")
+func MountDrives(drives []string) (map[string]string, error) {
+	if viper.IsSet("CLUSTER_PREMOUNTED_DISKS") && viper.GetString("CLUSTER_PREMOUNTED_DISKS") != "" {
+		LogMessage(Info, "Skipping drive mounting as CLUSTER_PREMOUNTED_DISKS is set.")
 		return nil, nil
 	}
-	var result []string
-
-	lsblkCmd := exec.Command("lsblk", "-dn", "-o", "NAME,TYPE")
-	out, err := lsblkCmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("lsblk failed: %w", err)
+	if viper.GetBool("NO_DISKS_FOR_CLUSTER") == true {
+		LogMessage(Info, "Skipping drive mounting as NO_DISKS_FOR_CLUSTER is set.")
+		return nil, nil
 	}
 
-	scanner := bufio.NewScanner(bytes.NewReader(out))
-	for scanner.Scan() {
-		fields := strings.Fields(scanner.Text())
-		if len(fields) != 2 || fields[1] != "disk" {
-			continue
-		}
-		name := fields[0]
-		if !strings.HasPrefix(name, "nvme") && !strings.HasPrefix(name, "sd") {
-			continue
-		}
-		devPath := "/dev/" + name
-		mountCheck := exec.Command("lsblk", "-no", "MOUNTPOINT", devPath)
-		mountOut, err := mountCheck.Output()
-		if err != nil {
-			continue
-		}
-		if strings.Contains(string(mountOut), "/") {
-			continue
-		}
-		if strings.HasPrefix(name, "sd") {
-			udevCmd := exec.Command("udevadm", "info", "--query=property", "--name", devPath)
-			udevOut, err := udevCmd.Output()
-			if err != nil {
-				continue
-			}
-			if isVirtualDisk(udevOut) {
-				continue
-			}
-		}
-
-		result = append(result, devPath)
-	}
-
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("scanner error: %w", err)
-	}
-	return result, nil
-}
-func MountDrives(drives []string) error {
-	if viper.IsSet("LONGHORN_DISKS") && viper.GetString("LONGHORN_DISKS") != "" {
-		LogMessage(Info, "Skipping drive mounting as LONGHORN_DISKS is set.")
-		return nil
-	}
-	if viper.GetBool("SKIP_DISK_CHECK") == true {
-		LogMessage(Info, "Skipping drive mounting as SKIP_DISK_CHECK is set.")
-		return nil
-	}
-
+	mountedMap := make(map[string]string)
 	usedMountPoints := make(map[string]bool)
 	i := 0
 	cmd := exec.Command("sh", "-c", "mount | awk '/\\/mnt\\/disk[0-9]+/ {print $3}'")
 	output, err := cmd.Output()
 	if err != nil {
-		return fmt.Errorf("failed to list existing mount points: %w", err)
+		return nil, fmt.Errorf("failed to list existing mount points: %w", err)
 	}
 	existingMountPoints := strings.Fields(string(output))
 	for _, mountPoint := range existingMountPoints {
@@ -285,14 +287,14 @@ func MountDrives(drives []string) error {
 	}
 	fstabContent, err := os.ReadFile("/etc/fstab")
 	if err != nil {
-		return fmt.Errorf("failed to read /etc/fstab: %w", err)
+		return nil, fmt.Errorf("failed to read /etc/fstab: %w", err)
 	}
 
 	for _, drive := range drives {
 		cmd = exec.Command("lsblk", "-f", drive)
 		output, err := cmd.Output()
 		if err != nil {
-			return fmt.Errorf("failed to check filesystem type for %s: %w", drive, err)
+			return mountedMap, fmt.Errorf("failed to check filesystem type for %s: %w", drive, err)
 		}
 		if strings.Contains(string(output), "ext4") {
 			LogMessage(Info, fmt.Sprintf("Disk %s is already formatted as ext4. Skipping format.", drive))
@@ -300,20 +302,20 @@ func MountDrives(drives []string) error {
 			cmd = exec.Command("lsblk", "-no", "PARTTYPE", drive)
 			output, err = cmd.Output()
 			if err != nil {
-				return fmt.Errorf("failed to check partition type for %s: %w", drive, err)
+				return mountedMap, fmt.Errorf("failed to check partition type for %s: %w", drive, err)
 			}
 			if strings.TrimSpace(string(output)) != "" {
 				LogMessage(Info, fmt.Sprintf("Disk %s has existing partitions. Removing partitions...", drive))
 				cmd = exec.Command("sudo", "wipefs", "-a", drive)
 				if err := cmd.Run(); err != nil {
-					return fmt.Errorf("failed to wipe partitions on %s: %w", drive, err)
+					return mountedMap, fmt.Errorf("failed to wipe partitions on %s: %w", drive, err)
 				}
 			}
 
 			LogMessage(Info, fmt.Sprintf("Disk %s is not partitioned. Formatting with ext4...", drive))
 			cmd = exec.Command("mkfs.ext4", "-F", "-F", drive)
 			if err := cmd.Run(); err != nil {
-				return fmt.Errorf("failed to format %s: %w", drive, err)
+				return mountedMap, fmt.Errorf("failed to format %s: %w", drive, err)
 			}
 		}
 		cmd = exec.Command("blkid", "-s", "UUID", "-o", "value", drive)
@@ -323,13 +325,7 @@ func MountDrives(drives []string) error {
 			uuid = strings.TrimSpace(string(uuidOutput))
 		}
 		if uuid != "" && strings.Contains(string(fstabContent), fmt.Sprintf("UUID=%s", uuid)) {
-			LogMessage(Info, fmt.Sprintf("%s is in /etc/fstab, automounting.", drive))
-			cmd := exec.Command("mount", "-a", drive)
-			_, err := cmd.Output()
-			if err != nil {
-				return fmt.Errorf("failed to automount %s: %w", drive, err)
-			}
-			continue
+			return mountedMap, fmt.Errorf("disk %s is already in /etc/fstab - please remove it first", drive)
 		}
 		mountPoint := fmt.Sprintf("/mnt/disk%d", i)
 		for usedMountPoints[mountPoint] || strings.Contains(string(fstabContent), mountPoint) {
@@ -339,37 +335,34 @@ func MountDrives(drives []string) error {
 		usedMountPoints[mountPoint] = true
 
 		if err := os.MkdirAll(mountPoint, 0755); err != nil {
-			return fmt.Errorf("failed to create mount point %s: %w", mountPoint, err)
+			return mountedMap, fmt.Errorf("failed to create mount point %s: %w", mountPoint, err)
 		}
 
 		cmd = exec.Command("mount", drive, mountPoint)
 		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("failed to mount %s at %s: %w", drive, mountPoint, err)
+			return mountedMap, fmt.Errorf("failed to mount %s at %s: %w", drive, mountPoint, err)
 		}
 
 		LogMessage(Info, fmt.Sprintf("Mounted %s at %s", drive, mountPoint))
+		mountedMap[mountPoint] = fmt.Sprintf("%s-%s", drive, uuid)
+
 		i++
 	}
-	return nil
+	return mountedMap, nil
 }
 
-func PersistMountedDisks() error {
-	if viper.IsSet("LONGHORN_DISKS") && viper.GetString("LONGHORN_DISKS") != "" {
-		LogMessage(Info, "Skipping drive mounting as LONGHORN_DISKS is set.")
+func PersistMountedDisks(mountedMap map[string]string) error {
+	if viper.IsSet("CLUSTER_PREMOUNTED_DISKS") && viper.GetString("CLUSTER_PREMOUNTED_DISKS") != "" {
+		LogMessage(Info, "Skipping drive mounting as CLUSTER_PREMOUNTED_DISKS is set.")
 		return nil
 	}
-	if viper.GetBool("SKIP_DISK_CHECK") == true {
-		LogMessage(Info, "Skipping drive mounting as SKIP_DISK_CHECK is set.")
+	if viper.GetBool("NO_DISKS_FOR_CLUSTER") == true {
+		LogMessage(Info, "Skipping drive mounting as NO_DISKS_FOR_CLUSTER is set.")
 		return nil
-	}
-	cmd := exec.Command("sh", "-c", "mount | awk '/\\/mnt\\/disk[0-9]+/ {print $1, $3}'")
-	output, err := cmd.Output()
-	if err != nil {
-		return fmt.Errorf("failed to list mounted disks: %w", err)
 	}
 
-	mountedDisks := strings.TrimSpace(string(output))
-	if mountedDisks == "" {
+	if len(mountedMap) == 0 {
+		LogMessage(Info, "No mounted directories to persist")
 		return nil
 	}
 
@@ -379,14 +372,7 @@ func PersistMountedDisks() error {
 		return fmt.Errorf("failed to backup fstab file: %w", err)
 	}
 
-	scanner := bufio.NewScanner(strings.NewReader(mountedDisks))
-	for scanner.Scan() {
-		fields := strings.Fields(scanner.Text())
-		if len(fields) != 2 {
-			continue
-		}
-		device, mountPoint := fields[0], fields[1]
-
+	for mountPoint, device := range mountedMap {
 		cmd := exec.Command("blkid", "-s", "UUID", "-o", "value", device)
 		uuidOutput, err := cmd.Output()
 		if err != nil {
@@ -406,7 +392,7 @@ func PersistMountedDisks() error {
 			LogMessage(Debug, fmt.Sprintf("%s is already in /etc/fstab.", mountPoint))
 			continue
 		}
-		entry := fmt.Sprintf("UUID=%s %s ext4 defaults,nofail 0 2\n", uuid, mountPoint)
+		entry := fmt.Sprintf("UUID=%s %s ext4 defaults,nofail 0 2 %s\n", uuid, mountPoint, bloomFstabTag)
 		cmd = exec.Command("sudo", "tee", "-a", fstabFile)
 		cmd.Stdin = strings.NewReader(entry)
 		if err := cmd.Run(); err != nil {
@@ -415,12 +401,10 @@ func PersistMountedDisks() error {
 		LogMessage(Debug, fmt.Sprintf("Added %s to /etc/fstab.", mountPoint))
 	}
 
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("scanner error: %w", err)
-	}
 	if err := exec.Command("sudo", "mount", "-a").Run(); err != nil {
 		return fmt.Errorf("failed to remount filesystems: %w", err)
 	}
 
 	return nil
 }
+

@@ -68,6 +68,14 @@ ClusterBloom automates the deployment of Kubernetes clusters with AMD GPU suppor
 - **Self-Signed Generation**: Automatic self-signed certificate creation
 - **Domain Configuration**: Ingress configuration with custom domains
 
+### 9. Web UI and Monitoring Interface
+- **Configuration Wizard**: Browser-based configuration form with validation
+- **Real-time Monitoring**: Web dashboard showing installation progress and status
+- **Error Recovery Interface**: Configuration reconfiguration after failed installations
+- **Responsive Design**: Mobile-friendly interface for remote management
+- **Form Validation**: Client-side validation with HTML5 patterns and JavaScript
+- **Automatic Redirects**: Seamless flow between configuration and monitoring modes
+
 ## Technical Architecture
 
 ### Core Components
@@ -86,11 +94,79 @@ ClusterBloom automates the deployment of Kubernetes clusters with AMD GPU suppor
 - **RKE2 Integration** (`pkg/rke2.go`): Kubernetes cluster setup
 - **ROCm Support** (`pkg/rocm.go`): AMD GPU driver management
 - **UI Framework** (`pkg/view.go`): Terminal user interface implementation
+- **Web Handlers** (`pkg/webhandlers.go`): HTTP handlers for web interface functionality
 - **Configuration Maps** (`pkg/configmaps.go`): Kubernetes ConfigMap creation for bloom configuration
 - **Package Management** (`pkg/packages.go`): System package installation and management
 - **OS Setup** (`pkg/os-setup.go`): Operating system configuration and validation
 - **Demo Steps** (`pkg/demosteps.go`): Demonstration steps for testing and UI showcase
 - **Validation** (`cmd/validation.go`): Input validation functions for configuration parameters
+
+#### Web UI Architecture
+
+##### Application Modes
+The web interface operates in two distinct modes:
+
+1. **Configuration Mode**: Used when no installation is currently running
+   - Displays configuration wizard form
+   - Handles form validation and submission
+   - Triggers installation after configuration save
+
+2. **Monitoring Mode**: Used when monitoring existing installation status
+   - Shows real-time installation progress
+   - Displays step-by-step execution status (Total, Completed, Running, Failed)
+   - Provides "Reconfigure" option for retrying failed installations
+
+##### Key Components (`pkg/webhandlers.go`)
+
+**WebHandlerService Struct**:
+```go
+type WebHandlerService struct {
+    configFile       string           // Path to bloom.yaml configuration file
+    prefilledConfig  map[string]interface{}  // Configuration loaded from bloom.log
+    steps            []Step           // Installation steps for progress tracking
+    startInstallation func() error    // Callback to trigger installation process
+}
+```
+
+**Critical Handler Functions**:
+- `DashboardHandler`: Routes to appropriate interface (config vs monitoring)
+- `ConfigWizardHandler`: Serves configuration form with pre-filled values
+- `MonitorHandler`: Displays real-time installation monitoring interface
+- `ReconfigureHandler`: Switches from monitoring to configuration mode
+- `ConfigAPIHandler`: Processes form submissions and triggers installations
+- `PrefilledConfigAPIHandler`: Returns pre-filled configuration data from bloom.log
+
+##### Form Validation System
+- **HTML5 Pattern Validation**: Uses regex patterns for client-side validation
+- **Domain Validation**: Pattern `[a-z0-9]([a-z0-9\-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)*`
+- **URL Validation**: Standard HTTP/HTTPS URL pattern validation
+- **Required Field Validation**: Enforces mandatory configuration parameters
+- **JavaScript Validation**: Additional client-side validation before submission
+
+##### Configuration Flow Logic
+1. **Application Startup**: Detects existing bloom.log from previous failed installations
+2. **Mode Detection**: Automatically enters monitoring mode if bloom.log exists with errors
+3. **Configuration Loading**: Pre-fills form with values parsed from bloom.log
+4. **Form Submission**: Validates input, saves to bloom.yaml, triggers installation
+5. **Installation Monitoring**: Shows real-time progress and error status
+6. **Error Recovery**: Provides reconfigure option to retry with modified settings
+
+##### HTTP Routes and Endpoints
+- `/`: Main dashboard (redirects based on current mode)
+- `/config`: Configuration wizard interface
+- `/monitor`: Installation monitoring dashboard
+- `/reconfigure`: Switches to configuration mode for retry scenarios
+- `/api/config`: REST endpoint for configuration form submission
+- `/api/prefilled-config`: Returns pre-filled configuration data
+- `/api/steps`: Real-time installation step status
+- `/api/variables`: Current configuration variables
+
+##### Installation Integration
+The web interface integrates with the core installation system through:
+- **Installation Callbacks**: WebHandlerService receives installation trigger functions
+- **Progress Monitoring**: Real-time step status updates via API endpoints
+- **Log Integration**: Parses bloom.log for configuration recovery
+- **State Management**: Coordinates between configuration and monitoring modes
 
 #### Installation Pipeline
 The system executes a sequential pipeline of installation steps:
@@ -127,11 +203,11 @@ The system executes a sequential pipeline of installation steps:
 - `CONTROL_PLANE`: Indicates if additional node should be control plane (when FIRST_NODE is false)
 - `GPU_NODE`: Enables/disables GPU-specific configurations
 - `SERVER_IP`/`JOIN_TOKEN`: Required for additional node joining
-- `SKIP_DISK_CHECK`: Bypasses disk-related operations
-- `LONGHORN_DISKS`: Manual disk specification
+- `NO_DISKS_FOR_CLUSTER`: Bypasses disk-related operations
+- `CLUSTER_PREMOUNTED_DISKS`: Manual disk specification
 - `CLUSTERFORGE_RELEASE`: ClusterForge version specification
 - `DISABLED_STEPS`/`ENABLED_STEPS`: Step execution control
-- `SELECTED_DISKS`: Pre-selected disk devices (also skips NVME drive checks)
+- `CLUSTER_DISKS`: Pre-selected disk devices (also skips NVME drive checks)
 - `DOMAIN`: Domain name for cluster ingress configuration
 - `USE_CERT_MANAGER`: Enable cert-manager with Let's Encrypt for TLS
 - `CERT_OPTION`: Certificate handling when cert-manager disabled ('existing' or 'generate')
@@ -198,6 +274,35 @@ sudo ./bloom test
 - Tests disk selection and mounting operations
 - Validates UI components and workflows
 
+#### Web UI Installation Workflow
+
+##### Initial Setup via Web Interface
+1. **Access Web Interface**: Navigate to `http://localhost:62078` in browser
+2. **Configuration Wizard**: Fill out cluster configuration form with:
+   - Node type selection (first node, additional node, control plane)
+   - GPU support options
+   - Domain configuration for ingress
+   - Storage and networking settings
+   - Optional ClusterForge and certificate management
+3. **Form Validation**: Real-time validation ensures correct input formats
+4. **Installation Trigger**: Submit form to generate bloom.yaml and start installation
+5. **Automatic Redirect**: Browser redirects to monitoring dashboard after 3 seconds
+
+##### Error Recovery Workflow
+1. **Failed Installation Detection**: Application detects existing bloom.log with errors
+2. **Monitoring Mode**: Automatically shows installation status with error details
+3. **Reconfigure Option**: Click "Reconfigure" button to retry installation
+4. **Pre-filled Form**: Configuration form loads with values from previous attempt
+5. **Modify and Retry**: Adjust configuration as needed and resubmit
+6. **Monitoring Dashboard**: Real-time progress tracking with step-by-step status
+
+##### Monitoring Interface Features
+- **Progress Cards**: Visual display of Total Steps, Completed, Running, Failed counts
+- **Step Details**: Expandable sections showing individual step progress
+- **Error Information**: Clear error messages with troubleshooting hints
+- **Log Access**: Recent logs tab for debugging installation issues
+- **Refresh Capability**: Manual refresh button for latest status updates
+
 ### Error Handling and Recovery
 - **Graceful Failures**: Clear error messages with recovery suggestions
 - **Step Isolation**: Failed steps don't prevent manual retry
@@ -244,6 +349,32 @@ sudo ./bloom test
 3. **Configuration Validation**: Basic validation without comprehensive checks
 4. **Log Management**: Basic logging without centralized log aggregation
 5. **Performance Tuning**: No performance optimization configurations
+
+### Recently Resolved Issues (Web UI)
+1. **Domain Validation Regex**: Fixed HTML5 pattern compatibility for domain validation
+   - **Issue**: Browser JavaScript errors with complex regex patterns in HTML5 form validation
+   - **Solution**: Simplified domain pattern to `[a-z0-9]([a-z0-9\-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)*`
+   - **Location**: `pkg/webhandlers.go:798`
+
+2. **Missing API Endpoints in Monitoring Mode**: API routes not available during monitoring
+   - **Issue**: Form submissions failed when application was in monitoring mode
+   - **Solution**: Added `/api/config` endpoint to monitoring mode server routing
+   - **Location**: `cmd/root.go` monitoring mode server setup
+
+3. **Installation Trigger Integration**: Configuration saves didn't trigger installations
+   - **Issue**: Web form saved configuration but didn't start installation process
+   - **Solution**: Enhanced WebHandlerService with installation callback system
+   - **Location**: `pkg/webhandlers.go` WebHandlerService structure and methods
+
+4. **JavaScript Redirect Flow**: Post-submission flow didn't show installation status
+   - **Issue**: Users saw configuration screen instead of monitoring dashboard after submission
+   - **Solution**: Implemented 3-second JavaScript redirect to `/monitor` endpoint
+   - **Location**: `pkg/webhandlers.go` ConfigAPIHandler response
+
+5. **Configuration Recovery**: Failed installations couldn't be easily retried
+   - **Issue**: Users had to manually recreate configuration after installation failures
+   - **Solution**: Automatic configuration pre-filling from bloom.log parsing
+   - **Location**: `pkg/webhandlers.go` PrefilledConfigAPIHandler and configuration loading
 
 ## Success Metrics
 

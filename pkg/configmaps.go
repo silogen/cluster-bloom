@@ -17,7 +17,6 @@
 package pkg
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"os/exec"
@@ -26,7 +25,7 @@ import (
 	"github.com/spf13/viper"
 )
 
-func CreateConfigMap() error {
+func CreateConfigMap(version string) error {
 	bloomConfig := make(map[string]string)
 
 	configFile := viper.ConfigFileUsed()
@@ -71,6 +70,7 @@ metadata:
   name: bloom
   namespace: default
 data:
+  BLOOM_VERSION: "` + version + `"
 `
 	// Add each configuration item
 	for key, value := range bloomConfig {
@@ -102,56 +102,4 @@ data:
 		return fmt.Errorf("failed to create ConfigMap: %w", err)
 	}
 	return nil
-}
-
-var podTemplate = `apiVersion: v1
-kind: Pod
-metadata:
-  name: bloom-yaml
-  namespace: default
-  annotations:
-    bloom.yaml: |
-%s
-spec:
-  restartPolicy: OnFailure
-  containers:
-  - name: bloom-yaml-create
-    image: alpine:latest
-    resources:
-      requests:
-        memory: "16Mi"
-        cpu: "10m"
-      limits:
-        memory: "64Mi"
-    command:
-      - /bin/sh
-      - -c
-      - |
-        echo "Bloom YAML for node in annotation"
-`
-
-func CreateConfigMapPod() error {
-	file, err := os.Open(viper.ConfigFileUsed())
-	if err != nil {
-		return fmt.Errorf("Error opening file: %v", err)
-	}
-	defer file.Close()
-	bloomContent := ""
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.Contains(line, "JOIN_TOKEN") {
-			bloomContent += "        " + line + "\n"
-		}
-	}
-	if err != nil {
-		return fmt.Errorf("failed to create directory: %w", err)
-	}
-	podYaml := fmt.Sprintf(podTemplate, bloomContent)
-	if err := os.WriteFile("/var/lib/rancher/rke2/agent/pod-manifests/bloom-yaml-creator.yaml", []byte(podYaml), 0644); err != nil {
-		return fmt.Errorf("failed to write file %s: %w", "/tmp/test", err)
-	}
-	return nil
-
 }

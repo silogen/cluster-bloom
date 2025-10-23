@@ -30,12 +30,35 @@ spec:
                       echo "Labeling $node as GPU node"
                       kubectl label $node feature.node.kubernetes.io/amd-gpu=true
                       kubectl label $node amd.com/gpu.product-name=AMD_Instinct_MI300X_OAM
-                    fi                      
-                    longhorn_label=$(kubectl get $node -o jsonpath='{.metadata.labels.silogen\.ai/longhorndisks}')
+                    fi
                     longhorn_annotation=$(kubectl get $node -o jsonpath='{.metadata.annotations.node\.longhorn\.io/default-disks-config}')
-                    if [ -n "$longhorn_label" ] && [ -z "$longhorn_annotation" ]; then
-                      disks_json=$(echo "$longhorn_label" | awk -v ORS= -Fxxx '{print "["; for (i=1; i<=NF; i++) printf "{\"path\":\"/mnt/"$i"\",\"allowScheduling\":true}" (i==NF ? "" : ","); print "]"}')
-                      kubectl annotate $node node.longhorn.io/default-disks-config="$disks_json"
+                    if [ -z "$longhorn_annotation" ]; then
+                      # Get all bloom.disk labels with key and value
+                      disk_data=$(kubectl get $node -o json | jq -r '.metadata.labels | to_entries[] | select(.key | startswith("bloom.disk___")) | "\(.key)=\(.value)"' 2>/dev/null)
+                      if [ -n "$disk_data" ]; then
+                        echo "Processing Longhorn disk labels for $node"
+                        # Build JSON array from bloom.disk labels
+                        disks_json="["
+                        first=true
+                        for entry in $disk_data; do
+                          # Split key=value
+                          label_key=$(echo "$entry" | cut -d= -f1)
+                          label_value=$(echo "$entry" | cut -d= -f2-)
+                          # Extract mount point from key (e.g., bloom.disk___mnt___disk0 -> /mnt/disk0)
+                          mount_point=$(echo "$label_key" | sed 's/^bloom\.disk//' | sed 's/___/\//g')
+                          # Extract disk name from value (e.g., disk___dev___sda -> /dev/sda)
+                          disk_name=$(echo "$label_value" | sed 's/___/_/g')
+                          if [ "$first" = true ]; then
+                            first=false
+                          else
+                            disks_json="${disks_json},"
+                          fi
+                          disks_json="${disks_json}{\"path\":\"${mount_point}\",\"allowScheduling\":true,\"name\":\"${disk_name}\"}"
+                        done
+                        disks_json="${disks_json}]"
+                        echo "Annotating $node with Longhorn disk config: $disks_json"
+                        kubectl annotate $node node.longhorn.io/default-disks-config="$disks_json"
+                      fi
                     fi
                   done
           restartPolicy: OnFailure

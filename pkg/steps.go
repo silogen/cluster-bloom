@@ -26,6 +26,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/silogen/cluster-bloom/pkg/args"
+	"github.com/silogen/cluster-bloom/pkg/sysvalidation"
 	"github.com/spf13/viper"
 )
 
@@ -36,6 +38,34 @@ var manifestFiles embed.FS
 
 //go:embed templates/*.yaml
 var templateFiles embed.FS
+
+var ValidateArgsStep = Step{
+	Id:          "ValidateArgsStep",
+	Name:        "Validate Configuration",
+	Description: "Validate all configuration arguments",
+	Action: func() StepResult {
+		if err := args.ValidateArgs(); err != nil {
+			return StepResult{
+				Error: fmt.Errorf("configuration validation failed: %v", err),
+			}
+		}
+		return StepResult{Error: nil}
+	},
+}
+
+var ValidateSystemRequirementsStep = Step{
+	Id:          "ValidateSystemRequirementsStep",
+	Name:        "Validate System Requirements",
+	Description: "Validate system resources (disk, memory, CPU, OS version, kernel modules)",
+	Action: func() StepResult {
+		if err := sysvalidation.ValidateResourceRequirements(); err != nil {
+			return StepResult{
+				Error: fmt.Errorf("system requirements validation failed: %v", err),
+			}
+		}
+		return StepResult{Error: nil}
+	},
+}
 
 var CheckUbuntuStep = Step{
 	Id:          "CheckUbuntuStep",
@@ -122,7 +152,7 @@ var CheckPortsBeforeOpeningStep = Step{
 		err := CheckPortsBeforeOpening()
 		if err != nil {
 			return StepResult{
-				Error: fmt.Errorf("Checking ports failed: %s", err.Error()),
+				Error: fmt.Errorf("checking ports failed: %s", err.Error()),
 			}
 		}
 		return StepResult{Error: nil}
@@ -131,7 +161,7 @@ var CheckPortsBeforeOpeningStep = Step{
 
 var InstallK8SToolsStep = Step{
 	Id:          "InstallK8SToolsStep",
-	Name:        "Install Kubernetes tools",
+	Name:        "Install Kubernetes Tools",
 	Description: "Install kubectl and k9s",
 	Action: func() StepResult {
 		err := installK8sTools()
@@ -146,7 +176,7 @@ var InstallK8SToolsStep = Step{
 
 var InotifyInstancesStep = Step{
 	Id:          "InotifyInstancesStep",
-	Name:        "Verify inotify instances",
+	Name:        "Verify inotify Instances",
 	Description: "Verify, or update, inotify instances",
 	Action: func() StepResult {
 		if !VerifyInotifyInstances() {
@@ -226,7 +256,7 @@ var SetupRKE2Step = Step{
 
 var CleanDisksStep = Step{
 	Id:          "CleanDisksStep",
-	Name:        "Clean disks",
+	Name:        "Clean Disks",
 	Description: "remove any previous longhorn temp drives",
 	Action: func() StepResult {
 		err := CleanDisks()
@@ -267,116 +297,104 @@ var UpdateModprobeStep = Step{
 	},
 }
 
-var SelectDrivesStep = Step{
-	Id:          "SelectDrivesStep",
-	Name:        "Select Unmounted Disks",
-	Description: "Identify and select unmounted physical disks",
-	Action: func() StepResult {
-		if viper.IsSet("SELECTED_DISKS") && viper.GetString("SELECTED_DISKS") != "" {
-			disks := strings.Split(viper.GetString("SELECTED_DISKS"), ",")
-			LogMessage(Info, fmt.Sprintf("Selected disks: %v", disks))
-			for _, disk := range disks {
-				cmd := exec.Command("umount", "-Av", disk)
-				output, _ := cmd.CombinedOutput()
-				LogMessage(Info, fmt.Sprintf("unmounted disk %s: %s", disk, string(output)))
-			}
-			viper.Set("selected_disks", disks)
-			return StepResult{Error: nil}
-		}
-		disks, err := GetUnmountedPhysicalDisks()
-		if err != nil {
-			return StepResult{
-				Error: fmt.Errorf("failed to get unmounted disks: %v", err),
-			}
-		}
-		if len(disks) == 0 {
-			LogMessage(Info, "No unmounted physical disks found")
-			return StepResult{Error: nil}
-		}
-		cmd := exec.Command("sh", "-c", "lsblk |awk '/nvme/ {print $0}'")
-		output, err := cmd.Output()
-		if err != nil {
-			return StepResult{
-				Error: fmt.Errorf("failed to get disk info: %v", err),
-			}
-		}
-		diskinfo := string(output)
-		options := make([]string, len(disks))
-		for i, disk := range disks {
-			options[i] = disk
-		}
-
-		result, err := ShowOptionsScreen(
-			"Unmounted Disks",
-			"Select disks to format and mount\n\n"+diskinfo+"\n\nThe suggested drives are pre-selected, arrow keys to navigate, spacebar to select, enter to confirm\n\nd when done, q to quit",
-			options,
-			options,
-		)
-		if err != nil {
-			return StepResult{
-				Error: fmt.Errorf("error selecting disks: %v", err),
-			}
-		}
-
-		if result.Canceled {
-			return StepResult{
-				Error: fmt.Errorf("disk selection canceled"),
-			}
-		}
-		LogMessage(Info, fmt.Sprintf("Selected disks: %v", result.Selected))
-
-		// Store the selected disks for the next step
-		viper.Set("selected_disks", result.Selected)
-
-		return StepResult{Message: fmt.Sprintf("Selected disks: %v", result.Selected)}
-	},
-}
-
-var MountSelectedDrivesStep = Step{
-	Id:          "MountSelectedDrivesStep",
-	Name:        "Mount Selected Disks",
-	Description: "Mount the selected physical disks",
+var PrepareLonghornDisksStep = Step{
+	Id:          "PrepareLonghornDisksStep",
+	Name:        "Prepare Longhorn Disks",
+	Description: "Mount selected disks or populate disk map from CLUSTER_PREMOUNTED_DISKS configuration",
 	Skip: func() bool {
-		if viper.IsSet("LONGHORN_DISKS") && viper.GetString("LONGHORN_DISKS") != "" {
-			LogMessage(Info, "Skipping drive mounting as LONGHORN_DISKS is set.")
-			return true
-		}
-		if viper.GetBool("SKIP_DISK_CHECK") {
-			LogMessage(Info, "Skipping drive mounting as SKIP_DISK_CHECK is set.")
+		if viper.GetBool("NO_DISKS_FOR_CLUSTER") {
+			LogMessage(Info, "Skipping drive mounting as NO_DISKS_FOR_CLUSTER is set.")
 			return true
 		}
 		return false
 	},
 	Action: func() StepResult {
-		selectedDisks := viper.GetStringSlice("selected_disks")
-		if len(selectedDisks) == 0 {
-			LogMessage(Info, "No disks selected for mounting")
-			return StepResult{Error: nil}
+		var mountedDiskMap map[string]string
+		// Check if CLUSTER_PREMOUNTED_DISKS is set
+		if viper.IsSet("CLUSTER_PREMOUNTED_DISKS") && viper.GetString("CLUSTER_PREMOUNTED_DISKS") != "" {
+			LogMessage(Info, "CLUSTER_PREMOUNTED_DISKS is set, populating mounted disk map from mount points")
+
+			// Parse CLUSTER_PREMOUNTED_DISKS and create map from current mount state
+			longhornDisks := viper.GetString("CLUSTER_PREMOUNTED_DISKS")
+			mountDirs := strings.Split(longhornDisks, ",")
+			mountedDiskMap = make(map[string]string)
+
+			for i, mountDir := range mountDirs {
+				mountDir = strings.TrimSpace(mountDir)
+				LogMessage(Info, mountDir)
+				mountedDiskMap[mountDir] = fmt.Sprintf("%d", i)
+			}
+			LogMessage(Info, fmt.Sprintf("%v", mountedDiskMap))
+		} else {
+
+			selectedDisks := strings.Split(viper.GetString("CLUSTER_DISKS"), ",")
+			if len(selectedDisks) == 0 {
+				return StepResult{
+					Error: fmt.Errorf("no disks selected for mounting"),
+				}
+			}
+			var mountError error
+			mountedDiskMap, mountError = MountDrives(selectedDisks)
+			if mountError != nil {
+				return StepResult{
+					Error: fmt.Errorf("error mounting disks: %v", mountError),
+				}
+			}
+			persistError := PersistMountedDisks(mountedDiskMap)
+			if persistError != nil {
+				return StepResult{
+					Error: fmt.Errorf("error persisting mounted disks: %v", persistError),
+				}
+			}
+		}
+		LogMessage(Info, fmt.Sprintf("Used %d disks: %v", len(mountedDiskMap), mountedDiskMap))
+		// Store in viper for use by other steps
+		viper.Set("mounted_disk_map", mountedDiskMap)
+
+		// Back up longhorn files for all disks in mountedDiskMap
+		timestamp := time.Now().Format("20060102-150405")
+		for mountPoint := range mountedDiskMap {
+			longhornConfigPath := filepath.Join(mountPoint, "longhorn-disk.cfg")
+			if _, err := os.Stat(longhornConfigPath); err == nil {
+				backupPath := filepath.Join(mountPoint, fmt.Sprintf("longhorn-disk.cfg.backup-%s", timestamp))
+				LogMessage(Info, fmt.Sprintf("Found longhorn-disk.cfg at %s, backing up to %s", longhornConfigPath, backupPath))
+				if err := os.Rename(longhornConfigPath, backupPath); err != nil {
+					LogMessage(Warn, fmt.Sprintf("Failed to backup longhorn-disk.cfg: %v", err))
+				} else {
+					LogMessage(Info, fmt.Sprintf("Backed up and removed longhorn-disk.cfg"))
+				}
+			}
+
+			replicasPath := filepath.Join(mountPoint, "replicas")
+			if info, err := os.Stat(replicasPath); err == nil && info.IsDir() {
+				backupPath := filepath.Join(mountPoint, fmt.Sprintf("replicas.backup-%s", timestamp))
+				LogMessage(Info, fmt.Sprintf("Found replicas directory at %s, backing up to %s", replicasPath, backupPath))
+				if err := os.Rename(replicasPath, backupPath); err != nil {
+					LogMessage(Warn, fmt.Sprintf("Failed to backup replicas directory: %v", err))
+				} else {
+					LogMessage(Info, fmt.Sprintf("Backed up and removed replicas directory"))
+				}
+			}
 		}
 
-		mountError := MountDrives(selectedDisks)
-		if mountError != nil {
-			return StepResult{
-				Error: fmt.Errorf("error mounting disks: %v", mountError),
-			}
-		}
-		persistError := PersistMountedDisks()
-		if persistError != nil {
-			return StepResult{
-				Error: fmt.Errorf("error persisting mounted disks: %v", persistError),
-			}
-		}
-		LogMessage(Info, fmt.Sprintf("Mounted and persisted disks: %v", selectedDisks))
 		return StepResult{Error: nil}
 	},
 }
 
 var GenerateNodeLabelsStep = Step{
 	Id:          "GenerateNodeLabelsStep",
-	Name:        "Generate node Labels",
+	Name:        "Generate Node Labels",
 	Description: "Generate labels for the node based on its configuration",
 	Action: func() StepResult {
-		err := GenerateNodeLabels()
+		// Get mounted disk map from viper
+		mountedDiskMap := make(map[string]string)
+		if mapInterface := viper.Get("mounted_disk_map"); mapInterface != nil {
+			if m, ok := mapInterface.(map[string]string); ok {
+				mountedDiskMap = m
+			}
+		}
+
+		err := GenerateNodeLabels(mountedDiskMap)
 		if err != nil {
 			return StepResult{Error: err}
 		}
@@ -386,11 +404,11 @@ var GenerateNodeLabelsStep = Step{
 
 var SetupMetallbStep = Step{
 	Id:          "SetupMetallbStep",
-	Name:        "Setup MetalLB manifests",
+	Name:        "Setup MetalLB Manifests",
 	Description: "Copy MetalLB YAML files to the RKE2 manifests directory",
 	Skip: func() bool {
 		if viper.GetBool("FIRST_NODE") == false {
-			LogMessage(Info, "Skipping GenerateLonghornDiskString as SKIP_DISK_CHECK is set.")
+			LogMessage(Info, "Skipping GenerateLonghornDiskString as NO_DISKS_FOR_CLUSTER is set.")
 			return true
 		}
 		return false
@@ -410,11 +428,11 @@ var SetupMetallbStep = Step{
 
 var SetupLonghornStep = Step{
 	Id:          "SetupLonghornStep",
-	Name:        "Setup Longhorn manifests",
+	Name:        "Setup Longhorn Manifests",
 	Description: "Copy Longhorn YAML files to the RKE2 manifests directory",
 	Skip: func() bool {
-		if viper.GetBool("SKIP_DISK_CHECK") {
-			LogMessage(Info, "Skipping GenerateLonghornDiskString as SKIP_DISK_CHECK is set.")
+		if viper.GetBool("NO_DISKS_FOR_CLUSTER") {
+			LogMessage(Info, "Skipping GenerateLonghornDiskString as NO_DISKS_FOR_CLUSTER is set.")
 			return true
 		}
 		return false
@@ -424,6 +442,25 @@ var SetupLonghornStep = Step{
 			err := setupManifests("longhorn")
 			if err != nil {
 				return StepResult{Error: err}
+			}
+			cmd := exec.Command("/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "wait", "--for=create", "--timeout=600s", "cronjob/label-and-annotate-nodes")
+			output, err := cmd.CombinedOutput()
+			if err != nil {
+				LogMessage(Error, fmt.Sprintf("Failed waiting for node annotation to be created: %v, output: %s", err, string(output)))
+				return StepResult{Error: fmt.Errorf("failed waiting for node annotation to be created: %w", err)}
+			}
+
+			cmd = exec.Command("/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "create", "job", "--from=cronjob/label-and-annotate-nodes", "label-and-annotate-nodes-initial", "-n", "default")
+			output, err = cmd.CombinedOutput()
+			if err != nil {
+				LogMessage(Error, fmt.Sprintf("Failed to trigger node annotator: %v, output: %s", err, string(output)))
+				return StepResult{Error: fmt.Errorf("failed to trigger node annotator: %w", err)}
+			}
+			cmd = exec.Command("/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "wait", "--for=jsonpath={.status.lastSuccessfulTime}", "--timeout=600s", "cronjob/label-and-annotate-nodes")
+			output, err = cmd.CombinedOutput()
+			if err != nil {
+				LogMessage(Error, fmt.Sprintf("Failed waiting for node annotation: %v, output: %s", err, string(output)))
+				return StepResult{Error: fmt.Errorf("failed waiting for node annotation: %w", err)}
 			}
 		} else {
 			return StepResult{Error: nil}
@@ -470,6 +507,10 @@ var HasSufficientRancherPartitionStep = Step{
 	Name:        "Check /var/lib/rancher Partition Size",
 	Description: "Check if the /var/lib/rancher partition size is sufficient",
 	Skip: func() bool {
+		if viper.GetBool("SKIP_RANCHER_PARTITION_CHECK") {
+			LogMessage(Info, "Skipping /var/lib/rancher partition check as SKIP_RANCHER_PARTITION_CHECK is set.")
+			return true
+		}
 		if !viper.GetBool("GPU_NODE") {
 			LogMessage(Info, "Skipping /var/lib/rancher partition check for CPU node.")
 			return true
@@ -482,34 +523,6 @@ var HasSufficientRancherPartitionStep = Step{
 			return StepResult{Error: nil}
 		}
 		return StepResult{Error: fmt.Errorf("/var/lib/rancher partition size is less than the recommended 500GB")}
-	},
-}
-
-var NVMEDrivesAvailableStep = Step{
-	Id:          "NVMEDrivesAvailableStep",
-	Name:        "Check NVMe Drives",
-	Description: "Check if NVMe drives are available",
-	Skip: func() bool {
-		if !viper.GetBool("GPU_NODE") {
-			LogMessage(Info, "Skipped for non-GPU node")
-			return true
-		}
-		if viper.GetBool("SKIP_DISK_CHECK") {
-			LogMessage(Info, "Skipping NVME drive check as SKIP_DISK_CHECK is set.")
-			return true
-		}
-		if viper.GetString("SELECTED_DISKS") != "" {
-			LogMessage(Info, "Skipping NVME drive check as SELECTED_DISKS is set.")
-			return true
-		}
-
-		return false
-	},
-	Action: func() StepResult {
-		if NVMEDrivesAvailable() {
-			return StepResult{Error: nil}
-		}
-		return StepResult{Error: fmt.Errorf("no NVMe drives available (either unmounted or mounted at /mnt/disk*)")}
 	},
 }
 
@@ -615,9 +628,35 @@ var SetupKubeConfig = Step{
 
 		// Store the path to k9s in a variable
 		k9sPath := "/snap/k9s/current/bin"
-
-		// Check if k9s path is already in bashrc
+		bashProfilePath := fmt.Sprintf("%s/.bash_profile", userHomeDir)
 		bashrcPath := fmt.Sprintf("%s/.bashrc", userHomeDir)
+
+		// Execute once for current shell (to avoid logout & login cycle):
+		addK9sPath := fmt.Sprintf("export PATH=$PATH:%s", k9sPath)
+		if err = exec.Command("sh", "-c", addK9sPath).Run(); err != nil {
+			LogMessage(Error, fmt.Sprintf("Failed to update PATH in .bash_profile: %v", err))
+		} else {
+			LogMessage(Info, fmt.Sprintf("Path in .bash_profile updated to contain %s", string(k9sPath)))
+		}
+
+		// Update k9s path in .bash_profile
+		bashProfileContent, err := os.ReadFile(bashProfilePath)
+		if err != nil {
+			LogMessage(Error, fmt.Sprintf("Failed to read .bash_profile: %v", err))
+		} else {
+			// Check if k9s path already exists in .bash_profile
+			if !strings.Contains(string(bashProfileContent), k9sPath) {
+				// Add k9s path to .bash_profile if not found
+				pathCmd := fmt.Sprintf("echo 'export PATH=$PATH:%s' >> %s", k9sPath, bashProfilePath)
+				if err = exec.Command("sh", "-c", pathCmd).Run(); err != nil {
+					LogMessage(Error, fmt.Sprintf("Failed to update PATH in .bash_profile: %v", err))
+				} else {
+					LogMessage(Info, fmt.Sprintf("Path in .bash_profile updated to contain %s", string(k9sPath)))
+				}
+			}
+		}
+
+		// Update k9s path in .bashrc
 		bashrcContent, err := os.ReadFile(bashrcPath)
 		if err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to read .bashrc: %v", err))
@@ -638,31 +677,35 @@ var SetupKubeConfig = Step{
 	},
 }
 
-var CreateBloomConfigMapStep = Step{
-	Id:          "CreateBloomConfigMapStep",
-	Name:        "Create Bloom ConfigMap",
-	Description: "Create a ConfigMap with bloom configuration in the default namespace",
-	Action: func() StepResult {
-		// Wait for the cluster to be ready
-		if viper.GetBool("FIRST_NODE") {
-			LogMessage(Info, "Waiting for cluster to be ready...")
-			time.Sleep(10 * time.Second)
-			err := CreateConfigMap()
-			if err != nil {
-				LogMessage(Error, fmt.Sprintf("Failed to create bloom ConfigMap: %v", err))
-				return StepResult{Error: fmt.Errorf("failed to create bloom ConfigMap: %w", err)}
+func CreateBloomConfigMapStepFunc(version string) Step {
+	return Step{
+		Id:          "CreateBloomConfigMapStep",
+		Name:        "Create Bloom ConfigMap",
+		Description: "Create a ConfigMap with bloom configuration in the default namespace",
+		Skip: func() bool {
+			if !viper.GetBool("FIRST_NODE") {
+				LogMessage(Info, "Skipped for additional node")
+				return true
 			}
-			LogMessage(Info, "Successfully created bloom ConfigMap in default namespace")
-			return StepResult{Message: "Bloom ConfigMap created successfully"}
-		} else {
-			err := CreateConfigMapPod()
-			if err != nil {
-				LogMessage(Error, fmt.Sprintf("Failed to create bloom ConfigMap Pod: %v", err))
-				return StepResult{Error: fmt.Errorf("failed to create bloom ConfigMap Pod: %w", err)}
+			return false
+		},
+		Action: func() StepResult {
+			// Wait for the cluster to be ready
+			if viper.GetBool("FIRST_NODE") {
+				LogMessage(Info, "Waiting for cluster to be ready...")
+
+				time.Sleep(10 * time.Second)
+				err := CreateConfigMap(version)
+				if err != nil {
+					LogMessage(Error, fmt.Sprintf("Failed to create bloom ConfigMap: %v", err))
+					return StepResult{Error: fmt.Errorf("failed to create bloom ConfigMap: %w", err)}
+				}
+				LogMessage(Info, "Successfully created bloom ConfigMap in default namespace")
+				return StepResult{Message: "Bloom ConfigMap created successfully"}
 			}
 			return StepResult{Error: nil}
-		}
-	},
+		},
+	}
 }
 
 var CreateDomainConfigStep = Step{
@@ -846,6 +889,26 @@ metadata:
 	},
 }
 
+var WaitForClusterReady = Step{
+	Id:          "WaitForClusterReady",
+	Name:        "Wait for Cluster to be Ready",
+	Description: "A wait step to ensure the cluster is ready",
+	Skip: func() bool {
+		if !viper.GetBool("FIRST_NODE") {
+			LogMessage(Info, "Skipping for additional nodes.")
+			return true
+		}
+		return false
+	},
+	Action: func() StepResult {
+		err := LonghornPreflightCheck()
+		if err != nil {
+			return StepResult{Error: fmt.Errorf("failed to run Longhorn preflight check: %v", err)}
+		}
+		return StepResult{Error: nil}
+	},
+}
+
 var SetupClusterForgeStep = Step{
 	Id:          "SetupClusterForgeStep",
 	Name:        "Setup Cluster Forge",
@@ -865,6 +928,7 @@ var SetupClusterForgeStep = Step{
 		return StepResult{Error: nil}
 	},
 }
+
 var FinalOutput = Step{
 	Id:          "FinalOutput",
 	Name:        "Output",
@@ -935,19 +999,19 @@ var UpdateUdevRulesStep = Step{
 		err := cmd.Run()
 		if err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to write to file: %v", err))
-			return StepResult{Error: fmt.Errorf("Failed to write to file: %v", err)}
+			return StepResult{Error: fmt.Errorf("failed to write to file: %v", err)}
 		}
 
 		err = exec.Command("sudo", "udevadm", "control", "--reload-rules").Run()
 		if err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to reload udev rules: %v", err))
-			return StepResult{Error: fmt.Errorf("Failed to reload udev rules: %v", err)}
+			return StepResult{Error: fmt.Errorf("failed to reload udev rules: %v", err)}
 		}
 
 		err = exec.Command("sudo", "udevadm", "trigger").Run()
 		if err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to trigger udev: %v", err))
-			return StepResult{Error: fmt.Errorf("Failed to trigger udev: %v", err)}
+			return StepResult{Error: fmt.Errorf("failed to trigger udev: %v", err)}
 		}
 
 		return StepResult{Error: nil}
@@ -962,56 +1026,90 @@ var CleanLonghornMountsStep = Step{
 		LogMessage(Info, "Cleaning Longhorn mounts and PVCs")
 
 		// Stop Longhorn services first if they exist
-		cmd := exec.Command("sh", "-c", "sudo systemctl stop longhorn-* 2>/dev/null || true")
-		cmd.CombinedOutput()
+		stepResult := shellCmdHelper("sudo systemctl stop longhorn-* 2>/dev/null || true")
+		if stepResult.Error != nil {
+			return stepResult
+		}
 
 		// Find and unmount all Longhorn-related mounts
 		for i := 0; i < 3; i++ {
 			// Unmount Longhorn device files
-			cmd = exec.Command("sh", "-c", "sudo umount -lf /dev/longhorn/pvc* 2>/dev/null || true")
-			cmd.CombinedOutput()
+			stepResult = shellCmdHelper("sudo umount -lf /dev/longhorn/pvc* 2>/dev/null || true")
+			if stepResult.Error != nil {
+				return stepResult
+			}
 
 			// Find /mnt/disk* mount points that contain longhorn-disk.cfg and unmount them
-			cmd = exec.Command("sh", "-c", `
+			shellCmd := `
 				for mount_point in /mnt/disk*; do
 					if [ -d "$mount_point" ] && find "$mount_point" -name "longhorn-disk.cfg" 2>/dev/null | grep -q .; then
 						echo "Found longhorn-disk.cfg in $mount_point, unmounting..."
 						sudo umount -lf "$mount_point" 2>/dev/null || true
 					fi
 				done
-			`)
-			cmd.CombinedOutput()
+			`
+			stepResult = shellCmdHelper(shellCmd)
+			if stepResult.Error != nil {
+				return stepResult
+			}
 
 			// Find and unmount CSI volume mounts
-			cmd = exec.Command("sh", "-c", "sudo umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/pvc-* 2>/dev/null || true")
-			cmd.CombinedOutput()
-			cmd = exec.Command("sh", "-c", "sudo umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/*/mount 2>/dev/null || true")
-			cmd.CombinedOutput()
+			stepResult = shellCmdHelper("sudo umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/pvc-* 2>/dev/null || true")
+			if stepResult.Error != nil {
+				return stepResult
+			}
+
+			stepResult = shellCmdHelper("sudo umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/*/mount 2>/dev/null || true")
+			if stepResult.Error != nil {
+				return stepResult
+			}
 
 			// Find and unmount CSI plugin mounts
-			cmd = exec.Command("sh", "-c", "mount | grep 'driver.longhorn.io' | awk '{print $3}' | xargs -r sudo umount -lf 2>/dev/null || true")
-			cmd.CombinedOutput()
+			stepResult = shellCmdHelper("mount | grep 'driver.longhorn.io' | awk '{print $3}' | xargs -r sudo umount -lf 2>/dev/null || true")
+			if stepResult.Error != nil {
+				return stepResult
+			}
 
 			// Find and unmount any remaining kubelet plugin mounts
-			cmd = exec.Command("sh", "-c", "sudo umount -Af /var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/* 2>/dev/null || true")
-			cmd.CombinedOutput()
+			stepResult = shellCmdHelper("sudo umount -Af /var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/* 2>/dev/null || true")
+			if stepResult.Error != nil {
+				return stepResult
+			}
 		}
 
 		// Force kill any processes using Longhorn mounts
-		cmd = exec.Command("sh", "-c", "sudo fuser -km /dev/longhorn/ 2>/dev/null || true")
-		cmd.CombinedOutput()
+		stepResult = shellCmdHelper("sudo fuser -km /dev/longhorn/ 2>/dev/null || true")
+		if stepResult.Error != nil {
+			return stepResult
+		}
 
 		// Clean up device files
-		cmd = exec.Command("sh", "-c", "sudo rm -rf /dev/longhorn/pvc-* 2>/dev/null || true")
-		cmd.CombinedOutput()
+		stepResult = shellCmdHelper("sudo rm -rf /dev/longhorn/pvc-* 2>/dev/null || true")
+		if stepResult.Error != nil {
+			return stepResult
+		}
 
 		// Clean up kubelet CSI mounts
-		cmd = exec.Command("sh", "-c", "sudo rm -rf /var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/* 2>/dev/null || true")
-		cmd.CombinedOutput()
+		stepResult = shellCmdHelper("sudo rm -rf /var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/* 2>/dev/null || true")
+		if stepResult.Error != nil {
+			return stepResult
+		}
 
 		LogMessage(Info, "Longhorn cleanup completed")
 		return StepResult{Error: nil}
 	},
+}
+
+func shellCmdHelper(shellCmd string) StepResult {
+	cmd := exec.Command("sh", "-c", shellCmd)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		LogMessage(Error, fmt.Sprintf("Error running command %s: %v, output: %s", shellCmd, err, string(output)))
+		return StepResult{Error: fmt.Errorf("error running %s: %w", shellCmd, err)}
+	} else {
+		LogMessage(Debug, fmt.Sprint("Success running %s", shellCmd))
+	}
+	return StepResult{Error: nil}
 }
 
 var UninstallRKE2Step = Step{

@@ -89,12 +89,20 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | OIDC_URL | The URL of the OIDC provider | "" |
 | SERVER_IP | The IP address of the RKE2 server (required for additional nodes) | |
 | JOIN_TOKEN | The token used to join additional nodes to the cluster | |
-| SKIP_DISK_CHECK | Set to true to skip disk-related operations | false |
-| LONGHORN_DISKS | Comma-separated list of disk paths to use for Longhorn | "" |
+| NO_DISKS_FOR_CLUSTER | Set to true to skip disk-related operations | false |
+| SKIP_RANCHER_PARTITION_CHECK | Set to true to skip /var/lib/rancher partition size check | false |
+| CLUSTER_PREMOUNTED_DISKS | Comma-separated list of disk paths to use for Longhorn | "" |
 | CLUSTERFORGE_RELEASE | The version of Cluster-Forge to install. Pass the URL for a specific release, or 'none' to not install ClusterForge. | "https://github.com/silogen/cluster-forge/releases/download/deploy/deploy-release.tar.gz" |
 | DISABLED_STEPS | Comma-separated list of steps to skip. Example "SetupLonghornStep,SetupMetallbStep" | "" |
 | ENABLED_STEPS | Comma-separated list of steps to perform. If empty, perform all. Example "SetupLonghornStep,SetupMetallbStep" | "" |
-| SELECTED_DISKS | Comma-separated list of disk devices. Example "/dev/sdb,/dev/sdc". Also skips NVME drive checks. | "" |
+| CLUSTER_DISKS | Comma-separated list of disk devices. Example "/dev/sdb,/dev/sdc". Also skips NVME drive checks. | "" |
+| CONTROL_PLANE |  Set to true if this node should be a control plane node |false, only applies when FIRST_NODE is false |
+| DOMAIN | The domain name for the cluster (e.g., "cluster.example.com") (required). | "" |
+| USE_CERT_MANAGER | Use cert-manager with Let's Encrypt for automatic TLS certificates | false |
+| CERT_OPTION | Certificate option when USE_CERT_MANAGER is false. Choose 'existing' or 'generate' | "" |
+| TLS_CERT | Path to TLS certificate file for ingress (required if CERT_OPTION is 'existing') | "" |
+| TLS_KEY | Path to TLS private key file for ingress (required if CERT_OPTION is 'existing') | "" |
+
 
 ### Using a Configuration File
 
@@ -103,7 +111,7 @@ Create a YAML configuration file (e.g., `bloom.yaml`):
 ```yaml
 FIRST_NODE: true
 GPU_NODE: true
-SKIP_DISK_CHECK: true
+NO_DISKS_FOR_CLUSTER: true
 ```
 
 Then run with:

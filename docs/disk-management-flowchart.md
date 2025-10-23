@@ -17,9 +17,9 @@ The following environment variables control the disk management flow:
 
 | Variable | Default | Effect on Flow |
 |----------|---------|----------------|
-| **SKIP_DISK_CHECK** | `false` | When `true`, bypasses entire disk setup process |
-| **SELECTED_DISKS** | `""` | Pre-configures specific disks (e.g., `/dev/sdb,/dev/sdc`), skipping discovery UI |
-| **LONGHORN_DISKS** | `""` | Directly specifies Longhorn disk paths (e.g., `/mnt/disk0,/mnt/disk1`), skipping mount operations |
+| **NO_DISKS_FOR_CLUSTER** | `false` | When `true`, bypasses entire disk setup process |
+| **CLUSTER_DISKS** | `""` | Pre-configures specific disks (e.g., `/dev/sdb,/dev/sdc`), skipping discovery UI |
+| **CLUSTER_PREMOUNTED_DISKS** | `""` | Directly specifies Longhorn disk paths (e.g., `/mnt/disk0,/mnt/disk1`), skipping mount operations |
 
 ## Process Flow
 
@@ -27,9 +27,9 @@ The following environment variables control the disk management flow:
 flowchart TD
     %% Environment Variables
     subgraph Variables[" Environment Variables (Configuration) "]
-        V1[SKIP_DISK_CHECK: Skip all disk operations<br/>Default: false]
-        V2[SELECTED_DISKS: Pre-configured disk list<br/>e.g., '/dev/sdb,/dev/sdc'<br/>Default: empty]
-        V3[LONGHORN_DISKS: Override Longhorn config<br/>e.g., '/mnt/disk0,/mnt/disk1'<br/>Default: empty]
+        V1[NO_DISKS_FOR_CLUSTER: Skip all disk operations<br/>Default: false]
+        V2[CLUSTER_DISKS: Pre-configured disk list<br/>e.g., '/dev/sdb,/dev/sdc'<br/>Default: empty]
+        V3[CLUSTER_PREMOUNTED_DISKS: Override Longhorn config<br/>e.g., '/mnt/disk0,/mnt/disk1'<br/>Default: empty]
     end
     
     %% Legend
@@ -41,12 +41,12 @@ flowchart TD
     end
     
     Start([Start Disk Setup]) --> Variables
-    Variables --> CheckSkip{SKIP_DISK_CHECK?}
+    Variables --> CheckSkip{NO_DISKS_FOR_CLUSTER?}
     
     CheckSkip -->|Yes = true| End([End - Skipped])
-    CheckSkip -->|No = false| CheckSelected{SELECTED_DISKS<br/>configured?}
+    CheckSkip -->|No = false| CheckSelected{CLUSTER_DISKS<br/>configured?}
     
-    CheckSelected -->|Yes - has value| UseSelected[Use configured disks<br/>from SELECTED_DISKS variable]
+    CheckSelected -->|Yes - has value| UseSelected[Use configured disks<br/>from CLUSTER_DISKS variable]
     CheckSelected -->|No - empty| GetUnmounted[GetUnmountedPhysicalDisks]
     
     GetUnmounted --> ListDisks[lsblk -dn -o NAME,TYPE]
@@ -76,8 +76,8 @@ flowchart TD
     ShowSelection --> StoreSel[Store selected_disks<br/>in viper config]
     StoreSel --> MountDrives[MountDrives function]
     
-    MountDrives --> CheckLonghorn{LONGHORN_DISKS<br/>configured?}
-    CheckLonghorn -->|Yes - has value| SkipMount[Skip mounting<br/>Use LONGHORN_DISKS paths]
+    MountDrives --> CheckLonghorn{CLUSTER_PREMOUNTED_DISKS<br/>configured?}
+    CheckLonghorn -->|Yes - has value| SkipMount[Skip mounting<br/>Use CLUSTER_PREMOUNTED_DISKS paths]
     CheckLonghorn -->|No - empty| ProcessEachDisk[Process each disk]
     
     ProcessEachDisk --> CheckFormat{Disk has ext4?}
@@ -105,8 +105,8 @@ flowchart TD
     RemountAll --> GenerateLonghorn[GenerateLonghornDiskString]
     SkipMount --> GenerateLonghorn
     
-    GenerateLonghorn --> CheckLonghornConfig{LONGHORN_DISKS<br/>configured?}
-    CheckLonghornConfig -->|Yes - has value| ParseConfig[Parse LONGHORN_DISKS<br/>comma-separated list]
+    GenerateLonghorn --> CheckLonghornConfig{CLUSTER_PREMOUNTED_DISKS<br/>configured?}
+    CheckLonghornConfig -->|Yes - has value| ParseConfig[Parse CLUSTER_PREMOUNTED_DISKS<br/>comma-separated list]
     CheckLonghornConfig -->|No - empty| FindMounted[Find mounted disks<br/>at /mnt/diskX]
     
     ParseConfig --> CreateLabelString[Join with 'xxx'<br/>delimiter]
@@ -131,8 +131,8 @@ flowchart TD
 ## Detailed Process Description
 
 ### 1. Initial Checks
-- **SKIP_DISK_CHECK**: If set to true, the entire disk setup process is skipped
-- **SELECTED_DISKS**: If pre-configured with a comma-separated list of disks (e.g., `/dev/sdb,/dev/sdc`), these disks are used directly without discovery
+- **NO_DISKS_FOR_CLUSTER**: If set to true, the entire disk setup process is skipped
+- **CLUSTER_DISKS**: If pre-configured with a comma-separated list of disks (e.g., `/dev/sdb,/dev/sdc`), these disks are used directly without discovery
 
 ### 2. Disk Discovery (`GetUnmountedPhysicalDisks`)
 The system discovers available disks by:
@@ -170,7 +170,7 @@ Makes mounts permanent by:
 Prepares disk information for Longhorn storage:
 
 #### Configuration Options:
-- **LONGHORN_DISKS**: If set, uses this comma-separated list directly
+- **CLUSTER_PREMOUNTED_DISKS**: If set, uses this comma-separated list directly
 - **Automatic Detection**: Otherwise, finds all mounted disks at `/mnt/diskX`
 
 #### Label Generation:
@@ -189,9 +189,9 @@ These labels are applied to the node when RKE2 starts, allowing Longhorn to auto
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `SKIP_DISK_CHECK` | Skip all disk operations | false |
-| `SELECTED_DISKS` | Pre-configured comma-separated disk list | "" |
-| `LONGHORN_DISKS` | Override Longhorn disk configuration | "" |
+| `NO_DISKS_FOR_CLUSTER` | Skip all disk operations | false |
+| `CLUSTER_DISKS` | Pre-configured comma-separated disk list | "" |
+| `CLUSTER_PREMOUNTED_DISKS` | Override Longhorn disk configuration | "" |
 
 ## Virtual Disk Detection
 
