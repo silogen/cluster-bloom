@@ -69,7 +69,7 @@ func TestRunCommand(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			output, err := command.Run(tt.command, tt.args...)
+			output, err := command.Run(false, tt.command, tt.args...)
 			if tt.expectError && err == nil {
 				t.Errorf("Expected error but got none")
 			} else if !tt.expectError && err != nil {
@@ -85,7 +85,7 @@ func TestRunCommand(t *testing.T) {
 
 func TestRunCommandWithDifferentArgs(t *testing.T) {
 	// Test with different argument combinations
-	output, err := command.Run("echo", "test")
+	output, err := command.Run(false, "echo", "test")
 	if err != nil {
 		t.Errorf("Expected no error, got: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestRunCommandWithDifferentArgs(t *testing.T) {
 		t.Errorf("Expected 'test\\n', got '%s'", output)
 	}
 
-	output, err = command.Run("echo", "-n", "no-newline")
+	output, err = command.Run(false, "echo", "-n", "no-newline")
 	if err != nil {
 		t.Errorf("Expected no error, got: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestRunCommandWithDifferentArgs(t *testing.T) {
 	}
 
 	// Test command that should fail
-	_, err = command.Run("false")
+	_, err = command.Run(false, "false")
 	if err == nil {
 		t.Errorf("Expected error from 'false' command")
 	}
@@ -110,7 +110,7 @@ func TestRunCommandWithDifferentArgs(t *testing.T) {
 
 func TestRunCommandErrorHandling(t *testing.T) {
 	// Test command with stderr output
-	_, err := command.Run("sh", "-c", "echo 'error message' >&2; exit 1")
+	_, err := command.Run(false, "sh", "-c", "echo 'error message' >&2; exit 1")
 	if err == nil {
 		t.Errorf("Expected error from failing command")
 	}
@@ -137,11 +137,11 @@ func TestROCMConfiguration(t *testing.T) {
 
 func TestCommandOutputParsing(t *testing.T) {
 	// Test parsing command output
-	output, err := command.Run("echo", "line1\nline2\nline3")
+	output, err := command.Run(false, "echo", "line1\nline2\nline3")
 	if err != nil {
 		t.Errorf("Expected no error, got: %v", err)
 	}
-	
+
 	lines := strings.Split(strings.TrimSpace(output), "\n")
 	if len(lines) != 3 {
 		t.Errorf("Expected 3 lines, got %d", len(lines))
