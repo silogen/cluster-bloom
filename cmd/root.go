@@ -89,6 +89,7 @@ var cfgFile string
 var oneShot bool
 var reconfigure bool
 var dryRun bool
+var dryRunMocks string
 
 func init() {
 	// Ensure arguments are initialized before help is displayed
@@ -103,6 +104,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&oneShot, "one-shot", false, "skip confirmation when using --config (useful for automation)")
 	rootCmd.PersistentFlags().BoolVar(&reconfigure, "reconfigure", false, "archive existing bloom.log and start fresh configuration")
 	rootCmd.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "run all steps without executing commands or modifying filesystem")
+	rootCmd.PersistentFlags().StringVar(&dryRunMocks, "dry-run-mocks", "", "YAML file with mock return values for dry-run mode")
 	rootCmd.AddCommand(helpCmd)
 	rootCmd.AddCommand(cliCmd)
 }
@@ -113,6 +115,14 @@ func initConfig() {
 
 	// Initialize dry-run mode
 	dryrun.SetDryRun(dryRun)
+
+	// Load mock values if dry-run-mocks file is provided
+	if dryRunMocks != "" {
+		if err := dryrun.LoadMockValues(dryRunMocks); err != nil {
+			log.Fatalf("Failed to load dry-run mock values from %s: %v", dryRunMocks, err)
+		}
+		log.Infof("Loaded dry-run mock values from: %s", dryRunMocks)
+	}
 
 	viper.SetConfigFile(cfgFile)
 	viper.WatchConfig()

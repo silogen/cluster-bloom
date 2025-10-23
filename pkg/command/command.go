@@ -34,6 +34,17 @@ import (
 func Run(name string, runInDryRun bool, command string, args ...string) (string, error) {
 	if dryrun.IsDryRun() && !runInDryRun {
 		log.Infof("[DRY-RUN] %s: %s %s", name, command, strings.Join(args, " "))
+
+		// Check for mock return value
+		if output, err, found := dryrun.GetMockValue(name); found {
+			if err != nil {
+				log.Infof("[DRY-RUN] %s: returning mock error: %v", name, err)
+			} else {
+				log.Debugf("[DRY-RUN] %s: returning mock output (%d bytes)", name, len(output))
+			}
+			return output, err
+		}
+
 		return "", nil
 	}
 
@@ -79,6 +90,17 @@ func Run(name string, runInDryRun bool, command string, args ...string) (string,
 func CombinedOutput(name string, runInDryRun bool, command string, args ...string) ([]byte, error) {
 	if dryrun.IsDryRun() && !runInDryRun {
 		log.Infof("[DRY-RUN] %s: %s %s", name, command, strings.Join(args, " "))
+
+		// Check for mock return value
+		if output, err, found := dryrun.GetMockValue(name); found {
+			if err != nil {
+				log.Infof("[DRY-RUN] %s: returning mock error: %v", name, err)
+			} else {
+				log.Debugf("[DRY-RUN] %s: returning mock output (%d bytes)", name, len(output))
+			}
+			return []byte(output), err
+		}
+
 		return []byte{}, nil
 	}
 
@@ -92,6 +114,17 @@ func CombinedOutput(name string, runInDryRun bool, command string, args ...strin
 func Output(name string, runInDryRun bool, command string, args ...string) ([]byte, error) {
 	if dryrun.IsDryRun() && !runInDryRun {
 		log.Infof("[DRY-RUN] %s: %s %s", name, command, strings.Join(args, " "))
+
+		// Check for mock return value
+		if output, err, found := dryrun.GetMockValue(name); found {
+			if err != nil {
+				log.Infof("[DRY-RUN] %s: returning mock error: %v", name, err)
+			} else {
+				log.Debugf("[DRY-RUN] %s: returning mock output (%d bytes)", name, len(output))
+			}
+			return []byte(output), err
+		}
+
 		return []byte{}, nil
 	}
 
@@ -106,6 +139,15 @@ func Output(name string, runInDryRun bool, command string, args ...string) ([]by
 func SimpleRun(name string, runInDryRun bool, command string, args ...string) error {
 	if dryrun.IsDryRun() && !runInDryRun {
 		log.Infof("[DRY-RUN] %s: %s %s", name, command, strings.Join(args, " "))
+
+		// Check for mock return value
+		if _, err, found := dryrun.GetMockValue(name); found {
+			if err != nil {
+				log.Infof("[DRY-RUN] %s: returning mock error: %v", name, err)
+			}
+			return err
+		}
+
 		return nil
 	}
 
