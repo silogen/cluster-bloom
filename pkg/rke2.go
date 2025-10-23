@@ -50,7 +50,7 @@ kube-apiserver-arg:
 `
 
 func FetchAndSaveOIDCCertificate(url string) error {
-	output, err := command.Output("sh", "-c", fmt.Sprintf("openssl s_client -showcerts -connect %s:443 </dev/null | sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p'", url))
+	output, err := command.Output(true, "sh", "-c", fmt.Sprintf("openssl s_client -showcerts -connect %s:443 </dev/null | sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p'", url))
 	if err != nil{
 		return fmt.Errorf("failed to fetch certificate from %s: %v", url, err)
 	}
@@ -72,7 +72,7 @@ func PrepareRKE2() error {
 	}
 
 	for _, cmd := range commands {
-		_, err := command.Run(cmd.command, cmd.args...)
+		_, err := command.Run(false, cmd.command, cmd.args...)
 		if err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to execute command '%s %v': %v", cmd.command, cmd.args, err))
 			return fmt.Errorf("failed to execute command '%s %v': %w", cmd.command, cmd.args, err)
@@ -121,7 +121,7 @@ func SetupFirstRKE2() error {
 	}
 
 	for _, cmd := range commands {
-		_, err := command.Run(cmd.command, cmd.args...)
+		_, err := command.Run(false, cmd.command, cmd.args...)
 		if err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to execute command '%s %v': %v", cmd.command, cmd.args, err))
 			return fmt.Errorf("failed to execute command '%s %v': %w", cmd.command, cmd.args, err)
@@ -138,7 +138,7 @@ func SetupFirstRKE2() error {
 }
 
 func startServiceWithTimeout(serviceName string, timeout time.Duration) error {
-	_, err := command.Run("systemctl", "start", serviceName+".service")
+	_, err := command.Run(false, "systemctl", "start", serviceName+".service")
 	LogMessage(Info, fmt.Sprintf("Starting service %s", serviceName))
 	if err != nil {
 		return fmt.Errorf("failed to start service %s: %w", serviceName, err)
@@ -147,7 +147,7 @@ func startServiceWithTimeout(serviceName string, timeout time.Duration) error {
 	LogMessage(Info, fmt.Sprintf("Waiting for service %s to become active (timeout: %v)", serviceName, timeout))
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		output, err := command.CombinedOutput("systemctl", "is-active", serviceName+".service")
+		output, err := command.CombinedOutput(true, "systemctl", "is-active", serviceName+".service")
 		status := string(output)
 		if err == nil && status == "active\n" {
 			LogMessage(Info, fmt.Sprintf("Service %s is now active", serviceName))
@@ -185,7 +185,7 @@ func SetupRKE2Additional() error {
 		{"systemctl", []string{"enable", "rke2-agent.service"}},
 	}
 	for _, cmd := range commands {
-		_, err := command.Run(cmd.command, cmd.args...)
+		_, err := command.Run(false, cmd.command, cmd.args...)
 		if err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to execute command '%s %v': %v", cmd.command, cmd.args, err))
 			return fmt.Errorf("failed to execute command '%s %v': %w", cmd.command, cmd.args, err)
@@ -227,7 +227,7 @@ func SetupRKE2ControlPlane() error {
 		{"systemctl", []string{"enable", "rke2-server.service"}},
 	}
 	for _, cmd := range commands {
-		_, err := command.Run(cmd.command, cmd.args...)
+		_, err := command.Run(false, cmd.command, cmd.args...)
 		if err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to execute command '%s %v': %v", cmd.command, cmd.args, err))
 			return fmt.Errorf("failed to execute command '%s %v': %w", cmd.command, cmd.args, err)

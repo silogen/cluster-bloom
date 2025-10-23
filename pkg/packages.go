@@ -37,7 +37,7 @@ func CheckPackageInstallConnections() error {
 	if cmd != nil {
 		cmd.Env = os.Environ()
 	}
-	output, err := command.CombinedOutput("apt-get", "update")
+	output, err := command.CombinedOutput(false, "apt-get", "update")
 	if err != nil {
 		return fmt.Errorf("Failed to verify apt-get connection: %w\nOutput: %s", err, output)
 	}
@@ -46,12 +46,12 @@ func CheckPackageInstallConnections() error {
 	if cmd != nil {
 		cmd.Env = os.Environ()
 	}
-	output, err = command.CombinedOutput("snap", "info", "core")
+	output, err = command.CombinedOutput(false, "snap", "info", "core")
 	if err != nil {
 		return fmt.Errorf("Failed to verify snap connection: %w\nOutput: %s", err, output)
 	}
 
-	osRelease, err := command.Output("sh", "-c", "grep VERSION_CODENAME /etc/os-release | cut -d= -f2")
+	osRelease, err := command.Output(true, "sh", "-c", "grep VERSION_CODENAME /etc/os-release | cut -d= -f2")
 	if err != nil {
 		return fmt.Errorf("Error getting Ubuntu codename: %w", err)
 	}
@@ -67,7 +67,7 @@ func CheckPackageInstallConnections() error {
 		if cmd != nil {
 			cmd.Env = os.Environ()
 		}
-		output, err = command.CombinedOutput("wget", "--spider", url)
+		output, err = command.CombinedOutput(false, "wget", "--spider", url)
 		if err != nil {
 			return fmt.Errorf("Failed to verify download from repository: %w\nOutput: %s", err, output)
 		}
@@ -106,7 +106,7 @@ func installpackage(pkgName string) error {
 	if cmd != nil {
 		cmd.Env = os.Environ()
 	}
-	output, err := command.CombinedOutput("apt-get", "install", "-y", pkgName)
+	output, err := command.CombinedOutput(false, "apt-get", "install", "-y", pkgName)
 	if err != nil {
 		return fmt.Errorf("failed to install package: %w\nOutput: %s", err, output)
 	}
@@ -125,7 +125,7 @@ func installK8sTools() error {
 
 	for _, cmdArgs := range cmds {
 		args := append([]string{"sudo"}, cmdArgs...)
-		err := command.SimpleRun(args[0], args[1:]...)
+		err := command.SimpleRun(false, args[0], args[1:]...)
 		if err != nil {
 			return fmt.Errorf("failed to execute command %v: %w", cmdArgs, err)
 		}
@@ -194,7 +194,7 @@ func SetupClusterForge() error {
 		LogMessage(Info, "Not installing ClusterForge as CLUSTERFORGE_RELEASE is set to none")
 		return nil
 	}
-	output, err := command.Output("wget", url, "-O", "clusterforge.tar.gz")
+	output, err := command.Output(false, "wget", url, "-O", "clusterforge.tar.gz")
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to download ClusterForge: %v, output: %v", err, output))
 		return err
@@ -202,7 +202,7 @@ func SetupClusterForge() error {
 		LogMessage(Info, "Successfully downloaded ClusterForge")
 	}
 
-	output, err = command.Output("tar", "-xzvf", "clusterforge.tar.gz")
+	output, err = command.Output(false, "tar", "-xzvf", "clusterforge.tar.gz")
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to unzip clusterforge.tar.gz: %v, output %v", err, output))
 		return err
@@ -215,7 +215,7 @@ func SetupClusterForge() error {
 	// Get the original user when running with sudo
 	originalUser := os.Getenv("SUDO_USER")
 
-	output, err = command.Output("sudo", "chown", "-R", fmt.Sprintf("%s:%s", originalUser, originalUser), "cluster-forge")
+	output, err = command.Output(false, "sudo", "chown", "-R", fmt.Sprintf("%s:%s", originalUser, originalUser), "cluster-forge")
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to change ownership of Clusterforge folder: %v, output %v", err, output))
 		return err
@@ -227,9 +227,9 @@ func SetupClusterForge() error {
 
 	var combinedOutput []byte
 	if originalUser != "" {
-		combinedOutput, err = command.CombinedOutput("sudo", "-u", originalUser, "bash", scriptsDir+"/bootstrap.sh", domain)
+		combinedOutput, err = command.CombinedOutput(false, "sudo", "-u", originalUser, "bash", scriptsDir+"/bootstrap.sh", domain)
 	} else {
-		combinedOutput, err = command.CombinedOutput("bash", scriptsDir+"/bootstrap.sh", domain)
+		combinedOutput, err = command.CombinedOutput(false, "bash", scriptsDir+"/bootstrap.sh", domain)
 	}
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to install ClusterForge: %v", err))

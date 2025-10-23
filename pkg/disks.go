@@ -35,7 +35,7 @@ func UnmountPriorLonghornDisks() error {
 	// Create backup first
 	backupTimestamp := time.Now().Format("060102-15:04")
 	backupFile := fmt.Sprintf("/etc/fstab.bak-%s", backupTimestamp)
-	if err := command.SimpleRun("sudo", "cp", "/etc/fstab", backupFile); err != nil {
+	if err := command.SimpleRun(false, "sudo", "cp", "/etc/fstab", backupFile); err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to backup fstab: %v", err))
 		return fmt.Errorf("failed to backup fstab: %w", err)
 	}
@@ -74,7 +74,7 @@ func UnmountPriorLonghornDisks() error {
 				if mountPoint != "" {
 					mountPoints[mountPoint] = mountPoint
 					LogMessage(Info, fmt.Sprintf("Force unmounting %s", mountPoint))
-					if err := command.SimpleRun("sudo", "umount", "-lf", mountPoint); err != nil {
+					if err := command.SimpleRun(false, "sudo", "umount", "-lf", mountPoint); err != nil {
 						LogMessage(Warn, fmt.Sprintf("Failed to force unmount %s: %v", mountPoint, err))
 					}
 					LogMessage(Info, fmt.Sprintf("Successfully unmounted %s", mountPoint))
@@ -105,7 +105,7 @@ func UnmountPriorLonghornDisks() error {
 	// Write cleaned fstab
 	LogMessage(Info, "Writing cleaned /etc/fstab")
 
-	if err := command.SimpleRun("sudo", "mv", tempFile, "/etc/fstab"); err != nil{
+	if err := command.SimpleRun(false, "sudo", "mv", tempFile, "/etc/fstab"); err != nil{
 		return fmt.Errorf("failed to update fstab: %w", err)
 	}
 
@@ -122,7 +122,7 @@ func CleanDisks() error {
 		LogMessage(Warn, fmt.Sprintf("Failed to unmount prior Longhorn disks: %v", err))
 	}
 
-	output, err := command.Output("mount")
+	output, err := command.Output(true, "mount")
 	if err != nil{
 		return fmt.Errorf("mount command failed: %w", err)
 	}
@@ -131,7 +131,7 @@ func CleanDisks() error {
 	for scanner.Scan() {
 		fields := strings.Fields(scanner.Text())
 		if len(fields) > 2 && strings.Contains(fields[2], "kubernetes.io/csi/driver.longhorn.io") {
-			_, err := command.Run("sudo", "umount", "-lf", fields[2])
+			_, err := command.Run(false, "sudo", "umount", "-lf", fields[2])
 			if err != nil {
 				LogMessage(Warn, fmt.Sprintf("Failed to unmount %s", fields[2]))
 			} else {
@@ -140,7 +140,7 @@ func CleanDisks() error {
 		}
 	}
 
-	output, err = command.Output("lsblk", "-o", "NAME,MOUNTPOINT")
+	output, err = command.Output(true, "lsblk", "-o", "NAME,MOUNTPOINT")
 	if err != nil {
 		return fmt.Errorf("lsblk command failed: %w", err)
 	}
@@ -150,7 +150,7 @@ func CleanDisks() error {
 		fields := strings.Fields(scanner.Text())
 		if len(fields) > 1 && strings.Contains(fields[1], "kubernetes.io/csi/driver.longhorn.io") {
 			dev := "/dev/" + fields[0]
-			_, err := command.Run("sudo", "wipefs", "-a", dev)
+			_, err := command.Run(false, "sudo", "wipefs", "-a", dev)
 			if err != nil {
 				LogMessage(Warn, fmt.Sprintf("Failed to wipe %s", dev))
 			} else {
@@ -159,12 +159,12 @@ func CleanDisks() error {
 		}
 	}
 
-	_, err = command.Run("sudo", "rm", "-rf", "/var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/*")
+	_, err = command.Run(false, "sudo", "rm", "-rf", "/var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/*")
 	if err != nil {
 		LogMessage(Warn, fmt.Sprintf("Failed to remove longhorn plugins directory: %v", err))
 	}
 
-	output, err = command.Output("lsblk", "-nd", "-o", "NAME,TYPE,MOUNTPOINT")
+	output, err = command.Output(true, "lsblk", "-nd", "-o", "NAME,TYPE,MOUNTPOINT")
 	if err != nil{
 		return fmt.Errorf("lsblk command failed: %w", err)
 	}
@@ -271,7 +271,7 @@ func MountDrives(drives []string) (map[string]string, error) {
 	mountedMap := make(map[string]string)
 	usedMountPoints := make(map[string]bool)
 	i := 0
-	output, err := command.Output("sh", "-c", "mount | awk '/\\/mnt\\/disk[0-9]+/ {print $3}'")
+	output, err := command.Output(true, "sh", "-c", "mount | awk '/\\/mnt\\/disk[0-9]+/ {print $3}'")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list existing mount points: %w", err)
 	}
@@ -285,30 +285,30 @@ func MountDrives(drives []string) (map[string]string, error) {
 	}
 
 	for _, drive := range drives {
-		output, err := command.Output("lsblk", "-f", drive)
+		output, err := command.Output(true, "lsblk", "-f", drive)
 		if err != nil {
 			return mountedMap, fmt.Errorf("failed to check filesystem type for %s: %w", drive, err)
 		}
 		if strings.Contains(string(output), "ext4") {
 			LogMessage(Info, fmt.Sprintf("Disk %s is already formatted as ext4. Skipping format.", drive))
 		} else {
-			output, err = command.Output("lsblk", "-no", "PARTTYPE", drive)
+			output, err = command.Output(true, "lsblk", "-no", "PARTTYPE", drive)
 			if err != nil {
 				return mountedMap, fmt.Errorf("failed to check partition type for %s: %w", drive, err)
 			}
 			if strings.TrimSpace(string(output)) != "" {
 				LogMessage(Info, fmt.Sprintf("Disk %s has existing partitions. Removing partitions...", drive))
-				if err := command.SimpleRun("sudo", "wipefs", "-a", drive); err != nil {
+				if err := command.SimpleRun(false, "sudo", "wipefs", "-a", drive); err != nil {
 					return mountedMap, fmt.Errorf("failed to wipe partitions on %s: %w", drive, err)
 				}
 			}
 
 			LogMessage(Info, fmt.Sprintf("Disk %s is not partitioned. Formatting with ext4...", drive))
-			if err := command.SimpleRun("mkfs.ext4", "-F", "-F", drive); err != nil {
+			if err := command.SimpleRun(false, "mkfs.ext4", "-F", "-F", drive); err != nil {
 				return mountedMap, fmt.Errorf("failed to format %s: %w", drive, err)
 			}
 		}
-		uuidOutput, err := command.Output("blkid", "-s", "UUID", "-o", "value", drive)
+		uuidOutput, err := command.Output(true, "blkid", "-s", "UUID", "-o", "value", drive)
 		uuid := ""
 		if err == nil {
 			uuid = strings.TrimSpace(string(uuidOutput))
@@ -327,7 +327,7 @@ func MountDrives(drives []string) (map[string]string, error) {
 			return mountedMap, fmt.Errorf("failed to create mount point %s: %w", mountPoint, err)
 		}
 
-		if err := command.SimpleRun("mount", drive, mountPoint); err != nil {
+		if err := command.SimpleRun(false, "mount", drive, mountPoint); err != nil {
 			return mountedMap, fmt.Errorf("failed to mount %s at %s: %w", drive, mountPoint, err)
 		}
 
@@ -356,12 +356,12 @@ func PersistMountedDisks(mountedMap map[string]string) error {
 
 	fstabFile := "/etc/fstab"
 	backupFile := "/etc/fstab.bak"
-	if err := command.SimpleRun("sudo", "cp", fstabFile, backupFile); err != nil {
+	if err := command.SimpleRun(false, "sudo", "cp", fstabFile, backupFile); err != nil {
 		return fmt.Errorf("failed to backup fstab file: %w", err)
 	}
 
 	for mountPoint, device := range mountedMap {
-		uuidOutput, err := command.Output("blkid", "-s", "UUID", "-o", "value", device)
+		uuidOutput, err := command.Output(true, "blkid", "-s", "UUID", "-o", "value", device)
 		if err != nil {
 			LogMessage(Info, fmt.Sprintf("Could not retrieve UUID for %s. Skipping...", device))
 			continue
@@ -391,7 +391,7 @@ func PersistMountedDisks(mountedMap map[string]string) error {
 		LogMessage(Debug, fmt.Sprintf("Added %s to /etc/fstab.", mountPoint))
 	}
 
-	if err := command.SimpleRun("sudo", "mount", "-a"); err != nil {
+	if err := command.SimpleRun(false, "sudo", "mount", "-a"); err != nil {
 		return fmt.Errorf("failed to remount filesystems: %w", err)
 	}
 

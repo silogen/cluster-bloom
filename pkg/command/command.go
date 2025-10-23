@@ -29,8 +29,9 @@ import (
 
 // Run executes a command with real-time stderr logging
 // Returns stdout as string and any error
-func Run(command string, args ...string) (string, error) {
-	if dryrun.IsDryRun() {
+// runInDryRun: if true, command executes even in dry-run mode (for read-only operations)
+func Run(runInDryRun bool, command string, args ...string) (string, error) {
+	if dryrun.IsDryRun() && !runInDryRun {
 		log.Infof("[DRY-RUN] EXEC: %s %s", command, strings.Join(args, " "))
 		return "", nil
 	}
@@ -72,8 +73,9 @@ func Run(command string, args ...string) (string, error) {
 }
 
 // CombinedOutput executes a command and returns combined stdout/stderr
-func CombinedOutput(command string, args ...string) ([]byte, error) {
-	if dryrun.IsDryRun() {
+// runInDryRun: if true, command executes even in dry-run mode (for read-only operations)
+func CombinedOutput(runInDryRun bool, command string, args ...string) ([]byte, error) {
+	if dryrun.IsDryRun() && !runInDryRun {
 		log.Infof("[DRY-RUN] EXEC: %s %s", command, strings.Join(args, " "))
 		return []byte{}, nil
 	}
@@ -83,8 +85,9 @@ func CombinedOutput(command string, args ...string) ([]byte, error) {
 }
 
 // Output executes a command and returns stdout only
-func Output(command string, args ...string) ([]byte, error) {
-	if dryrun.IsDryRun() {
+// runInDryRun: if true, command executes even in dry-run mode (for read-only operations)
+func Output(runInDryRun bool, command string, args ...string) ([]byte, error) {
+	if dryrun.IsDryRun() && !runInDryRun {
 		log.Infof("[DRY-RUN] EXEC: %s %s", command, strings.Join(args, " "))
 		return []byte{}, nil
 	}
@@ -95,8 +98,9 @@ func Output(command string, args ...string) ([]byte, error) {
 
 // SimpleRun executes a command and waits for it to complete
 // Returns only error (no output capture)
-func SimpleRun(command string, args ...string) error {
-	if dryrun.IsDryRun() {
+// runInDryRun: if true, command executes even in dry-run mode (for read-only operations)
+func SimpleRun(runInDryRun bool, command string, args ...string) error {
+	if dryrun.IsDryRun() && !runInDryRun {
 		log.Infof("[DRY-RUN] EXEC: %s %s", command, strings.Join(args, " "))
 		return nil
 	}

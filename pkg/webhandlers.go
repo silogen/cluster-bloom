@@ -142,7 +142,7 @@ func (h *WebHandlerService) AddRootDeviceToConfig() {
 
 func getRootDiskCmd() (string, error) {
 	// Get the source device for root mount
-	output, err := command.Output("findmnt", "-no", "SOURCE", "/")
+	output, err := command.Output(true, "findmnt", "-no", "SOURCE", "/")
 	if err != nil {
 		return "", err
 	}
@@ -150,7 +150,7 @@ func getRootDiskCmd() (string, error) {
 	device := strings.TrimSpace(string(output))
 
 	// Get the parent disk using lsblk
-	output, err = command.Output("lsblk", "-no", "PKNAME", device)
+	output, err = command.Output(true, "lsblk", "-no", "PKNAME", device)
 	if err != nil {
 		// If no parent, the device itself is the disk
 		return device, nil
