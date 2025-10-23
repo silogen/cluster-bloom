@@ -44,7 +44,7 @@ func UnmountPriorLonghornDisks() error {
 	mountPoints := make(map[string]string)
 
 	// Read /etc/fstab and look for entries tagged with bloomFstabTag
-	fstabContent, err := os.ReadFile("/etc/fstab")
+	fstabContent, err := fsops.ReadFile("/etc/fstab")
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to read /etc/fstab: %v", err))
 		return fmt.Errorf("failed to read /etc/fstab: %w", err)
@@ -279,36 +279,36 @@ func MountDrives(drives []string) (map[string]string, error) {
 	for _, mountPoint := range existingMountPoints {
 		usedMountPoints[mountPoint] = true
 	}
-	fstabContent, err := os.ReadFile("/etc/fstab")
+	fstabContent, err := fsops.ReadFile("/etc/fstab")
 	if err != nil {
 		return nil, fmt.Errorf("failed to read /etc/fstab: %w", err)
 	}
 
 	for _, drive := range drives {
-		output, err := command.Output("MountDrives.LsblkFilesystem", true, "lsblk", "-f", drive)
+		output, err := command.Output("MountDrives.LsblkFilesystem."+drive, true, "lsblk", "-f", drive)
 		if err != nil {
 			return mountedMap, fmt.Errorf("failed to check filesystem type for %s: %w", drive, err)
 		}
 		if strings.Contains(string(output), "ext4") {
 			LogMessage(Info, fmt.Sprintf("Disk %s is already formatted as ext4. Skipping format.", drive))
 		} else {
-			output, err = command.Output("MountDrives.LsblkParttype", true, "lsblk", "-no", "PARTTYPE", drive)
+			output, err = command.Output("MountDrives.LsblkParttype."+drive, true, "lsblk", "-no", "PARTTYPE", drive)
 			if err != nil {
 				return mountedMap, fmt.Errorf("failed to check partition type for %s: %w", drive, err)
 			}
 			if strings.TrimSpace(string(output)) != "" {
 				LogMessage(Info, fmt.Sprintf("Disk %s has existing partitions. Removing partitions...", drive))
-				if err := command.SimpleRun("MountDrives.WipefsPartitions", false, "sudo", "wipefs", "-a", drive); err != nil {
+				if err := command.SimpleRun("MountDrives.WipefsPartitions."+drive, false, "sudo", "wipefs", "-a", drive); err != nil {
 					return mountedMap, fmt.Errorf("failed to wipe partitions on %s: %w", drive, err)
 				}
 			}
 
 			LogMessage(Info, fmt.Sprintf("Disk %s is not partitioned. Formatting with ext4...", drive))
-			if err := command.SimpleRun("MountDrives.MkfsExt4", false, "mkfs.ext4", "-F", "-F", drive); err != nil {
+			if err := command.SimpleRun("MountDrives.MkfsExt4."+drive, false, "mkfs.ext4", "-F", "-F", drive); err != nil {
 				return mountedMap, fmt.Errorf("failed to format %s: %w", drive, err)
 			}
 		}
-		uuidOutput, err := command.Output("MountDrives.BlkidUUID", true, "blkid", "-s", "UUID", "-o", "value", drive)
+		uuidOutput, err := command.Output("MountDrives.BlkidUUID."+drive, true, "blkid", "-s", "UUID", "-o", "value", drive)
 		uuid := ""
 		if err == nil {
 			uuid = strings.TrimSpace(string(uuidOutput))
@@ -327,7 +327,7 @@ func MountDrives(drives []string) (map[string]string, error) {
 			return mountedMap, fmt.Errorf("failed to create mount point %s: %w", mountPoint, err)
 		}
 
-		if err := command.SimpleRun("MountDrives.MountDrive", false, "mount", drive, mountPoint); err != nil {
+		if err := command.SimpleRun("MountDrives.MountDrive."+drive, false, "mount", drive, mountPoint); err != nil {
 			return mountedMap, fmt.Errorf("failed to mount %s at %s: %w", drive, mountPoint, err)
 		}
 
@@ -361,7 +361,7 @@ func PersistMountedDisks(mountedMap map[string]string) error {
 	}
 
 	for mountPoint, device := range mountedMap {
-		uuidOutput, err := command.Output("PersistMountedDisks.BlkidUUID", true, "blkid", "-s", "UUID", "-o", "value", device)
+		uuidOutput, err := command.Output("PersistMountedDisks.BlkidUUID."+device, true, "blkid", "-s", "UUID", "-o", "value", device)
 		if err != nil {
 			LogMessage(Info, fmt.Sprintf("Could not retrieve UUID for %s. Skipping...", device))
 			continue
@@ -371,7 +371,7 @@ func PersistMountedDisks(mountedMap map[string]string) error {
 			LogMessage(Info, fmt.Sprintf("Could not retrieve UUID for %s. Skipping...", device))
 			continue
 		}
-		fstabContent, err := os.ReadFile(fstabFile)
+		fstabContent, err := fsops.ReadFile(fstabFile)
 		if err != nil {
 			return fmt.Errorf("failed to read fstab file: %w", err)
 		}

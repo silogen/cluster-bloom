@@ -1,0 +1,45 @@
+# Mock values for PrepareLonghornDisksStep - Disk with Existing Partitions
+# This file provides mock return values for wiping and mounting a disk with partitions
+
+mocks:
+  # Check existing mounts (none exist)
+  "MountDrives.GetExistingMounts":
+    output: ""
+    error: null
+
+  # Check filesystem type - no filesystem present
+  "MountDrives.LsblkFilesystem./dev/sdd":
+    output: |
+      NAME FSTYPE
+      sdd
+    error: null
+
+  # Check partition type - has existing partition
+  "MountDrives.LsblkParttype./dev/sdd":
+    output: "0fc63daf-8483-4772-8e79-3d69d8477de4"
+    error: null
+
+  # Wipe partitions (wipefs -a /dev/sdd)
+  "MountDrives.WipefsPartitions./dev/sdd":
+    output: ""
+    error: null
+
+  # Get UUID after formatting
+  "MountDrives.BlkidUUID./dev/sdd":
+    output: "c3d4e5f6-a7b8-9012-cdef-123456789012"
+    error: null
+
+  # Backup fstab before modifying
+  "PersistMountedDisks.BackupFstab":
+    output: ""
+    error: null
+
+  # Get UUID when persisting to fstab
+  "PersistMountedDisks.BlkidUUID./dev/sdd-c3d4e5f6-a7b8-9012-cdef-123456789012":
+    output: "c3d4e5f6-a7b8-9012-cdef-123456789012"
+    error: null
+
+  # Mount all filesystems to verify
+  "PersistMountedDisks.MountAll":
+    output: ""
+    error: null

@@ -19,6 +19,7 @@ package fsops
 import (
 	"io/fs"
 	"os"
+	"time"
 
 	"github.com/silogen/cluster-bloom/pkg/dryrun"
 	log "github.com/sirupsen/logrus"
@@ -213,3 +214,60 @@ func MkdirTemp(dir, pattern string) (string, error) {
 	}
 	return os.MkdirTemp(dir, pattern)
 }
+
+// ReadFile reads the file named by filename and returns the contents.
+// If dry-run mode is enabled, it checks for mock values first, then falls back to actual read.
+func ReadFile(name string) ([]byte, error) {
+	if dryrun.IsDryRun() {
+		// Check for mock value first
+		if output, err, found := dryrun.GetMockValue("ReadFile." + name); found {
+			log.Debugf("[DRY-RUN] READ_FILE (mocked): %s (%d bytes)", name, len(output))
+			return []byte(output), err
+		}
+		// If no mock, perform actual read for read-only operations
+		log.Debugf("[DRY-RUN] READ_FILE (actual): %s", name)
+		return os.ReadFile(name)
+	}
+	return os.ReadFile(name)
+}
+
+// Stat returns a FileInfo describing the named file.
+// If dry-run mode is enabled, it checks for mock values first to simulate file existence.
+func Stat(name string) (fs.FileInfo, error) {
+	if dryrun.IsDryRun() {
+		// Check for mock value to determine if file should exist
+		if output, err, found := dryrun.GetMockValue("Stat." + name); found {
+			log.Debugf("[DRY-RUN] STAT (mocked): %s", name)
+			if err != nil {
+				// Mock indicates file doesn't exist or has error
+				return nil, err
+			}
+			// If mock returns "exists", return a simple mock FileInfo
+			if output == "exists" || output == "file" {
+				return &mockFileInfo{name: name, isDir: false}, nil
+			}
+			if output == "dir" {
+				return &mockFileInfo{name: name, isDir: true}, nil
+			}
+			// For other outputs, return error
+			return nil, os.ErrNotExist
+		}
+		// If no mock, perform actual stat
+		log.Debugf("[DRY-RUN] STAT (actual): %s", name)
+		return os.Stat(name)
+	}
+	return os.Stat(name)
+}
+
+// mockFileInfo implements fs.FileInfo for dry-run mocking
+type mockFileInfo struct {
+	name  string
+	isDir bool
+}
+
+func (m *mockFileInfo) Name() string       { return m.name }
+func (m *mockFileInfo) Size() int64        { return 0 }
+func (m *mockFileInfo) Mode() fs.FileMode  { return 0644 }
+func (m *mockFileInfo) ModTime() time.Time { return time.Now() }
+func (m *mockFileInfo) IsDir() bool        { return m.isDir }
+func (m *mockFileInfo) Sys() interface{}   { return nil }

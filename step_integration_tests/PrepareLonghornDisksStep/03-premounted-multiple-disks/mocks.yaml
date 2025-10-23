@@ -1,0 +1,5 @@
+# Mock values for PrepareLonghornDisksStep - Pre-mounted Multiple Disks
+# Since we're using CLUSTER_PREMOUNTED_DISKS, no mounting commands are executed.
+# The step only parses the comma-separated list and creates a disk map.
+
+mocks: {}

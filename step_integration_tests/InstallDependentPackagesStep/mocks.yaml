@@ -1,0 +1,38 @@
+# Mock values for dry-run testing of InstallDependentPackagesStep
+# This file provides mock return values that will fail on chrony installation
+
+mocks:
+  # Successful package installations
+  "InstallPackage.AptInstallopen-iscsi":
+    output: |
+      Reading package lists...
+      Building dependency tree...
+      open-iscsi is already the newest version (2.1.5-1ubuntu2).
+      0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.
+    error: null
+
+  "InstallPackage.AptInstalljq":
+    output: |
+      Reading package lists...
+      Building dependency tree...
+      jq is already the newest version (1.6-2.1ubuntu3).
+      0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.
+    error: null
+
+  "InstallPackage.AptInstallnfs-common":
+    output: |
+      Reading package lists...
+      Building dependency tree...
+      nfs-common is already the newest version (1:2.6.1-1ubuntu1.2).
+      0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.
+    error: null
+
+  # Failed chrony installation
+  "InstallPackage.AptInstallchrony":
+    output: ""
+    error: "failed to install chrony: apt-get exited with error"
+
+  # K8s tools installations (shouldn't be reached due to chrony failure)
+  "InstallK8sTools.SnapInstall":
+    output: "kubectl 1.28.4 from Canonical✓ installed"
+    error: null

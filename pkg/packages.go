@@ -106,7 +106,7 @@ func installpackage(pkgName string) error {
 	if cmd != nil {
 		cmd.Env = os.Environ()
 	}
-	output, err := command.CombinedOutput("InstallPackage.AptInstall", false, "apt-get", "install", "-y", pkgName)
+	output, err := command.CombinedOutput("InstallPackage.AptInstall"+pkgName, false, "apt-get", "install", "-y", pkgName)
 	if err != nil {
 		return fmt.Errorf("failed to install package: %w\nOutput: %s", err, output)
 	}

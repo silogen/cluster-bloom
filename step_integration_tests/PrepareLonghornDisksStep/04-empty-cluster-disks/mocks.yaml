@@ -1,0 +1,4 @@
+# Mock values for PrepareLonghornDisksStep - Empty CLUSTER_DISKS Error
+# No mocks needed - error occurs during configuration validation before any commands
+
+mocks: {}

@@ -1,0 +1,23 @@
+# Test configuration for PrepareLonghornDisksStep - Empty CLUSTER_DISKS Error
+# This config will trigger an error by providing empty CLUSTER_DISKS
+
+# Enable ValidateArgsStep to catch the empty CLUSTER_DISKS error
+ENABLED_STEPS: "ValidateArgsStep,PrepareLonghornDisksStep"
+
+# Empty CLUSTER_DISKS - should trigger error
+NO_DISKS_FOR_CLUSTER: false
+CLUSTER_DISKS: ""
+
+# Basic required configuration
+FIRST_NODE: true
+GPU_NODE: false
+CONTROL_PLANE: true
+
+# Domain configuration (required but not used in this step)
+DOMAIN: "test.local"
+USE_CERT_MANAGER: false
+CERT_OPTION: "generate"
+
+# Cluster configuration
+CLUSTER_NAME: "test-cluster"
+JOIN_TOKEN: "test-token-12345"

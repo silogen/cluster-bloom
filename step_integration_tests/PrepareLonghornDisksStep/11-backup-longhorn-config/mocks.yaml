@@ -1,0 +1,13 @@
+# Mock values for PrepareLonghornDisksStep - Backup Existing Longhorn Config
+# This file provides mock return values for detecting and backing up longhorn-disk.cfg
+
+mocks:
+  # Mock that longhorn-disk.cfg exists at /mnt/storage1
+  "Stat./mnt/storage1/longhorn-disk.cfg":
+    output: "file"
+    error: null
+
+  # Mock that replicas directory does not exist (so we only test config backup)
+  "Stat./mnt/storage1/replicas":
+    output: ""
+    error: "stat /mnt/storage1/replicas: no such file or directory"

@@ -1,0 +1,19 @@
+# Mock values for dry-run testing of ValidateSystemRequirementsStep
+# This file provides mock return values to make the validation step pass
+
+mocks:
+  # System validation checks
+  "IsModuleLoaded.Lsmod":
+    output: |
+      Module                  Size  Used by
+      overlay               151552  0
+      br_netfilter           28672  0
+      amdgpu              12345678  0
+    error: null
+
+  "IsModuleAvailable.Modinfo":
+    output: |
+      filename:       /lib/modules/5.15.0-91-generic/kernel/fs/overlayfs/overlay.ko
+      license:        GPL
+      description:    Overlay filesystem
+    error: null

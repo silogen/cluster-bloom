@@ -1,0 +1,21 @@
+# Test configuration for PrepareLonghornDisksStep - Pre-mounted Single Disk
+# This config will only run PrepareLonghornDisksStep with a single pre-mounted disk
+
+# Enable only the PrepareLonghornDisksStep
+ENABLED_STEPS: "PrepareLonghornDisksStep"
+
+# Pre-mounted disk configuration - single disk
+NO_DISKS_FOR_CLUSTER: false
+CLUSTER_PREMOUNTED_DISKS: "/mnt/storage1"
+
+# Basic required configuration
+FIRST_NODE: true
+GPU_NODE: false
+CONTROL_PLANE: true
+
+# Domain configuration (required but not used in this step)
+DOMAIN: "test.local"
+USE_CERT_MANAGER: false
+
+# Cluster configuration
+CLUSTER_NAME: "test-cluster"

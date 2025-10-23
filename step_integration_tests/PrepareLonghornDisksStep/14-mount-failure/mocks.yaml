@@ -1,0 +1,37 @@
+# Mock values for PrepareLonghornDisksStep - mount Command Failure
+# This file provides mock return values for simulating mount command failure
+
+mocks:
+  # Check existing mounts (none exist)
+  "MountDrives.GetExistingMounts":
+    output: ""
+    error: null
+
+  # Mock fstab content (empty for new disk)
+  "ReadFile./etc/fstab":
+    output: |
+      # /etc/fstab: static file system information.
+      UUID=1234-5678 /boot/efi vfat defaults 0 1
+    error: null
+
+  # Check filesystem type - no filesystem present
+  "MountDrives.LsblkFilesystem./dev/sdb":
+    output: |
+      NAME FSTYPE
+      sdb
+    error: null
+
+  # Check partition type - no partitions present
+  "MountDrives.LsblkParttype./dev/sdb":
+    output: ""
+    error: null
+
+  # Get UUID after formatting succeeds
+  "MountDrives.BlkidUUID./dev/sdb":
+    output: "f6a7b8c9-d0e1-2345-f012-3456789abcde"
+    error: null
+
+  # mount command fails
+  "MountDrives.MountDrive./dev/sdb":
+    output: ""
+    error: "mount: /mnt/disk0: wrong fs type, bad option, bad superblock"
