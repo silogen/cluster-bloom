@@ -117,8 +117,8 @@ var CreateChronyConfigStep = Step{
 
 var PreloadImagesStep = Step{
 	Id:          "PreloadImagesStep",
-	Name:        "Preload Images",
-	Description: "Preload container images",
+	Name:        "Start Image Preload",
+	Description: "Start Preloading requested container images",
 	Action: func() StepResult {
 		if viper.GetBool("FIRST_NODE") && viper.GetString("PRELOAD_IMAGES") != "" {
 			err := PreloadImages()
