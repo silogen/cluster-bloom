@@ -271,7 +271,8 @@ func SetupRKE2ControlPlane() error {
 
 func isValidImageName(image string) bool {
 	// Simple regex to validate image names
-	re := regexp.MustCompile(`^[a-z0-9]+([._-][a-z0-9]+)*(:[a-z0-9]+([._-][a-z0-9]+)*)?$`)
+	re := regexp.MustCompile(`^(?:[a-z0-9]+(?:[._-][a-z0-9]+)*(?::[0-9]+)?\/)?[a-z0-9]+(?:[._-][a-z0-9]+)*(?:\/[a-z0-9]+(?:[._-][a-z0-9]+)*)*(?::[a-z0-9]+(?:[._-][a-z0-9]+)*)?$
+`)
 	return re.MatchString(image)
 }
 
