@@ -152,8 +152,8 @@ func SetArguments() {
 		{
 			Key:         "PRELOAD_IMAGES",
 			Default:     "docker.io/rocm/pytorch:rocm6.4_ubuntu24.04_py3.12_pytorch_release_2.6.0,docker.io/rocm/vllm:rocm6.4.1_vllm_0.9.0.1_20250605",
-			Description: "The container images to preload.",
-			Type:        "array<string>",
+			Description: "Comma-separated list of the container images to preload.",
+			Type:        "string",
 		},
 
 		// Step control
