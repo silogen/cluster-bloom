@@ -115,6 +115,21 @@ var CreateChronyConfigStep = Step{
 	},
 }
 
+var PreloadImagesStep = Step{
+	Id:          "PreloadImagesStep",
+	Name:        "Start Image Preload",
+	Description: "Start Preloading requested container images",
+	Action: func() StepResult {
+		if viper.GetBool("FIRST_NODE") && viper.GetString("PRELOAD_IMAGES") != "" {
+			err := PreloadImages()
+			if err != nil {
+				return StepResult{Error: err}
+			}
+		}
+		return StepResult{Error: nil}
+	},
+}
+
 var OpenPortsStep = Step{
 	Id:          "OpenPortsStep",
 	Name:        "Open Ports",

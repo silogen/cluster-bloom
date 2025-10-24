@@ -188,6 +188,7 @@ func rootSteps() []pkg.Step {
 	}
 	postK8Ssteps := []pkg.Step{
 		pkg.CreateChronyConfigStep,
+		pkg.PreloadImagesStep,
 		pkg.SetupLonghornStep,
 		pkg.SetupMetallbStep,
 		pkg.CreateMetalLBConfigStep,
