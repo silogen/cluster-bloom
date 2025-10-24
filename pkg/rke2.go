@@ -297,17 +297,4 @@ func PreloadImages() error {
 	}
 
 	return nil
-	// imagesDir := "/var/lib/rancher/rke2/agent/images"
-
-	// if err := os.MkdirAll(imagesDir, 0755); err != nil {
-	// 	return fmt.Errorf("failed to create images directory %s: %v", imagesDir, err)
-	// }
-	// imageList := viper.GetStringSlice("IMAGE_LIST")
-
-	// preloadImagesFile := "/var/lib/rancher/rke2/agent/images/airm_images.txt"
-	// LogMessage(Info, fmt.Sprintf("Caching images to %s", preloadImagesFile))
-	// if err := os.WriteFile(preloadImagesFile, []byte(strings.Join(imageList, "\n")), 0644); err != nil {
-	// 	return fmt.Errorf("failed to write airgapped images file %s: %v", preloadImagesFile, err)
-	// }
-	// return nil
 }
