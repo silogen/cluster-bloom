@@ -18,9 +18,10 @@ package pkg
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"time"
 
+	"github.com/silogen/cluster-bloom/pkg/command"
+	"github.com/silogen/cluster-bloom/pkg/fsops"
 	"github.com/spf13/viper"
 )
 
@@ -49,12 +50,11 @@ kube-apiserver-arg:
 `
 
 func FetchAndSaveOIDCCertificate(url string) error {
-	cmd := exec.Command("sh", "-c", fmt.Sprintf("openssl s_client -showcerts -connect %s:443 </dev/null | sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p'", url))
-	output, err := cmd.Output()
-	if err != nil {
+	output, err := command.Output("FetchAndSaveOIDCCertificate.OpensslClient", true, "sh", "-c", fmt.Sprintf("openssl s_client -showcerts -connect %s:443 </dev/null | sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p'", url))
+	if err != nil{
 		return fmt.Errorf("failed to fetch certificate from %s: %v", url, err)
 	}
-	if err := os.WriteFile("/etc/rancher/rke2/oidc-ca.crt", output, 0644); err != nil {
+	if err := fsops.WriteFile("/etc/rancher/rke2/oidc-ca.crt", output, 0644); err != nil {
 		return fmt.Errorf("failed to write certificate: %v", err)
 	}
 	return nil
@@ -72,7 +72,7 @@ func PrepareRKE2() error {
 	}
 
 	for _, cmd := range commands {
-		_, err := runCommand(cmd.command, cmd.args...)
+		_, err := command.Run("SetupFirstRKE2."+cmd.command, false, cmd.command, cmd.args...)
 		if err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to execute command '%s %v': %v", cmd.command, cmd.args, err))
 			return fmt.Errorf("failed to execute command '%s %v': %w", cmd.command, cmd.args, err)
@@ -85,13 +85,13 @@ func PrepareRKE2() error {
 		return fmt.Errorf("failed to setup audit policy: %w", err)
 	}
 	rke2ConfigPath := "/etc/rancher/rke2/config.yaml"
-	if err := os.WriteFile(rke2ConfigPath, []byte(rke2ConfigContent), 0644); err != nil {
+	if err := fsops.WriteFile(rke2ConfigPath, []byte(rke2ConfigContent), 0644); err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to write to %s: %v", rke2ConfigPath, err))
 		return err
 	}
 	certPath := "/etc/rancher/rke2/oidc-ca.crt"
 	if _, err := os.Stat(certPath); err == nil {
-		if err := os.Remove(certPath); err != nil {
+		if err := fsops.Remove(certPath); err != nil {
 			return fmt.Errorf("failed to remove existing certificate at %s: %v", certPath, err)
 		}
 		LogMessage(Info, fmt.Sprintf("Removed existing certificate at %s", certPath))
@@ -104,13 +104,7 @@ func PrepareRKE2() error {
 		LogMessage(Info, fmt.Sprintf("Fetched and saved OIDC certificate from %s", oidcURL))
 		configContent := fmt.Sprintf(oidcConfigTemplate, oidcURL)
 
-		file, err := os.OpenFile(rke2ConfigPath, os.O_APPEND|os.O_WRONLY, 0644)
-		if err != nil {
-			return fmt.Errorf("failed to open %s for appending: %v", rke2ConfigPath, err)
-		}
-		defer file.Close()
-
-		if _, err := file.WriteString(configContent); err != nil {
+		if err := fsops.AppendToFile(rke2ConfigPath, []byte(configContent)); err != nil {
 			return fmt.Errorf("failed to append to %s: %v", rke2ConfigPath, err)
 		}
 	}
@@ -127,7 +121,7 @@ func SetupFirstRKE2() error {
 	}
 
 	for _, cmd := range commands {
-		_, err := runCommand(cmd.command, cmd.args...)
+		_, err := command.Run("SetupFirstRKE2."+cmd.command, false, cmd.command, cmd.args...)
 		if err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to execute command '%s %v': %v", cmd.command, cmd.args, err))
 			return fmt.Errorf("failed to execute command '%s %v': %w", cmd.command, cmd.args, err)
@@ -144,7 +138,7 @@ func SetupFirstRKE2() error {
 }
 
 func startServiceWithTimeout(serviceName string, timeout time.Duration) error {
-	_, err := runCommand("systemctl", "start", serviceName+".service")
+	_, err := command.Run("StartServiceWithTimeout.Start", false, "systemctl", "start", serviceName+".service")
 	LogMessage(Info, fmt.Sprintf("Starting service %s", serviceName))
 	if err != nil {
 		return fmt.Errorf("failed to start service %s: %w", serviceName, err)
@@ -153,9 +147,7 @@ func startServiceWithTimeout(serviceName string, timeout time.Duration) error {
 	LogMessage(Info, fmt.Sprintf("Waiting for service %s to become active (timeout: %v)", serviceName, timeout))
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		// The exec.Command is fine here as it uses CombinedOutput
-		isActiveCmd := exec.Command("systemctl", "is-active", serviceName+".service")
-		output, err := isActiveCmd.CombinedOutput()
+		output, err := command.CombinedOutput("StartServiceWithTimeout.IsActive", true, "systemctl", "is-active", serviceName+".service")
 		status := string(output)
 		if err == nil && status == "active\n" {
 			LogMessage(Info, fmt.Sprintf("Service %s is now active", serviceName))
@@ -179,14 +171,7 @@ func SetupRKE2Additional() error {
 	rke2ConfigPath := "/etc/rancher/rke2/config.yaml"
 
 	configContent := fmt.Sprintf("\nserver: https://%s:9345\ntoken: %s\n", serverIP, joinToken)
-	file, err := os.OpenFile(rke2ConfigPath, os.O_APPEND|os.O_WRONLY, 0644)
-	if err != nil {
-		LogMessage(Error, fmt.Sprintf("Failed to open %s for appending: %v", rke2ConfigPath, err))
-		return err
-	}
-	defer file.Close()
-
-	if _, err := file.WriteString(configContent); err != nil {
+	if err := fsops.AppendToFile(rke2ConfigPath, []byte(configContent)); err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to append to %s: %v", rke2ConfigPath, err))
 		return err
 	}
@@ -200,7 +185,7 @@ func SetupRKE2Additional() error {
 		{"systemctl", []string{"enable", "rke2-agent.service"}},
 	}
 	for _, cmd := range commands {
-		_, err := runCommand(cmd.command, cmd.args...)
+		_, err := command.Run("SetupFirstRKE2."+cmd.command, false, cmd.command, cmd.args...)
 		if err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to execute command '%s %v': %v", cmd.command, cmd.args, err))
 			return fmt.Errorf("failed to execute command '%s %v': %w", cmd.command, cmd.args, err)
@@ -228,14 +213,7 @@ func SetupRKE2ControlPlane() error {
 	rke2ConfigPath := "/etc/rancher/rke2/config.yaml"
 
 	configContent := fmt.Sprintf("\nserver: https://%s:9345\ntoken: %s\n", serverIP, joinToken)
-	file, err := os.OpenFile(rke2ConfigPath, os.O_APPEND|os.O_WRONLY, 0644)
-	if err != nil {
-		LogMessage(Error, fmt.Sprintf("Failed to open %s for appending: %v", rke2ConfigPath, err))
-		return err
-	}
-	defer file.Close()
-
-	if _, err := file.WriteString(configContent); err != nil {
+	if err := fsops.AppendToFile(rke2ConfigPath, []byte(configContent)); err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to append to %s: %v", rke2ConfigPath, err))
 		return err
 	}
@@ -249,7 +227,7 @@ func SetupRKE2ControlPlane() error {
 		{"systemctl", []string{"enable", "rke2-server.service"}},
 	}
 	for _, cmd := range commands {
-		_, err := runCommand(cmd.command, cmd.args...)
+		_, err := command.Run("SetupFirstRKE2."+cmd.command, false, cmd.command, cmd.args...)
 		if err != nil {
 			LogMessage(Error, fmt.Sprintf("Failed to execute command '%s %v': %v", cmd.command, cmd.args, err))
 			return fmt.Errorf("failed to execute command '%s %v': %w", cmd.command, cmd.args, err)

@@ -19,9 +19,10 @@ package pkg
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 
+	"github.com/silogen/cluster-bloom/pkg/command"
+	"github.com/silogen/cluster-bloom/pkg/fsops"
 	"github.com/spf13/viper"
 )
 
@@ -81,12 +82,12 @@ data:
 	}
 
 	// Write to temporary file
-	tmpFile, err := os.CreateTemp("", "bloom-configmap-*.yaml")
+	tmpFile, err := fsops.CreateTemp("", "bloom-configmap-*.yaml")
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to create temporary file: %v", err))
 		return fmt.Errorf("failed to create temporary file: %w", err)
 	}
-	defer os.Remove(tmpFile.Name())
+	defer fsops.Remove(tmpFile.Name())
 
 	if _, err := tmpFile.WriteString(configMapYAML); err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to write ConfigMap YAML: %v", err))
@@ -95,8 +96,7 @@ data:
 	tmpFile.Close()
 
 	// Apply the ConfigMap using kubectl
-	cmd := exec.Command("/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "apply", "-f", tmpFile.Name())
-	output, err := cmd.CombinedOutput()
+	output, err := command.CombinedOutput("CreateConfigMap.KubectlApply", false, "/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "apply", "-f", tmpFile.Name())
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to create ConfigMap: %v, output: %s", err, string(output)))
 		return fmt.Errorf("failed to create ConfigMap: %w", err)

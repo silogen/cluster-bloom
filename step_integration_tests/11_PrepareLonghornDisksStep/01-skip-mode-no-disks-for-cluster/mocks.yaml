@@ -1,0 +1,5 @@
+# Mock values for PrepareLonghornDisksStep - Skip Mode
+# Since the step is skipped when NO_DISKS_FOR_CLUSTER is true,
+# no commands are executed and therefore no mocks are needed.
+
+mocks: {}

@@ -1,0 +1,13 @@
+# Test 11: Backup Existing Longhorn Config - Single Mount Point
+# Purpose: Verify backup of existing longhorn-disk.cfg file
+
+NO_DISKS_FOR_CLUSTER: false
+CLUSTER_PREMOUNTED_DISKS: "/mnt/storage1"
+CLUSTER_DISKS: ""
+ENABLED_STEPS: "PrepareLonghornDisksStep"
+FIRST_NODE: true
+CONTROL_PLANE: true
+CLUSTER_NAME: "test-cluster"
+DOMAIN: "test.local"
+JOIN_TOKEN: "test-token-12345"
+GPU_NODE: false

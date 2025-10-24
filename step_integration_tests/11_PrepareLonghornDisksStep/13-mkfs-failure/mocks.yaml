@@ -1,0 +1,32 @@
+# Mock values for PrepareLonghornDisksStep - mkfs.ext4 Failure
+# This file provides mock return values for simulating mkfs.ext4 failure
+
+mocks:
+  # Check existing mounts (none exist)
+  "MountDrives.GetExistingMounts":
+    output: ""
+    error: null
+
+  # Mock fstab content (empty for new disk)
+  "ReadFile./etc/fstab":
+    output: |
+      # /etc/fstab: static file system information.
+      UUID=1234-5678 /boot/efi vfat defaults 0 1
+    error: null
+
+  # Check filesystem type - no filesystem present
+  "MountDrives.LsblkFilesystem./dev/sdb":
+    output: |
+      NAME FSTYPE
+      sdb
+    error: null
+
+  # Check partition type - no partitions present
+  "MountDrives.LsblkParttype./dev/sdb":
+    output: ""
+    error: null
+
+  # mkfs.ext4 fails with error
+  "MountDrives.MkfsExt4./dev/sdb":
+    output: ""
+    error: "mkfs.ext4: Device or resource busy"

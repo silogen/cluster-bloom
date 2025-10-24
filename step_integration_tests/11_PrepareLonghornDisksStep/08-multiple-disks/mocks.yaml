@@ -1,0 +1,84 @@
+# Mock values for PrepareLonghornDisksStep - Multiple Disks
+# This file provides mock return values for mounting three disks with unique UUIDs
+
+mocks:
+  # Check existing mounts (none exist)
+  "MountDrives.GetExistingMounts":
+    output: ""
+    error: null
+
+  # Disk 1: /dev/sdb - Check filesystem type
+  "MountDrives.LsblkFilesystem./dev/sdb":
+    output: |
+      NAME FSTYPE
+      sdb
+    error: null
+
+  # Disk 1: /dev/sdb - Check partition type
+  "MountDrives.LsblkParttype./dev/sdb":
+    output: ""
+    error: null
+
+  # Disk 1: /dev/sdb - Get UUID after formatting
+  "MountDrives.BlkidUUID./dev/sdb":
+    output: "a1111111-1111-1111-1111-111111111111"
+    error: null
+
+  # Disk 2: /dev/sdc - Check filesystem type
+  "MountDrives.LsblkFilesystem./dev/sdc":
+    output: |
+      NAME FSTYPE
+      sdc
+    error: null
+
+  # Disk 2: /dev/sdc - Check partition type
+  "MountDrives.LsblkParttype./dev/sdc":
+    output: ""
+    error: null
+
+  # Disk 2: /dev/sdc - Get UUID after formatting
+  "MountDrives.BlkidUUID./dev/sdc":
+    output: "b2222222-2222-2222-2222-222222222222"
+    error: null
+
+  # Disk 3: /dev/sdd - Check filesystem type
+  "MountDrives.LsblkFilesystem./dev/sdd":
+    output: |
+      NAME FSTYPE
+      sdd
+    error: null
+
+  # Disk 3: /dev/sdd - Check partition type
+  "MountDrives.LsblkParttype./dev/sdd":
+    output: ""
+    error: null
+
+  # Disk 3: /dev/sdd - Get UUID after formatting
+  "MountDrives.BlkidUUID./dev/sdd":
+    output: "c3333333-3333-3333-3333-333333333333"
+    error: null
+
+  # Backup fstab before modifying
+  "PersistMountedDisks.BackupFstab":
+    output: ""
+    error: null
+
+  # Get UUID when persisting disk 1 to fstab
+  "PersistMountedDisks.BlkidUUID./dev/sdb-a1111111-1111-1111-1111-111111111111":
+    output: "a1111111-1111-1111-1111-111111111111"
+    error: null
+
+  # Get UUID when persisting disk 2 to fstab
+  "PersistMountedDisks.BlkidUUID./dev/sdc-b2222222-2222-2222-2222-222222222222":
+    output: "b2222222-2222-2222-2222-222222222222"
+    error: null
+
+  # Get UUID when persisting disk 3 to fstab
+  "PersistMountedDisks.BlkidUUID./dev/sdd-c3333333-3333-3333-3333-333333333333":
+    output: "c3333333-3333-3333-3333-333333333333"
+    error: null
+
+  # Mount all filesystems to verify
+  "PersistMountedDisks.MountAll":
+    output: ""
+    error: null

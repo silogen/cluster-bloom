@@ -1,0 +1,6 @@
+# Mock values for PrepareLonghornDisksStep - Pre-mounted Single Disk
+# Since we're using CLUSTER_PREMOUNTED_DISKS, no mounting commands are executed.
+# The step only checks for existing longhorn-disk.cfg and replicas directory,
+# which are file system operations handled by the fsops package in dry-run mode.
+
+mocks: {}

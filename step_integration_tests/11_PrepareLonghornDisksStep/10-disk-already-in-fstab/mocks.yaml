@@ -1,0 +1,29 @@
+# Mock values for PrepareLonghornDisksStep - Disk Already in Fstab
+# This file provides mock return values for detecting existing disk UUID in fstab
+
+mocks:
+  # Check existing mounts (none exist)
+  "MountDrives.GetExistingMounts":
+    output: ""
+    error: null
+
+  # Mock fstab content that already contains the disk UUID
+  "ReadFile./etc/fstab":
+    output: |
+      # /etc/fstab: static file system information.
+      UUID=1234-5678 /boot/efi vfat defaults 0 1
+      UUID=e5f6a7b8-c9d0-1234-ef01-23456789abcd / ext4 defaults 0 1
+      UUID=e5f6a7b8-c9d0-1234-ef01-23456789abcd /mnt/disk0 ext4 defaults,nofail 0 2 # managed by cluster-bloom
+    error: null
+
+  # Check filesystem type - ext4 already present
+  "MountDrives.LsblkFilesystem./dev/sdb":
+    output: |
+      NAME FSTYPE
+      sdb  ext4
+    error: null
+
+  # Get UUID - returns existing UUID that's already in fstab
+  "MountDrives.BlkidUUID./dev/sdb":
+    output: "e5f6a7b8-c9d0-1234-ef01-23456789abcd"
+    error: null

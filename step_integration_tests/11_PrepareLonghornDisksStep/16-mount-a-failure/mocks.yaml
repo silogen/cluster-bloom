@@ -1,0 +1,47 @@
+# Mock values for PrepareLonghornDisksStep - mount -a Failure
+# This file provides mock return values for simulating mount -a verification failure
+
+mocks:
+  # Check existing mounts (none exist)
+  "MountDrives.GetExistingMounts":
+    output: ""
+    error: null
+
+  # Mock fstab content
+  "ReadFile./etc/fstab":
+    output: |
+      # /etc/fstab: static file system information.
+      UUID=1234-5678 /boot/efi vfat defaults 0 1
+    error: null
+
+  # Check filesystem type - no filesystem present
+  "MountDrives.LsblkFilesystem./dev/sdb":
+    output: |
+      NAME FSTYPE
+      sdb
+    error: null
+
+  # Check partition type - no partitions present
+  "MountDrives.LsblkParttype./dev/sdb":
+    output: ""
+    error: null
+
+  # Get UUID after formatting
+  "MountDrives.BlkidUUID./dev/sdb":
+    output: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+    error: null
+
+  # Fstab backup succeeds
+  "PersistMountedDisks.BackupFstab":
+    output: ""
+    error: null
+
+  # UUID retrieval during persist succeeds
+  "PersistMountedDisks.BlkidUUID./dev/sdb-b2c3d4e5-f6a7-8901-bcde-f12345678901":
+    output: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+    error: null
+
+  # mount -a verification fails
+  "PersistMountedDisks.MountAll":
+    output: ""
+    error: "mount: mounting UUID=b2c3d4e5-f6a7-8901-bcde-f12345678901 on /mnt/disk0 failed: Invalid argument"

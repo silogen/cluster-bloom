@@ -1,0 +1,20 @@
+# Test configuration for PrepareLonghornDisksStep - Skip Mode
+# This config will only run PrepareLonghornDisksStep and it should be skipped
+
+# Enable only the PrepareLonghornDisksStep
+ENABLED_STEPS: "PrepareLonghornDisksStep"
+
+# Skip mode - no disks for cluster
+NO_DISKS_FOR_CLUSTER: true
+
+# Basic required configuration
+FIRST_NODE: true
+GPU_NODE: false
+CONTROL_PLANE: true
+
+# Domain configuration (required but not used in this step)
+DOMAIN: "test.local"
+USE_CERT_MANAGER: false
+
+# Cluster configuration
+CLUSTER_NAME: "test-cluster"

@@ -21,10 +21,11 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"github.com/silogen/cluster-bloom/pkg/command"
+	"github.com/silogen/cluster-bloom/pkg/fsops"
 	"github.com/spf13/viper"
 )
 
@@ -32,21 +33,25 @@ import (
 var longhornPreflightScript []byte
 
 func CheckPackageInstallConnections() error {
-	cmd := exec.Command("apt-get", "update")
-	cmd.Env = os.Environ()
-	output, err := cmd.CombinedOutput()
+	cmd := command.Cmd("apt-get", "update")
+	if cmd != nil {
+		cmd.Env = os.Environ()
+	}
+	output, err := command.CombinedOutput("CheckPackageInstallConnections.AptUpdate", false, "apt-get", "update")
 	if err != nil {
 		return fmt.Errorf("Failed to verify apt-get connection: %w\nOutput: %s", err, output)
 	}
 
-	cmd = exec.Command("snap", "info", "core")
-	cmd.Env = os.Environ()
-	output, err = cmd.CombinedOutput()
+	cmd = command.Cmd("snap", "info", "core")
+	if cmd != nil {
+		cmd.Env = os.Environ()
+	}
+	output, err = command.CombinedOutput("CheckPackageInstallConnections.SnapInfo", false, "snap", "info", "core")
 	if err != nil {
 		return fmt.Errorf("Failed to verify snap connection: %w\nOutput: %s", err, output)
 	}
 
-	osRelease, err := exec.Command("sh", "-c", "grep VERSION_CODENAME /etc/os-release | cut -d= -f2").Output()
+	osRelease, err := command.Output("CheckPackageInstallConnections.GetUbuntuCodename", true, "sh", "-c", "grep VERSION_CODENAME /etc/os-release | cut -d= -f2")
 	if err != nil {
 		return fmt.Errorf("Error getting Ubuntu codename: %w", err)
 	}
@@ -58,9 +63,11 @@ func CheckPackageInstallConnections() error {
 
 	var otherRepositories = []string{clusterForgeUrl, rocmUrl, rke2Url}
 	for _, url := range otherRepositories {
-		cmd = exec.Command("wget", "--spider", url)
-		cmd.Env = os.Environ()
-		output, err = cmd.CombinedOutput()
+		cmd = command.Cmd("wget", "--spider", url)
+		if cmd != nil {
+			cmd.Env = os.Environ()
+		}
+		output, err = command.CombinedOutput("CheckPackageInstallConnections.WgetSpider", false, "wget", "--spider", url)
 		if err != nil {
 			return fmt.Errorf("Failed to verify download from repository: %w\nOutput: %s", err, output)
 		}
@@ -95,9 +102,11 @@ func InstallDependentPackages() error {
 }
 
 func installpackage(pkgName string) error {
-	cmd := exec.Command("apt-get", "install", "-y", pkgName)
-	cmd.Env = os.Environ()
-	output, err := cmd.CombinedOutput()
+	cmd := command.Cmd("apt-get", "install", "-y", pkgName)
+	if cmd != nil {
+		cmd.Env = os.Environ()
+	}
+	output, err := command.CombinedOutput("InstallPackage.AptInstall"+pkgName, false, "apt-get", "install", "-y", pkgName)
 	if err != nil {
 		return fmt.Errorf("failed to install package: %w\nOutput: %s", err, output)
 	}
@@ -114,10 +123,11 @@ func installK8sTools() error {
 		{"snap", "install", "yq"},
 	}
 
-	for _, cmd := range cmds {
-		err := exec.Command("sudo", cmd...).Run()
+	for _, cmdArgs := range cmds {
+		args := append([]string{"sudo"}, cmdArgs...)
+		err := command.SimpleRun("InstallK8sTools.SnapInstall", false, args[0], args[1:]...)
 		if err != nil {
-			return fmt.Errorf("failed to execute command %v: %w", cmd, err)
+			return fmt.Errorf("failed to execute command %v: %w", cmdArgs, err)
 		}
 	}
 
@@ -127,7 +137,7 @@ func installK8sTools() error {
 
 func setupManifests(folder string) error {
 	targetDir := rke2ManifestDirectory
-	if err := os.MkdirAll(targetDir, 0755); err != nil {
+	if err := fsops.MkdirAll(targetDir, 0755); err != nil {
 		return fmt.Errorf("failed to create target directory %s: %w", targetDir, err)
 	}
 	err := fs.WalkDir(manifestFiles, filepath.Join("manifests", folder), func(path string, d fs.DirEntry, err error) error {
@@ -140,7 +150,7 @@ func setupManifests(folder string) error {
 				return fmt.Errorf("failed to read file %s: %w", path, err)
 			}
 			targetPath := filepath.Join(targetDir, filepath.Base(path))
-			if err := os.WriteFile(targetPath, content, 0644); err != nil {
+			if err := fsops.WriteFile(targetPath, content, 0644); err != nil {
 				return fmt.Errorf("failed to write file %s: %w", targetPath, err)
 			}
 			LogMessage(Info, fmt.Sprintf("Copied %s to %s", path, targetPath))
@@ -160,7 +170,7 @@ func setupAudit() error {
 	targetDir := "/etc/rancher/rke2"
 	targetPath := filepath.Join(targetDir, filepath.Base(sourceFile))
 
-	if err := os.MkdirAll(targetDir, 0755); err != nil {
+	if err := fsops.MkdirAll(targetDir, 0755); err != nil {
 		return fmt.Errorf("failed to create target directory %s: %w", targetDir, err)
 	}
 
@@ -184,8 +194,7 @@ func SetupClusterForge() error {
 		LogMessage(Info, "Not installing ClusterForge as CLUSTERFORGE_RELEASE is set to none")
 		return nil
 	}
-	cmd := exec.Command("wget", url, "-O", "clusterforge.tar.gz")
-	output, err := cmd.Output()
+	output, err := command.Output("SetupClusterForge.DownloadRelease", false, "wget", url, "-O", "clusterforge.tar.gz")
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to download ClusterForge: %v, output: %v", err, output))
 		return err
@@ -193,8 +202,7 @@ func SetupClusterForge() error {
 		LogMessage(Info, "Successfully downloaded ClusterForge")
 	}
 
-	cmd = exec.Command("tar", "-xzvf", "clusterforge.tar.gz")
-	output, err = cmd.Output()
+	output, err = command.Output("SetupClusterForge.ExtractTarball", false, "tar", "-xzvf", "clusterforge.tar.gz")
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to unzip clusterforge.tar.gz: %v, output %v", err, output))
 		return err
@@ -207,8 +215,7 @@ func SetupClusterForge() error {
 	// Get the original user when running with sudo
 	originalUser := os.Getenv("SUDO_USER")
 
-	cmd = exec.Command("sudo", "chown", "-R", fmt.Sprintf("%s:%s", originalUser, originalUser), "cluster-forge")
-	output, err = cmd.Output()
+	output, err = command.Output("SetupClusterForge.ChownDirectory", false, "sudo", "chown", "-R", fmt.Sprintf("%s:%s", originalUser, originalUser), "cluster-forge")
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to change ownership of Clusterforge folder: %v, output %v", err, output))
 		return err
@@ -217,33 +224,31 @@ func SetupClusterForge() error {
 	}
 
 	scriptsDir := "cluster-forge/scripts"
+
+	var combinedOutput []byte
 	if originalUser != "" {
-		// Run as the original user to avoid sudo issues with bootstrap script
-		cmd = exec.Command("sudo", "-u", originalUser, "bash", "./bootstrap.sh", domain)
+		combinedOutput, err = command.CombinedOutput("SetupClusterForge.BootstrapWithSudo", false, "sudo", "-u", originalUser, "bash", scriptsDir+"/bootstrap.sh", domain)
 	} else {
-		// Fallback if not running with sudo
-		cmd = exec.Command("bash", "./bootstrap.sh", domain)
+		combinedOutput, err = command.CombinedOutput("SetupClusterForge.Bootstrap", false, "bash", scriptsDir+"/bootstrap.sh", domain)
 	}
-	cmd.Dir = scriptsDir
-	output, err = cmd.CombinedOutput()
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to install ClusterForge: %v", err))
-		LogMessage(Error, fmt.Sprintf("ClusterForge bootstrap script output: %s", string(output)))
+		LogMessage(Error, fmt.Sprintf("ClusterForge bootstrap script output: %s", string(combinedOutput)))
 		return err
 	} else {
-		LogMessage(Info, fmt.Sprintf("ClusterForge deployment output: %s", output))
+		LogMessage(Info, fmt.Sprintf("ClusterForge deployment output: %s", combinedOutput))
 	}
 	return nil
 }
 
 func LonghornPreflightCheck() error {
 	// Create a temporary file with the embedded script content
-	tmpFile, err := os.CreateTemp("", "longhornPreflight-*.sh")
+	tmpFile, err := fsops.CreateTemp("", "longhornPreflight-*.sh")
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to create temporary script file: %v", err))
 		return err
 	}
-	defer os.Remove(tmpFile.Name()) // Clean up the temporary file
+	defer fsops.Remove(tmpFile.Name()) // Clean up the temporary file
 
 	// Write the embedded script content to the temporary file
 	if _, err := tmpFile.Write(longhornPreflightScript); err != nil {
@@ -254,17 +259,18 @@ func LonghornPreflightCheck() error {
 	tmpFile.Close()
 
 	// Make the script executable
-	if err := os.Chmod(tmpFile.Name(), 0755); err != nil {
+	if err := fsops.Chmod(tmpFile.Name(), 0755); err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to make script executable: %v", err))
 		return err
 	}
 
-	cmd := exec.Command("bash", tmpFile.Name())
-	cmd.Env = os.Environ()
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	err = cmd.Run()
+	cmd := command.Cmd("bash", tmpFile.Name())
+	if cmd != nil {
+		cmd.Env = os.Environ()
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		err = cmd.Run()
+	}
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Longhorn preflight check failed: %v", err))
 		return err

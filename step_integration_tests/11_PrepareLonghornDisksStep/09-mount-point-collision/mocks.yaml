@@ -1,0 +1,40 @@
+# Mock values for PrepareLonghornDisksStep - Mount Point Collision
+# This file provides mock return values for handling existing mount point /mnt/disk0
+
+mocks:
+  # Check existing mounts - /mnt/disk0 already in use
+  "MountDrives.GetExistingMounts":
+    output: "/mnt/disk0"
+    error: null
+
+  # Check filesystem type - no filesystem present
+  "MountDrives.LsblkFilesystem./dev/sdb":
+    output: |
+      NAME FSTYPE
+      sdb
+    error: null
+
+  # Check partition type - no partitions present
+  "MountDrives.LsblkParttype./dev/sdb":
+    output: ""
+    error: null
+
+  # Get UUID after formatting
+  "MountDrives.BlkidUUID./dev/sdb":
+    output: "d4e5f6a7-b8c9-0123-def0-123456789abc"
+    error: null
+
+  # Backup fstab before modifying
+  "PersistMountedDisks.BackupFstab":
+    output: ""
+    error: null
+
+  # Get UUID when persisting to fstab
+  "PersistMountedDisks.BlkidUUID./dev/sdb-d4e5f6a7-b8c9-0123-def0-123456789abc":
+    output: "d4e5f6a7-b8c9-0123-def0-123456789abc"
+    error: null
+
+  # Mount all filesystems to verify
+  "PersistMountedDisks.MountAll":
+    output: ""
+    error: null

@@ -1,0 +1,35 @@
+# Mock values for PrepareLonghornDisksStep - Already Formatted Disk
+# This file provides mock return values for mounting a disk that already has ext4
+
+mocks:
+  # Check existing mounts (none exist)
+  "MountDrives.GetExistingMounts":
+    output: ""
+    error: null
+
+  # Check filesystem type - ext4 already present
+  "MountDrives.LsblkFilesystem./dev/sdc":
+    output: |
+      NAME FSTYPE
+      sdc  ext4
+    error: null
+
+  # Get UUID for mounting (no formatting needed)
+  "MountDrives.BlkidUUID./dev/sdc":
+    output: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+    error: null
+
+  # Backup fstab before modifying
+  "PersistMountedDisks.BackupFstab":
+    output: ""
+    error: null
+
+  # Get UUID when persisting to fstab
+  "PersistMountedDisks.BlkidUUID./dev/sdc-b2c3d4e5-f6a7-8901-bcde-f12345678901":
+    output: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+    error: null
+
+  # Mount all filesystems to verify
+  "PersistMountedDisks.MountAll":
+    output: ""
+    error: null

@@ -1,0 +1,40 @@
+# Mock values for PrepareLonghornDisksStep - New Disk Mounting Single
+# This file provides mock return values for mounting a single unformatted disk
+
+mocks:
+  # Check existing mounts (none exist)
+  "MountDrives.GetExistingMounts":
+    output: ""
+    error: null
+
+  # Check filesystem type - no filesystem present
+  "MountDrives.LsblkFilesystem./dev/sdb":
+    output: |
+      NAME FSTYPE
+      sdb
+    error: null
+
+  # Check partition type - no partitions present
+  "MountDrives.LsblkParttype./dev/sdb":
+    output: ""
+    error: null
+
+  # Get UUID after formatting
+  "MountDrives.BlkidUUID./dev/sdb":
+    output: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+    error: null
+
+  # Backup fstab before modifying
+  "PersistMountedDisks.BackupFstab":
+    output: ""
+    error: null
+
+  # Get UUID when persisting to fstab
+  "PersistMountedDisks.BlkidUUID./dev/sdb-a1b2c3d4-e5f6-7890-abcd-ef1234567890":
+    output: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+    error: null
+
+  # Mount all filesystems to verify
+  "PersistMountedDisks.MountAll":
+    output: ""
+    error: null

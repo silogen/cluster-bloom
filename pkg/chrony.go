@@ -17,10 +17,10 @@ package pkg
 
 import (
     "fmt"
-    "os"
-    "os/exec"
 
-		"github.com/spf13/viper"
+	"github.com/silogen/cluster-bloom/pkg/command"
+	"github.com/silogen/cluster-bloom/pkg/fsops"
+	"github.com/spf13/viper"
 )
 
 // Define chrony configuration templates as package-level variables
@@ -58,8 +58,7 @@ func GenerateChronyConfFirst() error {
     }
 
     // Restart chronyd service
-    restartCmd := exec.Command("systemctl", "restart", "chronyd")
-    if output, err := restartCmd.CombinedOutput(); err != nil {
+    if output, err := command.CombinedOutput("GenerateChronyConfFirst.RestartChronyd", false, "systemctl", "restart", "chronyd"); err != nil {
         return fmt.Errorf("failed to restart chronyd: %w, output: %s", err, string(output))
     }
 
@@ -81,8 +80,7 @@ func GenerateChronyConfAdditional() error {
     }
 
     // Restart chronyd service
-    restartCmd := exec.Command("systemctl", "restart", "chronyd")
-    if output, err := restartCmd.CombinedOutput(); err != nil {
+    if output, err := command.CombinedOutput("GenerateChronyConfAdditional.RestartChronyd", false, "systemctl", "restart", "chronyd"); err != nil {
         return fmt.Errorf("failed to restart chronyd: %w, output: %s", err, string(output))
     }
 
@@ -92,14 +90,13 @@ func GenerateChronyConfAdditional() error {
 
 // writeChronyConf writes the chrony configuration to the specified file.
 func writeChronyConf(chronyConf string) error {
-    backupCmd := exec.Command("cp", "/etc/chrony/chrony.conf", "/etc/chrony/chrony.conf.bak")
-    if err := backupCmd.Run(); err != nil {
+    if err := command.SimpleRun("WriteChronyConf.BackupConfig", false, "cp", "/etc/chrony/chrony.conf", "/etc/chrony/chrony.conf.bak"); err != nil {
         return fmt.Errorf("failed to backup chrony.conf: %w", err)
     }
     targetPath := "/etc/chrony/chrony.conf"
 		LogMessage(Info, "Original chrony.conf saved as chrony.conf.bak")
 
-    err := os.WriteFile(targetPath, []byte(chronyConf), 0644)
+    err := fsops.WriteFile(targetPath, []byte(chronyConf), 0644)
     if err != nil {
         return fmt.Errorf("failed to write %s: %w", targetPath, err)
     }

@@ -1,0 +1,13 @@
+# Test 16: Persist Failure - mount -a Fails
+# Purpose: Test error handling when final mount -a verification fails
+
+NO_DISKS_FOR_CLUSTER: false
+CLUSTER_DISKS: "/dev/sdb"
+CLUSTER_PREMOUNTED_DISKS: ""
+ENABLED_STEPS: "PrepareLonghornDisksStep"
+FIRST_NODE: true
+CONTROL_PLANE: true
+CLUSTER_NAME: "test-cluster"
+DOMAIN: "test.local"
+JOIN_TOKEN: "test-token-12345"
+GPU_NODE: false

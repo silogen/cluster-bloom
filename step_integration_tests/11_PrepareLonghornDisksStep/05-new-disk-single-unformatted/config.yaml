@@ -1,0 +1,21 @@
+# Test configuration for PrepareLonghornDisksStep - New Disk Mounting Single
+# This config will only run PrepareLonghornDisksStep with a single new disk to mount
+
+# Enable only the PrepareLonghornDisksStep
+ENABLED_STEPS: "PrepareLonghornDisksStep"
+
+# New disk mounting configuration - single unformatted disk
+NO_DISKS_FOR_CLUSTER: false
+CLUSTER_DISKS: "/dev/sdb"
+
+# Basic required configuration
+FIRST_NODE: true
+GPU_NODE: false
+CONTROL_PLANE: true
+
+# Domain configuration (required but not used in this step)
+DOMAIN: "test.local"
+USE_CERT_MANAGER: false
+
+# Cluster configuration
+CLUSTER_NAME: "test-cluster"
