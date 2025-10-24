@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 
@@ -268,6 +269,12 @@ func SetupRKE2ControlPlane() error {
 	return nil
 }
 
+func isValidImageName(image string) bool {
+	// Simple regex to validate image names
+	re := regexp.MustCompile(`^[a-z0-9]+([._-][a-z0-9]+)*(:[a-z0-9]+([._-][a-z0-9]+)*)?$`)
+	return re.MatchString(image)
+}
+
 func PreloadImages() error {
 
 	LogMessage(Info, "Found PRELOAD_IMAGES configuration")
@@ -277,8 +284,14 @@ func PreloadImages() error {
 	for _, image := range images {
 		image = strings.TrimSpace(image)
 		if image != "" {
-			targetImages = append(targetImages, image)
+			if isValidImageName(image) {
+				targetImages = append(targetImages, image)
+			} else {
+				LogMessage(Info, fmt.Sprintf("Invalid image name found in PRELOAD_IMAGES: %s", image))
+			}
+
 		}
+
 	}
 
 	if len(targetImages) == 0 {
