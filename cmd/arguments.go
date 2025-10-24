@@ -149,6 +149,12 @@ func SetArguments() {
 			Description: "The version of Cluster-Forge to install. Pass the URL for a specific release, or 'none' to not install ClusterForge.",
 			Type:        "url",
 		},
+		{
+			Key:         "PRELOAD_IMAGES",
+			Default:     "rocm/pytorch:rocm6.4_ubuntu24.04_py3.12_pytorch_release_2.6.0,rocm/vllm:rocm6.4.1_vllm_0.9.0.1_20250605",
+			Description: "The container images to preload.",
+			Type:        "array<string>",
+		},
 
 		// Step control
 		{

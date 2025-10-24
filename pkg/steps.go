@@ -120,7 +120,7 @@ var PreloadImagesStep = Step{
 	Name:        "Preload Images",
 	Description: "Preload container images",
 	Action: func() StepResult {
-		if viper.GetBool("FIRST_NODE") {
+		if viper.GetBool("FIRST_NODE") && viper.GetString("PRELOAD_IMAGES") != "" {
 			err := PreloadImages()
 			if err != nil {
 				return StepResult{Error: err}

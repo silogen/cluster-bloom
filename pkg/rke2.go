@@ -270,17 +270,44 @@ func SetupRKE2ControlPlane() error {
 
 func PreloadImages() error {
 
-	imagesDir := "/var/lib/rancher/rke2/agent/images"
+	LogMessage(Info, "Found PRELOAD_IMAGES configuration")
+	images := strings.Split(viper.GetString("PRELOAD_IMAGES"), ",")
 
+	var targetImages []string
+	for _, image := range images {
+		image = strings.TrimSpace(image)
+		if image != "" {
+			targetImages = append(targetImages, image)
+		}
+	}
+
+	if len(targetImages) == 0 {
+		LogMessage(Info, "No valid images found in PRELOAD_IMAGES")
+		return nil
+	}
+
+	LogMessage(Info, fmt.Sprintf("Preloading images: %v", targetImages))
+	imagesDir := "/var/lib/rancher/rke2/agent/images"
 	if err := os.MkdirAll(imagesDir, 0755); err != nil {
 		return fmt.Errorf("failed to create images directory %s: %v", imagesDir, err)
 	}
-	imageList := viper.GetStringSlice("IMAGE_LIST")
-
-	preloadImagesFile := "/var/lib/rancher/rke2/agent/images/airm_images.txt"
-	LogMessage(Info, fmt.Sprintf("Caching images to %s", preloadImagesFile))
-	if err := os.WriteFile(preloadImagesFile, []byte(strings.Join(imageList, "\n")), 0644); err != nil {
-		return fmt.Errorf("failed to write airgapped images file %s: %v", preloadImagesFile, err)
+	preloadImagesList := "/var/lib/rancher/rke2/agent/images/preload_images.txt"
+	if err := os.WriteFile(preloadImagesList, []byte(strings.Join(targetImages, "\n")), 0644); err != nil {
+		return fmt.Errorf("failed to write preload images file %s: %v", preloadImagesList, err)
 	}
+
 	return nil
+	// imagesDir := "/var/lib/rancher/rke2/agent/images"
+
+	// if err := os.MkdirAll(imagesDir, 0755); err != nil {
+	// 	return fmt.Errorf("failed to create images directory %s: %v", imagesDir, err)
+	// }
+	// imageList := viper.GetStringSlice("IMAGE_LIST")
+
+	// preloadImagesFile := "/var/lib/rancher/rke2/agent/images/airm_images.txt"
+	// LogMessage(Info, fmt.Sprintf("Caching images to %s", preloadImagesFile))
+	// if err := os.WriteFile(preloadImagesFile, []byte(strings.Join(imageList, "\n")), 0644); err != nil {
+	// 	return fmt.Errorf("failed to write airgapped images file %s: %v", preloadImagesFile, err)
+	// }
+	// return nil
 }
