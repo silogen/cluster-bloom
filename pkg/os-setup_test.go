@@ -121,22 +121,6 @@ func TestHasSufficientRancherPartition(t *testing.T) {
 	})
 }
 
-func TestNVMEDrivesAvailable(t *testing.T) {
-	t.Run("with SKIP_DISK_CHECK", func(t *testing.T) {
-		viper.Set("SKIP_DISK_CHECK", true)
-		result := NVMEDrivesAvailable()
-		if !result {
-			t.Errorf("Expected true when SKIP_DISK_CHECK is set")
-		}
-		viper.Set("SKIP_DISK_CHECK", false)
-	})
-
-	t.Run("normal check", func(t *testing.T) {
-		result := NVMEDrivesAvailable()
-		// Result depends on system hardware
-		t.Logf("NVMEDrivesAvailable returned: %v", result)
-	})
-}
 
 func TestCreateMetalLBConfig(t *testing.T) {
 	if os.Getuid() != 0 {

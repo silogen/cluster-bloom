@@ -184,34 +184,36 @@ func ValidateDisabledStepsConflict(stepNames string) error {
 	return nil
 }
 
-// ValidateSkipDiskCheckConsistency warns about inconsistencies with SKIP_DISK_CHECK
+// ValidateSkipDiskCheckConsistency warns about inconsistencies with NO_DISKS_FOR_CLUSTER
 func ValidateSkipDiskCheckConsistency(skipDiskCheckStr string) error {
-	skipDiskCheck := viper.GetBool("SKIP_DISK_CHECK")
-	longhornDisks := viper.GetString("LONGHORN_DISKS")
-	selectedDisks := viper.GetString("SELECTED_DISKS")
+	skipDiskCheck := viper.GetBool("NO_DISKS_FOR_CLUSTER")
+	longhornDisks := viper.GetString("CLUSTER_PREMOUNTED_DISKS")
+	selectedDisks := viper.GetString("CLUSTER_DISKS")
 
 	if skipDiskCheck && (longhornDisks != "" || selectedDisks != "") {
-		log.Warnf("SKIP_DISK_CHECK=true but disk parameters are set (LONGHORN_DISKS or SELECTED_DISKS) - disk operations will be skipped")
+		log.Warnf("NO_DISKS_FOR_CLUSTER=true but disk parameters are set (CLUSTER_PREMOUNTED_DISKS or CLUSTER_DISKS) - disk operations will be skipped")
 	}
 
 	if !skipDiskCheck && longhornDisks == "" && selectedDisks == "" {
-		log.Warnf("SKIP_DISK_CHECK=false but no disk parameters specified - automatic disk detection will be used")
+		log.Warnf("NO_DISKS_FOR_CLUSTER=false but no disk parameters specified - automatic disk detection will be used")
 	}
 
 	return nil
 }
 
-// ValidateLonghornDisksArg validates LONGHORN_DISKS configuration
+// ValidateLonghornDisksArg validates CLUSTER_PREMOUNTED_DISKS configuration
 func ValidateLonghornDisksArg(disks string) error {
-	// Use the same logic as the existing validation in root.go
-	// longhornDiskString := pkg.ParseLonghornDiskConfig()
-	// if len(longhornDiskString) > 63 {
-	// 	return fmt.Errorf("LONGHORN_DISKS configuration too long (%d characters), maximum 63 characters allowed. Parsed string: %s",
-	// 		len(longhornDiskString), longhornDiskString)
-	// }
-	// if strings.Contains(longhornDiskString, "/") {
-	// 	return fmt.Errorf("LONGHORN_DISKS must not contain slashes. Parsed string: %s", longhornDiskString)
-	// }
+	selectedDisks := viper.GetString("CLUSTER_DISKS")
+
+	// Both cannot be set
+	if disks != "" && selectedDisks != "" {
+		return fmt.Errorf("CLUSTER_PREMOUNTED_DISKS and CLUSTER_DISKS cannot both be set - use one or the other")
+	}
+
+	// At least one must be set
+	if disks == "" && selectedDisks == "" {
+		return fmt.Errorf("either CLUSTER_PREMOUNTED_DISKS or CLUSTER_DISKS must be set")
+	}
 
 	return nil
 }
@@ -299,8 +301,38 @@ func ValidateBool(input string) error {
 	return fmt.Errorf("invalid boolean value. Please enter: true/false, yes/no, y/n, or 1/0")
 }
 
+// ValidateDeprecatedArgs checks if any deprecated arguments are being used
+func ValidateDeprecatedArgs() error {
+	var errors []string
+
+	// Map of old argument names to new argument names
+	deprecatedArgs := map[string]string{
+		"SKIP_DISK_CHECK": "NO_DISKS_FOR_CLUSTER",
+		"LONGHORN_DISKS":  "CLUSTER_PREMOUNTED_DISKS",
+		"SELECTED_DISKS":  "CLUSTER_DISKS",
+	}
+
+	// Check if any deprecated arguments are set in viper
+	for oldArg, newArg := range deprecatedArgs {
+		if viper.IsSet(oldArg) {
+			errors = append(errors, fmt.Sprintf("argument '%s' has been renamed to '%s'. Please update your configuration to use '%s' instead", oldArg, newArg, newArg))
+		}
+	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf("deprecated arguments detected:\n- %s", strings.Join(errors, "\n- "))
+	}
+
+	return nil
+}
+
 func ValidateArgs() error {
 	var errors []string
+
+	// Check for deprecated arguments first
+	if err := ValidateDeprecatedArgs(); err != nil {
+		return err
+	}
 
 	for _, arg := range Arguments {
 		value := viper.GetString(arg.Key)

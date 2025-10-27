@@ -343,10 +343,10 @@ if !viper.GetBool("FIRST_NODE") {
 ### Configuration Length Validation
 Validate configuration constraints (e.g., Kubernetes resource limits):
 ```go
-if viper.IsSet("LONGHORN_DISKS") && viper.GetString("LONGHORN_DISKS") != "" {
-    longhornDiskString := pkg.ParseLonghornDiskConfig()
-    if len(longhornDiskString) > 63 {
-        log.Fatalf("Too many disks, %s is longer than 63", longhornDiskString)
+if viper.IsSet("CLUSTER_PREMOUNTED_DISKS") && viper.GetString("CLUSTER_PREMOUNTED_DISKS") != "" {
+    disks := viper.GetString("CLUSTER_PREMOUNTED_DISKS")
+    if len(disks) > 63 {
+        log.Fatalf("Too many disks, %s is longer than 63", disks)
     }
 }
 ```

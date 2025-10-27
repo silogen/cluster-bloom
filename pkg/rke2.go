@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 
@@ -90,6 +91,7 @@ func PrepareRKE2() error {
 		LogMessage(Error, fmt.Sprintf("Failed to write to %s: %v", rke2ConfigPath, err))
 		return err
 	}
+
 	certPath := "/etc/rancher/rke2/oidc-ca.crt"
 	if _, err := os.Stat(certPath); err == nil {
 		if err := os.Remove(certPath); err != nil {
@@ -303,5 +305,45 @@ func injectTLS_SAN(rke2ConfigPath string) error {
 
 		LogMessage(Info, "Successfully added TLS SAN configuration to RKE2 config")
 	}
+  return nil
+}
+  
+func isValidImageName(image string) bool {
+	re := regexp.MustCompile(`^[a-z0-9]+([._-][a-z0-9]+)*(\/[a-z0-9]+([._-][a-z0-9]+)*)*(?::[a-z0-9]+([._-][a-z0-9]+)*)?$`)
+	return re.MatchString(image)
+}
+
+func PreloadImages() error {
+
+	LogMessage(Info, "Found PRELOAD_IMAGES configuration")
+	images := strings.Split(viper.GetString("PRELOAD_IMAGES"), ",")
+
+	var targetImages []string
+	for _, image := range images {
+		image = strings.TrimSpace(image)
+		if image != "" {
+			if isValidImageName(image) {
+				targetImages = append(targetImages, image)
+			} else {
+				LogMessage(Info, fmt.Sprintf("Invalid image name found in PRELOAD_IMAGES: %s", image))
+			}
+		}
+	}
+
+	if len(targetImages) == 0 {
+		LogMessage(Info, "No valid images found in PRELOAD_IMAGES")
+		return nil
+	}
+
+	LogMessage(Info, fmt.Sprintf("Preloading images: %v", targetImages))
+	imagesDir := "/var/lib/rancher/rke2/agent/images"
+	if err := os.MkdirAll(imagesDir, 0755); err != nil {
+		return fmt.Errorf("failed to create images directory %s: %v", imagesDir, err)
+	}
+	preloadImagesList := "/var/lib/rancher/rke2/agent/images/preload_images.txt"
+	if err := os.WriteFile(preloadImagesList, []byte(strings.Join(targetImages, "\n")), 0644); err != nil {
+		return fmt.Errorf("failed to write preload images file %s: %v", preloadImagesList, err)
+	}
+
 	return nil
 }

@@ -283,65 +283,6 @@ func HasSufficientRancherPartition() bool {
 	return false
 }
 
-func NVMEDrivesAvailable() bool {
-	if viper.GetBool("SKIP_DISK_CHECK") == true {
-		LogMessage(Info, "Skipping NVME drive check as SKIP_DISK_CHECK is set.")
-		return true
-	}
-	if viper.GetString("SELECTED_DISKS") != "" {
-		LogMessage(Info, "Skipping NVME drive check as SELECTED_DISKS is set.")
-		return true
-	}
-	cmd := exec.Command("sh", "-c", "lsblk -o NAME,TYPE | grep nvme | grep disk | awk '{print $1}'")
-	output, err := cmd.Output()
-	if err != nil {
-		LogMessage(Error, fmt.Sprintf("Failed to list NVME devices: %v", err))
-		return false
-	}
-
-	nvmeDevices := strings.Fields(string(output))
-	if len(nvmeDevices) == 0 {
-		LogMessage(Warn, "No NVME devices found in the system")
-		return false
-	}
-	atLeastOneValidDrive := false
-
-	for _, device := range nvmeDevices {
-		fullDevPath := "/dev/" + device
-		mountCmd := exec.Command("sh", "-c", fmt.Sprintf("mount | grep %s", fullDevPath))
-		mountOutput, err := mountCmd.Output()
-		if err != nil {
-			LogMessage(Info, fmt.Sprintf("NVME device %s is unmounted and available", fullDevPath))
-			atLeastOneValidDrive = true
-			continue
-		}
-		mountLine := strings.TrimSpace(string(mountOutput))
-		if mountLine == "" {
-			LogMessage(Info, fmt.Sprintf("NVME device %s is unmounted and available", fullDevPath))
-			atLeastOneValidDrive = true
-			continue
-		}
-		fields := strings.Fields(mountLine)
-		if len(fields) < 3 {
-			LogMessage(Warn, fmt.Sprintf("Unexpected mount output format for device %s: %s", fullDevPath, mountLine))
-			continue
-		}
-		mountPoint := fields[2]
-		if strings.HasPrefix(mountPoint, "/mnt/disk") {
-			LogMessage(Info, fmt.Sprintf("NVME device %s is properly mounted at %s", fullDevPath, mountPoint))
-			atLeastOneValidDrive = true
-		} else {
-			LogMessage(Warn, fmt.Sprintf("NVME device %s is mounted at %s, which is not an approved location", fullDevPath, mountPoint))
-		}
-	}
-
-	if !atLeastOneValidDrive {
-		LogMessage(Warn, "No NVME drives available (either unmounted or mounted at /mnt/disk*)")
-		return false
-	}
-
-	return true
-}
 
 func CreateMetalLBConfig() error {
 	cmd := exec.Command("sh", "-c", "ip route get 1 | awk '{print $7; exit}'")

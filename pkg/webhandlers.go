@@ -180,23 +180,23 @@ func (h *WebHandlerService) LoadConfigFromFile(configFile string, oneShot bool) 
 
 		// Convert viper keys to uppercase format expected by the rest of the system
 		keyMapping := map[string]string{
-			"domain":               "DOMAIN",
-			"server_ip":            "SERVER_IP",
-			"join_token":           "JOIN_TOKEN",
-			"first_node":           "FIRST_NODE",
-			"gpu_node":             "GPU_NODE",
-			"control_plane":        "CONTROL_PLANE",
-			"skip_disk_check":      "SKIP_DISK_CHECK",
-			"selected_disks":       "SELECTED_DISKS",
-			"longhorn_disks":       "LONGHORN_DISKS",
-			"use_cert_manager":     "USE_CERT_MANAGER",
-			"cert_option":          "CERT_OPTION",
-			"tls_cert":             "TLS_CERT",
-			"tls_key":              "TLS_KEY",
-			"oidc_url":             "OIDC_URL",
-			"clusterforge_release": "CLUSTERFORGE_RELEASE",
-			"disabled_steps":       "DISABLED_STEPS",
-			"enabled_steps":        "ENABLED_STEPS",
+			"domain":                   "DOMAIN",
+			"server_ip":                "SERVER_IP",
+			"join_token":               "JOIN_TOKEN",
+			"first_node":               "FIRST_NODE",
+			"gpu_node":                 "GPU_NODE",
+			"control_plane":            "CONTROL_PLANE",
+			"no_disks_for_cluster":     "NO_DISKS_FOR_CLUSTER",
+			"cluster_disks":            "CLUSTER_DISKS",
+			"cluster_premounted_disks": "CLUSTER_PREMOUNTED_DISKS",
+			"use_cert_manager":         "USE_CERT_MANAGER",
+			"cert_option":              "CERT_OPTION",
+			"tls_cert":                 "TLS_CERT",
+			"tls_key":                  "TLS_KEY",
+			"oidc_url":                 "OIDC_URL",
+			"clusterforge_release":     "CLUSTERFORGE_RELEASE",
+			"disabled_steps":           "DISABLED_STEPS",
+			"enabled_steps":            "ENABLED_STEPS",
 		}
 
 		// Copy configuration with proper key mapping
@@ -292,24 +292,12 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	// // Safely extract LONGHORN_DISKS from prefilledConfig (it may be absent or not a string)
-	// var longhornDisksStr string
-	// if v, ok := h.prefilledConfig["LONGHORN_DISKS"].(string); ok {
-	// 	longhornDisksStr = v
-	// } else if v, ok := h.prefilledConfig["longhorn_disks"].(string); ok {
-	// 	// accept lowercase key as well
-	// 	longhornDisksStr = v
-	// } else {
-	// 	longhornDisksStr = ""
-	// }
-
-	//_, longhornMountPoints, err := GetPriorLonghornDisks(longhornDisksStr)
-	_, longhornPreviousDisks, err := GetDisksFromSelectedConfig(h.prefilledConfig["selected_disks"].(string))
+	_, longhornPreviousDisks, err := GetDisksFromSelectedConfig(h.prefilledConfig["cluster_disks"].(string))
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Error getting prior Longhorn previous format targets: %v", err))
 	}
 
-	_, longhornPreviousMountpoints, err := GetDisksFromLonghornConfig(h.prefilledConfig["longhorn_disks"].(string))
+	_, longhornPreviousMountpoints, err := GetDisksFromLonghornConfig(h.prefilledConfig["cluster_premounted_disks"].(string))
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Error getting prior Longhorn mount points: %v", err))
 	}
