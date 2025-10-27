@@ -94,11 +94,10 @@ func Run(name string, runInDryRun bool, command string, args ...string) (string,
 // name: identifier for this call site (e.g., "StepName.Operation")
 // runInDryRun: if true, command executes even in dry-run mode (for read-only operations)
 func CombinedOutput(name string, runInDryRun bool, command string, args ...string) ([]byte, error) {
-	if dryrun.IsDryRun() && !runInDryRun {
-		log.Infof("[DRY-RUN] %s: %s %s", name, command, strings.Join(args, " "))
-
-		// Check for mock return value
+	if dryrun.IsDryRun() {
+		// Always check for mocks first in dry-run mode
 		if output, err, found := dryrun.GetMockValue(name); found {
+			log.Infof("[DRY-RUN] %s: %s %s", name, command, strings.Join(args, " "))
 			if err != nil {
 				log.Infof("[DRY-RUN] %s: returning mock error: %v", name, err)
 			} else {
@@ -107,7 +106,14 @@ func CombinedOutput(name string, runInDryRun bool, command string, args ...strin
 			return []byte(output), err
 		}
 
-		return []byte{}, nil
+		// If no mock and runInDryRun is false, return empty
+		if !runInDryRun {
+			log.Infof("[DRY-RUN] %s: %s %s", name, command, strings.Join(args, " "))
+			return []byte{}, nil
+		}
+
+		// If no mock but runInDryRun is true, execute real command
+		log.Infof("[DRY-RUN] %s (read-only): %s %s", name, command, strings.Join(args, " "))
 	}
 
 	cmd := exec.Command(command, args...)

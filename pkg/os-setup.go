@@ -288,10 +288,9 @@ func HasSufficientRancherPartition() bool {
 	return false
 }
 
-
 func CreateMetalLBConfig() error {
 	output, err := command.Output("CreateMetalLBConfig.GetDefaultIP", true, "sh", "-c", "ip route get 1 | awk '{print $7; exit}'")
-	if err != nil{
+	if err != nil {
 		return fmt.Errorf("failed to determine default IP: %v", err)
 	}
 	defaultIP := strings.TrimSpace(string(output))
@@ -327,7 +326,7 @@ metadata:
 func GetUserHomeDirViaShell(username string) (string, error) {
 	// Use shell's tilde expansion to get the home directory
 	output, err := command.Output("GetUserHomeDirViaShell.EvalEcho", true, "sh", "-c", fmt.Sprintf("eval echo ~%s", username))
-	if err != nil{
+	if err != nil {
 		return "", fmt.Errorf("failed to get home directory for user %s: %w", username, err)
 	}
 
@@ -404,15 +403,15 @@ func setupMultipath() error {
 }
 
 func updateModprobe() error {
-	output, err := command.Output("UpdateModprobe.CommentBlacklist", true, "sh", "-c", "sudo sed -i '/^blacklist amdgpu/s/^/# /' /etc/modprobe.d/*.conf")
-	if err != nil{
+	output, err := command.Output("UpdateModprobe.CommentBlacklist", false, "sh", "-c", "sudo sed -i '/^blacklist amdgpu/s/^/# /' /etc/modprobe.d/*.conf")
+	if err != nil {
 		LogMessage(Warn, fmt.Sprintf("Modprobe configuration returned: %s", output))
 		return fmt.Errorf("failed to configure Modprobe: %w", err)
 	} else {
 		LogMessage(Info, "")
 	}
-	output, err = command.Output("UpdateModprobe.LoadModule", true, "modprobe", "amdgpu")
-	if err != nil{
+	output, err = command.Output("UpdateModprobe.LoadModule", false, "modprobe", "amdgpu")
+	if err != nil {
 		LogMessage(Warn, fmt.Sprintf("Modprobe amdgpu returned: %s", output))
 		return fmt.Errorf("failed to modprobe amdgpu: %w", err)
 	} else {

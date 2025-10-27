@@ -1003,17 +1003,19 @@ var CleanLonghornMountsStep = Step{
 		LogMessage(Info, "Cleaning Longhorn mounts and PVCs")
 
 		// Stop Longhorn services first if they exist
-		stepResult := shellCmdHelper("sudo systemctl stop longhorn-* 2>/dev/null || true")
-		if stepResult.Error != nil {
-			return stepResult
+		err := command.SimpleRun("CleanLonghornMounts.StopServices", false, "sh", "-c", "sudo systemctl stop longhorn-* 2>/dev/null || true")
+		if err != nil {
+			LogMessage(Error, fmt.Sprintf("Error stopping Longhorn services: %v", err))
+			return StepResult{Error: fmt.Errorf("error stopping Longhorn services: %w", err)}
 		}
 
 		// Find and unmount all Longhorn-related mounts
 		for i := 0; i < 3; i++ {
 			// Unmount Longhorn device files
-			stepResult = shellCmdHelper("sudo umount -lf /dev/longhorn/pvc* 2>/dev/null || true")
-			if stepResult.Error != nil {
-				return stepResult
+			err = command.SimpleRun(fmt.Sprintf("CleanLonghornMounts.UmountPVC.Iteration%d", i+1), false, "sh", "-c", "sudo umount -lf /dev/longhorn/pvc* 2>/dev/null || true")
+			if err != nil {
+				LogMessage(Error, fmt.Sprintf("Error unmounting /dev/longhorn/pvc*: %v", err))
+				return StepResult{Error: fmt.Errorf("error unmounting /dev/longhorn/pvc*: %w", err)}
 			}
 
 			// Find /mnt/disk* mount points that contain longhorn-disk.cfg and unmount them
@@ -1025,67 +1027,64 @@ var CleanLonghornMountsStep = Step{
 					fi
 				done
 			`
-			stepResult = shellCmdHelper(shellCmd)
-			if stepResult.Error != nil {
-				return stepResult
+			err = command.SimpleRun(fmt.Sprintf("CleanLonghornMounts.CheckMntDisks.Iteration%d", i+1), false, "sh", "-c", shellCmd)
+			if err != nil {
+				LogMessage(Error, fmt.Sprintf("Error checking /mnt/disk*: %v", err))
+				return StepResult{Error: fmt.Errorf("error checking /mnt/disk*: %w", err)}
 			}
 
 			// Find and unmount CSI volume mounts
-			stepResult = shellCmdHelper("sudo umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/pvc-* 2>/dev/null || true")
-			if stepResult.Error != nil {
-				return stepResult
+			err = command.SimpleRun(fmt.Sprintf("CleanLonghornMounts.UmountKubeletPVC.Iteration%d", i+1), false, "sh", "-c", "sudo umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/pvc-* 2>/dev/null || true")
+			if err != nil {
+				LogMessage(Error, fmt.Sprintf("Error unmounting kubelet CSI PVC: %v", err))
+				return StepResult{Error: fmt.Errorf("error unmounting kubelet CSI PVC: %w", err)}
 			}
 
-			stepResult = shellCmdHelper("sudo umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/*/mount 2>/dev/null || true")
-			if stepResult.Error != nil {
-				return stepResult
+			err = command.SimpleRun(fmt.Sprintf("CleanLonghornMounts.UmountKubeletMount.Iteration%d", i+1), false, "sh", "-c", "sudo umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/*/mount 2>/dev/null || true")
+			if err != nil {
+				LogMessage(Error, fmt.Sprintf("Error unmounting kubelet CSI mount: %v", err))
+				return StepResult{Error: fmt.Errorf("error unmounting kubelet CSI mount: %w", err)}
 			}
 
 			// Find and unmount CSI plugin mounts
-			stepResult = shellCmdHelper("mount | grep 'driver.longhorn.io' | awk '{print $3}' | xargs -r sudo umount -lf 2>/dev/null || true")
-			if stepResult.Error != nil {
-				return stepResult
+			err = command.SimpleRun(fmt.Sprintf("CleanLonghornMounts.GrepUmountDriver.Iteration%d", i+1), false, "sh", "-c", "mount | grep 'driver.longhorn.io' | awk '{print $3}' | xargs -r sudo umount -lf 2>/dev/null || true")
+			if err != nil {
+				LogMessage(Error, fmt.Sprintf("Error unmounting longhorn driver: %v", err))
+				return StepResult{Error: fmt.Errorf("error unmounting longhorn driver: %w", err)}
 			}
 
 			// Find and unmount any remaining kubelet plugin mounts
-			stepResult = shellCmdHelper("sudo umount -Af /var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/* 2>/dev/null || true")
-			if stepResult.Error != nil {
-				return stepResult
+			err = command.SimpleRun(fmt.Sprintf("CleanLonghornMounts.UmountCSIPlugin.Iteration%d", i+1), false, "sh", "-c", "sudo umount -Af /var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/* 2>/dev/null || true")
+			if err != nil {
+				LogMessage(Error, fmt.Sprintf("Error unmounting CSI plugin: %v", err))
+				return StepResult{Error: fmt.Errorf("error unmounting CSI plugin: %w", err)}
 			}
 		}
 
 		// Force kill any processes using Longhorn mounts
-		stepResult = shellCmdHelper("sudo fuser -km /dev/longhorn/ 2>/dev/null || true")
-		if stepResult.Error != nil {
-			return stepResult
+		err = command.SimpleRun("CleanLonghornMounts.FuserKill", false, "sh", "-c", "sudo fuser -km /dev/longhorn/ 2>/dev/null || true")
+		if err != nil {
+			LogMessage(Error, fmt.Sprintf("Error killing processes: %v", err))
+			return StepResult{Error: fmt.Errorf("error killing processes: %w", err)}
 		}
 
 		// Clean up device files
-		stepResult = shellCmdHelper("sudo rm -rf /dev/longhorn/pvc-* 2>/dev/null || true")
-		if stepResult.Error != nil {
-			return stepResult
+		err = command.SimpleRun("CleanLonghornMounts.RemovePVCDevices", false, "sh", "-c", "sudo rm -rf /dev/longhorn/pvc-* 2>/dev/null || true")
+		if err != nil {
+			LogMessage(Error, fmt.Sprintf("Error removing PVC devices: %v", err))
+			return StepResult{Error: fmt.Errorf("error removing PVC devices: %w", err)}
 		}
 
 		// Clean up kubelet CSI mounts
-		stepResult = shellCmdHelper("sudo rm -rf /var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/* 2>/dev/null || true")
-		if stepResult.Error != nil {
-			return stepResult
+		err = command.SimpleRun("CleanLonghornMounts.RemoveCSIPlugin", false, "sh", "-c", "sudo rm -rf /var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/* 2>/dev/null || true")
+		if err != nil {
+			LogMessage(Error, fmt.Sprintf("Error removing CSI plugin: %v", err))
+			return StepResult{Error: fmt.Errorf("error removing CSI plugin: %w", err)}
 		}
 
 		LogMessage(Info, "Longhorn cleanup completed")
 		return StepResult{Error: nil}
 	},
-}
-
-func shellCmdHelper(shellCmd string) StepResult {
-	output, err := command.CombinedOutput("ShellCmdHelper.Exec", true, "sh", "-c", shellCmd)
-	if err != nil {
-		LogMessage(Error, fmt.Sprintf("Error running command %s: %v, output: %s", shellCmd, err, string(output)))
-		return StepResult{Error: fmt.Errorf("error running %s: %w", shellCmd, err)}
-	} else {
-		LogMessage(Debug, fmt.Sprintf("Success running %s", shellCmd))
-	}
-	return StepResult{Error: nil}
 }
 
 var UninstallRKE2Step = Step{

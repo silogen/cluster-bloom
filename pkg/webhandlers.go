@@ -291,14 +291,21 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	_, longhornPreviousDisks, err := GetDisksFromSelectedConfig(h.prefilledConfig["cluster_disks"].(string))
-	if err != nil {
-		LogMessage(Error, fmt.Sprintf("Error getting prior Longhorn previous format targets: %v", err))
+	var longhornPreviousDisks map[string]string
+	var longhornPreviousMountpoints map[string]string
+
+	if clusterDisks, ok := h.prefilledConfig["cluster_disks"].(string); ok {
+		_, longhornPreviousDisks, err = GetDisksFromSelectedConfig(clusterDisks)
+		if err != nil {
+			LogMessage(Error, fmt.Sprintf("Error getting prior Longhorn previous format targets: %v", err))
+		}
 	}
 
-	_, longhornPreviousMountpoints, err := GetDisksFromLonghornConfig(h.prefilledConfig["cluster_premounted_disks"].(string))
-	if err != nil {
-		LogMessage(Error, fmt.Sprintf("Error getting prior Longhorn mount points: %v", err))
+	if clusterPremountedDisks, ok := h.prefilledConfig["cluster_premounted_disks"].(string); ok {
+		_, longhornPreviousMountpoints, err = GetDisksFromLonghornConfig(clusterPremountedDisks)
+		if err != nil {
+			LogMessage(Error, fmt.Sprintf("Error getting prior Longhorn mount points: %v", err))
+		}
 	}
 
 	log.Infof("ConfigWizardHandler: Previous Longhorn mountpoints: %v", longhornPreviousMountpoints)

@@ -1,0 +1,8 @@
+DOMAIN: test.local
+FIRST_NODE: true
+NO_DISKS_FOR_CLUSTER: true
+CERT_OPTION: generate
+ENABLED_STEPS: "PrepareLonghornDisksStep"
+
+# Mocks for commands (empty since step is skipped)
+mocks: {}

@@ -179,7 +179,7 @@ func setupAudit() error {
 		return fmt.Errorf("failed to read file %s: %w", sourceFile, err)
 	}
 
-	if err := os.WriteFile(targetPath, content, 0644); err != nil {
+	if err := fsops.WriteFile(targetPath, content, 0644); err != nil {
 		return fmt.Errorf("failed to write file %s: %w", targetPath, err)
 	}
 
