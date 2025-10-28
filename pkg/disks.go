@@ -24,6 +24,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/silogen/cluster-bloom/pkg/mockablecmd"
 	"github.com/spf13/viper"
 )
 
@@ -276,8 +277,7 @@ func MountDrives(drives []string) (map[string]string, error) {
 	mountedMap := make(map[string]string)
 	usedMountPoints := make(map[string]bool)
 	i := 0
-	cmd := exec.Command("sh", "-c", "mount | awk '/\\/mnt\\/disk[0-9]+/ {print $3}'")
-	output, err := cmd.Output()
+	output, err := mockablecmd.Run("PrepareLonghornDisksStep.ListMounts", "sh", "-c", "mount | awk '/\\/mnt\\/disk[0-9]+/ {print $3}'")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list existing mount points: %w", err)
 	}
@@ -291,35 +291,37 @@ func MountDrives(drives []string) (map[string]string, error) {
 	}
 
 	for _, drive := range drives {
-		cmd = exec.Command("lsblk", "-f", drive)
-		output, err := cmd.Output()
+		mockID := fmt.Sprintf("PrepareLonghornDisksStep.CheckFilesystem.%s", drive)
+		output, err := mockablecmd.Run(mockID, "lsblk", "-f", drive)
 		if err != nil {
 			return mountedMap, fmt.Errorf("failed to check filesystem type for %s: %w", drive, err)
 		}
 		if strings.Contains(string(output), "ext4") {
 			LogMessage(Info, fmt.Sprintf("Disk %s is already formatted as ext4. Skipping format.", drive))
 		} else {
-			cmd = exec.Command("lsblk", "-no", "PARTTYPE", drive)
-			output, err = cmd.Output()
+			mockID = fmt.Sprintf("PrepareLonghornDisksStep.CheckPartitionType.%s", drive)
+			output, err = mockablecmd.Run(mockID, "lsblk", "-no", "PARTTYPE", drive)
 			if err != nil {
 				return mountedMap, fmt.Errorf("failed to check partition type for %s: %w", drive, err)
 			}
 			if strings.TrimSpace(string(output)) != "" {
 				LogMessage(Info, fmt.Sprintf("Disk %s has existing partitions. Removing partitions...", drive))
-				cmd = exec.Command("sudo", "wipefs", "-a", drive)
-				if err := cmd.Run(); err != nil {
+				mockID := fmt.Sprintf("PrepareLonghornDisksStep.WipePartitions.%s", drive)
+				_, err := mockablecmd.Run(mockID, "sudo", "wipefs", "-a", drive)
+				if err != nil {
 					return mountedMap, fmt.Errorf("failed to wipe partitions on %s: %w", drive, err)
 				}
 			}
 
 			LogMessage(Info, fmt.Sprintf("Disk %s is not partitioned. Formatting with ext4...", drive))
-			cmd = exec.Command("mkfs.ext4", "-F", "-F", drive)
-			if err := cmd.Run(); err != nil {
+			mockID := fmt.Sprintf("PrepareLonghornDisksStep.FormatDisk.%s", drive)
+			_, err := mockablecmd.Run(mockID, "mkfs.ext4", "-F", "-F", drive)
+			if err != nil {
 				return mountedMap, fmt.Errorf("failed to format %s: %w", drive, err)
 			}
 		}
-		cmd = exec.Command("blkid", "-s", "UUID", "-o", "value", drive)
-		uuidOutput, err := cmd.Output()
+		mockID = fmt.Sprintf("PrepareLonghornDisksStep.GetUUID.%s", drive)
+		uuidOutput, err := mockablecmd.Run(mockID, "blkid", "-s", "UUID", "-o", "value", drive)
 		uuid := ""
 		if err == nil {
 			uuid = strings.TrimSpace(string(uuidOutput))
@@ -338,8 +340,9 @@ func MountDrives(drives []string) (map[string]string, error) {
 			return mountedMap, fmt.Errorf("failed to create mount point %s: %w", mountPoint, err)
 		}
 
-		cmd = exec.Command("mount", drive, mountPoint)
-		if err := cmd.Run(); err != nil {
+		mockID = fmt.Sprintf("PrepareLonghornDisksStep.MountDrive.%s", drive)
+		_, err = mockablecmd.Run(mockID, "mount", drive, mountPoint)
+		if err != nil {
 			return mountedMap, fmt.Errorf("failed to mount %s at %s: %w", drive, mountPoint, err)
 		}
 
@@ -368,13 +371,13 @@ func PersistMountedDisks(mountedMap map[string]string) error {
 
 	fstabFile := "/etc/fstab"
 	backupFile := "/etc/fstab.bak"
-	if err := exec.Command("sudo", "cp", fstabFile, backupFile).Run(); err != nil {
+	if _, err := mockablecmd.Run("PersistMountedDisks.BackupFstab", "sudo", "cp", fstabFile, backupFile); err != nil {
 		return fmt.Errorf("failed to backup fstab file: %w", err)
 	}
 
 	for mountPoint, device := range mountedMap {
-		cmd := exec.Command("blkid", "-s", "UUID", "-o", "value", device)
-		uuidOutput, err := cmd.Output()
+		mockID := fmt.Sprintf("PersistMountedDisks.GetUUID.%s", device)
+		uuidOutput, err := mockablecmd.Run(mockID, "blkid", "-s", "UUID", "-o", "value", device)
 		if err != nil {
 			LogMessage(Info, fmt.Sprintf("Could not retrieve UUID for %s. Skipping...", device))
 			continue
@@ -393,7 +396,7 @@ func PersistMountedDisks(mountedMap map[string]string) error {
 			continue
 		}
 		entry := fmt.Sprintf("UUID=%s %s ext4 defaults,nofail 0 2 %s\n", uuid, mountPoint, bloomFstabTag)
-		cmd = exec.Command("sudo", "tee", "-a", fstabFile)
+		cmd := exec.Command("sudo", "tee", "-a", fstabFile)
 		cmd.Stdin = strings.NewReader(entry)
 		if err := cmd.Run(); err != nil {
 			return fmt.Errorf("failed to add entry to fstab: %w", err)
@@ -401,7 +404,7 @@ func PersistMountedDisks(mountedMap map[string]string) error {
 		LogMessage(Debug, fmt.Sprintf("Added %s to /etc/fstab.", mountPoint))
 	}
 
-	if err := exec.Command("sudo", "mount", "-a").Run(); err != nil {
+	if _, err := mockablecmd.Run("PersistMountedDisks.RemountAll", "sudo", "mount", "-a"); err != nil {
 		return fmt.Errorf("failed to remount filesystems: %w", err)
 	}
 

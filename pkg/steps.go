@@ -1129,7 +1129,7 @@ func shellCmdHelper(shellCmd string) StepResult {
 		LogMessage(Error, fmt.Sprintf("Error running command %s: %v, output: %s", shellCmd, err, string(output)))
 		return StepResult{Error: fmt.Errorf("error running %s: %w", shellCmd, err)}
 	} else {
-		LogMessage(Debug, fmt.Sprint("Success running %s", shellCmd))
+		LogMessage(Debug, fmt.Sprintf("Success running %s", shellCmd))
 	}
 	return StepResult{Error: nil}
 }

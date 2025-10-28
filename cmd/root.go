@@ -31,6 +31,7 @@ import (
 
 	"github.com/silogen/cluster-bloom/pkg"
 	"github.com/silogen/cluster-bloom/pkg/args"
+	"github.com/silogen/cluster-bloom/pkg/mockablecmd"
 )
 
 var rootCmd = &cobra.Command{
@@ -114,6 +115,9 @@ func initConfig() {
 	if err := viper.ReadInConfig(); err == nil {
 		log.Infof("Using config file: %s", viper.ConfigFileUsed())
 	}
+
+	// Load mocks from config if present
+	mockablecmd.LoadMocks()
 
 	// Log config BEFORE any validation that might exit
 	logConfigValues()
