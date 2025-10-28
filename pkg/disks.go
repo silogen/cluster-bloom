@@ -336,7 +336,9 @@ func MountDrives(drives []string) (map[string]string, error) {
 		}
 		usedMountPoints[mountPoint] = true
 
-		if err := os.MkdirAll(mountPoint, 0755); err != nil {
+		mockID = fmt.Sprintf("PrepareLonghornDisksStep.CreateMountPoint.%s", mountPoint)
+		_, err = mockablecmd.Run(mockID, "mkdir", "-p", mountPoint)
+		if err != nil {
 			return mountedMap, fmt.Errorf("failed to create mount point %s: %w", mountPoint, err)
 		}
 
@@ -376,8 +378,12 @@ func PersistMountedDisks(mountedMap map[string]string) error {
 	}
 
 	for mountPoint, device := range mountedMap {
+		// device is in format "/dev/sda-uuid", extract just the device name
+		deviceParts := strings.Split(device, "-")
+		deviceName := deviceParts[0]
+
 		mockID := fmt.Sprintf("PersistMountedDisks.GetUUID.%s", device)
-		uuidOutput, err := mockablecmd.Run(mockID, "blkid", "-s", "UUID", "-o", "value", device)
+		uuidOutput, err := mockablecmd.Run(mockID, "blkid", "-s", "UUID", "-o", "value", deviceName)
 		if err != nil {
 			LogMessage(Info, fmt.Sprintf("Could not retrieve UUID for %s. Skipping...", device))
 			continue
@@ -395,10 +401,11 @@ func PersistMountedDisks(mountedMap map[string]string) error {
 			LogMessage(Debug, fmt.Sprintf("%s is already in /etc/fstab.", mountPoint))
 			continue
 		}
-		entry := fmt.Sprintf("UUID=%s %s ext4 defaults,nofail 0 2 %s\n", uuid, mountPoint, bloomFstabTag)
-		cmd := exec.Command("sudo", "tee", "-a", fstabFile)
-		cmd.Stdin = strings.NewReader(entry)
-		if err := cmd.Run(); err != nil {
+		entry := fmt.Sprintf("UUID=%s %s ext4 defaults,nofail 0 2 %s", uuid, mountPoint, bloomFstabTag)
+		mockID = fmt.Sprintf("PersistMountedDisks.AddFstabEntry.%s", mountPoint)
+		shellCmd := fmt.Sprintf("echo '%s' | sudo tee -a %s", entry, fstabFile)
+		_, err = mockablecmd.Run(mockID, "sh", "-c", shellCmd)
+		if err != nil {
 			return fmt.Errorf("failed to add entry to fstab: %w", err)
 		}
 		LogMessage(Debug, fmt.Sprintf("Added %s to /etc/fstab.", mountPoint))

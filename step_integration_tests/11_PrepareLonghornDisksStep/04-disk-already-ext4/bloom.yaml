@@ -4,15 +4,28 @@ CLUSTER_DISKS: /dev/sdb
 mocks:
   PrepareLonghornDisksStep.ListMounts:
     output: ""
+    args: ["sh", "-c", "mount | awk '/\\/mnt\\/disk[0-9]+/ {print $3}'"]
   PrepareLonghornDisksStep.CheckFilesystem./dev/sdb:
     output: "NAME FSTYPE\nsdb  ext4"
+    args: ["lsblk", "-f", "/dev/sdb"]
   PrepareLonghornDisksStep.GetUUID./dev/sdb:
     output: "xyz-789-ghi-012"
+    args: ["blkid", "-s", "UUID", "-o", "value", "/dev/sdb"]
+  PrepareLonghornDisksStep.CreateMountPoint./mnt/disk0:
+    output: ""
+    args: ["mkdir", "-p", "/mnt/disk0"]
   PrepareLonghornDisksStep.MountDrive./dev/sdb:
     output: ""
+    args: ["mount", "/dev/sdb", "/mnt/disk0"]
   PersistMountedDisks.BackupFstab:
     output: ""
+    args: ["sudo", "cp", "/etc/fstab", "/etc/fstab.bak"]
   PersistMountedDisks.GetUUID./dev/sdb-xyz-789-ghi-012:
     output: "xyz-789-ghi-012"
+    args: ["blkid", "-s", "UUID", "-o", "value", "/dev/sdb"]
+  PersistMountedDisks.AddFstabEntry./mnt/disk0:
+    output: ""
+    args: ["sh", "-c", "echo 'UUID=xyz-789-ghi-012 /mnt/disk0 ext4 defaults,nofail 0 2 # managed by cluster-bloom' | sudo tee -a /etc/fstab"]
   PersistMountedDisks.RemountAll:
     output: ""
+    args: ["sudo", "mount", "-a"]

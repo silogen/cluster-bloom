@@ -4,15 +4,28 @@ CLUSTER_DISKS: /dev/sda
 mocks:
   PrepareLonghornDisksStep.ListMounts:
     output: ""
+    args: ["sh", "-c", "mount | awk '/\\/mnt\\/disk[0-9]+/ {print $3}'"]
   PrepareLonghornDisksStep.CheckFilesystem./dev/sda:
     output: "NAME FSTYPE\nsda  "
+    args: ["lsblk", "-f", "/dev/sda"]
   PrepareLonghornDisksStep.CheckPartitionType./dev/sda:
     output: ""
+    args: ["lsblk", "-no", "PARTTYPE", "/dev/sda"]
   PrepareLonghornDisksStep.FormatDisk./dev/sda:
     error: "mkfs.ext4: Device or resource busy"
+    args: ["mkfs.ext4", "-F", "-F", "/dev/sda"]
   PrepareLonghornDisksStep.GetUUID./dev/sda:
     error: "ERROR: Should not get UUID after format failure"
+    args: ["blkid", "-s", "UUID", "-o", "value", "/dev/sda"]
+  PrepareLonghornDisksStep.CreateMountPoint./mnt/disk0:
+    error: "ERROR: Should not create mount point after format failure"
+    args: ["mkdir", "-p", "/mnt/disk0"]
   PrepareLonghornDisksStep.MountDrive./dev/sda:
     error: "ERROR: Should not mount drive after format failure"
+    args: ["mount", "/dev/sda", "/mnt/disk0"]
   PersistMountedDisks.BackupFstab:
     error: "ERROR: Should not persist after format failure"
+    args: ["sudo", "cp", "/etc/fstab", "/etc/fstab.bak"]
+  PersistMountedDisks.AddFstabEntry./mnt/disk0:
+    error: "ERROR: Should not add fstab entry after format failure"
+    args: ["sh", "-c", "echo 'UUID=* /mnt/disk0 ext4 defaults,nofail 0 2 # managed by cluster-bloom' | sudo tee -a /etc/fstab"]

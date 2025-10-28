@@ -3,12 +3,17 @@ CLUSTER_DISKS: /dev/sda
 
 mocks:
   PrepareLonghornDisksStep.ListMounts:
-    output: "/dev/sda on /mnt/longhorn0 type ext4 (rw,relatime)"
+    output: "/mnt/disk0"
+    args: ["sh", "-c", "mount | awk '/\\/mnt\\/disk[0-9]+/ {print $3}'"]
   PrepareLonghornDisksStep.CheckFilesystem./dev/sda:
     error: "ERROR: Should not check filesystem when disk is already mounted"
+    args: ["lsblk", "-f", "/dev/sda"]
   PrepareLonghornDisksStep.FormatDisk./dev/sda:
     error: "ERROR: Should not format disk when already mounted"
+    args: ["mkfs.ext4", "-F", "-F", "/dev/sda"]
   PrepareLonghornDisksStep.MountDrive./dev/sda:
     error: "ERROR: Should not mount drive when already mounted"
+    args: ["mount", "/dev/sda", "/mnt/disk0"]
   PersistMountedDisks.BackupFstab:
     error: "ERROR: Should not persist when disk is already mounted"
+    args: ["sudo", "cp", "/etc/fstab", "/etc/fstab.bak"]

@@ -4,19 +4,34 @@ CLUSTER_DISKS: /dev/sda
 mocks:
   PrepareLonghornDisksStep.ListMounts:
     output: ""
+    args: ["sh", "-c", "mount | awk '/\\/mnt\\/disk[0-9]+/ {print $3}'"]
   PrepareLonghornDisksStep.CheckFilesystem./dev/sda:
     output: "NAME FSTYPE\nsda  "
+    args: ["lsblk", "-f", "/dev/sda"]
   PrepareLonghornDisksStep.CheckPartitionType./dev/sda:
     output: ""
+    args: ["lsblk", "-no", "PARTTYPE", "/dev/sda"]
   PrepareLonghornDisksStep.FormatDisk./dev/sda:
     output: ""
+    args: ["mkfs.ext4", "-F", "-F", "/dev/sda"]
   PrepareLonghornDisksStep.GetUUID./dev/sda:
     output: "abc-123-def-456"
+    args: ["blkid", "-s", "UUID", "-o", "value", "/dev/sda"]
+  PrepareLonghornDisksStep.CreateMountPoint./mnt/disk0:
+    output: ""
+    args: ["mkdir", "-p", "/mnt/disk0"]
   PrepareLonghornDisksStep.MountDrive./dev/sda:
     output: ""
+    args: ["mount", "/dev/sda", "/mnt/disk0"]
   PersistMountedDisks.BackupFstab:
     output: ""
+    args: ["sudo", "cp", "/etc/fstab", "/etc/fstab.bak"]
   PersistMountedDisks.GetUUID./dev/sda-abc-123-def-456:
     output: "abc-123-def-456"
+    args: ["blkid", "-s", "UUID", "-o", "value", "/dev/sda"]
+  PersistMountedDisks.AddFstabEntry./mnt/disk0:
+    output: ""
+    args: ["sh", "-c", "echo 'UUID=abc-123-def-456 /mnt/disk0 ext4 defaults,nofail 0 2 # managed by cluster-bloom' | sudo tee -a /etc/fstab"]
   PersistMountedDisks.RemountAll:
     output: ""
+    args: ["sudo", "mount", "-a"]
