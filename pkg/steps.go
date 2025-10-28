@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/silogen/cluster-bloom/pkg/args"
+	"github.com/silogen/cluster-bloom/pkg/system/logrotate"
 	"github.com/silogen/cluster-bloom/pkg/sysvalidation"
 	"github.com/spf13/viper"
 )
@@ -424,7 +425,7 @@ var SetupLonghornStep = Step{
 	},
 	Action: func() StepResult {
 		if viper.GetBool("FIRST_NODE") {
-			err := setupManifests("longhorn")
+			err = setupManifests("longhorn")
 			if err != nil {
 				return StepResult{Error: err}
 			}
@@ -449,6 +450,26 @@ var SetupLonghornStep = Step{
 			}
 		} else {
 			return StepResult{Error: nil}
+		}
+		return StepResult{Error: nil}
+	},
+}
+
+var LogrotateConfigStep = Step{
+	Id:          "LogConfigStep",
+	Name:        "Configure logrotate and rsyslog rate limiting",
+	Description: "Configure agressive logrotate for iSCSI Logs and rsyslog rate limiting",
+	Skip: func() bool {
+		if !viper.GetBool("FIRST_NODE") {
+			LogMessage(Info, "Skipping for additional nodes.")
+			return true
+		}
+		return false
+	},
+	Action: func() StepResult {
+		err := logrotate.SetupLogrotate()
+		if err != nil {
+			return StepResult{Error: err}
 		}
 		return StepResult{Error: nil}
 	},
