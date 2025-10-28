@@ -1,0 +1,14 @@
+ENABLED_STEPS: PrepareLonghornDisksStep
+CLUSTER_DISKS: /dev/sda
+
+mocks:
+  PrepareLonghornDisksStep.ListMounts:
+    output: "/dev/sda on /mnt/longhorn0 type ext4 (rw,relatime)"
+  PrepareLonghornDisksStep.CheckFilesystem./dev/sda:
+    error: "ERROR: Should not check filesystem when disk is already mounted"
+  PrepareLonghornDisksStep.FormatDisk./dev/sda:
+    error: "ERROR: Should not format disk when already mounted"
+  PrepareLonghornDisksStep.MountDrive./dev/sda:
+    error: "ERROR: Should not mount drive when already mounted"
+  PersistMountedDisks.BackupFstab:
+    error: "ERROR: Should not persist when disk is already mounted"

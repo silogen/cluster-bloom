@@ -1,0 +1,8 @@
+ENABLED_STEPS: PrepareLonghornDisksStep
+NO_DISKS_FOR_CLUSTER: true
+
+mocks:
+  PrepareLonghornDisksStep.ListMounts:
+    error: "ERROR: Should not check mounts when NO_DISKS_FOR_CLUSTER is set"
+  PersistMountedDisks.BackupFstab:
+    error: "ERROR: Should not persist when NO_DISKS_FOR_CLUSTER is set"

@@ -1,0 +1,22 @@
+ENABLED_STEPS: PrepareLonghornDisksStep
+CLUSTER_DISKS: /dev/sda
+
+mocks:
+  PrepareLonghornDisksStep.ListMounts:
+    output: ""
+  PrepareLonghornDisksStep.CheckFilesystem./dev/sda:
+    output: "NAME FSTYPE\nsda  "
+  PrepareLonghornDisksStep.CheckPartitionType./dev/sda:
+    output: ""
+  PrepareLonghornDisksStep.FormatDisk./dev/sda:
+    output: ""
+  PrepareLonghornDisksStep.GetUUID./dev/sda:
+    output: "abc-123-def-456"
+  PrepareLonghornDisksStep.MountDrive./dev/sda:
+    output: ""
+  PersistMountedDisks.BackupFstab:
+    output: ""
+  PersistMountedDisks.GetUUID./dev/sda-abc-123-def-456:
+    output: "abc-123-def-456"
+  PersistMountedDisks.RemountAll:
+    output: ""

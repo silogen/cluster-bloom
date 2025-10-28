@@ -1,0 +1,18 @@
+ENABLED_STEPS: PrepareLonghornDisksStep
+CLUSTER_DISKS: /dev/sda
+
+mocks:
+  PrepareLonghornDisksStep.ListMounts:
+    output: ""
+  PrepareLonghornDisksStep.CheckFilesystem./dev/sda:
+    output: "NAME FSTYPE\nsda  ext4"
+  PrepareLonghornDisksStep.GetUUID./dev/sda:
+    output: "abc-123"
+  PrepareLonghornDisksStep.MountDrive./dev/sda:
+    error: "mount: /mnt/longhorn0: mount point does not exist"
+  PersistMountedDisks.BackupFstab:
+    error: "ERROR: Should not persist after mount failure"
+  PersistMountedDisks.GetUUID./dev/sda-abc-123:
+    error: "ERROR: Should not get UUID for persistence after mount failure"
+  PersistMountedDisks.RemountAll:
+    error: "ERROR: Should not remount after mount failure"

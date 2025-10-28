@@ -1,0 +1,18 @@
+ENABLED_STEPS: PrepareLonghornDisksStep
+CLUSTER_DISKS: /dev/sdb
+
+mocks:
+  PrepareLonghornDisksStep.ListMounts:
+    output: ""
+  PrepareLonghornDisksStep.CheckFilesystem./dev/sdb:
+    output: "NAME FSTYPE\nsdb  ext4"
+  PrepareLonghornDisksStep.GetUUID./dev/sdb:
+    output: "xyz-789-ghi-012"
+  PrepareLonghornDisksStep.MountDrive./dev/sdb:
+    output: ""
+  PersistMountedDisks.BackupFstab:
+    output: ""
+  PersistMountedDisks.GetUUID./dev/sdb-xyz-789-ghi-012:
+    output: "xyz-789-ghi-012"
+  PersistMountedDisks.RemountAll:
+    output: ""

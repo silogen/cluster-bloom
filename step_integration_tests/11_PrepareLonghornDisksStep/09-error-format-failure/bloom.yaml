@@ -1,0 +1,18 @@
+ENABLED_STEPS: PrepareLonghornDisksStep
+CLUSTER_DISKS: /dev/sda
+
+mocks:
+  PrepareLonghornDisksStep.ListMounts:
+    output: ""
+  PrepareLonghornDisksStep.CheckFilesystem./dev/sda:
+    output: "NAME FSTYPE\nsda  "
+  PrepareLonghornDisksStep.CheckPartitionType./dev/sda:
+    output: ""
+  PrepareLonghornDisksStep.FormatDisk./dev/sda:
+    error: "mkfs.ext4: Device or resource busy"
+  PrepareLonghornDisksStep.GetUUID./dev/sda:
+    error: "ERROR: Should not get UUID after format failure"
+  PrepareLonghornDisksStep.MountDrive./dev/sda:
+    error: "ERROR: Should not mount drive after format failure"
+  PersistMountedDisks.BackupFstab:
+    error: "ERROR: Should not persist after format failure"

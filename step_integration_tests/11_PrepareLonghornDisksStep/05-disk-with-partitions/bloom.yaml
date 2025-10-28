@@ -1,0 +1,24 @@
+ENABLED_STEPS: PrepareLonghornDisksStep
+CLUSTER_DISKS: /dev/sdc
+
+mocks:
+  PrepareLonghornDisksStep.ListMounts:
+    output: ""
+  PrepareLonghornDisksStep.CheckFilesystem./dev/sdc:
+    output: "NAME FSTYPE\nsdc  ntfs"
+  PrepareLonghornDisksStep.CheckPartitionType./dev/sdc:
+    output: "0x83"
+  PrepareLonghornDisksStep.WipePartitions./dev/sdc:
+    output: ""
+  PrepareLonghornDisksStep.FormatDisk./dev/sdc:
+    output: ""
+  PrepareLonghornDisksStep.GetUUID./dev/sdc:
+    output: "def-456-ghi-789"
+  PrepareLonghornDisksStep.MountDrive./dev/sdc:
+    output: ""
+  PersistMountedDisks.BackupFstab:
+    output: ""
+  PersistMountedDisks.GetUUID./dev/sdc-def-456-ghi-789:
+    output: "def-456-ghi-789"
+  PersistMountedDisks.RemountAll:
+    output: ""
