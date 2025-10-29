@@ -136,9 +136,11 @@ func runTestConfig(configFile string, configIdx int) bool {
 		startTime := time.Now()
 
 		result := pkg.StepResult{Error: nil, Message: ""}
+		skipped := false
 		if step.Skip != nil && step.Skip() {
 			fmt.Println("        status: skipped")
 			pkg.LogMessage(pkg.Info, fmt.Sprintf("Step %s is skipped", step.Name))
+			skipped = true
 		} else {
 			result = step.Action()
 		}
@@ -153,7 +155,7 @@ func runTestConfig(configFile string, configIdx int) bool {
 			fmt.Printf("        duration_ms: %d\n", duration.Milliseconds())
 			pkg.LogMessage(pkg.Error, fmt.Sprintf("Execution failed: %v", result.Error))
 			break
-		} else {
+		} else if !skipped {
 			completedSteps = append(completedSteps, step.Name)
 			fmt.Println("        status: completed")
 			if result.Message != "" {
