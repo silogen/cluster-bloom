@@ -28,8 +28,11 @@ import (
 	"github.com/spf13/viper"
 )
 
-//go:embed scripts/longhornPreflight.sh
+//go:embed scripts/longhorn_preflight_check.sh
 var longhornPreflightScript []byte
+
+//go:embed scripts/longhorn_validate_pvc_creation.sh
+var longhornPVCValidationScript []byte
 
 func CheckPackageInstallConnections() error {
 	cmd := exec.Command("apt-get", "update")
@@ -237,39 +240,35 @@ func SetupClusterForge() error {
 }
 
 func LonghornPreflightCheck() error {
-	// Create a temporary file with the embedded script content
-	tmpFile, err := os.CreateTemp("", "longhornPreflight-*.sh")
-	if err != nil {
-		LogMessage(Error, fmt.Sprintf("Failed to create temporary script file: %v", err))
-		return err
-	}
-	defer os.Remove(tmpFile.Name()) // Clean up the temporary file
-
-	// Write the embedded script content to the temporary file
-	if _, err := tmpFile.Write(longhornPreflightScript); err != nil {
-		LogMessage(Error, fmt.Sprintf("Failed to write script content: %v", err))
-		tmpFile.Close()
-		return err
-	}
-	tmpFile.Close()
-
-	// Make the script executable
-	if err := os.Chmod(tmpFile.Name(), 0755); err != nil {
-		LogMessage(Error, fmt.Sprintf("Failed to make script executable: %v", err))
-		return err
-	}
-
-	cmd := exec.Command("bash", tmpFile.Name())
+	// runs a system-level check to ensure Longhorn can be installed successfully
+	cmd := exec.Command("bash", "-s")
+	cmd.Stdin = strings.NewReader(string(longhornPreflightScript))
 	cmd.Env = os.Environ()
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	err = cmd.Run()
-	if err != nil {
+	if err := cmd.Run(); err != nil {
 		LogMessage(Error, fmt.Sprintf("Longhorn preflight check failed: %v", err))
 		return err
 	}
 
 	LogMessage(Info, "Longhorn preflight check completed successfully")
+	return nil
+}
+
+func LonghornValidatePVCCreation() error {
+	// runs a cluster-level check to ensure Longhorn can create PVCs successfully
+	cmd := exec.Command("bash", "-s")
+	cmd.Stdin = strings.NewReader(string(longhornPVCValidationScript))
+	cmd.Env = os.Environ()
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		LogMessage(Error, fmt.Sprintf("Longhorn PVC creation check failed: %v", err))
+		return err
+	}
+
+	LogMessage(Info, "Longhorn PVC creation check completed successfully")
 	return nil
 }
