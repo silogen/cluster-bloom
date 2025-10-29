@@ -244,8 +244,6 @@ func LonghornPreflightCheck() error {
 	cmd := exec.Command("bash", "-s")
 	cmd.Stdin = strings.NewReader(string(longhornPreflightScript))
 	cmd.Env = os.Environ()
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
 
 	if err := cmd.Run(); err != nil {
 		LogMessage(Error, fmt.Sprintf("Longhorn preflight check failed: %v", err))
@@ -261,8 +259,6 @@ func LonghornValidatePVCCreation() error {
 	cmd := exec.Command("bash", "-s")
 	cmd.Stdin = strings.NewReader(string(longhornPVCValidationScript))
 	cmd.Env = os.Environ()
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
 
 	if err := cmd.Run(); err != nil {
 		LogMessage(Error, fmt.Sprintf("Longhorn PVC creation check failed: %v", err))

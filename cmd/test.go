@@ -128,8 +128,7 @@ func runTestConfig(configFile string, configIdx int) bool {
 	var failedStep string
 
 	for i, step := range enabledSteps {
-		fmt.Printf("      - name: %s\n", step.Name)
-		fmt.Printf("        description: %s\n", step.Description)
+		fmt.Printf("      - id: %s\n", step.Id)
 		fmt.Printf("        number: %d\n", i+1)
 
 		pkg.LogMessage(pkg.Info, fmt.Sprintf("Starting step: %s", step.Name))

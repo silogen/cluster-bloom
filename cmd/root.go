@@ -194,6 +194,7 @@ func rootSteps() []pkg.Step {
 	}
 	k8Ssteps := []pkg.Step{
 		pkg.SetupRKE2Step,
+		pkg.SetupKubeConfig,
 	}
 	postK8Ssteps := []pkg.Step{
 		pkg.CreateChronyConfigStep,
@@ -202,7 +203,6 @@ func rootSteps() []pkg.Step {
 		pkg.SetupLonghornStep,
 		pkg.SetupMetallbStep,
 		pkg.CreateMetalLBConfigStep,
-		pkg.SetupKubeConfig,
 		pkg.CreateDomainConfigStep,
 		pkg.CreateBloomConfigMapStepFunc(Version),
 		pkg.WaitForClusterReady,
