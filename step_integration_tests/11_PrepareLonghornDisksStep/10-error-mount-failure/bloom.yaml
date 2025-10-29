@@ -1,6 +1,8 @@
 ENABLED_STEPS: PrepareLonghornDisksStep
 CLUSTER_DISKS: /dev/sda
 
+
+expected_error: "mount: /mnt/disk0: mount point does not exist"
 mocks:
   PrepareLonghornDisksStep.ListMounts:
     output: ""

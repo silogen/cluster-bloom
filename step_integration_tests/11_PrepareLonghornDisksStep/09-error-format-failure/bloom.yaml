@@ -1,6 +1,8 @@
 ENABLED_STEPS: PrepareLonghornDisksStep
 CLUSTER_DISKS: /dev/sda
 
+
+expected_error: "mkfs.ext4: Device or resource busy"
 mocks:
   PrepareLonghornDisksStep.ListMounts:
     output: ""

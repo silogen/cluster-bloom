@@ -143,8 +143,6 @@ func setupLogging() {
 		archivedPath := filepath.Join(currentDir, fmt.Sprintf("bloom-%s.log", timestamp))
 		if err := os.Rename(logPath, archivedPath); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to archive bloom.log: %v\n", err)
-		} else {
-			fmt.Printf("📝 Archived previous log to %s\n", filepath.Base(archivedPath))
 		}
 	}
 

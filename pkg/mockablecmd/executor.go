@@ -38,6 +38,12 @@ var (
 	mocksOnce sync.Once
 )
 
+// ResetMocks clears the mock registry and resets the sync.Once
+func ResetMocks() {
+	mocks = make(map[string]MockResponse)
+	mocksOnce = sync.Once{}
+}
+
 // LoadMocks loads mock configurations from viper
 func LoadMocks() {
 	mocksOnce.Do(func() {
