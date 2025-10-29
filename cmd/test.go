@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/silogen/cluster-bloom/pkg"
+	"github.com/silogen/cluster-bloom/pkg/args"
 	"github.com/silogen/cluster-bloom/pkg/mockablecmd"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -94,6 +95,12 @@ func runTestConfig(configFile string, configIdx int) bool {
 	// Reset viper and mocks for this config
 	viper.Reset()
 	mockablecmd.ResetMocks()
+
+	// Set defaults from args package
+	for _, arg := range args.Arguments {
+		viper.SetDefault(arg.Key, arg.Default)
+	}
+
 	viper.SetConfigFile(configFile)
 	if err := viper.ReadInConfig(); err != nil {
 		fmt.Printf("    error: \"Failed to read config: %v\"\n", err)
