@@ -4,6 +4,8 @@ CLUSTER_DISKS: /dev/sda
 
 expected_error: "mkfs.ext4: Device or resource busy"
 mocks:
+  PrepareLonghornDisksStep.ReadFstab:
+    output: ""
   PrepareLonghornDisksStep.ListMounts:
     output: ""
     args: ["sh", "-c", "mount | awk '/\\/mnt\\/disk[0-9]+/ {print $3}'"]

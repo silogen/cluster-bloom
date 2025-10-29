@@ -18,6 +18,7 @@ package mockablecmd
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -156,4 +157,29 @@ func validateArgs(expectedArgs []interface{}, actualName string, actualArgs []st
 	}
 
 	return nil
+}
+
+// ReadFile reads a file and returns its contents
+// mockID is a string identifier for mocking purposes (e.g., "PrepareLonghornDisksStep.ReadFstab")
+func ReadFile(mockID string, filename string) ([]byte, error) {
+	log.Infof("mockablecmd.ReadFile: mockID=%q, filename=%q", mockID, filename)
+
+	// Normalize mockID to lowercase for case-insensitive lookup
+	mockIDLower := strings.ToLower(mockID)
+
+	// Check if mock exists for this ID
+	if mock, exists := mocks[mockIDLower]; exists {
+		log.Infof("mockablecmd.ReadFile: using mock for %q (normalized to %q)", mockID, mockIDLower)
+
+		if mock.Error != "" {
+			log.Infof("mockablecmd.ReadFile: returning mocked error for %q: %s", mockID, mock.Error)
+			return []byte(mock.Output), fmt.Errorf("%s", mock.Error)
+		}
+		log.Infof("mockablecmd.ReadFile: returning mocked output for %q", mockID)
+		return []byte(mock.Output), nil
+	}
+
+	// No mock found, read the actual file
+	log.Infof("mockablecmd.ReadFile: no mock found for %q, reading real file: %s", mockID, filename)
+	return os.ReadFile(filename)
 }

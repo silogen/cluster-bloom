@@ -2,6 +2,8 @@ ENABLED_STEPS: PrepareLonghornDisksStep
 CLUSTER_DISKS: /dev/sdc
 
 mocks:
+  PrepareLonghornDisksStep.ReadFstab:
+    output: ""
   PrepareLonghornDisksStep.ListMounts:
     output: ""
     args: ["sh", "-c", "mount | awk '/\\/mnt\\/disk[0-9]+/ {print $3}'"]

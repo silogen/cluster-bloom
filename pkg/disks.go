@@ -44,7 +44,8 @@ func UnmountPriorLonghornDisks() error {
 	mountPoints := make(map[string]string)
 
 	// Read /etc/fstab and look for entries tagged with bloomFstabTag
-	fstabContent, err := os.ReadFile("/etc/fstab")
+	mockID := "CleanLonghornMountsStep.ReadFstab"
+	fstabContent, err := mockablecmd.ReadFile(mockID, "/etc/fstab")
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to read /etc/fstab: %v", err))
 		return fmt.Errorf("failed to read /etc/fstab: %w", err)
@@ -285,7 +286,8 @@ func MountDrives(drives []string) (map[string]string, error) {
 	for _, mountPoint := range existingMountPoints {
 		usedMountPoints[mountPoint] = true
 	}
-	fstabContent, err := os.ReadFile("/etc/fstab")
+	mockID := "PrepareLonghornDisksStep.ReadFstab"
+	fstabContent, err := mockablecmd.ReadFile(mockID, "/etc/fstab")
 	if err != nil {
 		return nil, fmt.Errorf("failed to read /etc/fstab: %w", err)
 	}
@@ -393,7 +395,8 @@ func PersistMountedDisks(mountedMap map[string]string) error {
 			LogMessage(Info, fmt.Sprintf("Could not retrieve UUID for %s. Skipping...", device))
 			continue
 		}
-		fstabContent, err := os.ReadFile(fstabFile)
+		mockID = "PersistMountedDisks.ReadFstab"
+		fstabContent, err := mockablecmd.ReadFile(mockID, fstabFile)
 		if err != nil {
 			return fmt.Errorf("failed to read fstab file: %w", err)
 		}
