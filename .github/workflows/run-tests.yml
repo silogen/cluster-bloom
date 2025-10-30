@@ -9,14 +9,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # - name: Install devbox
-      #   uses: jetify-com/devbox-install-action@v0.12.0
-
       - name: Build with devbox
         run: devbox run build
 
       - name: Run step integration tests
-        run: devbox run -- ./dist/bloom test integration_tests/step/*/bloom.yaml
+        run: dist/bloom test integration_tests/step/*/bloom.yaml
 
       - name: Deploy
         run: sudo ./dist/bloom test /home/ubuntu/ci/bloom.yaml
