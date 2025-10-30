@@ -31,6 +31,7 @@ import (
 
 	"github.com/silogen/cluster-bloom/pkg"
 	"github.com/silogen/cluster-bloom/pkg/args"
+	"github.com/silogen/cluster-bloom/pkg/mockablecmd"
 )
 
 var rootCmd = &cobra.Command{
@@ -38,25 +39,20 @@ var rootCmd = &cobra.Command{
 	Short: "Cluster-Bloom creates a cluster",
 	Long:  displayHelp(),
 	Run: func(cmd *cobra.Command, args []string) {
+		// In one-shot mode, config file must exist
+		if oneShot {
+			if _, err := os.Stat(cfgFile); os.IsNotExist(err) {
+				fmt.Printf("❌ Error: --one-shot requires a valid config file\n")
+				fmt.Printf("❌ Config file '%s' does not exist\n", cfgFile)
+				fmt.Println("💡 Use --config flag to specify a valid configuration file")
+				os.Exit(1)
+			}
+		}
+
 		// Handle reconfigure flag
 		if reconfigure {
-			currentDir, _ := os.Getwd()
-			logPath := filepath.Join(currentDir, "bloom.log")
-
-			if _, err := os.Stat(logPath); err == nil {
-				// Archive the existing bloom.log
-				timestamp := time.Now().Format("20060102-150405")
-				archivedPath := filepath.Join(currentDir, fmt.Sprintf("bloom-%s.log", timestamp))
-
-				if err := os.Rename(logPath, archivedPath); err != nil {
-					fmt.Printf("❌ Failed to archive bloom.log: %v\n", err)
-					os.Exit(1)
-				}
-
-				fmt.Printf("✅ Archived bloom.log to %s\n", filepath.Base(archivedPath))
-				fmt.Println("🚀 Starting fresh configuration...")
-				fmt.Println()
-			}
+			fmt.Println("🚀 Starting fresh configuration...")
+			fmt.Println()
 			// Continue to configuration interface
 			runWebInterfaceWithConfig()
 			return
@@ -120,6 +116,9 @@ func initConfig() {
 		log.Infof("Using config file: %s", viper.ConfigFileUsed())
 	}
 
+	// Load mocks from config if present
+	mockablecmd.LoadMocks()
+
 	// Log config BEFORE any validation that might exit
 	logConfigValues()
 }
@@ -137,6 +136,16 @@ func setupLogging() {
 	}
 
 	logPath := filepath.Join(currentDir, "bloom.log")
+
+	// Archive existing bloom.log if it exists
+	if _, err := os.Stat(logPath); err == nil {
+		timestamp := time.Now().Format("20060102-150405")
+		archivedPath := filepath.Join(currentDir, fmt.Sprintf("bloom-%s.log", timestamp))
+		if err := os.Rename(logPath, archivedPath); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to archive bloom.log: %v\n", err)
+		}
+	}
+
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		// Still log to stderr if we can't open the file
@@ -185,6 +194,7 @@ func rootSteps() []pkg.Step {
 	}
 	k8Ssteps := []pkg.Step{
 		pkg.SetupRKE2Step,
+		pkg.SetupKubeConfig,
 	}
 	postK8Ssteps := []pkg.Step{
 		pkg.CreateChronyConfigStep,
@@ -193,7 +203,6 @@ func rootSteps() []pkg.Step {
 		pkg.SetupLonghornStep,
 		pkg.SetupMetallbStep,
 		pkg.CreateMetalLBConfigStep,
-		pkg.SetupKubeConfig,
 		pkg.CreateDomainConfigStep,
 		pkg.CreateBloomConfigMapStepFunc(Version),
 		pkg.WaitForClusterReady,
@@ -383,16 +392,8 @@ func startWebUIMonitoring() {
 	handlerService.SetInstallationHandler(rootSteps(), func() error {
 		log.Info("Restarting bloom with new configuration...")
 
-		// Archive current log if it exists
-		if _, err := os.Stat("bloom.log"); err == nil {
-			timestamp := time.Now().Format("20060102-150405")
-			archivedPath := fmt.Sprintf("bloom-%s.log", timestamp)
-			if err := os.Rename("bloom.log", archivedPath); err != nil {
-				log.Errorf("Failed to archive bloom.log: %v", err)
-			} else {
-				log.Infof("Archived bloom.log to %s", archivedPath)
-			}
-		}
+		// Reinitialize logging to archive the current log
+		setupLogging()
 
 		// Start installation with new configuration
 		return pkg.RunStepsWithCLI(rootSteps())
