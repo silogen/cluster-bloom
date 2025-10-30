@@ -31,8 +31,8 @@ import (
 
 var testCmd = &cobra.Command{
 	Use:   "test [config-file...]",
-	Short: "Test a node to check readiness for cluster use",
-	Long:  `Runs through steps to validate all settings and prerequisite SW are setup correctly. Accepts multiple config files as arguments.`,
+	Short: "Run multiple configs in sequence",
+	Long:  `Runs multiple configuration files in sequence, executing each config. Outputs structured YAML results showing pass/fail status for each config and overall summary.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		testSteps(args)
 	},

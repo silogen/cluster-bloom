@@ -16,7 +16,7 @@ jobs:
         run: devbox run build
 
       - name: Run step integration tests
-        run: devbox run -- ./dist/bloom test step_integration_tests/*/*/bloom.yaml
+        run: devbox run -- ./dist/bloom test integration_tests/step/*/bloom.yaml
 
       - name: Deploy
         run: sudo ./dist/bloom test /home/ubuntu/ci/bloom.yaml
