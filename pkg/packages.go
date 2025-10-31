@@ -206,6 +206,7 @@ func SetupClusterForge() error {
 	}
 
 	domain := viper.GetString("DOMAIN")
+	valuesFile := viper.GetString("CF_VALUES")
 
 	// Get the original user when running with sudo
 	originalUser := os.Getenv("SUDO_USER")
@@ -220,12 +221,21 @@ func SetupClusterForge() error {
 	}
 
 	scriptsDir := "cluster-forge/scripts"
+
 	if originalUser != "" {
 		// Run as the original user to avoid sudo issues with bootstrap script
-		cmd = exec.Command("sudo", "-u", originalUser, "bash", "./bootstrap.sh", domain)
+		if valuesFile != "" {
+			cmd = exec.Command("sudo", "-u", originalUser, "bash", "./bootstrap.sh", domain, valuesFile)
+		} else {
+			cmd = exec.Command("sudo", "-u", originalUser, "bash", "./bootstrap.sh", domain)
+		}
 	} else {
 		// Fallback if not running with sudo
-		cmd = exec.Command("bash", "./bootstrap.sh", domain)
+		if valuesFile != "" {
+			cmd = exec.Command("bash", "./bootstrap.sh", domain, valuesFile)
+		} else {
+			cmd = exec.Command("bash", "./bootstrap.sh", domain)
+		}
 	}
 	cmd.Dir = scriptsDir
 	output, err = cmd.CombinedOutput()

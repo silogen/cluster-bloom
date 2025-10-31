@@ -50,6 +50,12 @@ func SetArguments() {
 			Type:         "non-empty-string",
 			Dependencies: "FIRST_NODE=true",
 		},
+		{
+			Key:         "CF_VALUES",
+			Default:     "",
+			Description: "Path to ClusterForge values file (e.g., \"values_cf.yaml\"). Optional.",
+			Type:        "string",
+		},
 
 		// TLS/Certificate configuration
 		{
