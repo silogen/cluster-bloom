@@ -32,6 +32,7 @@ func init() {
 		{Key: "SERVER_IP", Default: "", Description: "IP address of the RKE2 server. Required for non-first nodes.", Type: "non-empty-ip-address", Dependencies: "FIRST_NODE=false"},
 		{Key: "JOIN_TOKEN", Default: "", Description: "Token for joining additional nodes to the cluster. Required for non-first nodes.", Type: "non-empty-string", Dependencies: "FIRST_NODE=false", Validators: []func(value string) error{ValidateJoinTokenArg}},
 		{Key: "DOMAIN", Default: "", Description: "The domain name for the cluster (e.g., \"cluster.example.com\"). Required.", Type: "non-empty-string", Dependencies: "FIRST_NODE=true"},
+		{Key: "CF_VALUES", Default: "", Description: "Path to ClusterForge values file (e.g., \"values_cf.yaml\"). Optional.", Type: "string"},
 		{Key: "USE_CERT_MANAGER", Default: false, Description: "Use cert-manager with Let's Encrypt for automatic TLS certificates.", Type: "bool", Dependencies: "FIRST_NODE=true"},
 		{Key: "CERT_OPTION", Default: "", Description: "Certificate option when USE_CERT_MANAGER is false. Choose 'existing' or 'generate'.", Type: "enum", Options: []string{"existing", "generate"}, Dependencies: "USE_CERT_MANAGER=false,FIRST_NODE=true"},
 		{Key: "TLS_CERT", Default: "", Description: "Path to TLS certificate file for ingress. Required if CERT_OPTION is 'existing'.", Type: "file", Dependencies: "CERT_OPTION=existing"},
