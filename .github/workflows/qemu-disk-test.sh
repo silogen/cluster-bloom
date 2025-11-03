@@ -36,40 +36,39 @@ sleep 2
 echo "Creating fresh working directory..."
 rm -rf "$VM_NAME"
 mkdir -p "$VM_NAME"
-cd "$VM_NAME"
 
 # Download Ubuntu 24.04 AMD64 cloud image
-if [ ! -f ../noble-server-cloudimg-amd64.img ]; then
+if [ ! -f noble-server-cloudimg-amd64.img ]; then
     echo "Downloading Ubuntu 24.04 AMD64 cloud image (~700MB)..."
-    curl -L --progress-bar -o ../noble-server-cloudimg-amd64.img \
+    curl -L --progress-bar -o noble-server-cloudimg-amd64.img \
         https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img
 fi
 
 # Copy OVMF VARS for writable UEFI variables
 echo "Setting up UEFI firmware..."
-cp /usr/share/OVMF/OVMF_VARS.fd .
+cp /usr/share/OVMF/OVMF_VARS.fd "$VM_NAME/"
 
-# Create OS disk (20GB)
+# Create OS disk (40GB)
 echo "Creating OS disk..."
-qemu-img create -f qcow2 -F qcow2 -b ../noble-server-cloudimg-amd64.img os-disk.qcow2 40G
+qemu-img create -f qcow2 -F qcow2 -b "$(pwd)/noble-server-cloudimg-amd64.img" "$VM_NAME/os-disk.qcow2" 40G
 
 # Create 8 NVMe disk images (1MB each)
 echo "Creating 8 NVMe disk images..."
 for i in {0..7}; do
-    qemu-img create -f raw nvme${i}.img 1M
+    qemu-img create -f raw "$VM_NAME/nvme${i}.img" 1M
 done
 
 # Create cloud-init configuration with proper user setup
 echo "Creating cloud-init configuration..."
-mkdir -p seed-content
+mkdir -p "$VM_NAME/seed-content"
 
 # Generate SSH key if it doesn't exist
-if [ ! -f qemu-login ]; then
+if [ ! -f "$VM_NAME/qemu-login" ]; then
     echo "Generating SSH key (qemu-login)..."
-    ssh-keygen -t rsa -b 4096 -f qemu-login -N ""
+    ssh-keygen -t rsa -b 4096 -f "$VM_NAME/qemu-login" -N ""
 fi
 
-cat > seed-content/user-data << EOF
+cat > "$VM_NAME/seed-content/user-data" << EOF
 #cloud-config
 
 # Enable password authentication (as fallback)
@@ -85,7 +84,7 @@ users:
     shell: /bin/bash
     groups: [users, admin, sudo]
     ssh_authorized_keys:
-      - $(cat qemu-login.pub)
+      - $(cat "$VM_NAME/qemu-login.pub")
 
 # Set password explicitly (fallback)
 chpasswd:
@@ -109,7 +108,7 @@ runcmd:
 final_message: "Cloud-init complete! System is ready."
 EOF
 
-cat > seed-content/meta-data << EOF
+cat > "$VM_NAME/seed-content/meta-data" << EOF
 instance-id: $VM_NAME-001
 local-hostname: $VM_NAME
 EOF
@@ -117,13 +116,13 @@ EOF
 # Create ISO seed image
 echo "Creating cloud-init seed ISO..."
 if command -v mkisofs &> /dev/null; then
-    mkisofs -output seed.img -volid cidata -joliet -rock seed-content/user-data seed-content/meta-data 2>/dev/null
+    mkisofs -output "$VM_NAME/seed.img" -volid cidata -joliet -rock "$VM_NAME/seed-content/user-data" "$VM_NAME/seed-content/meta-data" 2>/dev/null
 elif command -v genisoimage &> /dev/null; then
-    genisoimage -output seed.img -volid cidata -joliet -rock seed-content/user-data seed-content/meta-data 2>/dev/null
+    genisoimage -output "$VM_NAME/seed.img" -volid cidata -joliet -rock "$VM_NAME/seed-content/user-data" "$VM_NAME/seed-content/meta-data" 2>/dev/null
 fi
 
 # Create startup script
-cat > start-vm.sh << STARTEOF
+cat > "$VM_NAME/start-vm.sh" << STARTEOF
 #!/bin/bash
 SCRIPT_DIR="\$(cd "\$(dirname "\$0")" && pwd)"
 cd "\$SCRIPT_DIR"
@@ -186,24 +185,24 @@ echo "✓ Timeout reached (2 minutes). VM may still be booting."
 echo "Check logs: tail -f \$SCRIPT_DIR/startup.log"
 STARTEOF
 
-chmod +x start-vm.sh
+chmod +x "$VM_NAME/start-vm.sh"
 
 # Create stop script
-cat > stop-vm.sh << 'EOF'
+cat > "$VM_NAME/stop-vm.sh" << 'EOF'
 #!/bin/bash
 killall qemu-system-x86_64
 EOF
 
-chmod +x stop-vm.sh
+chmod +x "$VM_NAME/stop-vm.sh"
 
 # Create SSH helper script
-cat > ssh-vm.sh << 'EOF'
+cat > "$VM_NAME/ssh-vm.sh" << EOF
 #!/bin/bash
-cd "$(dirname "$0")"
+cd "\$(dirname "\$0")"
 ssh -i qemu-login -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -p 2222 ubuntu@localhost
 EOF
 
-chmod +x ssh-vm.sh
+chmod +x "$VM_NAME/ssh-vm.sh"
 
 echo ""
 echo "=========================================="
@@ -231,18 +230,18 @@ echo ""
 
 # Start the VM automatically
 echo "Starting the VM..."
-bash start-vm.sh
+bash "$VM_NAME/start-vm.sh"
 
 # Verify bloom binary exists
-if [ ! -f "../$BLOOM_BINARY" ]; then
-    echo "ERROR: Bloom binary not found at ../$BLOOM_BINARY"
+if [ ! -f "$BLOOM_BINARY" ]; then
+    echo "ERROR: Bloom binary not found at $BLOOM_BINARY"
     exit 1
 fi
 
 # Verify all config files exist
 for config in "${BLOOM_CONFIGS[@]}"; do
-    if [ ! -f "../$config" ]; then
-        echo "ERROR: Config file not found at ../$config"
+    if [ ! -f "$config" ]; then
+        echo "ERROR: Config file not found at $config"
         exit 1
     fi
 done
@@ -254,15 +253,15 @@ echo "Copying bloom binary and config files to VM..."
 sleep 10
 
 # Build file list for scp - bloom binary first
-FILES_TO_COPY="../$BLOOM_BINARY"
+FILES_TO_COPY="$BLOOM_BINARY"
 
 # Add all config files
 for config in "${BLOOM_CONFIGS[@]}"; do
-    FILES_TO_COPY="$FILES_TO_COPY ../$config"
+    FILES_TO_COPY="$FILES_TO_COPY $config"
 done
 
 # Copy all files at once
-scp -i qemu-login -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -P 2222 $FILES_TO_COPY ubuntu@localhost:~/
+scp -i "$VM_NAME/qemu-login" -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -P 2222 $FILES_TO_COPY ubuntu@localhost:~/
 
 echo "Files copied successfully"
 echo "Making bloom executable and running test..."
@@ -275,25 +274,20 @@ for config in "${BLOOM_CONFIGS[@]}"; do
 done
 
 # Make bloom executable and run the test
-ssh -i qemu-login -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -p 2222 ubuntu@localhost chmod +x $BLOOM_BINARY_NAME
+ssh -i "$VM_NAME/qemu-login" -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -p 2222 ubuntu@localhost chmod +x $BLOOM_BINARY_NAME
 echo "Running: sudo ./$BLOOM_BINARY_NAME test$CONFIG_NAMES"
-ssh -i qemu-login -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -p 2222 ubuntu@localhost sudo ./$BLOOM_BINARY_NAME test$CONFIG_NAMES | tee test-results.yaml
-
-# Copy test results back to host
-echo "Copying test results back to host..."
-scp -i qemu-login -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -P 2222 ubuntu@localhost:~/test-results.yaml ../test-results.yaml
+ssh -i "$VM_NAME/qemu-login" -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -p 2222 ubuntu@localhost sudo ./$BLOOM_BINARY_NAME test$CONFIG_NAMES | tee "$VM_NAME-test-results.yaml"
 
 echo ""
 echo "Test execution completed"
-echo "Results saved to: ../test-results.yaml"
+echo "Results saved to: test-results.yaml"
 
 # Clean up VM
 echo ""
 echo "Cleaning up VM..."
-bash stop-vm.sh || killall qemu-system-x86_64 2>/dev/null || true
+bash "$VM_NAME/stop-vm.sh" || killall qemu-system-x86_64 2>/dev/null || true
 sleep 2
 
-cd ..
 echo "Removing $VM_NAME directory..."
 rm -rf "$VM_NAME"
 
