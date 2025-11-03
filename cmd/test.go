@@ -49,6 +49,8 @@ func testSteps(configFiles []string) {
 		os.Exit(1)
 	}
 
+	overallStartTime := time.Now()
+
 	fmt.Println("---")
 	fmt.Printf("total_configs: %d\n", len(configFiles))
 	fmt.Println("test_runs:")
@@ -69,11 +71,15 @@ func testSteps(configFiles []string) {
 		}
 	}
 
+	overallDuration := time.Since(overallStartTime)
+
 	// Print overall summary
 	fmt.Println("overall_summary:")
 	fmt.Printf("  total: %d\n", len(configFiles))
 	fmt.Printf("  passed: %d\n", passedCount)
 	fmt.Printf("  failed: %d\n", failedCount)
+	fmt.Printf("  duration_ms: %d\n", overallDuration.Milliseconds())
+	fmt.Printf("  duration: %v\n", overallDuration.Round(time.Millisecond))
 	if len(failedConfigs) > 0 {
 		fmt.Println("  failed_configs:")
 		for _, config := range failedConfigs {
