@@ -13,7 +13,8 @@ jobs:
         run: devbox run build
 
       - name: Run step integration tests
-        run: dist/bloom test integration_tests/step/*/bloom.yaml
+        run: dist/bloom test integration_tests/step/*/*/bloom.yaml
 
-      - name: Deploy
-        run: sudo ./dist/bloom test /home/ubuntu/ci/bloom.yaml
+      - name: QEMU Disk Test
+        run: |
+          bash .github/workflows/qemu-disk-test.sh nvme-test-vm dist/bloom /home/ubuntu/ci/bloom.yaml

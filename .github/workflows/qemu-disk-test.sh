@@ -1,15 +1,18 @@
 #!/bin/bash
 set -e
 
-# Check if VM name argument is provided
-if [ -z "$1" ]; then
-    echo "ERROR: VM name argument is required"
-    echo "Usage: $0 <vm-name>"
-    echo "Example: $0 nvme-test-vm"
+# Check if required arguments are provided
+if [ $# -lt 3 ]; then
+    echo "ERROR: Insufficient arguments"
+    echo "Usage: $0 <vm-name> <bloom-binary-path> <bloom-yaml-path> [additional-yaml-paths...]"
+    echo "Example: $0 nvme-test-vm ./cluster-bloom ./test/bloom.yaml ./test/bloom2.yaml"
     exit 1
 fi
 
 VM_NAME="$1"
+BLOOM_BINARY="$2"
+shift 2
+BLOOM_CONFIGS=("$@")
 
 echo "Setting up QEMU VM '$VM_NAME' with 8 NVMe drives (Linux KVM - Clean Setup)..."
 
@@ -48,7 +51,7 @@ cp /usr/share/OVMF/OVMF_VARS.fd .
 
 # Create OS disk (20GB)
 echo "Creating OS disk..."
-qemu-img create -f qcow2 -F qcow2 -b ../noble-server-cloudimg-amd64.img os-disk.qcow2 20G
+qemu-img create -f qcow2 -F qcow2 -b ../noble-server-cloudimg-amd64.img os-disk.qcow2 40G
 
 # Create 8 NVMe disk images (1MB each)
 echo "Creating 8 NVMe disk images..."
@@ -230,40 +233,59 @@ echo ""
 echo "Starting the VM..."
 bash start-vm.sh
 
-# Check if bloom and bloom.yaml exist and copy them to VM
-if [ -f "../bloom" ] && [ -f "../bloom.yaml" ]; then
-    echo ""
-    echo "Found bloom and bloom.yaml in parent directory"
-    echo "Copying files to VM..."
-
-    # Wait a bit more to ensure VM is fully ready for SSH
-    sleep 10
-
-    # Copy bloom binary
-    scp -i qemu-login -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -P 2222 ../bloom ../bloom.yaml  ubuntu@localhost:~/
-
-    echo "Files copied successfully"
-    echo "Making bloom executable and running test..."
-
-    # Make bloom executable and run the test
-    ssh -i qemu-login -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -p 2222 ubuntu@localhost << 'SSHEOF'
-chmod +x bloom
-echo "Running: sudo ./bloom test bloom.yaml"
-sudo ./bloom test bloom.yaml | tee test-results.yaml
-SSHEOF
-
-    # Copy test results back to host
-    echo "Copying test results back to host..."
-    scp -i qemu-login -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -P 2222 ubuntu@localhost:~/test-results.yaml ../test-results.yaml
-
-    echo ""
-    echo "Test execution completed"
-    echo "Results saved to: ../test-results.yaml"
-else
-    echo ""
-    echo "Note: bloom and/or bloom.yaml not found in parent directory"
-    echo "Skipping automatic test execution"
+# Verify bloom binary exists
+if [ ! -f "../$BLOOM_BINARY" ]; then
+    echo "ERROR: Bloom binary not found at ../$BLOOM_BINARY"
+    exit 1
 fi
+
+# Verify all config files exist
+for config in "${BLOOM_CONFIGS[@]}"; do
+    if [ ! -f "../$config" ]; then
+        echo "ERROR: Config file not found at ../$config"
+        exit 1
+    fi
+done
+
+echo ""
+echo "Copying bloom binary and config files to VM..."
+
+# Wait a bit more to ensure VM is fully ready for SSH
+sleep 10
+
+# Build file list for scp - bloom binary first
+FILES_TO_COPY="../$BLOOM_BINARY"
+
+# Add all config files
+for config in "${BLOOM_CONFIGS[@]}"; do
+    FILES_TO_COPY="$FILES_TO_COPY ../$config"
+done
+
+# Copy all files at once
+scp -i qemu-login -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -P 2222 $FILES_TO_COPY ubuntu@localhost:~/
+
+echo "Files copied successfully"
+echo "Making bloom executable and running test..."
+
+# Build the bloom test command with all config files
+BLOOM_BINARY_NAME=$(basename "$BLOOM_BINARY")
+CONFIG_NAMES=""
+for config in "${BLOOM_CONFIGS[@]}"; do
+    CONFIG_NAMES="$CONFIG_NAMES $(basename "$config")"
+done
+
+# Make bloom executable and run the test
+ssh -i qemu-login -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -p 2222 ubuntu@localhost chmod +x $BLOOM_BINARY_NAME
+echo "Running: sudo ./$BLOOM_BINARY_NAME test$CONFIG_NAMES"
+ssh -i qemu-login -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -p 2222 ubuntu@localhost sudo ./$BLOOM_BINARY_NAME test$CONFIG_NAMES | tee test-results.yaml
+
+# Copy test results back to host
+echo "Copying test results back to host..."
+scp -i qemu-login -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -P 2222 ubuntu@localhost:~/test-results.yaml ../test-results.yaml
+
+echo ""
+echo "Test execution completed"
+echo "Results saved to: ../test-results.yaml"
 
 # Clean up VM
 echo ""
