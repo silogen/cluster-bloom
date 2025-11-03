@@ -270,10 +270,13 @@ sudo ./bloom demo-ui
 
 #### Test Mode
 ```bash
-sudo ./bloom test
+./bloom test [config-file...]
 ```
-- Tests disk selection and mounting operations
-- Validates UI components and workflows
+- Runs multiple configuration files in sequence for integration testing
+- Executes enabled steps with mocked commands for each config
+- Outputs structured YAML results showing pass/fail status
+- Useful for validating installation steps without system modifications
+- Example: `./bloom test integration_tests/step/*/bloom.yaml`
 
 #### Web UI Installation Workflow
 

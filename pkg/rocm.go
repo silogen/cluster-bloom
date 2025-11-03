@@ -31,7 +31,7 @@ func CheckGPUAvailability() error {
 	output, err := exec.Command("sh", "-c", "lsmod").CombinedOutput()
 
 	if err != nil {
-		return fmt.Errorf("Failed to run lsmod: "+err.Error())
+		return fmt.Errorf("failed to run lsmod: %w", err)
 	} 
 
 	// grep will give an error if the module is not found, but we want to check the output
