@@ -1,0 +1,279 @@
+#!/bin/bash
+set -e
+
+# Check if VM name argument is provided
+if [ -z "$1" ]; then
+    echo "ERROR: VM name argument is required"
+    echo "Usage: $0 <vm-name>"
+    echo "Example: $0 nvme-test-vm"
+    exit 1
+fi
+
+VM_NAME="$1"
+
+echo "Setting up QEMU VM '$VM_NAME' with 8 NVMe drives (Linux KVM - Clean Setup)..."
+
+# Check dependencies
+if ! command -v qemu-system-x86_64 &> /dev/null; then
+    echo "ERROR: QEMU not found."
+    exit 1
+fi
+
+if ! command -v mkisofs &> /dev/null && ! command -v genisoimage &> /dev/null; then
+    echo "ERROR: mkisofs not found."
+    exit 1
+fi
+
+# Kill any existing QEMU processes
+echo "Cleaning up any existing QEMU processes..."
+killall qemu-system-x86_64 2>/dev/null && echo "✓ Killed existing QEMU" || true
+sleep 2
+
+# Completely remove and recreate working directory
+echo "Creating fresh working directory..."
+rm -rf "$VM_NAME"
+mkdir -p "$VM_NAME"
+cd "$VM_NAME"
+
+# Download Ubuntu 24.04 AMD64 cloud image
+if [ ! -f ../noble-server-cloudimg-amd64.img ]; then
+    echo "Downloading Ubuntu 24.04 AMD64 cloud image (~700MB)..."
+    curl -L --progress-bar -o ../noble-server-cloudimg-amd64.img \
+        https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img
+fi
+
+# Copy OVMF VARS for writable UEFI variables
+echo "Setting up UEFI firmware..."
+cp /usr/share/OVMF/OVMF_VARS.fd .
+
+# Create OS disk (20GB)
+echo "Creating OS disk..."
+qemu-img create -f qcow2 -F qcow2 -b ../noble-server-cloudimg-amd64.img os-disk.qcow2 20G
+
+# Create 8 NVMe disk images (1MB each)
+echo "Creating 8 NVMe disk images..."
+for i in {0..7}; do
+    qemu-img create -f raw nvme${i}.img 1M
+done
+
+# Create cloud-init configuration with proper user setup
+echo "Creating cloud-init configuration..."
+mkdir -p seed-content
+
+# Generate SSH key if it doesn't exist
+if [ ! -f qemu-login ]; then
+    echo "Generating SSH key (qemu-login)..."
+    ssh-keygen -t rsa -b 4096 -f qemu-login -N ""
+fi
+
+cat > seed-content/user-data << EOF
+#cloud-config
+
+# Enable password authentication (as fallback)
+ssh_pwauth: True
+disable_root: false
+
+# Create ubuntu user with SSH key
+users:
+  - name: ubuntu
+    plain_text_passwd: ubuntu
+    lock_passwd: false
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    groups: [users, admin, sudo]
+    ssh_authorized_keys:
+      - $(cat qemu-login.pub)
+
+# Set password explicitly (fallback)
+chpasswd:
+  list: |
+    ubuntu:ubuntu
+  expire: False
+
+# Run commands after boot
+runcmd:
+  - sleep 10
+  - echo "ubuntu:ubuntu" | chpasswd
+  - echo "System ready at $(date)" > /home/ubuntu/boot-complete.txt
+  - echo "" >> /home/ubuntu/boot-complete.txt
+  - echo "=== NVMe Devices ===" >> /home/ubuntu/boot-complete.txt
+  - lsblk >> /home/ubuntu/boot-complete.txt
+  - echo "" >> /home/ubuntu/boot-complete.txt
+  - echo "=== Device List ===" >> /home/ubuntu/boot-complete.txt
+  - ls -l /dev/nvme* >> /home/ubuntu/boot-complete.txt 2>&1 || echo "No /dev/nvme* found" >> /home/ubuntu/boot-complete.txt
+  - chown ubuntu:ubuntu /home/ubuntu/boot-complete.txt
+
+final_message: "Cloud-init complete! System is ready."
+EOF
+
+cat > seed-content/meta-data << EOF
+instance-id: $VM_NAME-001
+local-hostname: $VM_NAME
+EOF
+
+# Create ISO seed image
+echo "Creating cloud-init seed ISO..."
+if command -v mkisofs &> /dev/null; then
+    mkisofs -output seed.img -volid cidata -joliet -rock seed-content/user-data seed-content/meta-data 2>/dev/null
+elif command -v genisoimage &> /dev/null; then
+    genisoimage -output seed.img -volid cidata -joliet -rock seed-content/user-data seed-content/meta-data 2>/dev/null
+fi
+
+# Create startup script
+cat > start-vm.sh << STARTEOF
+#!/bin/bash
+SCRIPT_DIR="\$(cd "\$(dirname "\$0")" && pwd)"
+cd "\$SCRIPT_DIR"
+
+echo "Starting x86_64 VM with 8 NVMe devices in background..."
+echo "Output will be logged to \$SCRIPT_DIR/startup.log"
+echo "Wait ~90 seconds for cloud-init to complete."
+echo ""
+echo "To monitor boot progress:"
+echo "  tail -f \$SCRIPT_DIR/startup.log"
+echo ""
+echo "To connect via SSH:"
+echo "  \$SCRIPT_DIR/ssh-vm.sh"
+echo ""
+
+qemu-system-x86_64 \
+  -machine q35,accel=kvm \
+  -cpu host \
+  -smp 2 \
+  -m 10G \
+  -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE.fd \
+  -drive if=pflash,format=raw,file="\$SCRIPT_DIR/OVMF_VARS.fd" \
+  -drive file=os-disk.qcow2,if=virtio,format=qcow2 \
+  -drive file=seed.img,if=virtio,format=raw \
+  -drive file=nvme0.img,if=none,id=nvme0,format=raw \
+  -device nvme,serial=NVME000001,drive=nvme0 \
+  -drive file=nvme1.img,if=none,id=nvme1,format=raw \
+  -device nvme,serial=NVME000002,drive=nvme1 \
+  -drive file=nvme2.img,if=none,id=nvme2,format=raw \
+  -device nvme,serial=NVME000003,drive=nvme2 \
+  -drive file=nvme3.img,if=none,id=nvme3,format=raw \
+  -device nvme,serial=NVME000004,drive=nvme3 \
+  -drive file=nvme4.img,if=none,id=nvme4,format=raw \
+  -device nvme,serial=NVME000005,drive=nvme4 \
+  -drive file=nvme5.img,if=none,id=nvme5,format=raw \
+  -device nvme,serial=NVME000006,drive=nvme5 \
+  -drive file=nvme6.img,if=none,id=nvme6,format=raw \
+  -device nvme,serial=NVME000007,drive=nvme6 \
+  -drive file=nvme7.img,if=none,id=nvme7,format=raw \
+  -device nvme,serial=NVME000008,drive=nvme7 \
+  -netdev user,id=net0,hostfwd=tcp::2222-:22 \
+  -device virtio-net-pci,netdev=net0 \
+  -nographic > "\$SCRIPT_DIR/startup.log" 2>&1 &
+
+VM_PID=\$!
+echo "VM started with PID \$VM_PID"
+echo "Waiting for login prompt (timeout: 2 minutes)..."
+
+elapsed=0
+while [ \$elapsed -lt 120 ]; do
+  if grep -q "$VM_NAME login:" "\$SCRIPT_DIR/startup.log" 2>/dev/null; then
+    echo "✓ VM is ready! (login prompt found after \${elapsed}s)"
+    exit 0
+  fi
+  sleep 2
+  elapsed=\$((elapsed + 2))
+done
+
+echo "✓ Timeout reached (2 minutes). VM may still be booting."
+echo "Check logs: tail -f \$SCRIPT_DIR/startup.log"
+STARTEOF
+
+chmod +x start-vm.sh
+
+# Create stop script
+cat > stop-vm.sh << 'EOF'
+#!/bin/bash
+killall qemu-system-x86_64
+EOF
+
+chmod +x stop-vm.sh
+
+# Create SSH helper script
+cat > ssh-vm.sh << 'EOF'
+#!/bin/bash
+cd "$(dirname "$0")"
+ssh -i qemu-login -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -p 2222 ubuntu@localhost
+EOF
+
+chmod +x ssh-vm.sh
+
+echo ""
+echo "=========================================="
+echo "✓ Clean Setup Complete!"
+echo "=========================================="
+echo ""
+echo "Step 1: Start the VM"
+echo "  cd $VM_NAME && ./start-vm.sh"
+echo ""
+echo "Step 2: Wait ~90 seconds for boot + cloud-init"
+echo ""
+echo "Step 3: In a NEW TERMINAL, SSH to the VM:"
+echo "  cd $VM_NAME && ./ssh-vm.sh"
+echo "  (passwordless SSH with qemu-login key)"
+echo ""
+echo "Step 4: Inside VM, verify NVMe devices:"
+echo "  lsblk"
+echo "  ls -l /dev/nvme*"
+echo "  cat ~/boot-complete.txt"
+echo ""
+echo "To stop the VM:"
+echo "  cd $VM_NAME && ./stop-vm.sh"
+echo "  or press Ctrl+A then X in the console"
+echo ""
+
+# Start the VM automatically
+echo "Starting the VM..."
+bash start-vm.sh
+
+# Check if bloom and bloom.yaml exist and copy them to VM
+if [ -f "../bloom" ] && [ -f "../bloom.yaml" ]; then
+    echo ""
+    echo "Found bloom and bloom.yaml in parent directory"
+    echo "Copying files to VM..."
+
+    # Wait a bit more to ensure VM is fully ready for SSH
+    sleep 10
+
+    # Copy bloom binary
+    scp -i qemu-login -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -P 2222 ../bloom ../bloom.yaml  ubuntu@localhost:~/
+
+    echo "Files copied successfully"
+    echo "Making bloom executable and running test..."
+
+    # Make bloom executable and run the test
+    ssh -i qemu-login -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -p 2222 ubuntu@localhost << 'SSHEOF'
+chmod +x bloom
+echo "Running: sudo ./bloom test bloom.yaml"
+sudo ./bloom test bloom.yaml | tee test-results.yaml
+SSHEOF
+
+    # Copy test results back to host
+    echo "Copying test results back to host..."
+    scp -i qemu-login -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -P 2222 ubuntu@localhost:~/test-results.yaml ../test-results.yaml
+
+    echo ""
+    echo "Test execution completed"
+    echo "Results saved to: ../test-results.yaml"
+else
+    echo ""
+    echo "Note: bloom and/or bloom.yaml not found in parent directory"
+    echo "Skipping automatic test execution"
+fi
+
+# Clean up VM
+echo ""
+echo "Cleaning up VM..."
+bash stop-vm.sh || killall qemu-system-x86_64 2>/dev/null || true
+sleep 2
+
+cd ..
+echo "Removing $VM_NAME directory..."
+rm -rf "$VM_NAME"
+
+echo ""
+echo "✓ VM deleted and cleaned up"
