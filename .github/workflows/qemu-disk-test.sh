@@ -37,11 +37,17 @@ echo "Creating fresh working directory..."
 rm -rf "$VM_NAME"
 mkdir -p "$VM_NAME"
 
-# Download Ubuntu 24.04 AMD64 cloud image
+# Download or copy Ubuntu 24.04 AMD64 cloud image
+CI_IMAGE_CACHE="/home/ubuntu/ci/noble-server-cloudimg-amd64.img"
 if [ ! -f noble-server-cloudimg-amd64.img ]; then
-    echo "Downloading Ubuntu 24.04 AMD64 cloud image (~700MB)..."
-    curl -L --progress-bar -o noble-server-cloudimg-amd64.img \
-        https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img
+    if [ ! -f "$CI_IMAGE_CACHE" ]; then
+        echo "Downloading Ubuntu 24.04 AMD64 cloud image to cache (~700MB)..."
+        mkdir -p "$(dirname "$CI_IMAGE_CACHE")"
+        curl -L -s -o "$CI_IMAGE_CACHE" \
+            https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img
+    fi
+    echo "Copying Ubuntu cloud image from cache..."
+    cp "$CI_IMAGE_CACHE" noble-server-cloudimg-amd64.img
 fi
 
 # Copy OVMF VARS for writable UEFI variables
