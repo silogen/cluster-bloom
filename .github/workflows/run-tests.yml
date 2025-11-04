@@ -17,4 +17,13 @@ jobs:
 
       - name: QEMU Disk Test
         run: |
-          bash .github/workflows/qemu-disk-test.sh nvme-test-vm dist/bloom /home/ubuntu/ci/bloom.yaml
+          bash .github/workflows/qemu-disk-test.sh nvme-test-vm dist/bloom /home/ubuntu/ci/bloom.yaml /home/ubuntu/ci/bloom.yaml
+
+      - name: Check Test Results
+        run: |
+          if ! grep -q "success: true" nvme-test-vm-test-results.yaml; then
+            echo "❌ Tests failed - check nvme-test-vm-test-results.yaml for details"
+            cat nvme-test-vm-test-results.yaml
+            exit 1
+          fi
+          echo "✅ All tests passed"
