@@ -21,7 +21,8 @@ jobs:
 
       - name: Check Test Results
         run: |
-          if ! grep -q "success: true" nvme-test-vm-test-results.yaml; then
+          SUCCESS=$(yq '.overall_summary.success' nvme-test-vm-test-results.yaml)
+          if [ "$SUCCESS" != "true" ]; then
             echo "❌ Tests failed - check nvme-test-vm-test-results.yaml for details"
             cat nvme-test-vm-test-results.yaml
             exit 1
