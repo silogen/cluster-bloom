@@ -302,7 +302,7 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
 		LogMessage(Error, fmt.Sprintf("Error getting prior Longhorn mount points: %v", err))
 	}
 
-	log.Infof("ConfigWizardHandler: Previous Longhorn mountpoints: %v", longhornPreviousMountpoints)
+	log.Debugf("ConfigWizardHandler: Previous Longhorn mountpoints: %v", longhornPreviousMountpoints)
 
 	longhornPreviousDisksString := generateDisplayString(longhornPreviousDisks)
 	longhornPreviousMountpointsString := generateDisplayString(longhornPreviousMountpoints)
@@ -384,20 +384,21 @@ func (h *WebHandlerService) ConfigAPIHandler(w http.ResponseWriter, r *http.Requ
 	h.configVersion++
 	h.lastError = "" // Clear any previous errors
 
-	// Start installation if callback is set (monitoring mode)
-	if h.startInstallation != nil {
-		go func() {
-			log.Info("Starting installation process after configuration save...")
-			if err := h.startInstallation(); err != nil {
-				log.Errorf("Failed to start installation: %v", err)
-			}
-		}()
-	}
+	// Don't start installation automatically to avoid concurrent Viper access
+	// The user will need to restart bloom with the new configuration
+	// if h.startInstallation != nil {
+	// 	go func() {
+	// 		log.Info("Starting installation process after configuration save...")
+	// 		if err := h.startInstallation(); err != nil {
+	// 			log.Errorf("Failed to start installation: %v", err)
+	// 		}
+	// 	}()
+	// }
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
-		"message": "Configuration saved successfully",
+		"message": "Configuration saved successfully. Please restart bloom to apply changes.",
 		"file":    filename,
 	})
 }

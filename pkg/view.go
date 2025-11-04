@@ -241,6 +241,7 @@ func RunWebInterfaceWithConfig(port string, steps []Step, configFile string, one
 	mux.HandleFunc("/api/validation-error", handlerService.ValidationErrorAPIHandler)
 	mux.HandleFunc("/monitor", handlerService.MonitorHandler)
 	mux.HandleFunc("/api/prefilled-config", handlerService.PrefilledConfigAPIHandler)
+	mux.HandleFunc("/api/reconfigure", handlerService.ReconfigureHandler)
 
 	handler := LocalhostOnly(mux)
 	server := &http.Server{

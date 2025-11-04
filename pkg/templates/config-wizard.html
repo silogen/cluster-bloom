@@ -340,6 +340,28 @@
                 </div>
             </div>
 
+            <!-- CLI Options Help -->
+            <div class="config-section">
+                <div class="section-header">💻 Command Line Options</div>
+                <div class="section-content">
+                    <div class="description" style="margin-bottom: 15px;">
+                        After generating your configuration, you can run bloom in different modes:
+                    </div>
+                    <div style="background: #f8f9fa; padding: 15px; border-radius: 4px; font-family: monospace; margin-bottom: 10px;">
+                        <div style="margin-bottom: 8px;"><strong>Web interface mode (default):</strong></div>
+                        <div style="color: #666;">bloom --config bloom.yaml</div>
+                    </div>
+                    <div style="background: #f8f9fa; padding: 15px; border-radius: 4px; font-family: monospace; margin-bottom: 10px;">
+                        <div style="margin-bottom: 8px;"><strong>Terminal-only mode:</strong></div>
+                        <div style="color: #666;">bloom cli --config bloom.yaml</div>
+                    </div>
+                    <div style="background: #f8f9fa; padding: 15px; border-radius: 4px; font-family: monospace;">
+                        <div style="margin-bottom: 8px;"><strong>Automated mode (no interaction):</strong></div>
+                        <div style="color: #666;">bloom --one-shot --config bloom.yaml</div>
+                    </div>
+                </div>
+            </div>
+
             <div class="actions">
                 <button type="button" class="btn btn-secondary" onclick="resetForm()">Reset</button>
                 <button type="submit" class="btn">Generate Configuration & Start Installation</button>
