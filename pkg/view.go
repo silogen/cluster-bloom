@@ -209,9 +209,6 @@ func RunStepsWithUI(steps []Step) error {
 	fmt.Println()
 	if viper.GetBool("FIRST_NODE") {
 		fmt.Println("To setup additional nodes to join the cluster, run the command in additional_node_command.txt")
-	} else {
-		fmt.Println("The content of longhorn_drive_setup.txt must be run in order to mount drives properly. " +
-			"This can be done in the control node, which was installed first, or with a valid kubeconfig for the cluster.")
 	}
 	fmt.Println()
 	if finalErr != nil {
@@ -566,9 +563,6 @@ func RunStepsWithCLI(steps []Step) error {
 	fmt.Println()
 	if viper.GetBool("FIRST_NODE") {
 		fmt.Println("📝 To setup additional nodes to join the cluster, run the command in additional_node_command.txt")
-	} else {
-		fmt.Println("📝 The content of longhorn_drive_setup.txt must be run in order to mount drives properly.")
-		fmt.Println("   This can be done in the control node, which was installed first, or with a valid kubeconfig for the cluster.")
 	}
 	fmt.Println()
 	if finalErr != nil {
