@@ -988,6 +988,8 @@ var FinalOutput = Step{
 
 			LogMessage(Info, "To setup additional nodes to join the cluster, copy and run the command from additional_node_command.txt")
 			return StepResult{Message: "To setup additional nodes to join the cluster, copy and run the command from additional_node_command.txt"}
+		} else {
+			return StepResult{Error: nil}
 		}
 	},
 }
