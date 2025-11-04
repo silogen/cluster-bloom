@@ -132,6 +132,7 @@ func runTestConfig(configFile string, configIdx int) bool {
 	var finalErr error
 	var completedSteps []string
 	var failedStep string
+	configStartTime := time.Now()
 
 	for i, step := range enabledSteps {
 		fmt.Printf("      - id: %s\n", step.Id)
@@ -162,7 +163,7 @@ func runTestConfig(configFile string, configIdx int) bool {
 			pkg.LogMessage(pkg.Error, fmt.Sprintf("Execution failed: %v", result.Error))
 			break
 		} else if !skipped {
-			completedSteps = append(completedSteps, step.Name)
+			completedSteps = append(completedSteps, step.Id)
 			fmt.Println("        status: completed")
 			if result.Message != "" {
 				fmt.Printf("        message: \"%s\"\n", result.Message)
@@ -175,10 +176,14 @@ func runTestConfig(configFile string, configIdx int) bool {
 		time.Sleep(500 * time.Millisecond)
 	}
 
+	configDuration := time.Since(configStartTime)
+
 	// Print summary for this config
 	fmt.Println("    summary:")
 	fmt.Printf("      total: %d\n", len(enabledSteps))
 	fmt.Printf("      completed: %d\n", len(completedSteps))
+	fmt.Printf("      duration_ms: %d\n", configDuration.Milliseconds())
+	fmt.Printf("      duration: %v\n", configDuration.Round(time.Millisecond))
 
 	// Determine success based on expected error
 	success := false
@@ -206,8 +211,8 @@ func runTestConfig(configFile string, configIdx int) bool {
 
 	if len(completedSteps) > 0 {
 		fmt.Println("      completed_steps:")
-		for _, stepName := range completedSteps {
-			fmt.Printf("        - %s\n", stepName)
+		for _, stepId := range completedSteps {
+			fmt.Printf("        - %s\n", stepId)
 		}
 	}
 
