@@ -54,9 +54,9 @@ fi
 echo "Setting up UEFI firmware..."
 cp /usr/share/OVMF/OVMF_VARS.fd "$VM_NAME/"
 
-# Create OS disk (40GB)
+# Create OS disk (100GB)
 echo "Creating OS disk..."
-qemu-img create -f qcow2 -F qcow2 -b "$(pwd)/noble-server-cloudimg-amd64.img" "$VM_NAME/os-disk.qcow2" 40G
+qemu-img create -f qcow2 -F qcow2 -b "$(pwd)/noble-server-cloudimg-amd64.img" "$VM_NAME/os-disk.qcow2" 100G
 
 # Create 8 NVMe disk images (1MB each)
 echo "Creating 8 NVMe disk images..."
