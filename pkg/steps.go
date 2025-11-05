@@ -286,6 +286,13 @@ var UpdateModprobeStep = Step{
 	Id:          "UpdateModprobeStep",
 	Name:        "Update Modprobe",
 	Description: "Update Modprobe to unblacklist amdgpu",
+	Skip: func() bool {
+		if !viper.GetBool("GPU_NODE") {
+			LogMessage(Info, "Skipping ROCm setup for non-GPU node")
+			return true
+		}
+		return false
+	},
 	Action: func() StepResult {
 		err := updateModprobe()
 		if err != nil {
@@ -714,7 +721,6 @@ func CreateBloomConfigMapStepFunc(version string) Step {
 			if viper.GetBool("FIRST_NODE") {
 				LogMessage(Info, "Waiting for cluster to be ready...")
 
-				time.Sleep(10 * time.Second)
 				err := CreateConfigMap(version)
 				if err != nil {
 					LogMessage(Error, fmt.Sprintf("Failed to create bloom ConfigMap: %v", err))

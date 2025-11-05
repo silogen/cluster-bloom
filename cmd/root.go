@@ -204,8 +204,8 @@ func rootSteps() []pkg.Step {
 		pkg.SetupMetallbStep,
 		pkg.CreateMetalLBConfigStep,
 		pkg.CreateDomainConfigStep,
-		pkg.CreateBloomConfigMapStepFunc(Version),
 		pkg.WaitForClusterReady,
+		pkg.CreateBloomConfigMapStepFunc(Version),
 		pkg.SetupClusterForgeStep,
 	}
 
