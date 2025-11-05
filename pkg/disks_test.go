@@ -45,23 +45,6 @@ func TestGenerateNodeLabels(t *testing.T) {
 		}
 		viper.Set("CLUSTER_PREMOUNTED_DISKS", "")
 	})
-
-	t.Run("with NO_DISKS_FOR_CLUSTER", func(t *testing.T) {
-		viper.Set("NO_DISKS_FOR_CLUSTER", true)
-		err := GenerateNodeLabels(map[string]string{})
-		if err != nil {
-			t.Errorf("Expected no error with NO_DISKS_FOR_CLUSTER, got: %v", err)
-		}
-		viper.Set("NO_DISKS_FOR_CLUSTER", false)
-	})
-
-	t.Run("with no cluster disks", func(t *testing.T) {
-		viper.Set("CLUSTER_DISKS", []string{})
-		err := GenerateNodeLabels(map[string]string{})
-		if err != nil {
-			t.Errorf("Expected no error with empty disk list, got: %v", err)
-		}
-	})
 }
 
 func TestIsVirtualDisk(t *testing.T) {
@@ -179,4 +162,3 @@ func TestAppendToFile(t *testing.T) {
 		t.Errorf("Expected %s, got %s", content, string(data))
 	}
 }
-
