@@ -206,7 +206,7 @@ func SetupClusterForge() error {
 		LogMessage(Info, "Successfully downloaded ClusterForge")
 	}
 
-	cmd = exec.Command("tar", "-xzvf", "clusterforge.tar.gz")
+	cmd = exec.Command("tar", "-xzvf", "clusterforge.tar.gz", "--no-same-owner")
 	output, err = cmd.Output()
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to unzip clusterforge.tar.gz: %v, output %v", err, output))
@@ -219,14 +219,17 @@ func SetupClusterForge() error {
 
 	// Get the original user when running with sudo
 	originalUser := os.Getenv("SUDO_USER")
-
-	cmd = exec.Command("sudo", "chown", "-R", fmt.Sprintf("%s:%s", originalUser, originalUser), "cluster-forge")
-	output, err = cmd.Output()
-	if err != nil {
-		LogMessage(Error, fmt.Sprintf("Failed to change ownership of Clusterforge folder: %v, output %v", err, output))
-		return err
+	if originalUser != "" {
+		cmd = exec.Command("sudo", "chown", "-R", fmt.Sprintf("%s:%s", originalUser, originalUser), "cluster-forge")
+		output, err = cmd.Output()
+		if err != nil {
+			LogMessage(Error, fmt.Sprintf("Failed to change ownership of Clusterforge folder: %v, output %v", err, output))
+			return err
+		} else {
+			LogMessage(Info, fmt.Sprintf("Successfully updated ownership of Clusterforge folder to %s", originalUser))
+		}
 	} else {
-		LogMessage(Info, fmt.Sprintf("Successfully updated ownership of Clusterforge folder to %s", originalUser))
+		LogMessage(Info, "Sudo user returned nil, not attempting to change ownership of Clusterforge folder")
 	}
 
 	scriptsDir := "cluster-forge/scripts"
