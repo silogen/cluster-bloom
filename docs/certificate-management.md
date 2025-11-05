@@ -86,7 +86,7 @@ The cluster setup wizard (`bloom wizard`) guides you through certificate configu
 
 ### Manual Configuration
 
-Set the following environment variables before running `bloom up`:
+Set the following environment variables before running bloom:
 
 ```bash
 # For cert-manager (automatic certificates)

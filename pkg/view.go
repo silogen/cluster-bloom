@@ -241,6 +241,11 @@ func RunWebInterfaceWithConfig(port string, steps []Step, configFile string, one
 	mux.HandleFunc("/api/validation-error", handlerService.ValidationErrorAPIHandler)
 	mux.HandleFunc("/monitor", handlerService.MonitorHandler)
 	mux.HandleFunc("/api/prefilled-config", handlerService.PrefilledConfigAPIHandler)
+	mux.HandleFunc("/api/reconfigure", handlerService.ReconfigureHandler)
+	// Register monitoring endpoints from the start (they will be inactive until monitor is set)
+	mux.HandleFunc("/api/logs", handlerService.LogsAPIHandler)
+	mux.HandleFunc("/api/variables", handlerService.VariablesAPIHandler)
+	mux.HandleFunc("/api/steps", handlerService.StepsAPIHandler)
 
 	handler := LocalhostOnly(mux)
 	server := &http.Server{
@@ -284,6 +289,15 @@ func RunWebInterfaceWithConfig(port string, steps []Step, configFile string, one
 			fmt.Println("🔄 Starting installation...")
 			fmt.Println()
 
+			// Update viper with the new configuration from web interface
+			config := handlerService.GetConfig()
+			if config != nil {
+				for key, value := range config {
+					viper.Set(key, value)
+				}
+				log.Infof("Updated viper with %d config values from web interface", len(config))
+			}
+
 			// Setup logging now that we're about to start installation
 			if setupLogging != nil {
 				setupLogging()
@@ -299,11 +313,6 @@ func RunWebInterfaceWithConfig(port string, steps []Step, configFile string, one
 			monitor := NewWebMonitor()
 			handlerService.monitor = monitor
 			globalWebMonitor = monitor
-
-			// Add monitoring endpoints to the same server
-			mux.HandleFunc("/api/logs", handlerService.LogsAPIHandler)
-			mux.HandleFunc("/api/variables", handlerService.VariablesAPIHandler)
-			mux.HandleFunc("/api/steps", handlerService.StepsAPIHandler)
 
 			// Run installation
 			installErr := runStepsInBackground(steps, monitor)
