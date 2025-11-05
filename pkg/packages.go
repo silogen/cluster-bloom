@@ -36,7 +36,12 @@ var longhornPVCValidationScript []byte
 
 func CheckPackageInstallConnections() error {
 	cmd := exec.Command("apt-get", "update")
-	cmd.Env = os.Environ()
+	env := os.Environ()
+	// Add environment variables to prevent interactive prompts
+	env = append(env, "DEBIAN_FRONTEND=noninteractive")
+	env = append(env, "NEEDRESTART_MODE=a")
+	env = append(env, "NEEDRESTART_SUSPEND=1")
+	cmd.Env = env
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("Failed to verify apt-get connection: %w\nOutput: %s", err, output)
@@ -99,7 +104,12 @@ func InstallDependentPackages() error {
 
 func installpackage(pkgName string) error {
 	cmd := exec.Command("apt-get", "install", "-y", pkgName)
-	cmd.Env = os.Environ()
+	env := os.Environ()
+	// Add environment variables to prevent interactive prompts
+	env = append(env, "DEBIAN_FRONTEND=noninteractive")
+	env = append(env, "NEEDRESTART_MODE=a")
+	env = append(env, "NEEDRESTART_SUSPEND=1")
+	cmd.Env = env
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to install package: %w\nOutput: %s", err, output)
