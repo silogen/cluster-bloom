@@ -269,18 +269,30 @@ func (h *WebHandlerService) DashboardHandler(w http.ResponseWriter, r *http.Requ
 func (h *WebHandlerService) LogsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
+	if h.monitor == nil {
+		json.NewEncoder(w).Encode([]string{})
+		return
+	}
 	json.NewEncoder(w).Encode(h.monitor.GetLogs())
 }
 
 func (h *WebHandlerService) VariablesAPIHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
+	if h.monitor == nil {
+		json.NewEncoder(w).Encode(map[string]string{})
+		return
+	}
 	json.NewEncoder(w).Encode(h.monitor.GetVariables())
 }
 
 func (h *WebHandlerService) StepsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
+	if h.monitor == nil {
+		json.NewEncoder(w).Encode([]interface{}{})
+		return
+	}
 	json.NewEncoder(w).Encode(h.monitor.GetSteps())
 }
 
