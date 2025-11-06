@@ -190,22 +190,43 @@ func runBrowserTest(t *testing.T, testCaseFile string) {
 
 	// If this test expects an error (validation failure)
 	if testCase.ExpectedError != "" {
-		t.Logf("\n📋 Test Case: %s (expects validation failure)", testCaseFile)
-		t.Logf("   Expected Error: %s", testCase.ExpectedError)
+		// Verify bloom.yaml was NOT created (validation should prevent save)
+		if _, err := os.Stat(bloomYamlPath); err == nil {
+			t.Errorf("❌ Validation should have failed but bloom.yaml was created!")
+			t.Errorf("   Expected error message: %s", testCase.ExpectedError)
+			return
+		}
 
-		// Check if the expected error appears in the page text
-		if contains(pageText, testCase.ExpectedError) {
-			t.Logf("   ✅ Validation failed as expected with error: %s", testCase.ExpectedError)
-			t.Logf("✅ Test passed! Validation correctly rejected invalid input\n")
-		} else {
-			// Also check if bloom.yaml was NOT created (it shouldn't be for validation failures)
-			if _, err := os.Stat(bloomYamlPath); err == nil {
-				t.Errorf("   ❌ Validation should have failed but bloom.yaml was created!")
-				t.Errorf("   Expected error message: %s", testCase.ExpectedError)
-			} else {
-				t.Logf("   ℹ️  bloom.yaml was NOT created (validation likely failed)")
-				t.Logf("   ✅ Test passed! Form validation prevented invalid submission\n")
-			}
+		// Check if the expected error appears via HTML5 validation
+		var validationInfo string
+		err = chromedp.Run(ctx,
+			// Get the validation message from the DOMAIN field
+			chromedp.Evaluate(`
+				const domainInput = document.getElementById('DOMAIN');
+				const validationMessage = domainInput.validationMessage;
+				const isValid = domainInput.validity.valid;
+				const title = domainInput.getAttribute('title');
+
+				JSON.stringify({
+					validationMessage: validationMessage,
+					isValid: isValid,
+					title: title,
+					value: domainInput.value
+				});
+			`, &validationInfo),
+		)
+
+		if err != nil {
+			t.Errorf("⚠️ Could not check for validation message: %v", err)
+			return
+		}
+
+		// Check if error appears in validation message or title attribute
+		errorDisplayed := contains(validationInfo, testCase.ExpectedError)
+
+		if !errorDisplayed {
+			t.Errorf("❌ Expected error text '%s' not found in validation", testCase.ExpectedError)
+			t.Errorf("   Validation info: %s", validationInfo)
 		}
 		return
 	}
@@ -224,13 +245,6 @@ func runBrowserTest(t *testing.T, testCaseFile string) {
 		t.Fatalf("❌ Failed to read bloom.yaml: %v", err)
 	}
 
-	t.Logf("\n📋 Test Case: %s", testCaseFile)
-	t.Logf("   DOMAIN:        %s", testCase.Domain)
-	t.Logf("   CLUSTER_DISKS: %s", testCase.ClusterDisks)
-	t.Logf("   FIRST_NODE:    %v", testCase.FirstNode)
-	t.Logf("   GPU_NODE:      %v", testCase.GPUNode)
-	t.Logf("   CERT_OPTION:   %s", testCase.CertOption)
-
 	expectedValues := []string{
 		fmt.Sprintf("DOMAIN: %s", testCase.Domain),
 		fmt.Sprintf("CLUSTER_DISKS: %s", testCase.ClusterDisks),
@@ -239,18 +253,10 @@ func runBrowserTest(t *testing.T, testCaseFile string) {
 	}
 
 	contentStr := string(content)
-	allMatch := true
 	for _, expected := range expectedValues {
 		if !contains(contentStr, expected) {
-			t.Errorf("   ❌ Missing: %s", expected)
-			allMatch = false
-		} else {
-			t.Logf("   ✅ Verified: %s", expected)
+			t.Errorf("❌ Missing: %s", expected)
 		}
-	}
-
-	if allMatch {
-		t.Logf("✅ Test passed! Configuration saved successfully\n")
 	}
 }
 

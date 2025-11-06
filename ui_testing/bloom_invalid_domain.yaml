@@ -4,4 +4,4 @@ CERT_OPTION: generate
 FIRST_NODE: true
 GPU_NODE: true
 
-expected_error: "Invalid format"
+expected_error: "Valid domain format"

@@ -147,7 +147,7 @@ cd "$UI_TEST_DIR"
 # Run tests and capture exit code
 set +e
 BLOOM_YAML_PATH="$BLOOM_YAML" go test -v -run TestWebFormE2E 2>&1 | grep -v "ERROR: could not unmarshal"
-TEST_EXIT_CODE=$?
+TEST_EXIT_CODE=${PIPESTATUS[0]}
 set -e
 
 echo -e "\n${BLUE}═══════════════════════════════════════════════════════${NC}"
