@@ -50,7 +50,34 @@ func SetArguments() {
 			Type:         "non-empty-string",
 			Dependencies: "FIRST_NODE=true",
 		},
-
+		{
+			Key:          "NODE_IP",
+			Default:      "",
+			Description:  "The IP address to advertise for this node. Optional.",
+			Type:         "non-empty-ip-address",
+			Dependencies: "FIRST_NODE=false",
+		},
+		{
+			Key:          "NODE_EXTERNAL_IP",
+			Default:      "",
+			Description:  "The external IP address to advertise for this node. Optional.",
+			Type:         "non-empty-ip-address",
+			Dependencies: "FIRST_NODE=false",
+		},
+		{
+			Key:          "ADVERTISE_ADDRESS",
+			Default:      "",
+			Description:  "The IP address the  apiserver uses to advertise to members of the cluster. Optional.",
+			Type:         "non-empty-ip-address",
+			Dependencies: "FIRST_NODE=false",
+		},
+		{
+			Key:          "TLS_SAN",
+			Default:      "",
+			Description:  "Additional hostnames or IPv4 addresses as Subject Alternative Names on the server TLS cert. Optional.",
+			Type:         "string",
+			Validators:   []func(value string) error{args.ValidateListOfIPs},
+		},
 		// TLS/Certificate configuration
 		{
 			Key:          "USE_CERT_MANAGER",

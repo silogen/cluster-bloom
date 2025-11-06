@@ -115,6 +115,24 @@ func ValidateJoinTokenArg(token string) error {
 	return nil
 }
 
+func ValidateListOfIPs(ips string) error {
+	if ips == "" {
+		return nil // Empty input is allowed
+	}
+
+	ipList := strings.Split(ips, ",")
+	for _, ipStr := range ipList {
+		ipStr = strings.TrimSpace(ipStr)
+		if ipStr == "" {
+			continue // Skip empty entries
+		}
+		if err := ValidateIPAddress(ipStr); err != nil {
+			return fmt.Errorf("invalid IP address '%s': %v", ipStr, err)
+		}
+	}
+	return nil
+}
+
 // ValidateStepNamesArg validates that step names are valid against the steps from rootSteps
 func ValidateStepNamesArg(stepNames string) error {
 	if stepNames == "" {
