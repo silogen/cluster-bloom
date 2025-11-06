@@ -262,7 +262,7 @@ func RunWebInterfaceWithConfig(port string, steps []Step, configFile string, one
 	go func() {
 		for {
 			time.Sleep(1 * time.Second)
-			if handlerService.GetConfig() != nil {
+			if handlerService.ConfigChanged() {
 				configReceived <- true
 				break
 			}

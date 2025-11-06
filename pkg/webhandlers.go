@@ -462,7 +462,7 @@ func (h *WebHandlerService) ConfigOnlyAPIHandler(w http.ResponseWriter, r *http.
 	h.configVersion++
 	h.lastError = ""             // Clear any previous errors
 	h.shouldStartInstall = false // Do NOT signal installation to start
-	h.configSavedOnly = true     // Signal that config was saved without installation
+	h.configSavedOnly = false    // Do NOT signal to exit - just save the config
 
 	log.Info("Configuration saved without starting installation")
 
