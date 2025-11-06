@@ -973,6 +973,8 @@
                         window.isOneShot = data.oneShot;
 
                         // Show banner indicating pre-filled configuration
+                        // we have three sources for the pre-filled info, glossing over some bugs 
+                        // todo: update how we load default -vs- existing bloom.yaml content
                         const banner = document.getElementById('error-banner');
                         const title = document.getElementById('error-title');
                         const message = document.getElementById('error-message');
@@ -982,13 +984,13 @@
                             banner.style.background = '#e8f5e8';
                             banner.style.border = '2px solid #2e7d32';
                             title.style.color = '#2e7d32';
-                            title.textContent = '📄 Configuration Loaded from File';
-                            message.textContent = 'Configuration has been pre-filled from your config file.';
+                            title.textContent = '📄 Configuration has been pre-filled';
+                            message.textContent = 'Configuration has been pre-filled';
 
                             if (data.oneShot) {
                                 suggestion.textContent = 'One-shot mode enabled - auto-proceeding...';
                             } else {
-                                suggestion.textContent = 'Please review the configuration below and click "Generate Configuration & Start Installation" to proceed.';
+                                suggestion.textContent = 'Please update or review the configuration below and click "Generate Configuration & Start Installation" to proceed.';
                             }
 
                             banner.style.display = 'block';
