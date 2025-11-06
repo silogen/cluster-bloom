@@ -449,6 +449,7 @@ func startWebUIMonitoring() {
 	mux.HandleFunc("/api/reconfigure", handlerService.ReconfigureHandler)
 	mux.HandleFunc("/api/prefilled-config", handlerService.PrefilledConfigAPIHandler)
 	mux.HandleFunc("/api/config", handlerService.ConfigAPIHandler)
+	mux.HandleFunc("/api/config-only", handlerService.ConfigOnlyAPIHandler)
 
 	handler := pkg.LocalhostOnly(mux)
 	server := &http.Server{

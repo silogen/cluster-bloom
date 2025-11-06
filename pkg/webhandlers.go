@@ -46,31 +46,35 @@ const (
 )
 
 type WebHandlerService struct {
-	monitor           *WebMonitor
-	configMode        bool
-	config            map[string]interface{}
-	lastError         string
-	errorType         ErrorType
-	configVersion     int
-	prefilledConfig   map[string]interface{}
-	oneShot           bool
-	validationFailed  bool
-	validationErrors  []string
-	steps             []Step
-	startInstallation func() error
+	monitor              *WebMonitor
+	configMode           bool
+	config               map[string]interface{}
+	lastError            string
+	errorType            ErrorType
+	configVersion        int
+	prefilledConfig      map[string]interface{}
+	oneShot              bool
+	validationFailed     bool
+	validationErrors     []string
+	steps                []Step
+	startInstallation    func() error
+	shouldStartInstall   bool
+	configSavedOnly      bool
 }
 
 func NewWebHandlerService(monitor *WebMonitor) *WebHandlerService {
 	return &WebHandlerService{
-		monitor:           monitor,
-		configMode:        false,
-		config:            make(map[string]interface{}),
-		errorType:         ErrorTypeGeneral,
-		configVersion:     0,
-		prefilledConfig:   make(map[string]interface{}),
-		oneShot:           false,
-		steps:             nil,
-		startInstallation: nil,
+		monitor:            monitor,
+		configMode:         false,
+		config:             make(map[string]interface{}),
+		errorType:          ErrorTypeGeneral,
+		configVersion:      0,
+		prefilledConfig:    make(map[string]interface{}),
+		oneShot:            false,
+		steps:              nil,
+		startInstallation:  nil,
+		shouldStartInstall: false,
+		configSavedOnly:    false,
 	}
 }
 
@@ -81,13 +85,15 @@ func (h *WebHandlerService) SetInstallationHandler(steps []Step, startCallback f
 
 func NewWebHandlerServiceConfig() *WebHandlerService {
 	return &WebHandlerService{
-		monitor:         nil,
-		configMode:      true,
-		config:          make(map[string]interface{}),
-		errorType:       ErrorTypeGeneral,
-		configVersion:   0,
-		prefilledConfig: make(map[string]interface{}),
-		oneShot:         false,
+		monitor:            nil,
+		configMode:         true,
+		config:             make(map[string]interface{}),
+		errorType:          ErrorTypeGeneral,
+		configVersion:      0,
+		prefilledConfig:    make(map[string]interface{}),
+		oneShot:            false,
+		shouldStartInstall: false,
+		configSavedOnly:    false,
 	}
 }
 
@@ -394,7 +400,8 @@ func (h *WebHandlerService) ConfigAPIHandler(w http.ResponseWriter, r *http.Requ
 
 	h.config = config
 	h.configVersion++
-	h.lastError = "" // Clear any previous errors
+	h.lastError = ""            // Clear any previous errors
+	h.shouldStartInstall = true // Signal that installation should start
 
 	// Don't start installation automatically to avoid concurrent Viper access
 	// The user will need to restart bloom with the new configuration
@@ -411,6 +418,58 @@ func (h *WebHandlerService) ConfigAPIHandler(w http.ResponseWriter, r *http.Requ
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"message": "Configuration saved successfully. Please restart bloom to apply changes.",
+		"file":    filename,
+	})
+}
+
+func (h *WebHandlerService) ConfigOnlyAPIHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var config map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&config); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Invalid JSON: " + err.Error(),
+		})
+		return
+	}
+
+	yamlData, err := yaml.Marshal(config)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Failed to generate YAML: " + err.Error(),
+		})
+		return
+	}
+
+	filename := "bloom.yaml"
+	if err := os.WriteFile(filename, yamlData, 0644); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Failed to save configuration: " + err.Error(),
+		})
+		return
+	}
+
+	h.config = config
+	h.configVersion++
+	h.lastError = ""             // Clear any previous errors
+	h.shouldStartInstall = false // Do NOT signal installation to start
+	h.configSavedOnly = true     // Signal that config was saved without installation
+
+	log.Info("Configuration saved without starting installation")
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Configuration saved successfully. You can start the installation manually when ready.",
 		"file":    filename,
 	})
 }
@@ -441,7 +500,7 @@ func (h *WebHandlerService) SetError(errorMsg string) {
 }
 
 func (h *WebHandlerService) ConfigChanged() bool {
-	return h.configVersion > 1 // First config is version 1, changes are version 2+
+	return h.configVersion > 1 && h.shouldStartInstall // First config is version 1, changes are version 2+, and installation should start
 }
 
 func (h *WebHandlerService) GetLastError() string {
