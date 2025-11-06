@@ -995,10 +995,7 @@ var FinalOutput = Step{
 			LogMessage(Info, "To setup additional nodes to join the cluster, copy and run the command from additional_node_command.txt")
 			return StepResult{Message: "To setup additional nodes to join the cluster, copy and run the command from additional_node_command.txt"}
 		} else {
-			message := "The content of longhorn_drive_setup.txt must be run in order to mount drives properly. " +
-				"This can be done in the control node, which was installed first, or with a valid kubeconfig for the cluster."
-			LogMessage(Info, message)
-			return StepResult{Message: message}
+			return StepResult{Error: nil}
 		}
 	},
 }
