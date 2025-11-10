@@ -286,6 +286,13 @@ var UpdateModprobeStep = Step{
 	Id:          "UpdateModprobeStep",
 	Name:        "Update Modprobe",
 	Description: "Update Modprobe to unblacklist amdgpu",
+	Skip: func() bool {
+		if !viper.GetBool("GPU_NODE") {
+			LogMessage(Info, "Skipping ROCm setup for non-GPU node")
+			return true
+		}
+		return false
+	},
 	Action: func() StepResult {
 		err := updateModprobe()
 		if err != nil {
@@ -421,6 +428,26 @@ var SetupMetallbStep = Step{
 			}
 		} else {
 			return StepResult{Error: nil}
+		}
+		return StepResult{Error: nil}
+	},
+}
+
+var LonghornPreflightCheckStep = Step{
+	Id:          "LonghornPreflightCheckStep",
+	Name:        "Longhorn Preflight Check",
+	Description: "Validate system passes Longhorn preflight checks before setting up Longhorn",
+	Skip: func() bool {
+		if !viper.GetBool("FIRST_NODE") {
+			LogMessage(Info, "Skipping for additional nodes.")
+			return true
+		}
+		return false
+	},
+	Action: func() StepResult {
+		err := LonghornPreflightCheck()
+		if err != nil {
+			return StepResult{Error: fmt.Errorf("failed to run Longhorn preflight check: %v", err)}
 		}
 		return StepResult{Error: nil}
 	},
@@ -694,7 +721,6 @@ func CreateBloomConfigMapStepFunc(version string) Step {
 			if viper.GetBool("FIRST_NODE") {
 				LogMessage(Info, "Waiting for cluster to be ready...")
 
-				time.Sleep(10 * time.Second)
 				err := CreateConfigMap(version)
 				if err != nil {
 					LogMessage(Error, fmt.Sprintf("Failed to create bloom ConfigMap: %v", err))
@@ -890,9 +916,11 @@ metadata:
 }
 
 var WaitForClusterReady = Step{
+	// wrapper for any post creation validations
+	// presently just validates Longhorn PVC creation on first node
 	Id:          "WaitForClusterReady",
 	Name:        "Wait for Cluster to be Ready",
-	Description: "A wait step to ensure the cluster is ready",
+	Description: "A wait step to ensure the cluster is ready (first node only)",
 	Skip: func() bool {
 		if !viper.GetBool("FIRST_NODE") {
 			LogMessage(Info, "Skipping for additional nodes.")
@@ -901,9 +929,9 @@ var WaitForClusterReady = Step{
 		return false
 	},
 	Action: func() StepResult {
-		err := LonghornPreflightCheck()
+		err := LonghornValidatePVCCreation()
 		if err != nil {
-			return StepResult{Error: fmt.Errorf("failed to run Longhorn preflight check: %v", err)}
+			return StepResult{Error: fmt.Errorf("failed to valite Longhorn is able to create PVCs: %v", err)}
 		}
 		return StepResult{Error: nil}
 	},
@@ -967,10 +995,7 @@ var FinalOutput = Step{
 			LogMessage(Info, "To setup additional nodes to join the cluster, copy and run the command from additional_node_command.txt")
 			return StepResult{Message: "To setup additional nodes to join the cluster, copy and run the command from additional_node_command.txt"}
 		} else {
-			message := "The content of longhorn_drive_setup.txt must be run in order to mount drives properly. " +
-				"This can be done in the control node, which was installed first, or with a valid kubeconfig for the cluster."
-			LogMessage(Info, message)
-			return StepResult{Message: message}
+			return StepResult{Error: nil}
 		}
 	},
 }
@@ -1107,7 +1132,7 @@ func shellCmdHelper(shellCmd string) StepResult {
 		LogMessage(Error, fmt.Sprintf("Error running command %s: %v, output: %s", shellCmd, err, string(output)))
 		return StepResult{Error: fmt.Errorf("error running %s: %w", shellCmd, err)}
 	} else {
-		LogMessage(Debug, fmt.Sprint("Success running %s", shellCmd))
+		LogMessage(Debug, fmt.Sprintf("Success running %s", shellCmd))
 	}
 	return StepResult{Error: nil}
 }

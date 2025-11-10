@@ -486,6 +486,10 @@ If building interactive terminal applications:
 - Use `integration_test.go` with build tags for integration tests
 - Create separate `test/` directory for VM and system tests
 - Organize mocks in `mocks_test.go` files
+- Step integration tests go in `integration_tests/step/<StepName>/` directories
+  - Each test scenario in its own subdirectory with `bloom.yaml` config
+  - Use `mocks:` section in YAML to mock command outputs
+  - See `integration_tests/step/11_PrepareLonghornDisksStep/TEST_SCENARIOS.md` for examples
 
 ### Unit Testing Strategy
 ```go
@@ -552,6 +556,8 @@ func TestStepExecution(t *testing.T) {
 ```
 
 ### Integration Testing
+
+#### Go Integration Tests
 Use build tags to separate integration tests:
 ```go
 //go:build integration
@@ -561,14 +567,57 @@ func TestIntegrationStepExecution(t *testing.T) {
     if testing.Short() {
         t.Skip("Skipping integration test in short mode")
     }
-    
+
     if os.Getenv("CLUSTER_BLOOM_TEST_ENV") != "true" {
         t.Skip("Skipping integration test")
     }
-    
+
     // Integration test logic
 }
 ```
+
+#### Step Integration Tests
+For testing installation steps with mocked commands, create YAML-based tests:
+
+**Directory Structure:**
+```
+integration_tests/step/<StepName>/<scenario-name>/bloom.yaml
+```
+
+**Example Config (integration_tests/step/11_PrepareLonghornDisksStep/03-fresh-disk-single/bloom.yaml):**
+```yaml
+ENABLED_STEPS: PrepareLonghornDisksStep
+CLUSTER_DISKS: /dev/sda
+
+mocks:
+  PrepareLonghornDisksStep.ReadFstab:
+    output: ""
+  PrepareLonghornDisksStep.CheckFilesystem./dev/sda:
+    output: "NAME FSTYPE\nsda  "
+    args: ["lsblk", "-f", "/dev/sda"]
+  PrepareLonghornDisksStep.FormatDisk./dev/sda:
+    output: ""
+    args: ["mkfs.ext4", "-F", "-F", "/dev/sda"]
+```
+
+**Running Step Tests:**
+```bash
+# Run all step integration tests
+./bloom test integration_tests/step/*/bloom.yaml
+
+# Run tests for specific step
+./bloom test integration_tests/step/11_PrepareLonghornDisksStep/*/bloom.yaml
+
+# Run single test scenario
+./bloom test integration_tests/step/11_PrepareLonghornDisksStep/03-fresh-disk-single/bloom.yaml
+```
+
+**Creating New Step Tests:**
+1. Create directory: `integration_tests/step/<StepID>/<scenario-name>/`
+2. Add `bloom.yaml` with test config and mocks
+3. Document scenarios in `TEST_SCENARIOS.md`
+4. Add mocks for all command executions and file reads
+5. Use `expected_error` field to test error handling
 
 ### VM-based System Testing
 For full system testing that requires actual Ubuntu environments:

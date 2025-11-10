@@ -209,9 +209,6 @@ func RunStepsWithUI(steps []Step) error {
 	fmt.Println()
 	if viper.GetBool("FIRST_NODE") {
 		fmt.Println("To setup additional nodes to join the cluster, run the command in additional_node_command.txt")
-	} else {
-		fmt.Println("The content of longhorn_drive_setup.txt must be run in order to mount drives properly. " +
-			"This can be done in the control node, which was installed first, or with a valid kubeconfig for the cluster.")
 	}
 	fmt.Println()
 	if finalErr != nil {
@@ -241,6 +238,11 @@ func RunWebInterfaceWithConfig(port string, steps []Step, configFile string, one
 	mux.HandleFunc("/api/validation-error", handlerService.ValidationErrorAPIHandler)
 	mux.HandleFunc("/monitor", handlerService.MonitorHandler)
 	mux.HandleFunc("/api/prefilled-config", handlerService.PrefilledConfigAPIHandler)
+	mux.HandleFunc("/api/reconfigure", handlerService.ReconfigureHandler)
+	// Register monitoring endpoints from the start (they will be inactive until monitor is set)
+	mux.HandleFunc("/api/logs", handlerService.LogsAPIHandler)
+	mux.HandleFunc("/api/variables", handlerService.VariablesAPIHandler)
+	mux.HandleFunc("/api/steps", handlerService.StepsAPIHandler)
 
 	handler := LocalhostOnly(mux)
 	server := &http.Server{
@@ -284,6 +286,15 @@ func RunWebInterfaceWithConfig(port string, steps []Step, configFile string, one
 			fmt.Println("🔄 Starting installation...")
 			fmt.Println()
 
+			// Update viper with the new configuration from web interface
+			config := handlerService.GetConfig()
+			if config != nil {
+				for key, value := range config {
+					viper.Set(key, value)
+				}
+				log.Infof("Updated viper with %d config values from web interface", len(config))
+			}
+
 			// Setup logging now that we're about to start installation
 			if setupLogging != nil {
 				setupLogging()
@@ -299,11 +310,6 @@ func RunWebInterfaceWithConfig(port string, steps []Step, configFile string, one
 			monitor := NewWebMonitor()
 			handlerService.monitor = monitor
 			globalWebMonitor = monitor
-
-			// Add monitoring endpoints to the same server
-			mux.HandleFunc("/api/logs", handlerService.LogsAPIHandler)
-			mux.HandleFunc("/api/variables", handlerService.VariablesAPIHandler)
-			mux.HandleFunc("/api/steps", handlerService.StepsAPIHandler)
 
 			// Run installation
 			installErr := runStepsInBackground(steps, monitor)
@@ -566,9 +572,6 @@ func RunStepsWithCLI(steps []Step) error {
 	fmt.Println()
 	if viper.GetBool("FIRST_NODE") {
 		fmt.Println("📝 To setup additional nodes to join the cluster, run the command in additional_node_command.txt")
-	} else {
-		fmt.Println("📝 The content of longhorn_drive_setup.txt must be run in order to mount drives properly.")
-		fmt.Println("   This can be done in the control node, which was installed first, or with a valid kubeconfig for the cluster.")
 	}
 	fmt.Println()
 	if finalErr != nil {

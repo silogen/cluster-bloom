@@ -40,7 +40,7 @@ func init() {
 		{Key: "OIDC_URL", Default: "", Description: "The URL of the OIDC provider.", Type: "url"},
 		{Key: "ROCM_BASE_URL", Default: "https://repo.radeon.com/amdgpu-install/6.3.2/ubuntu/", Description: "ROCm base repository URL.", Type: "non-empty-url", Dependencies: "GPU_NODE=true"},
 		{Key: "RKE2_INSTALLATION_URL", Default: "https://get.rke2.io", Description: "RKE2 installation script URL.", Type: "non-empty-url"},
-		{Key: "CLUSTERFORGE_RELEASE", Default: "https://github.com/silogen/cluster-forge/releases/download/deploy/deploy-release.tar.gz", Description: "The version of Cluster-Forge to install. Pass the URL for a specific release, or 'none' to not install ClusterForge.", Type: "url"},
+		{Key: "CLUSTERFORGE_RELEASE", Default: "https://github.com/silogen/cluster-forge/releases/download/v1.0.0/release-enterprise-ai-v1.0.0.tar.gz", Description: "The version of Cluster-Forge to install. Pass the URL for a specific release, or 'none' to not install ClusterForge.", Type: "url"},
 		{Key: "DISABLED_STEPS", Default: "", Description: "Comma-separated list of steps to skip. Example: \"SetupLonghornStep,SetupMetallbStep\".", Type: "string", Validators: []func(value string) error{ValidateStepNamesArg, ValidateDisabledStepsWarnings, ValidateDisabledStepsConflict}},
 		{Key: "ENABLED_STEPS", Default: "", Description: "Comma-separated list of steps to perform. If empty, perform all. Example: \"SetupLonghornStep,SetupMetallbStep\".", Type: "string", Validators: []func(value string) error{ValidateStepNamesArg}},
 	})
@@ -586,7 +586,7 @@ func TestValidateDeprecatedArgs(t *testing.T) {
 		{
 			name: "New args used - valid",
 			setArgs: map[string]string{
-				"NO_DISKS_FOR_CLUSTER":    "false",
+				"NO_DISKS_FOR_CLUSTER":     "false",
 				"CLUSTER_PREMOUNTED_DISKS": "/mnt/disk1",
 			},
 			wantErr: false,
