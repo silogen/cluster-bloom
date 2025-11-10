@@ -120,7 +120,7 @@ func ValidateListOfHostnames(hostnames string) error {
 		return nil // Empty input is allowed
 	}
 
-	hostNameList := hostnames.Split(hostnames, ",")
+	hostNameList := strings.Split(hostnames, ",")
 	for _, hostNameStr := range hostNameList {
 		hostNameStr = strings.TrimSpace(hostNameStr)
 		if hostNameStr == "" {
@@ -129,9 +129,11 @@ func ValidateListOfHostnames(hostnames string) error {
 		NotValidIPErr := ValidateIPAddress(hostNameStr);
 		NotValidHostnameErr := ValidateHostname(hostNameStr);
 
-		if NotValidHostnameErr != nil && NotValidIPErr != nil {
-		{
-			return fmt.Errorf("invalid hostname in TLS SAN '%s': %v", hostNameStr, err)
+		if NotValidHostnameErr != nil {
+			return fmt.Errorf("invalid hostname in TLS SAN '%s': %v", hostNameStr, NotValidHostnameErr)
+		}
+		if NotValidIPErr != nil {
+			return fmt.Errorf("invalid IP address in TLS SAN '%s': %v", hostNameStr, NotValidIPErr)
 		}
 	}
 	return nil
@@ -306,6 +308,27 @@ func ValidateURL(urlStr string) error {
 	return nil
 }
 
+// ValidateHostname validates a hostname
+func ValidateHostname(hostnameStr string) error {
+	if hostnameStr == "" {
+		return nil // Empty hostnames are allowed for optional parameters
+	}
+
+	if strings.ToLower(hostnameStr) == "none" {
+		return nil
+	}
+
+	parsedHostname, err := url.Parse(hostnameStr)
+	if err != nil {
+		return fmt.Errorf("invalid hostname format: %v", err)
+	}
+
+	if parsedHostname.Host == "" {
+		return fmt.Errorf("invalid hostname: missing host")
+	}
+
+	return nil
+}
 // ValidateToken validates a token string (currently supports JOIN_TOKEN format)
 func ValidateToken(token string) error {
 	return ValidateJoinTokenArg(token)
