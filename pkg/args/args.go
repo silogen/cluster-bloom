@@ -115,19 +115,23 @@ func ValidateJoinTokenArg(token string) error {
 	return nil
 }
 
-func ValidateListOfIPs(ips string) error {
-	if ips == "" {
+func ValidateListOfHostnames(hostnames string) error {
+	if hostnames == "" {
 		return nil // Empty input is allowed
 	}
 
-	ipList := strings.Split(ips, ",")
-	for _, ipStr := range ipList {
-		ipStr = strings.TrimSpace(ipStr)
-		if ipStr == "" {
+	hostNameList := hostnames.Split(hostnames, ",")
+	for _, hostNameStr := range hostNameList {
+		hostNameStr = strings.TrimSpace(hostNameStr)
+		if hostNameStr == "" {
 			continue // Skip empty entries
 		}
-		if err := ValidateIPAddress(ipStr); err != nil {
-			return fmt.Errorf("invalid IP address '%s': %v", ipStr, err)
+		NotValidIPErr := ValidateIPAddress(hostNameStr);
+		NotValidHostnameErr := ValidateHostname(hostNameStr);
+
+		if NotValidHostnameErr != nil && NotValidIPErr != nil {
+		{
+			return fmt.Errorf("invalid hostname in TLS SAN '%s': %v", hostNameStr, err)
 		}
 	}
 	return nil

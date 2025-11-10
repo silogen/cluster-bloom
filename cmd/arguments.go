@@ -76,7 +76,7 @@ func SetArguments() {
 			Default:      "",
 			Description:  "Additional hostnames or IPv4 addresses as Subject Alternative Names on the server TLS cert. Comma-separated list of IP's. Optional.",
 			Type:         "string",
-			Validators:   []func(value string) error{args.ValidateListOfIPs},
+			Validators:   []func(value string) error{args.ValidateListOfHostnames},
 		},
 		// TLS/Certificate configuration
 		{
