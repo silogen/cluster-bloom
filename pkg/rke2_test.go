@@ -98,11 +98,13 @@ func TestSetupRKE2Additional(t *testing.T) {
 		name        string
 		serverIP    string
 		joinToken   string
+		internalIP   string
 		expectError bool
 	}{
-		{"missing server IP", "", "token", true},
-		{"missing join token", "192.168.1.1", "", true},
-		{"valid inputs", "192.168.1.1", "valid-token", true}, // Will fail due to file permissions
+		{"missing server IP", "", "token", "", true},
+		{"missing join token", "192.168.1.1", "", "", true},
+		{"valid inputs", "192.168.1.1", "valid-token", "", true}, // Will fail due to file permissions,
+		{"wrong format ip", "192.168.1.1", "valid-token", "152.152.155.1525", true},
 	}
 
 	for _, tt := range tests {
@@ -110,6 +112,7 @@ func TestSetupRKE2Additional(t *testing.T) {
 			viper.Set("SERVER_IP", tt.serverIP)
 			viper.Set("JOIN_TOKEN", tt.joinToken)
 			viper.Set("RKE2_INSTALLATION_URL", "https://get.rke2.io")
+			viper.Set("INTERNAL_IP", tt.internalIP)
 
 			err := SetupRKE2Additional()
 			if tt.expectError && err == nil {
