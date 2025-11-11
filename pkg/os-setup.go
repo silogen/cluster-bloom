@@ -173,7 +173,7 @@ func setInotifyValue(value int) error {
 func CheckInotifyConfig() error {
 	currentValue, err := getCurrentInotifyValue()
 	if err != nil {
-		return fmt.Errorf("Failed to get current inotify instances: %w", err)
+		return fmt.Errorf("failed to get current inotify instances: %w", err)
 	}
 
 	if currentValue <= targetValue {
