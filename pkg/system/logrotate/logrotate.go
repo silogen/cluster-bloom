@@ -38,7 +38,14 @@ type ConfigParams struct {
 }
 
 func Configure() error {
-	// wrapper function to setup logrotate for iscsi logs
+	// configure logrotate with agressive setup to deal with iscsi log spam
+
+	// preflight
+	if !isLogrotateInstalled() {
+		err := fmt.Errorf("logrotate not installed, aborting logrotate setup")
+		log.Error(err)
+		return err
+	}
 
 	configParams := &ConfigParams{
 		SourceFilePath:  "logrotate/iscsi-aggressive",
@@ -47,7 +54,9 @@ func Configure() error {
 	}
 
 	if err := createConfig(configParams); err != nil {
-		return fmt.Errorf("failed to create logrotate config: %v", err)
+		err := fmt.Errorf("failed to create logrotate config: %v", err)
+		log.Error(err)
+		return err
 	}
 
 	logPaths := []string{
@@ -56,18 +65,30 @@ func Configure() error {
 	}
 
 	configFile := filepath.Join(configParams.DestinationPath, "iscsi-aggressive")
+
+	// comment out existing logrotate blocks for iscsi logs
 	if err := commentOutLogrotateBlocks(configFile, logPaths); err != nil {
-		return fmt.Errorf("failed to comment out logrotate blocks: %v", err)
+		err := fmt.Errorf("failed to comment out logrotate blocks: %v", err)
+		log.Error(err)
+		return err
+	}
+
+	if err := enableHourlyRotation(); err != nil {
+		err := fmt.Errorf("failed to enable hourly logrotate config: %v", err)
+		log.Error(err)
+		return err
 	}
 
 	if err := applyConfigs(); err != nil {
-		return fmt.Errorf("failed to apply logrotate configs: %v", err)
+		err := fmt.Errorf("failed to apply logrotate configs: %v", err)
+		log.Error(err)
+		return err
 	}
 
 	return nil
 }
 
-func checkLogrotateInstalled() bool {
+func isLogrotateInstalled() bool {
 	_, err := exec.LookPath("logrotate")
 	return err == nil
 }
@@ -118,26 +139,65 @@ func createConfig(options *ConfigParams) error {
 }
 
 func commentOutLogrotateBlocks(configFile string, logPaths []string) error {
+	// conflict prevention / deduplication: comment out existing logrotate blocks for the specified log paths
+
 	// Check if the config file exists
 	if _, err := os.Stat(configFile); os.IsNotExist(err) {
 		return fmt.Errorf("config file %s does not exist", configFile)
 	}
 
-	// Build the sed pattern from the log paths
-	pattern := buildSedPattern(logPaths)
-
-	// Construct the sed command
-	// -i.bak creates a backup with .bak extension
-	sedCmd := fmt.Sprintf("/%s/,/^}/ s/^/# /", pattern)
-
-	cmd := exec.Command("sed", "-i.bak", sedCmd, configFile)
-
-	// Capture output for error reporting
-	output, err := cmd.CombinedOutput()
+	// Read the entire file
+	content, err := os.ReadFile(configFile)
 	if err != nil {
-		return fmt.Errorf("sed command failed: %v\nOutput: %s", err, output)
+		return fmt.Errorf("failed to read config file %s: %v", configFile, err)
 	}
 
+	lines := strings.Split(string(content), "\n")
+	var result []string
+	inTargetBlock := false
+	braceDepth := 0
+
+	for _, line := range lines {
+		trimmedLine := strings.TrimSpace(line)
+
+		// Check if this line contains any of our target log paths
+		for _, logPath := range logPaths {
+			if strings.Contains(trimmedLine, logPath) {
+				inTargetBlock = true
+				braceDepth = 0
+				break
+			}
+		}
+
+		if inTargetBlock {
+			// Count braces to track block boundaries
+			braceDepth += strings.Count(trimmedLine, "{")
+			braceDepth -= strings.Count(trimmedLine, "}")
+
+			// Comment out the line
+			result = append(result, "# "+line)
+
+			// Exit block when we've closed all braces
+			if braceDepth == 0 && strings.Contains(trimmedLine, "}") {
+				inTargetBlock = false
+			}
+		} else {
+			result = append(result, line)
+		}
+	}
+
+	// Create backup
+	backupFile := configFile + ".bak"
+	if err := os.WriteFile(backupFile, content, 0644); err != nil {
+		return fmt.Errorf("failed to create backup file %s: %v", backupFile, err)
+	}
+
+	// Write the modified content
+	if err := os.WriteFile(configFile, []byte(strings.Join(result, "\n")), 0644); err != nil {
+		return fmt.Errorf("failed to write modified config file %s: %v", configFile, err)
+	}
+
+	log.Infof("Successfully commented out logrotate blocks for: %v", logPaths)
 	return nil
 }
 
@@ -162,6 +222,9 @@ func enableHourlyRotation() error {
 
 		// write the logrotate command to the file
 		_, err = emptyFile.WriteString(fmt.Sprintf("#!/bin/sh\n%s\n", logrotateCmd))
+		if err != nil {
+			return fmt.Errorf("failed to write to hourly cron file %s: %v", hourlyCronFile, err)
+		}
 		emptyFile.Close()
 	} else {
 		// file exists, ensure the logrotate command is present
@@ -195,50 +258,21 @@ func applyConfigs() error {
 	// Run logrotate in debug mode to verify config
 	debugLogrotate := exec.Command("sudo", "logrotate", "-d", "/etc/logrotate.d/iscsi-aggressive")
 	if err := debugLogrotate.Run(); err != nil {
-		log.Infof(fmt.Sprintf("Error executing logrotate: %v", err))
+		log.Infof("Error executing logrotate: %v", err)
 	} else {
-		log.Infof(fmt.Sprintf("  ✓ Successfully ran logrotate"))
+		log.Infof("  ✓ Successfully ran logrotate")
 	}
 
 	validateLogrotate := exec.Command("bash", "/opt/validate_logrotate.sh")
 	output, err := validateLogrotate.CombinedOutput()
 	if err != nil {
-		log.Infof(fmt.Sprintf("Error running logrotate validation script: %v", err))
+		log.Infof("Error running logrotate validation script: %v", err)
 	} else {
-		log.Infof(fmt.Sprintf("==== start logrotate script output ===="))
-		log.Infof(fmt.Sprintf("%s, string(output)"))
+		log.Infof("==== start logrotate script output ====")
 		log.Infof("  ✓ Successfully validated logrotate setup")
 		if len(output) > 0 {
-			log.Infof(fmt.Sprintf("Script output: %s", string(output)))
+			log.Infof("Script output: %s", string(output))
 		}
 	}
-}
-
-// buildSedPattern creates a sed-compatible regex pattern from log paths
-func buildSedPattern(logPaths []string) string {
-	var escapedPaths []string
-
-	for _, path := range logPaths {
-		// Escape special regex characters in the path
-		escaped := escapeForSed(path)
-		escapedPaths = append(escapedPaths, escaped)
-	}
-
-	// Join with \| for sed's OR operator
-	return strings.Join(escapedPaths, `\|`)
-}
-
-// escapeForSed escapes special characters for use in sed regex
-func escapeForSed(s string) string {
-	// Escape common special characters in file paths
-	replacer := strings.NewReplacer(
-		`/`, `\/`, // Forward slashes
-		`.`, `\.`, // Dots
-		`*`, `\*`, // Asterisks
-		`[`, `\[`, // Square brackets
-		`]`, `\]`,
-		`^`, `\^`, // Caret
-		`$`, `\$`, // Dollar
-	)
-	return replacer.Replace(s)
+	return nil
 }

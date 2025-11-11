@@ -9,6 +9,22 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+func Configure() error {
+	// configure rsyslog rate limiting to reduce iSCSI log spam
+	err := setupRsyslogRateLimiting()
+	if err != nil {
+		return fmt.Errorf("failed to setup rsyslog rate limiting: %v", err)
+	}
+
+	// apply the new configuration by restarting rsyslog
+	err = applyConfig()
+	if err != nil {
+		return fmt.Errorf("failed to apply rsyslog configuration: %v", err)
+	}
+
+	return nil
+}
+
 func setupRsyslogRateLimiting() error {
 	// function to copy 01-iscsi-filter.conf to /etc/rsyslog.d/01-iscsi-filter.conf
 	var configFiles embed.FS
@@ -27,7 +43,7 @@ func setupRsyslogRateLimiting() error {
 		return fmt.Errorf("failed to write file %s: %v", destinationPath, err)
 	}
 
-	log.Infof(fmt.Sprintf("  ✓ Successfully created rsyslog rate limiting config at %s", destinationPath))
+	log.Infof("  ✓ Successfully created rsyslog rate limiting config at %s", destinationPath)
 	return nil
 }
 
@@ -35,8 +51,10 @@ func applyConfig() error {
 	// Restart rsyslog to apply changes
 	restartSyslog := exec.Command("sudo", "systemctl", "restart", "rsyslog")
 	if err := restartSyslog.Run(); err != nil {
-		log.Errorf(fmt.Sprintf("Error restarting rsyslog via systemctl: %v", err))
+		log.Errorf("Error restarting rsyslog via systemctl: %v", err)
+		return err
 	} else {
-		log.Infof(fmt.Sprintf("  ✓ Successfully restarted rsyslog via systemctl"))
+		log.Infof("  ✓ Successfully restarted rsyslog via systemctl")
 	}
+	return nil
 }

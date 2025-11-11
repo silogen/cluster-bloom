@@ -173,7 +173,7 @@ func setInotifyValue(value int) error {
 func CheckInotifyConfig() error {
 	currentValue, err := getCurrentInotifyValue()
 	if err != nil {
-		return fmt.Errorf("Failed to get current inotify instances: " + err.Error())
+		return fmt.Errorf("Failed to get current inotify instances: %w", err)
 	}
 
 	if currentValue <= targetValue {
@@ -282,7 +282,6 @@ func HasSufficientRancherPartition() bool {
 	LogMessage(Warn, fmt.Sprintf("/var/lib/rancher partition size (%.1fGB) is less than the recommended 500GB", size))
 	return false
 }
-
 
 func CreateMetalLBConfig() error {
 	cmd := exec.Command("sh", "-c", "ip route get 1 | awk '{print $7; exit}'")

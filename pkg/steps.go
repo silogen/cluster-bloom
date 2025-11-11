@@ -28,6 +28,7 @@ import (
 
 	"github.com/silogen/cluster-bloom/pkg/args"
 	"github.com/silogen/cluster-bloom/pkg/system/logrotate"
+	"github.com/silogen/cluster-bloom/pkg/system/rsyslog"
 	"github.com/silogen/cluster-bloom/pkg/sysvalidation"
 	"github.com/spf13/viper"
 )
@@ -347,7 +348,7 @@ var PrepareLonghornDisksStep = Step{
 				if err := os.Rename(longhornConfigPath, backupPath); err != nil {
 					LogMessage(Warn, fmt.Sprintf("Failed to backup longhorn-disk.cfg: %v", err))
 				} else {
-					LogMessage(Info, fmt.Sprintf("Backed up and removed longhorn-disk.cfg"))
+					LogMessage(Info, "Backed up and removed longhorn-disk.cfg")
 				}
 			}
 
@@ -358,7 +359,7 @@ var PrepareLonghornDisksStep = Step{
 				if err := os.Rename(replicasPath, backupPath); err != nil {
 					LogMessage(Warn, fmt.Sprintf("Failed to backup replicas directory: %v", err))
 				} else {
-					LogMessage(Info, fmt.Sprintf("Backed up and removed replicas directory"))
+					LogMessage(Info, "Backed up and removed replicas directory")
 				}
 			}
 		}
@@ -425,7 +426,7 @@ var SetupLonghornStep = Step{
 	},
 	Action: func() StepResult {
 		if viper.GetBool("FIRST_NODE") {
-			err = setupManifests("longhorn")
+			err := setupManifests("longhorn")
 			if err != nil {
 				return StepResult{Error: err}
 			}
@@ -455,10 +456,10 @@ var SetupLonghornStep = Step{
 	},
 }
 
-var LogrotateConfigStep = Step{
-	Id:          "LogConfigStep",
-	Name:        "Configure logrotate and rsyslog rate limiting",
-	Description: "Configure agressive logrotate for iSCSI Logs and rsyslog rate limiting",
+var ConfigLogrotateStep = Step{
+	Id:          "ConfigLogrotateStep",
+	Name:        "Configure logrotate with agressive rotation",
+	Description: "Configure agressive logrotate settings due to possible iSCSI log flooding",
 	Skip: func() bool {
 		if !viper.GetBool("FIRST_NODE") {
 			LogMessage(Info, "Skipping for additional nodes.")
@@ -467,11 +468,25 @@ var LogrotateConfigStep = Step{
 		return false
 	},
 	Action: func() StepResult {
-		err := logrotate.SetupLogrotate()
-		if err != nil {
-			return StepResult{Error: err}
+		err := logrotate.Configure()
+		return StepResult{Error: err}
+	},
+}
+
+var ConfigRsyslogStep = Step{
+	Id:          "ConfigRsyslogStep",
+	Name:        "Configure rsyslog rate limiting",
+	Description: "Configure rsyslog rate limiting to prevent log flooding",
+	Skip: func() bool {
+		if !viper.GetBool("FIRST_NODE") {
+			LogMessage(Info, "Skipping for additional nodes.")
+			return true
 		}
-		return StepResult{Error: nil}
+		return false
+	},
+	Action: func() StepResult {
+		err := rsyslog.Configure()
+		return StepResult{Error: err}
 	},
 }
 
@@ -1113,7 +1128,7 @@ func shellCmdHelper(shellCmd string) StepResult {
 		LogMessage(Error, fmt.Sprintf("Error running command %s: %v, output: %s", shellCmd, err, string(output)))
 		return StepResult{Error: fmt.Errorf("error running %s: %w", shellCmd, err)}
 	} else {
-		LogMessage(Debug, fmt.Sprint("Success running %s", shellCmd))
+		LogMessage(Debug, fmt.Sprintf("Success running %s", shellCmd))
 	}
 	return StepResult{Error: nil}
 }
