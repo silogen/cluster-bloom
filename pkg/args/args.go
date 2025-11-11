@@ -129,11 +129,13 @@ func ValidateListOfHostnames(hostnames string) error {
 		NotValidIPErr := ValidateIPAddress(hostNameStr);
 		NotValidHostnameErr := ValidateHostname(hostNameStr);
 
-		if NotValidHostnameErr != nil {
-			return fmt.Errorf("invalid hostname in TLS SAN '%s': %v", hostNameStr, NotValidHostnameErr)
-		}
-		if NotValidIPErr != nil {
-			return fmt.Errorf("invalid IP address in TLS SAN '%s': %v", hostNameStr, NotValidIPErr)
+		if NotValidHostnameErr != nil && NotValidIPErr != nil {
+			if NotValidHostnameErr != nil {
+				return fmt.Errorf("invalid hostname in TLS SAN '%s': %v", hostNameStr, NotValidHostnameErr)
+			}
+			if NotValidIPErr != nil {
+				return fmt.Errorf("invalid IP address in TLS SAN '%s': %v", hostNameStr, NotValidIPErr)
+			}
 		}
 	}
 	return nil
@@ -318,13 +320,9 @@ func ValidateHostname(hostnameStr string) error {
 		return nil
 	}
 
-	parsedHostname, err := url.Parse(hostnameStr)
+	_, err := url.Parse(hostnameStr)
 	if err != nil {
 		return fmt.Errorf("invalid hostname format: %v", err)
-	}
-
-	if parsedHostname.Host == "" {
-		return fmt.Errorf("invalid hostname: missing host")
 	}
 
 	return nil
