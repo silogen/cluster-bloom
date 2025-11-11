@@ -180,9 +180,35 @@ func SetupRKE2Additional() error {
 	if joinToken == "" {
 		return fmt.Errorf("JOIN_TOKEN configuration item is not set")
 	}
+
+	nodeIP := viper.GetString("NODE_IP")
+	nodeExternalIP := viper.GetString("NODE_EXTERNAL_IP")
+	advertiseAddress := viper.GetString("ADVERTISE_ADDRESS")
+	tlsSANstring := viper.GetString("TLS_SAN")
+	tlsSANIPs := []string{}
+	if tlsSANstring != "" {
+		tlsSANIPs = strings.Split(tlsSANstring, ",")
+	}
+
 	rke2ConfigPath := "/etc/rancher/rke2/config.yaml"
 
 	configContent := fmt.Sprintf("\nserver: https://%s:9345\ntoken: %s\n", serverIP, joinToken)
+	if nodeIP != "" {
+		configContent += fmt.Sprintf("node-ip: %s\n", nodeIP)
+	}
+	if nodeExternalIP != "" {
+		configContent += fmt.Sprintf("node-external-ip: %s\n", nodeExternalIP)
+	}
+	if advertiseAddress != "" {
+		configContent += fmt.Sprintf("advertise-address: %s\n", advertiseAddress)
+	}
+	if len(tlsSANIPs) > 0 {
+		configContent += "tls-san:\n"
+		for i := range tlsSANIPs {
+			configContent += fmt.Sprintf("  - %s\n", tlsSANIPs[i])
+		}
+	}
+
 	file, err := os.OpenFile(rke2ConfigPath, os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to open %s for appending: %v", rke2ConfigPath, err))
@@ -229,9 +255,37 @@ func SetupRKE2ControlPlane() error {
 	if joinToken == "" {
 		return fmt.Errorf("JOIN_TOKEN configuration item is not set")
 	}
+	
+	nodeIP := viper.GetString("NODE_IP")
+	nodeExternalIP := viper.GetString("NODE_EXTERNAL_IP")
+	advertiseAddress := viper.GetString("ADVERTISE_ADDRESS")
+	tlsSANstring := viper.GetString("TLS_SAN")
+	tlsSANIPs := []string{}
+	if tlsSANstring != "" {
+		tlsSANIPs = strings.Split(tlsSANstring, ",")
+	}
+
 	rke2ConfigPath := "/etc/rancher/rke2/config.yaml"
 
 	configContent := fmt.Sprintf("\nserver: https://%s:9345\ntoken: %s\n", serverIP, joinToken)
+	
+	if nodeIP != "" {
+		configContent += fmt.Sprintf("node-ip: %s\n", nodeIP)
+	}
+	if nodeExternalIP != "" {
+		configContent += fmt.Sprintf("node-external-ip: %s\n", nodeExternalIP)
+	}
+	if advertiseAddress != "" {
+		configContent += fmt.Sprintf("advertise-address: %s\n", advertiseAddress)
+	}
+	if len(tlsSANIPs) > 0 {
+		configContent += "tls-san:\n"
+		for i := range tlsSANIPs {
+			configContent += fmt.Sprintf("  - %s\n", tlsSANIPs[i])
+		}
+	}
+
+
 	file, err := os.OpenFile(rke2ConfigPath, os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to open %s for appending: %v", rke2ConfigPath, err))
