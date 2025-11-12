@@ -147,7 +147,7 @@ fi
 
 # Create OS disk with size from profile
 echo "Creating OS disk ($ROOT_DISK_SIZE)..."
-qemu-img create -f qcow2 -F qcow2 -b "$VM_NAME/noble-server-cloudimg-amd64.img" "$VM_NAME/os-disk.qcow2" "$ROOT_DISK_SIZE"
+qemu-img create -f qcow2 -F qcow2 -b "noble-server-cloudimg-amd64.img" "$VM_NAME/os-disk.qcow2" "$ROOT_DISK_SIZE"
 
 # Create disk images based on profile
 echo "Creating $DISK_COUNT disk images from profile..."
