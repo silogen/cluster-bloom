@@ -4,17 +4,100 @@ set -e
 # Check if required arguments are provided
 if [ $# -lt 3 ]; then
     echo "ERROR: Insufficient arguments"
-    echo "Usage: $0 <vm-name> <bloom-binary-path> <bloom-yaml-path> [additional-yaml-paths...]"
-    echo "Example: $0 nvme-test-vm ./cluster-bloom ./test/bloom.yaml ./test/bloom2.yaml"
+    echo "Usage: $0 <vm-name> <profile-yaml> <bloom-binary-path>"
+    echo "Example: $0 nvme-test-vm ./vm-profile.yaml ./cluster-bloom"
+    echo ""
+    echo "Note: bloom.yaml config files are now specified in the profile.yaml under 'bloom_configs' key"
     exit 1
 fi
 
 VM_NAME="$1"
-BLOOM_BINARY="$2"
-shift 2
-BLOOM_CONFIGS=("$@")
+PROFILE_YAML="$2"
+BLOOM_BINARY="$3"
 
-echo "Setting up QEMU VM '$VM_NAME' with 8 NVMe drives (Linux KVM - Clean Setup)..."
+# Verify profile file exists
+if [ ! -f "$PROFILE_YAML" ]; then
+    echo "ERROR: Profile YAML not found at $PROFILE_YAML"
+    exit 1
+fi
+
+# Parse profile YAML using basic grep/awk (works without yq)
+VM_MEMORY=$(grep "^memory:" "$PROFILE_YAML" | awk '{print $2}' | tr -d '"' || echo "10G")
+ROOT_DISK_SIZE=$(grep "^root_disk_size:" "$PROFILE_YAML" | awk '{print $2}' | tr -d '"' || echo "100G")
+DISK_COUNT=$(grep -A 100 "^disks:" "$PROFILE_YAML" | grep "  - size:" | wc -l)
+
+# Parse bloom config files from profile
+BLOOM_CONFIGS=()
+while IFS= read -r line; do
+    # Stop if we hit another top-level key (no leading spaces)
+    if [[ "$line" =~ ^[a-zA-Z] ]]; then
+        break
+    fi
+    # Extract config path after "  - " or "- " prefix (only direct list items)
+    if [[ "$line" =~ ^[[:space:]]*-[[:space:]]+ ]] && [[ ! "$line" =~ : ]]; then
+        config=$(echo "$line" | sed 's/^[[:space:]]*-[[:space:]]*//' | tr -d '"' | tr -d "'")
+        if [ -n "$config" ]; then
+            # Resolve relative paths from profile directory
+            PROFILE_DIR=$(dirname "$PROFILE_YAML")
+            if [[ "$config" != /* ]]; then
+                config="$PROFILE_DIR/$config"
+            fi
+            BLOOM_CONFIGS+=("$config")
+        fi
+    fi
+done < <(grep -A 100 "^bloom_configs:" "$PROFILE_YAML" | tail -n +2)
+
+# Verify all bloom config files exist
+if [ ${#BLOOM_CONFIGS[@]} -eq 0 ]; then
+    echo "ERROR: No bloom_configs specified in $PROFILE_YAML"
+    exit 1
+fi
+
+for config in "${BLOOM_CONFIGS[@]}"; do
+    if [ ! -f "$config" ]; then
+        echo "ERROR: Bloom config file not found at $config"
+        exit 1
+    fi
+done
+
+echo "Bloom config files (${#BLOOM_CONFIGS[@]}):"
+for config in "${BLOOM_CONFIGS[@]}"; do
+    echo "  - $config"
+done
+
+# Parse individual disk configurations
+DISK_SIZES=()
+DISK_TYPES=()
+DISK_FORMATS=()
+
+if [ $DISK_COUNT -gt 0 ]; then
+    while IFS= read -r line; do
+        DISK_SIZES+=("$(echo "$line" | awk '{print $3}' | tr -d '"')")
+    done < <(grep -A 100 "^disks:" "$PROFILE_YAML" | grep "  - size:")
+
+    while IFS= read -r line; do
+        DISK_TYPES+=("$(echo "$line" | awk '{print $2}' | tr -d '"')")
+    done < <(grep -A 100 "^disks:" "$PROFILE_YAML" | grep "    type:")
+
+    while IFS= read -r line; do
+        DISK_FORMATS+=("$(echo "$line" | awk '{print $2}' | tr -d '"')")
+    done < <(grep -A 100 "^disks:" "$PROFILE_YAML" | grep "    format:")
+else
+    # Default to 8 NVMe drives if none specified
+    DISK_COUNT=8
+    for i in {0..7}; do
+        DISK_SIZES+=("1M")
+        DISK_TYPES+=("nvme")
+        DISK_FORMATS+=("raw")
+    done
+fi
+
+echo "VM Profile Configuration:"
+echo "  Memory: $VM_MEMORY"
+echo "  Root disk size: $ROOT_DISK_SIZE"
+echo "  Number of disks: $DISK_COUNT"
+
+echo "Setting up QEMU VM '$VM_NAME' with $DISK_COUNT drives (Linux KVM - Clean Setup)..."
 
 # Check dependencies
 if ! command -v qemu-system-x86_64 &> /dev/null; then
@@ -39,16 +122,14 @@ mkdir -p "$VM_NAME"
 
 # Download or copy Ubuntu 24.04 AMD64 cloud image
 CI_IMAGE_CACHE="$HOME/ci/noble-server-cloudimg-amd64.img"
-if [ ! -f noble-server-cloudimg-amd64.img ]; then
-    if [ ! -f "$CI_IMAGE_CACHE" ]; then
-        echo "Downloading Ubuntu 24.04 AMD64 cloud image to cache (~700MB)..."
-        mkdir -p "$(dirname "$CI_IMAGE_CACHE")"
-        curl -L -s -o "$CI_IMAGE_CACHE" \
-            https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img
-    fi
-    echo "Copying Ubuntu cloud image from cache..."
-    cp "$CI_IMAGE_CACHE" noble-server-cloudimg-amd64.img
+if [ ! -f "$CI_IMAGE_CACHE" ]; then
+    echo "Downloading Ubuntu 24.04 AMD64 cloud image to cache (~700MB)..."
+    mkdir -p "$(dirname "$CI_IMAGE_CACHE")"
+    curl -L -s -o "$CI_IMAGE_CACHE" \
+        https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img
 fi
+echo "Copying Ubuntu cloud image to VM directory..."
+cp "$CI_IMAGE_CACHE" "$VM_NAME/noble-server-cloudimg-amd64.img"
 
 # Copy OVMF files for UEFI boot
 echo "Setting up UEFI firmware..."
@@ -64,14 +145,18 @@ else
     exit 1
 fi
 
-# Create OS disk (100GB)
-echo "Creating OS disk..."
-qemu-img create -f qcow2 -F qcow2 -b "$(pwd)/noble-server-cloudimg-amd64.img" "$VM_NAME/os-disk.qcow2" 100G
+# Create OS disk with size from profile
+echo "Creating OS disk ($ROOT_DISK_SIZE)..."
+qemu-img create -f qcow2 -F qcow2 -b "$VM_NAME/noble-server-cloudimg-amd64.img" "$VM_NAME/os-disk.qcow2" "$ROOT_DISK_SIZE"
 
-# Create 8 NVMe disk images (1MB each)
-echo "Creating 8 NVMe disk images..."
-for i in {0..7}; do
-    qemu-img create -f raw "$VM_NAME/nvme${i}.img" 1M
+# Create disk images based on profile
+echo "Creating $DISK_COUNT disk images from profile..."
+for i in $(seq 0 $((DISK_COUNT - 1))); do
+    DISK_SIZE="${DISK_SIZES[$i]}"
+    DISK_TYPE="${DISK_TYPES[$i]}"
+    DISK_FORMAT="${DISK_FORMATS[$i]}"
+    echo "  Creating disk $i: type=$DISK_TYPE, size=$DISK_SIZE, format=$DISK_FORMAT"
+    qemu-img create -f "$DISK_FORMAT" "$VM_NAME/${DISK_TYPE}${i}.img" "$DISK_SIZE"
 done
 
 # Create cloud-init configuration with proper user setup
@@ -137,13 +222,37 @@ elif command -v genisoimage &> /dev/null; then
     genisoimage -output "$VM_NAME/seed.img" -volid cidata -joliet -rock "$VM_NAME/seed-content/user-data" "$VM_NAME/seed-content/meta-data" 2>/dev/null
 fi
 
-# Create startup script
+# Build QEMU disk arguments first
+QEMU_DISK_ARGS=""
+for i in $(seq 0 $((DISK_COUNT - 1))); do
+    DISK_TYPE="${DISK_TYPES[$i]}"
+    DISK_FORMAT="${DISK_FORMATS[$i]}"
+    SERIAL_NUM=$(printf "%08d" $((i + 1)))
+
+    if [ "$DISK_TYPE" = "nvme" ]; then
+        QEMU_DISK_ARGS="${QEMU_DISK_ARGS}  -drive file=${DISK_TYPE}${i}.img,if=none,id=${DISK_TYPE}${i},format=${DISK_FORMAT} \\
+  -device nvme,serial=NVME${SERIAL_NUM},drive=${DISK_TYPE}${i} \\
+"
+    elif [ "$DISK_TYPE" = "virtio" ]; then
+        QEMU_DISK_ARGS="${QEMU_DISK_ARGS}  -drive file=${DISK_TYPE}${i}.img,if=virtio,format=${DISK_FORMAT} \\
+"
+    elif [ "$DISK_TYPE" = "scsi" ]; then
+        QEMU_DISK_ARGS="${QEMU_DISK_ARGS}  -drive file=${DISK_TYPE}${i}.img,if=none,id=${DISK_TYPE}${i},format=${DISK_FORMAT} \\
+  -device scsi-hd,drive=${DISK_TYPE}${i} \\
+"
+    else
+        QEMU_DISK_ARGS="${QEMU_DISK_ARGS}  -drive file=${DISK_TYPE}${i}.img,if=ide,format=${DISK_FORMAT} \\
+"
+    fi
+done
+
+# Create startup script with direct variable expansion
 cat > "$VM_NAME/start-vm.sh" << STARTEOF
 #!/bin/bash
 SCRIPT_DIR="\$(cd "\$(dirname "\$0")" && pwd)"
 cd "\$SCRIPT_DIR"
 
-echo "Starting x86_64 VM with 8 NVMe devices in background..."
+echo "Starting x86_64 VM with $DISK_COUNT devices in background..."
 echo "Output will be logged to \$SCRIPT_DIR/startup.log"
 echo "Wait ~90 seconds for cloud-init to complete."
 echo ""
@@ -154,33 +263,17 @@ echo "To connect via SSH:"
 echo "  \$SCRIPT_DIR/ssh-vm.sh"
 echo ""
 
-qemu-system-x86_64 \
-  -machine q35,accel=kvm \
-  -cpu host \
-  -smp 2 \
-  -m 10G \
-  -drive if=pflash,format=raw,readonly=on,file=$OVMF_CODE \
-  -drive if=pflash,format=raw,file="\$SCRIPT_DIR/OVMF_VARS.fd" \
-  -drive file=os-disk.qcow2,if=virtio,format=qcow2 \
-  -drive file=seed.img,if=virtio,format=raw \
-  -drive file=nvme0.img,if=none,id=nvme0,format=raw \
-  -device nvme,serial=NVME000001,drive=nvme0 \
-  -drive file=nvme1.img,if=none,id=nvme1,format=raw \
-  -device nvme,serial=NVME000002,drive=nvme1 \
-  -drive file=nvme2.img,if=none,id=nvme2,format=raw \
-  -device nvme,serial=NVME000003,drive=nvme2 \
-  -drive file=nvme3.img,if=none,id=nvme3,format=raw \
-  -device nvme,serial=NVME000004,drive=nvme3 \
-  -drive file=nvme4.img,if=none,id=nvme4,format=raw \
-  -device nvme,serial=NVME000005,drive=nvme4 \
-  -drive file=nvme5.img,if=none,id=nvme5,format=raw \
-  -device nvme,serial=NVME000006,drive=nvme5 \
-  -drive file=nvme6.img,if=none,id=nvme6,format=raw \
-  -device nvme,serial=NVME000007,drive=nvme6 \
-  -drive file=nvme7.img,if=none,id=nvme7,format=raw \
-  -device nvme,serial=NVME000008,drive=nvme7 \
-  -netdev user,id=net0,hostfwd=tcp::2222-:22 \
-  -device virtio-net-pci,netdev=net0 \
+qemu-system-x86_64 \\
+  -machine q35,accel=kvm \\
+  -cpu host \\
+  -smp 2 \\
+  -m $VM_MEMORY \\
+  -drive if=pflash,format=raw,readonly=on,file=$OVMF_CODE \\
+  -drive if=pflash,format=raw,file="\$SCRIPT_DIR/OVMF_VARS.fd" \\
+  -drive file=os-disk.qcow2,if=virtio,format=qcow2 \\
+  -drive file=seed.img,if=virtio,format=raw \\
+$QEMU_DISK_ARGS  -netdev user,id=net0,hostfwd=tcp::2222-:22 \\
+  -device virtio-net-pci,netdev=net0 \\
   -nographic > "\$SCRIPT_DIR/startup.log" 2>&1 &
 
 VM_PID=\$!
@@ -254,13 +347,7 @@ if [ ! -f "$BLOOM_BINARY" ]; then
     exit 1
 fi
 
-# Verify all config files exist
-for config in "${BLOOM_CONFIGS[@]}"; do
-    if [ ! -f "$config" ]; then
-        echo "ERROR: Config file not found at $config"
-        exit 1
-    fi
-done
+# Config files already verified earlier in the script
 
 echo ""
 echo "Copying bloom binary and config files to VM..."

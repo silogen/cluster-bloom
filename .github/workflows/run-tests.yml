@@ -25,7 +25,7 @@ jobs:
 
       - name: QEMU Disk Test
         run: |
-          bash tests/e2e/qemu/qemu-disk-test.sh nvme-test-vm dist/bloom tests/e2e/test_case_1/bloom.yaml
+          bash tests/e2e/qemu/qemu-disk-test.sh nvme-test-vm tests/e2e/test_case_1/profile.yaml dist/bloom
 
       - name: Check Test Results
         run: |
