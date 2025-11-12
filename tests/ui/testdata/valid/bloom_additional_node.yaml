@@ -1,0 +1,5 @@
+DOMAIN: additional-node.local
+CLUSTER_DISKS: /dev/sdb
+CERT_OPTION: generate
+FIRST_NODE: false
+GPU_NODE: false

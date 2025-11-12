@@ -486,10 +486,10 @@ If building interactive terminal applications:
 - Use `integration_test.go` with build tags for integration tests
 - Create separate `test/` directory for VM and system tests
 - Organize mocks in `mocks_test.go` files
-- Step integration tests go in `integration_tests/step/<StepName>/` directories
+- Step integration tests go in `tests/integration/step/<StepName>/` directories
   - Each test scenario in its own subdirectory with `bloom.yaml` config
   - Use `mocks:` section in YAML to mock command outputs
-  - See `integration_tests/step/11_PrepareLonghornDisksStep/TEST_SCENARIOS.md` for examples
+  - See `tests/integration/step/11_PrepareLonghornDisksStep/TEST_SCENARIOS.md` for examples
 
 ### Unit Testing Strategy
 ```go
@@ -581,10 +581,10 @@ For testing installation steps with mocked commands, create YAML-based tests:
 
 **Directory Structure:**
 ```
-integration_tests/step/<StepName>/<scenario-name>/bloom.yaml
+tests/integration/step/<StepName>/<scenario-name>/bloom.yaml
 ```
 
-**Example Config (integration_tests/step/11_PrepareLonghornDisksStep/03-fresh-disk-single/bloom.yaml):**
+**Example Config (tests/integration/step/11_PrepareLonghornDisksStep/03-fresh-disk-single/bloom.yaml):**
 ```yaml
 ENABLED_STEPS: PrepareLonghornDisksStep
 CLUSTER_DISKS: /dev/sda
@@ -603,17 +603,17 @@ mocks:
 **Running Step Tests:**
 ```bash
 # Run all step integration tests
-./bloom test integration_tests/step/*/bloom.yaml
+./bloom test tests/integration/step/*/bloom.yaml
 
 # Run tests for specific step
-./bloom test integration_tests/step/11_PrepareLonghornDisksStep/*/bloom.yaml
+./bloom test tests/integration/step/11_PrepareLonghornDisksStep/*/bloom.yaml
 
 # Run single test scenario
-./bloom test integration_tests/step/11_PrepareLonghornDisksStep/03-fresh-disk-single/bloom.yaml
+./bloom test tests/integration/step/11_PrepareLonghornDisksStep/03-fresh-disk-single/bloom.yaml
 ```
 
 **Creating New Step Tests:**
-1. Create directory: `integration_tests/step/<StepID>/<scenario-name>/`
+1. Create directory: `tests/integration/step/<StepID>/<scenario-name>/`
 2. Add `bloom.yaml` with test config and mocks
 3. Document scenarios in `TEST_SCENARIOS.md`
 4. Add mocks for all command executions and file reads

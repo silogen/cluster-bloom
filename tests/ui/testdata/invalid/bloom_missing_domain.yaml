@@ -1,0 +1,6 @@
+CLUSTER_DISKS: /dev/sdb
+CERT_OPTION: generate
+FIRST_NODE: true
+GPU_NODE: true
+
+expected_error: "This field is required"

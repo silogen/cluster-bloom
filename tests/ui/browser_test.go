@@ -66,14 +66,20 @@ func TestWebFormE2E(t *testing.T) {
 		t.Skip("Skipping browser tests (SKIP_BROWSER_TESTS is set)")
 	}
 
-	// Find test case files matching pattern bloom_*.yaml
-	testFiles, err := filepath.Glob("bloom_*.yaml")
-	if err != nil {
-		t.Fatalf("Failed to find test case files: %v", err)
+	// Find test case files in testdata directory (all subdirectories)
+	testFiles := []string{}
+	testDirs := []string{"testdata/valid", "testdata/invalid", "testdata/integration"}
+
+	for _, dir := range testDirs {
+		files, err := filepath.Glob(filepath.Join(dir, "bloom_*.yaml"))
+		if err != nil {
+			t.Fatalf("Failed to find test case files in %s: %v", dir, err)
+		}
+		testFiles = append(testFiles, files...)
 	}
 
 	if len(testFiles) == 0 {
-		t.Skip("No test case files found (bloom_*.yaml)")
+		t.Skip("No test case files found in testdata/")
 	}
 
 	// Run test for each test case file
@@ -122,8 +128,8 @@ func runBrowserTest(t *testing.T, testCaseFile string) {
 	var saveButtonExists bool
 	var pageText string
 
-	// Run browser automation
-	err = chromedp.Run(ctx,
+	// Build dynamic form filling actions based on test case data
+	actions := chromedp.Tasks{
 		// Navigate to the configuration page
 		chromedp.Navigate(url),
 
@@ -131,7 +137,7 @@ func runBrowserTest(t *testing.T, testCaseFile string) {
 		chromedp.WaitVisible(`#config-form`, chromedp.ByID),
 
 		// Wait for page to fully load
-		chromedp.Sleep(500*time.Millisecond),
+		chromedp.Sleep(500 * time.Millisecond),
 
 		// Get page title to verify we're on the right page
 		chromedp.Title(&pageTitle),
@@ -141,22 +147,29 @@ func runBrowserTest(t *testing.T, testCaseFile string) {
 
 		// Check "Save Configuration" button exists
 		chromedp.Evaluate(`Array.from(document.querySelectorAll('button')).some(btn => btn.textContent.includes('Save Configuration'))`, &saveButtonExists),
+	}
 
-		// Fill in DOMAIN field from test case
-		chromedp.SetValue(`#DOMAIN`, testCase.Domain, chromedp.ByID),
+	// Fill in fields from test case using reflection
+	// String fields
+	if testCase.Domain != "" {
+		actions = append(actions, chromedp.SetValue(`#DOMAIN`, testCase.Domain, chromedp.ByID))
+	}
+	if testCase.ClusterDisks != "" {
+		actions = append(actions, chromedp.SetValue(`#CLUSTER_DISKS`, testCase.ClusterDisks, chromedp.ByID))
+	}
+	if testCase.CertOption != "" {
+		actions = append(actions, chromedp.SetValue(`#CERT_OPTION`, testCase.CertOption, chromedp.ByID))
+	}
+	if testCase.ClusterPremountedDisks != "" {
+		actions = append(actions, chromedp.SetValue(`#CLUSTER_PREMOUNTED_DISKS`, testCase.ClusterPremountedDisks, chromedp.ByID))
+	}
 
-		// Set FIRST_NODE checkbox based on test case
-		chromedp.Evaluate(fmt.Sprintf(`document.getElementById('FIRST_NODE').checked = %v`, testCase.FirstNode), nil),
+	// Boolean fields (checkboxes) - always set them based on test case value
+	actions = append(actions, chromedp.Evaluate(fmt.Sprintf(`document.getElementById('FIRST_NODE').checked = %v`, testCase.FirstNode), nil))
+	actions = append(actions, chromedp.Evaluate(fmt.Sprintf(`document.getElementById('GPU_NODE').checked = %v`, testCase.GPUNode), nil))
 
-		// Set GPU_NODE checkbox based on test case
-		chromedp.Evaluate(fmt.Sprintf(`document.getElementById('GPU_NODE').checked = %v`, testCase.GPUNode), nil),
-
-		// Fill in CLUSTER_DISKS field from test case
-		chromedp.SetValue(`#CLUSTER_DISKS`, testCase.ClusterDisks, chromedp.ByID),
-
-		// Select CERT_OPTION from test case
-		chromedp.SetValue(`#CERT_OPTION`, testCase.CertOption, chromedp.ByID),
-
+	// Add final actions
+	actions = append(actions,
 		// Log before clicking save
 		chromedp.Evaluate(`console.log('About to click Save Configuration button')`, nil),
 
@@ -173,6 +186,9 @@ func runBrowserTest(t *testing.T, testCaseFile string) {
 		// Get page text to check for validation errors
 		chromedp.Evaluate(`document.body.innerText`, &pageText),
 	)
+
+	// Run browser automation
+	err = chromedp.Run(ctx, actions)
 
 	if err != nil {
 		t.Fatalf("❌ Browser automation failed: %v", err)

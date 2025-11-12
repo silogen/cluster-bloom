@@ -1,12 +1,19 @@
 #!/bin/bash
 # Script to run UI tests with a temporary bloom server instance
 # This script starts bloom, runs the tests, and cleans up
+#
+# Usage:
+#   ./run_ui_tests.sh                              # Run all tests
+#   ./run_ui_tests.sh bloom_basic_first_node.yaml  # Run specific test
+#   ./run_ui_tests.sh bloom_*.yaml                 # Run tests matching pattern
+#   ./run_ui_tests.sh test1.yaml test2.yaml        # Run multiple specific tests
 
 set -e  # Exit on error
 
 # Get script directory and project root
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+UI_TEST_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Create temporary directory for test run
 TEMP_DIR=$(mktemp -d -t bloom-ui-test.XXXXXX)
@@ -23,7 +30,6 @@ BLOOM_PORT=62078
 BLOOM_PID=""
 BLOOM_LOG="$TEMP_DIR/bloom.log"
 BLOOM_BINARY="$PROJECT_ROOT/dist/bloom"
-UI_TEST_DIR="$SCRIPT_DIR"
 WORK_DIR="$TEMP_DIR/work"
 BLOOM_YAML="$WORK_DIR/bloom.yaml"  # bloom.yaml is created in the working directory
 
@@ -135,8 +141,28 @@ done
 
 echo -e "\n${GREEN}✅ Bloom server started successfully${NC}\n"
 
-# Run the UI tests
-echo -e "${BLUE}🧪 Running UI tests...${NC}"
+# Build test filter based on arguments
+if [ $# -eq 0 ]; then
+    # No arguments - run all tests
+    TEST_FILTER="TestWebFormE2E"
+    echo -e "${BLUE}🧪 Running all UI tests...${NC}"
+else
+    # Arguments provided - build regex filter for specific tests
+    # Convert file names to test names by removing .yaml extension
+    TEST_NAMES=""
+    for test_file in "$@"; do
+        # Remove .yaml extension and any path
+        test_name=$(basename "$test_file" .yaml)
+        if [ -z "$TEST_NAMES" ]; then
+            TEST_NAMES="$test_name"
+        else
+            TEST_NAMES="$TEST_NAMES|$test_name"
+        fi
+    done
+    TEST_FILTER="TestWebFormE2E/($TEST_NAMES).yaml"
+    echo -e "${BLUE}🧪 Running selected UI tests: $*${NC}"
+fi
+
 echo -e "${BLUE}   Test directory: $UI_TEST_DIR${NC}"
 echo -e "${BLUE}   Bloom YAML will be created at: $BLOOM_YAML${NC}"
 echo -e "${BLUE}═══════════════════════════════════════════════════════${NC}\n"
@@ -146,7 +172,7 @@ cd "$UI_TEST_DIR"
 # Run tests with environment variable pointing to temp bloom.yaml
 # Run tests and capture exit code
 set +e
-BLOOM_YAML_PATH="$BLOOM_YAML" go test -v -run TestWebFormE2E 2>&1 | grep -v "ERROR: could not unmarshal"
+BLOOM_YAML_PATH="$BLOOM_YAML" go test -v -run "$TEST_FILTER" 2>&1 | grep -v "ERROR: could not unmarshal"
 TEST_EXIT_CODE=${PIPESTATUS[0]}
 set -e
 

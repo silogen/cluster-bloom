@@ -38,7 +38,7 @@ rm -rf "$VM_NAME"
 mkdir -p "$VM_NAME"
 
 # Download or copy Ubuntu 24.04 AMD64 cloud image
-CI_IMAGE_CACHE="/home/ubuntu/ci/noble-server-cloudimg-amd64.img"
+CI_IMAGE_CACHE="$HOME/ci/noble-server-cloudimg-amd64.img"
 if [ ! -f noble-server-cloudimg-amd64.img ]; then
     if [ ! -f "$CI_IMAGE_CACHE" ]; then
         echo "Downloading Ubuntu 24.04 AMD64 cloud image to cache (~700MB)..."
@@ -50,9 +50,19 @@ if [ ! -f noble-server-cloudimg-amd64.img ]; then
     cp "$CI_IMAGE_CACHE" noble-server-cloudimg-amd64.img
 fi
 
-# Copy OVMF VARS for writable UEFI variables
+# Copy OVMF files for UEFI boot
 echo "Setting up UEFI firmware..."
-cp /usr/share/OVMF/OVMF_VARS.fd "$VM_NAME/"
+# Try different OVMF file locations (varies by distro/version)
+if [ -f /usr/share/OVMF/OVMF_CODE.fd ] && [ -f /usr/share/OVMF/OVMF_VARS.fd ]; then
+    OVMF_CODE="/usr/share/OVMF/OVMF_CODE.fd"
+    cp /usr/share/OVMF/OVMF_VARS.fd "$VM_NAME/"
+elif [ -f /usr/share/OVMF/OVMF_CODE_4M.fd ] && [ -f /usr/share/OVMF/OVMF_VARS_4M.fd ]; then
+    OVMF_CODE="/usr/share/OVMF/OVMF_CODE_4M.fd"
+    cp /usr/share/OVMF/OVMF_VARS_4M.fd "$VM_NAME/OVMF_VARS.fd"
+else
+    echo "ERROR: OVMF firmware files not found. Install ovmf package."
+    exit 1
+fi
 
 # Create OS disk (100GB)
 echo "Creating OS disk..."
@@ -149,7 +159,7 @@ qemu-system-x86_64 \
   -cpu host \
   -smp 2 \
   -m 10G \
-  -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE.fd \
+  -drive if=pflash,format=raw,readonly=on,file=$OVMF_CODE \
   -drive if=pflash,format=raw,file="\$SCRIPT_DIR/OVMF_VARS.fd" \
   -drive file=os-disk.qcow2,if=virtio,format=qcow2 \
   -drive file=seed.img,if=virtio,format=raw \

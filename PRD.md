@@ -275,7 +275,7 @@ sudo ./bloom demo-ui
 - Executes enabled steps with mocked commands for each config
 - Outputs structured YAML results showing pass/fail status
 - Useful for validating installation steps without system modifications
-- Example: `./bloom test integration_tests/step/*/bloom.yaml`
+- Example: `./bloom test tests/integration/step/*/bloom.yaml`
 
 #### Web UI Installation Workflow
 
