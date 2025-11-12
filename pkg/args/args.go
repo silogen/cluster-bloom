@@ -205,6 +205,24 @@ func ValidateSkipDiskCheckConsistency(skipDiskCheckStr string) error {
 func ValidateLonghornDisksArg(disks string) error {
 	selectedDisks := viper.GetString("CLUSTER_DISKS")
 
+	// validate format of disks (comma-separated list) and each is an absolute path which exists
+	clusterPremountedDisks := viper.GetString("CLUSTER_PREMOUNTED_DISKS")
+	if clusterPremountedDisks != "" {
+		diskList := strings.Split(clusterPremountedDisks, ",")
+		for _, disk := range diskList {
+			disk = strings.TrimSpace(disk)
+			if disk == "" {
+				continue
+			}
+			if !filepath.IsAbs(disk) {
+				return fmt.Errorf("CLUSTER_PREMOUNTED_DISKS contains a non-absolute path: %s", disk)
+			}
+			if _, err := os.Stat(disk); os.IsNotExist(err) {
+				return fmt.Errorf("CLUSTER_PREMOUNTED_DISKS contains a path that does not exist: %s", disk)
+			}
+		}
+	}
+
 	// Both cannot be set
 	if disks != "" && selectedDisks != "" {
 		return fmt.Errorf("CLUSTER_PREMOUNTED_DISKS and CLUSTER_DISKS cannot both be set - use one or the other")
