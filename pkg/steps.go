@@ -862,8 +862,9 @@ data:
 			}
 			indentedCertData := strings.Join(indentedLines, "\n")
 
-			// Generate auth-config.yaml using template
-			authConfigContent := fmt.Sprintf(authConfigTemplate, domain, indentedCertData, domain, indentedCertData)
+			// Generate OIDC domain with kc. prefix and create auth-config.yaml
+			oidcDomain := fmt.Sprintf("kc.%s", domain)
+			authConfigContent := fmt.Sprintf(authConfigTemplate, oidcDomain, indentedCertData, oidcDomain, indentedCertData)
 
 			// Create auth directory
 			authDir := "/etc/rancher/rke2/auth"
