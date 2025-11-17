@@ -75,6 +75,39 @@ jwt:
       prefix: "oidc:"
 `
 
+var clusterRoleBindingTemplate = `apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: airm-realm-admin-binding
+subjects:
+- kind: Group
+  name: "oidc:airm-role:Super Administrator"
+  apiGroup: rbac.authorization.k8s.io
+- kind: Group
+  name: "oidc:airm-role:Platform Administrator"
+  apiGroup: rbac.authorization.k8s.io
+- kind: Group
+  name: "oidc:argocd-users"
+  apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: cluster-admin
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: k8s-realm-view-binding
+subjects:
+- kind: Group
+  name: "oidc:k8s-readonly"
+  apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: view
+  apiGroup: rbac.authorization.k8s.io
+`
+
 func FetchAndSaveOIDCCertificate(url string) error {
 	cmd := exec.Command("sh", "-c", fmt.Sprintf("openssl s_client -showcerts -connect %s:443 </dev/null | sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p'", url))
 	output, err := cmd.Output()

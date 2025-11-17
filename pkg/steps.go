@@ -877,6 +877,32 @@ data:
 
 			LogMessage(Info, "Successfully created authentication configuration file")
 
+			// Create ClusterRoleBindings for OIDC authorization
+			LogMessage(Info, "Creating OIDC ClusterRoleBindings")
+			
+			clusterRoleBindingFile, err := os.CreateTemp("", "cluster-role-binding-*.yaml")
+			if err != nil {
+				LogMessage(Error, fmt.Sprintf("Failed to create temporary ClusterRoleBinding file: %v", err))
+				return StepResult{Error: fmt.Errorf("failed to create temporary ClusterRoleBinding file: %w", err)}
+			}
+			defer os.Remove(clusterRoleBindingFile.Name())
+
+			if _, err := clusterRoleBindingFile.WriteString(clusterRoleBindingTemplate); err != nil {
+				LogMessage(Error, fmt.Sprintf("Failed to write ClusterRoleBinding YAML: %v", err))
+				return StepResult{Error: fmt.Errorf("failed to write ClusterRoleBinding YAML: %w", err)}
+			}
+			clusterRoleBindingFile.Close()
+
+			// Apply the ClusterRoleBindings
+			cmd := exec.Command("/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "apply", "-f", clusterRoleBindingFile.Name())
+			output, err := cmd.CombinedOutput()
+			if err != nil {
+				LogMessage(Error, fmt.Sprintf("Failed to create ClusterRoleBindings: %v, output: %s", err, string(output)))
+				return StepResult{Error: fmt.Errorf("failed to create ClusterRoleBindings: %w", err)}
+			}
+
+			LogMessage(Info, "Successfully created OIDC ClusterRoleBindings")
+
 			// Create kgateway-system namespace
 			namespaceYAML := `apiVersion: v1
 kind: Namespace
