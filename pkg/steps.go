@@ -458,8 +458,8 @@ var SetupLonghornStep = Step{
 
 var ConfigLogrotateStep = Step{
 	Id:          "ConfigLogrotateStep",
-	Name:        "Configure logrotate with agressive rotation",
-	Description: "Configure agressive logrotate settings due to possible iSCSI log flooding",
+	Name:        "Configure logrotate",
+	Description: "Configure logrotate with aggressive, size-based rotation settings",
 	Skip: func() bool {
 		if !viper.GetBool("FIRST_NODE") {
 			LogMessage(Info, "Skipping for additional nodes.")
@@ -469,6 +469,11 @@ var ConfigLogrotateStep = Step{
 	},
 	Action: func() StepResult {
 		err := logrotate.Configure()
+		if err != nil {
+			LogMessage(Error, fmt.Sprintf("Failed to configure logrotate: %v", err))
+		} else {
+			LogMessage(Info, "logrotate configuration applied (/etc/logrotate.d/iscsi-aggressive.conf)")
+		}
 		return StepResult{Error: err}
 	},
 }
@@ -476,7 +481,7 @@ var ConfigLogrotateStep = Step{
 var ConfigRsyslogStep = Step{
 	Id:          "ConfigRsyslogStep",
 	Name:        "Configure rsyslog rate limiting",
-	Description: "Configure rsyslog rate limiting to prevent log flooding",
+	Description: "Configure rsyslog rate limiting to prevent possible iSCSI log flooding",
 	Skip: func() bool {
 		if !viper.GetBool("FIRST_NODE") {
 			LogMessage(Info, "Skipping for additional nodes.")
@@ -486,6 +491,11 @@ var ConfigRsyslogStep = Step{
 	},
 	Action: func() StepResult {
 		err := rsyslog.Configure()
+		if err != nil {
+			LogMessage(Error, fmt.Sprintf("Failed to configure rsyslog: %v", err))
+		} else {
+			LogMessage(Info, "rsyslog configured successfully")
+		}
 		return StepResult{Error: err}
 	},
 }

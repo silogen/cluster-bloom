@@ -16,29 +16,54 @@
 package logrotate
 
 import (
-	"embed"
+	_ "embed"
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
 )
 
+//go:embed conf/iscsi-aggressive.conf
+var iscsiAggressive []byte
+
+//go:embed conf/rke2-components.conf
+var rke2Components []byte
+
+const (
+	cronFilePath             = "/etc/cron.d/iscsi-logrotate"
+	logrotateConfigISCSI     = "/etc/logrotate.d/iscsi-aggressive.conf"
+	logrotateConfigRke2      = "/etc/logrotate.d/rke2-server"
+	logrotateCommandFragment = "/usr/sbin/logrotate -f " + logrotateConfigISCSI
+	logFilePath              = "/var/log/iscsi-logrotate.log"
+	cronContent              = `# Managed by AMD Enterprise AI Workbench - do not edit manually
+SHELL=/bin/sh
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+
+# iSCSI logrotate - runs every 10 minutes
+*/10 * * * * root ` + logrotateCommandFragment + ` >> ` + logFilePath + ` 2>&1
+
+# logroate for RKE2 logs - runs hourly
+0 * * * * root /usr/sbin/logrotate -f ` + logrotateConfigRke2 + ` >> ` + logFilePath + ` 2>&1
+`
+)
+
+// logrotateConfig represents a logrotate configuration to be deployed
+type logrotateConfig struct {
+	destPath      string
+	content       []byte
+	logPathsToFix []string // log paths in existing configs to comment out
+}
+
 type Logger interface {
 	LogMessage(level int, message string)
 }
 
-type ConfigParams struct {
-	SourceFilePath  string
-	DestinationPath string
-	Permissions     os.FileMode
-	Logger          Logger
-}
-
 func Configure() error {
-	// configure logrotate with agressive setup to deal with iscsi log spam
+	// configure logrotate with aggressive setup to deal with iscsi log spam
 
 	// preflight
 	if !isLogrotateInstalled() {
@@ -47,44 +72,41 @@ func Configure() error {
 		return err
 	}
 
-	configParams := &ConfigParams{
-		SourceFilePath:  "logrotate/iscsi-aggressive",
-		DestinationPath: "/etc/logrotate.d/",
-		Permissions:     0644,
+	// Define configurations to deploy
+	configs := []logrotateConfig{
+		{
+			destPath: logrotateConfigISCSI,
+			content:  iscsiAggressive,
+			logPathsToFix: []string{
+				"/var/log/iscsi/iscsi.log",
+				"/var/log/iscsi/iscsi_trc.log",
+			},
+		},
+		{
+			destPath:      logrotateConfigRke2,
+			content:       rke2Components,
+			logPathsToFix: []string{}, // RKE2 config doesn't need conflict resolution
+		},
 	}
 
-	if err := createConfig(configParams); err != nil {
-		err := fmt.Errorf("failed to create logrotate config: %v", err)
-		log.Error(err)
-		return err
+	// Deploy each configuration
+	for _, cfg := range configs {
+		if err := deployConfig(cfg); err != nil {
+			return fmt.Errorf("failed to deploy config %s: %v", cfg.destPath, err)
+		}
 	}
 
-	logPaths := []string{
-		"/var/log/iscsi/iscsi.log",
-		"/var/log/iscsi/iscsi_trc.log",
+	// enable cronjob for logrotate execution (ISCSI specific)
+	if err := setupCronJob(); err != nil {
+		return fmt.Errorf("failed to setup cronjob: %v", err)
 	}
 
-	configFile := filepath.Join(configParams.DestinationPath, "iscsi-aggressive")
-
-	// comment out existing logrotate blocks for iscsi logs
-	if err := commentOutLogrotateBlocks(configFile, logPaths); err != nil {
-		err := fmt.Errorf("failed to comment out logrotate blocks: %v", err)
-		log.Error(err)
-		return err
+	// apply the new logrotate configs
+	if err := applyConfigs(configs); err != nil {
+		return fmt.Errorf("failed to apply logrotate configs: %v", err)
 	}
 
-	if err := enableHourlyRotation(); err != nil {
-		err := fmt.Errorf("failed to enable hourly logrotate config: %v", err)
-		log.Error(err)
-		return err
-	}
-
-	if err := applyConfigs(); err != nil {
-		err := fmt.Errorf("failed to apply logrotate configs: %v", err)
-		log.Error(err)
-		return err
-	}
-
+	log.Info("Logrotate configuration completed successfully.")
 	return nil
 }
 
@@ -93,48 +115,47 @@ func isLogrotateInstalled() bool {
 	return err == nil
 }
 
-func createConfig(options *ConfigParams) error {
-	var configFiles embed.FS
-
-	sourceFilePath := options.SourceFilePath
-	destinationPath := options.DestinationPath
-
-	// default permissions to 0644 if not provided
-	permissions := options.Permissions
-	if permissions == 0 {
-		permissions = os.FileMode(0644)
+// deployConfig handles creation and conflict resolution for a single logrotate config
+func deployConfig(cfg logrotateConfig) error {
+	// Create the config file
+	if err := createConfig(cfg.destPath, cfg.content); err != nil {
+		return fmt.Errorf("failed to create config: %v", err)
 	}
 
-	// strip out leading folders from the sourceFile if present
-	sourceFile := filepath.Base(sourceFilePath)
-	destinationFile := filepath.Join(destinationPath, sourceFile)
+	// Comment out existing logrotate blocks for conflict prevention / deduplication
+	if len(cfg.logPathsToFix) > 0 {
+		if err := commentOutLogrotateBlocks(cfg.destPath, cfg.logPathsToFix); err != nil {
+			return fmt.Errorf("failed to comment out logrotate blocks: %v", err)
+		}
+	}
+
+	return nil
+}
+
+func createConfig(destPath string, content []byte) error {
+	filePermissions := os.FileMode(0644)
+
 	// Ensure the destination directory exists
-	if err := os.MkdirAll(destinationPath, 0755); err != nil {
-		return fmt.Errorf("failed to create directory %s: %v", destinationPath, err)
+	logrotateDir := path.Dir(destPath)
+	if err := os.MkdirAll(logrotateDir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory %s: %v", logrotateDir, err)
 	}
 
 	// Check if the file already exists
-	if _, err := os.Stat(destinationFile); err == nil {
-		fmt.Printf("  ✓ %s already exists, skipping creation.\n", destinationFile)
+	if _, err := os.Stat(destPath); err == nil {
+		log.Infof("%s already exists, skipping creation.", destPath)
 		return nil
 	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("failed to check if file %s exists: %v", destinationFile, err)
+		return fmt.Errorf("failed to check if file %s exists: %v", destPath, err)
 	}
 
-	fmt.Printf("Installing logrotate config: %s -> %s\n", sourceFile, destinationFile)
-
-	// Read the embedded file
-	content, err := configFiles.ReadFile(sourceFilePath)
+	// Write the file from embedded content
+	err := os.WriteFile(destPath, content, filePermissions)
 	if err != nil {
-		return fmt.Errorf("failed to read embedded file %s: %v", sourceFilePath, err)
+		return fmt.Errorf("error writing logrotate config file: %v", err)
 	}
 
-	// Write the file with proper permissions
-	if err := os.WriteFile(destinationFile, content, permissions); err != nil {
-		return fmt.Errorf("failed to write file %s: %v", destinationFile, err)
-	}
-
-	fmt.Printf("  ✓ Successfully created %s\n", destinationFile)
+	log.Infof("Created logrotate config: %s", destPath)
 	return nil
 }
 
@@ -201,78 +222,68 @@ func commentOutLogrotateBlocks(configFile string, logPaths []string) error {
 	return nil
 }
 
-func enableHourlyRotation() error {
-	logrotateCmd := "/usr/sbin/logrotate -f /etc/logrotate.d/iscsi-aggressive"
-
-	// Check if the hourly cron file exists
-	hourlyCronFile := "/etc/cron.hourly/logrotate-hourly"
-	if _, err := os.Stat(hourlyCronFile); os.IsNotExist(err) {
-		// add cron.hourly folder if it doesn't exist
-		if _, err := os.Stat("/etc/cron.hourly"); os.IsNotExist(err) {
-			if err := os.MkdirAll("/etc/cron.hourly", 0755); err != nil {
-				return fmt.Errorf("failed to create /etc/cron.hourly directory: %v", err)
-			}
+func setupCronJob() error {
+	// Check if cron file already exists and contains our logrotate command
+	if existingContent, err := os.ReadFile(cronFilePath); err == nil {
+		if strings.Contains(string(existingContent), logrotateCommandFragment) {
+			log.Info("Cron job already exists with logrotate command, skipping")
+			return ensureCronLogFile()
 		}
+		log.Info("Cron job exists but doesn't contain expected logrotate command, updating...")
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("failed to read existing cron file: %w", err)
+	}
 
-		// create an empty file
-		emptyFile, err := os.Create(hourlyCronFile)
+	// Ensure /etc/cron.d directory exists
+	cronDir := filepath.Dir(cronFilePath)
+	if err := os.MkdirAll(cronDir, 0755); err != nil {
+		return fmt.Errorf("failed to create cron.d directory: %w", err)
+	}
+
+	// Write the cron file
+	if err := os.WriteFile(cronFilePath, []byte(cronContent), 0644); err != nil {
+		return fmt.Errorf("failed to write cron file: %w", err)
+	}
+
+	log.Info("Cron job created/updated at ", cronFilePath)
+
+	return ensureCronLogFile()
+}
+
+func ensureCronLogFile() error {
+	// Create log file if it doesn't exist
+	if _, err := os.Stat(logFilePath); os.IsNotExist(err) {
+		f, err := os.Create(logFilePath)
 		if err != nil {
-			return fmt.Errorf("failed to create hourly cron file %s: %v", hourlyCronFile, err)
+			return fmt.Errorf("failed to create log file: %w", err)
+		}
+		f.Close()
+
+		// Set appropriate permissions
+		if err := os.Chmod(logFilePath, 0644); err != nil {
+			log.Warning("Failed to set log file permissions: ", err)
 		}
 
-		// write the logrotate command to the file
-		_, err = emptyFile.WriteString(fmt.Sprintf("#!/bin/sh\n%s\n", logrotateCmd))
-		if err != nil {
-			return fmt.Errorf("failed to write to hourly cron file %s: %v", hourlyCronFile, err)
-		}
-		emptyFile.Close()
+		log.Info("Log file created at ", logFilePath)
+	} else if err != nil {
+		return fmt.Errorf("failed to check log file: %w", err)
 	} else {
-		// file exists, ensure the logrotate command is present
-		content, err := os.ReadFile(hourlyCronFile)
-		if err != nil {
-			return fmt.Errorf("failed to read hourly cron file %s: %v", hourlyCronFile, err)
-		}
-
-		if strings.Contains(string(content), logrotateCmd) {
-			// command already present, nothing to do
-			return nil
-		} else {
-			// append the command to the file
-			f, err := os.OpenFile(hourlyCronFile, os.O_APPEND|os.O_WRONLY, 0644)
-			if err != nil {
-				return fmt.Errorf("failed to open hourly cron file %s for appending: %v", hourlyCronFile, err)
-			}
-			defer f.Close()
-
-			_, err = f.WriteString("\n" + logrotateCmd + "\n")
-			if err != nil {
-				return fmt.Errorf("failed to append to hourly cron file %s: %v", hourlyCronFile, err)
-			}
-		}
+		log.Debug("Log file already exists at ", logFilePath)
 	}
 
 	return nil
 }
 
-func applyConfigs() error {
-	// Run logrotate in debug mode to verify config
-	debugLogrotate := exec.Command("sudo", "logrotate", "-d", "/etc/logrotate.d/iscsi-aggressive")
-	if err := debugLogrotate.Run(); err != nil {
-		log.Infof("Error executing logrotate: %v", err)
-	} else {
-		log.Infof("  ✓ Successfully ran logrotate")
-	}
-
-	validateLogrotate := exec.Command("bash", "/opt/validate_logrotate.sh")
-	output, err := validateLogrotate.CombinedOutput()
-	if err != nil {
-		log.Infof("Error running logrotate validation script: %v", err)
-	} else {
-		log.Infof("==== start logrotate script output ====")
-		log.Infof("  ✓ Successfully validated logrotate setup")
-		if len(output) > 0 {
-			log.Infof("Script output: %s", string(output))
+func applyConfigs(configs []logrotateConfig) error {
+	// Run logrotate in debug mode to verify each config
+	for _, cfg := range configs {
+		debugLogrotate := exec.Command("sudo", "logrotate", "-d", cfg.destPath)
+		if err := debugLogrotate.Run(); err != nil {
+			log.Warnf("Error executing logrotate for %s: %v", cfg.destPath, err)
+		} else {
+			log.Infof("✓ Successfully validated logrotate config: %s", cfg.destPath)
 		}
 	}
+
 	return nil
 }

@@ -1,49 +1,46 @@
 package rsyslog
 
 import (
-	"embed"
+	_ "embed"
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 
 	log "github.com/sirupsen/logrus"
 )
 
+//go:embed 01-iscsi-filter.conf
+var iscsiFilterConfig []byte
+
 func Configure() error {
 	// configure rsyslog rate limiting to reduce iSCSI log spam
-	err := setupRsyslogRateLimiting()
-	if err != nil {
-		return fmt.Errorf("failed to setup rsyslog rate limiting: %v", err)
+
+	rsyslogConfigFile := "/etc/rsyslog.d/01-iscsi-filter.conf"
+
+	// Check if config already exists - if so, skip (idempotent)
+	// This allows manual modifications to be preserved
+	if _, err := os.Stat(rsyslogConfigFile); err == nil {
+		log.Infof("Rsyslog config already exists at %s, skipping overwrite", rsyslogConfigFile)
+		return nil
+	}
+
+	// Ensure the destination directory exists
+	rsyslogDir := path.Dir(rsyslogConfigFile)
+	if err := os.MkdirAll(rsyslogDir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory %s: %v", rsyslogDir, err)
+	}
+
+	// Write the embedded config file
+	if err := os.WriteFile(rsyslogConfigFile, iscsiFilterConfig, 0644); err != nil {
+		return fmt.Errorf("failed to write file %s: %v", rsyslogConfigFile, err)
 	}
 
 	// apply the new configuration by restarting rsyslog
-	err = applyConfig()
-	if err != nil {
+	if err := applyConfig(); err != nil {
 		return fmt.Errorf("failed to apply rsyslog configuration: %v", err)
 	}
 
-	return nil
-}
-
-func setupRsyslogRateLimiting() error {
-	// function to copy 01-iscsi-filter.conf to /etc/rsyslog.d/01-iscsi-filter.conf
-	var configFiles embed.FS
-
-	sourceFilePath := "logrotate/01-iscsi-filter.conf"
-	destinationPath := "/etc/rsyslog.d/01-iscsi-filter.conf"
-
-	// Read the embedded file
-	content, err := configFiles.ReadFile(sourceFilePath)
-	if err != nil {
-		return fmt.Errorf("failed to read embedded file %s: %v", sourceFilePath, err)
-	}
-
-	// Write the file with proper permissions
-	if err := os.WriteFile(destinationPath, content, 0644); err != nil {
-		return fmt.Errorf("failed to write file %s: %v", destinationPath, err)
-	}
-
-	log.Infof("  ✓ Successfully created rsyslog rate limiting config at %s", destinationPath)
 	return nil
 }
 
@@ -51,10 +48,8 @@ func applyConfig() error {
 	// Restart rsyslog to apply changes
 	restartSyslog := exec.Command("sudo", "systemctl", "restart", "rsyslog")
 	if err := restartSyslog.Run(); err != nil {
-		log.Errorf("Error restarting rsyslog via systemctl: %v", err)
-		return err
-	} else {
-		log.Infof("  ✓ Successfully restarted rsyslog via systemctl")
+		return fmt.Errorf("Error restarting rsyslog via systemctl: %v", err)
 	}
+
 	return nil
 }

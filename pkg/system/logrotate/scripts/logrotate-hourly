@@ -1,4 +1,0 @@
-#!/bin/sh
-
-# file copied to /etc/cron.hourly/logrotate-hourly
-/usr/sbin/logrotate -f /etc/logrotate.d/iscsi-aggressive
