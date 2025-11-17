@@ -853,10 +853,14 @@ data:
 			}
 
 			// Indent certificate data properly for YAML
-			indentedCertData := strings.ReplaceAll(string(certData), "\n", "\n      ")
-			if strings.HasSuffix(indentedCertData, "\n      ") {
-				indentedCertData = strings.TrimSuffix(indentedCertData, "\n      ")
+			certLines := strings.Split(strings.TrimSpace(string(certData)), "\n")
+			var indentedLines []string
+			for _, line := range certLines {
+				if line != "" {
+					indentedLines = append(indentedLines, "      "+line)
+				}
 			}
+			indentedCertData := strings.Join(indentedLines, "\n")
 
 			// Generate auth-config.yaml using template
 			authConfigContent := fmt.Sprintf(authConfigTemplate, domain, indentedCertData, domain, indentedCertData)
@@ -876,6 +880,29 @@ data:
 			}
 
 			LogMessage(Info, "Successfully created authentication configuration file")
+
+			// Add authentication-config to RKE2 config
+			LogMessage(Info, "Adding authentication-config to RKE2 configuration")
+			rke2ConfigPath := "/etc/rancher/rke2/config.yaml"
+			
+			authConfigContent := `
+kube-apiserver-arg:
+  - "--authentication-config=/etc/rancher/rke2/auth/auth-config.yaml"
+`
+			
+			file, err := os.OpenFile(rke2ConfigPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+			if err != nil {
+				LogMessage(Error, fmt.Sprintf("Failed to open RKE2 config file: %v", err))
+				return StepResult{Error: fmt.Errorf("failed to open RKE2 config file: %w", err)}
+			}
+			defer file.Close()
+
+			if _, err := file.WriteString(authConfigContent); err != nil {
+				LogMessage(Error, fmt.Sprintf("Failed to append to RKE2 config: %v", err))
+				return StepResult{Error: fmt.Errorf("failed to append to RKE2 config: %w", err)}
+			}
+
+			LogMessage(Info, "Successfully added authentication-config to RKE2 configuration")
 
 			// Create ClusterRoleBindings for OIDC authorization
 			LogMessage(Info, "Creating OIDC ClusterRoleBindings")
