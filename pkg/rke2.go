@@ -41,13 +41,38 @@ audit-policy-file: "/etc/rancher/rke2/audit-policy.yaml"
 
 var oidcConfigTemplate = `
 kube-apiserver-arg:
-  - "--oidc-issuer-url=%s"
-  - "--oidc-client-id=k8s"
-  - "--oidc-username-claim=preferred_username"
-  - "--oidc-groups-claim=groups"
-  - "--oidc-ca-file=/etc/rancher/rke2/oidc-ca.crt"
-  - "--oidc-username-prefix=oidc"
-  - "--oidc-groups-prefix=oidc"
+  - "--authentication-config=/etc/rancher/rke2/auth/auth-config.yaml"
+`
+
+var authConfigTemplate = `apiVersion: apiserver.config.k8s.io/v1
+kind: AuthenticationConfiguration
+jwt:
+- issuer:
+    url: https://%s/realms/airm
+    certificateAuthority: |
+%s
+    audiences:
+    - k8s
+  claimMappings:
+    username:
+      claim: preferred_username
+      prefix: "oidc:"
+    groups:
+      claim: groups
+      prefix: "oidc:"
+- issuer:
+    url: https://%s/realms/k8s
+    certificateAuthority: |
+%s
+    audiences:
+    - k8s
+  claimMappings:
+    username:
+      claim: preferred_username
+      prefix: "oidc:"
+    groups:
+      claim: groups
+      prefix: "oidc:"
 `
 
 func FetchAndSaveOIDCCertificate(url string) error {

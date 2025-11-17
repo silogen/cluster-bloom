@@ -842,6 +842,41 @@ data:
 				return StepResult{Message: "Domain ConfigMap created but no TLS configuration applied"}
 			}
 
+			// Create auth-config.yaml for authentication configuration
+			LogMessage(Info, "Creating authentication configuration file")
+			
+			// Read certificate data
+			certData, err := os.ReadFile(tlsCertPath)
+			if err != nil {
+				LogMessage(Error, fmt.Sprintf("Failed to read certificate file: %v", err))
+				return StepResult{Error: fmt.Errorf("failed to read certificate file: %w", err)}
+			}
+
+			// Indent certificate data properly for YAML
+			indentedCertData := strings.ReplaceAll(string(certData), "\n", "\n      ")
+			if strings.HasSuffix(indentedCertData, "\n      ") {
+				indentedCertData = strings.TrimSuffix(indentedCertData, "\n      ")
+			}
+
+			// Generate auth-config.yaml using template
+			authConfigContent := fmt.Sprintf(authConfigTemplate, domain, indentedCertData, domain, indentedCertData)
+
+			// Create auth directory
+			authDir := "/etc/rancher/rke2/auth"
+			if err := os.MkdirAll(authDir, 0755); err != nil {
+				LogMessage(Error, fmt.Sprintf("Failed to create auth directory: %v", err))
+				return StepResult{Error: fmt.Errorf("failed to create auth directory: %w", err)}
+			}
+
+			// Write auth-config.yaml
+			authConfigPath := filepath.Join(authDir, "auth-config.yaml")
+			if err := os.WriteFile(authConfigPath, []byte(authConfigContent), 0644); err != nil {
+				LogMessage(Error, fmt.Sprintf("Failed to write auth-config.yaml: %v", err))
+				return StepResult{Error: fmt.Errorf("failed to write auth-config.yaml: %w", err)}
+			}
+
+			LogMessage(Info, "Successfully created authentication configuration file")
+
 			// Create kgateway-system namespace
 			namespaceYAML := `apiVersion: v1
 kind: Namespace
