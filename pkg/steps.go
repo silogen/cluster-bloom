@@ -890,7 +890,7 @@ kube-apiserver-arg:
   - "--authentication-config=/etc/rancher/rke2/auth/auth-config.yaml"
 `
 			
-			file, err = os.OpenFile(rke2ConfigPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+			file, err := os.OpenFile(rke2ConfigPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
 			if err != nil {
 				LogMessage(Error, fmt.Sprintf("Failed to open RKE2 config file: %v", err))
 				return StepResult{Error: fmt.Errorf("failed to open RKE2 config file: %w", err)}
