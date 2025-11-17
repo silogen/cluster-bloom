@@ -923,8 +923,8 @@ metadata:
 			tmpNsFile.Close()
 
 			// Apply the namespace
-			cmd := exec.Command("/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "apply", "-f", tmpNsFile.Name())
-			output, err := cmd.CombinedOutput()
+			cmd = exec.Command("/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "apply", "-f", tmpNsFile.Name())
+			output, err = cmd.CombinedOutput()
 			if err != nil {
 				LogMessage(Error, fmt.Sprintf("Failed to create kgateway-system namespace: %v, output: %s", err, string(output)))
 				return StepResult{Error: fmt.Errorf("failed to create kgateway-system namespace: %w", err)}
