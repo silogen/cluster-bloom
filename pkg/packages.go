@@ -130,7 +130,7 @@ func installK8sTools() error {
 		{"curl", "-fsSL", "-o", "/usr/local/bin/kubectl", "-LO", "https://dl.k8s.io/release/v1.34.2/bin/linux/amd64/kubectl"},
 		{"chmod", "ugo+x", "/usr/local/bin/kubectl"},
 
-		{"curl", "-fsSL", "-o", "/tmp/get-helm-4.sh" "https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-4"},
+		{"curl", "-fsSL", "-o", "/tmp/get-helm-4.sh", "https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-4"},
 		{"chmod", "ugo+x", "/tmp/get-helm-4.sh"},
 		{"DESIRED_VERSION=v4.0.0", "/tmp/get-helm-4.sh"},
 		{"rm", "/tmp/get-helm-4.sh"},
