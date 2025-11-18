@@ -18,8 +18,7 @@ func Configure() error {
 
 	rsyslogConfigFile := "/etc/rsyslog.d/01-iscsi-filter.conf"
 
-	// Check if config already exists - if so, skip (idempotent)
-	// This allows manual modifications to be preserved
+	// Check if config already exists - if so, skip to preserve modifications
 	if _, err := os.Stat(rsyslogConfigFile); err == nil {
 		log.Infof("Rsyslog config already exists at %s, skipping overwrite", rsyslogConfigFile)
 		return nil

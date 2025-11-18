@@ -30,24 +30,25 @@ import (
 //go:embed conf/iscsi-aggressive.conf
 var iscsiAggressive []byte
 
-//go:embed conf/rke2-components.conf
+//go:embed conf/rke2.conf
 var rke2Components []byte
 
 const (
-	cronFilePath             = "/etc/cron.d/iscsi-logrotate"
-	logrotateConfigISCSI     = "/etc/logrotate.d/iscsi-aggressive.conf"
-	logrotateConfigRke2      = "/etc/logrotate.d/rke2-server"
-	logrotateCommandFragment = "/usr/sbin/logrotate -f " + logrotateConfigISCSI
-	logFilePath              = "/var/log/iscsi-logrotate.log"
-	cronContent              = `# Managed by AMD Enterprise AI Workbench - do not edit manually
+	cronFilePath          = "/etc/cron.d/logrotate"
+	logrotateConfigISCSI  = "/etc/logrotate.d/iscsi-aggressive"
+	logrotateConfigRKE2   = "/etc/logrotate.d/rke2"
+	logrotateCommandISCSI = "/usr/sbin/logrotate -f " + logrotateConfigISCSI
+	logrotateCommandRKE2  = "/usr/sbin/logrotate -f " + logrotateConfigRKE2
+	logFilePath           = "/var/log/logrotate-bloom.log"
+	cronContent           = `# Managed by AMD cluster-bloom utility - do not edit manually
 SHELL=/bin/sh
 PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 
 # iSCSI logrotate - runs every 10 minutes
-*/10 * * * * root ` + logrotateCommandFragment + ` >> ` + logFilePath + ` 2>&1
+*/10 * * * * root ` + logrotateCommandISCSI + ` >> ` + logFilePath + ` 2>&1
 
 # logroate for RKE2 logs - runs hourly
-0 * * * * root /usr/sbin/logrotate -f ` + logrotateConfigRke2 + ` >> ` + logFilePath + ` 2>&1
+0 * * * * root /usr/sbin/logrotate -f ` + logrotateConfigRKE2 + ` >> ` + logFilePath + ` 2>&1
 `
 )
 
@@ -83,7 +84,7 @@ func Configure() error {
 			},
 		},
 		{
-			destPath:      logrotateConfigRke2,
+			destPath:      logrotateConfigRKE2,
 			content:       rke2Components,
 			logPathsToFix: []string{}, // RKE2 config doesn't need conflict resolution
 		},
@@ -223,13 +224,14 @@ func commentOutLogrotateBlocks(configFile string, logPaths []string) error {
 }
 
 func setupCronJob() error {
-	// Check if cron file already exists and contains our logrotate command
+	// Check if cron file already exists and contains our logrotate commands
 	if existingContent, err := os.ReadFile(cronFilePath); err == nil {
-		if strings.Contains(string(existingContent), logrotateCommandFragment) {
-			log.Info("Cron job already exists with logrotate command, skipping")
+		if strings.Contains(string(existingContent), logrotateCommandISCSI) &&
+			strings.Contains(string(existingContent), logrotateCommandRKE2) {
+			log.Info("Cron job already exists with logrotate commands, skipping")
 			return ensureCronLogFile()
 		}
-		log.Info("Cron job exists but doesn't contain expected logrotate command, updating...")
+		log.Info("Cron job exists but doesn't contain expected logrotate commands, updating...")
 	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("failed to read existing cron file: %w", err)
 	}
