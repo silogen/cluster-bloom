@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -174,6 +175,89 @@ func PrepareRKE2() error {
 		if _, err := file.WriteString(configContent); err != nil {
 			return fmt.Errorf("failed to append to %s: %v", rke2ConfigPath, err)
 		}
+	}
+
+	// Handle certificate and authentication configuration
+	domain := viper.GetString("DOMAIN")
+	if domain != "" {
+		certOption := viper.GetString("CERT_OPTION")
+		
+		// Create persistent cert directory
+		certDir := "/etc/rancher/rke2/certs"
+		if err := os.MkdirAll(certDir, 0755); err != nil {
+			return fmt.Errorf("failed to create cert directory: %w", err)
+		}
+		
+		var tlsCertPath, tlsKeyPath string
+		
+		if certOption == "generate" {
+			// CASE 1: Generate certificates to persistent location
+			tlsCertPath = filepath.Join(certDir, "tls.crt")
+			tlsKeyPath = filepath.Join(certDir, "tls.key") 
+			
+			LogMessage(Info, "Generating self-signed certificate for domain: "+domain)
+			
+			// Generate self-signed certificate
+			cmd := exec.Command("openssl", "req", "-x509", "-nodes", "-days", "365", "-newkey", "rsa:2048",
+				"-keyout", tlsKeyPath,
+				"-out", tlsCertPath, 
+				"-subj", fmt.Sprintf("/CN=%s", domain),
+				"-addext", fmt.Sprintf("subjectAltName=DNS:%s,DNS:*.%s", domain, domain))
+				
+			if output, err := cmd.CombinedOutput(); err != nil {
+				return fmt.Errorf("failed to generate certificate: %w, output: %s", err, string(output))
+			}
+			
+			LogMessage(Info, fmt.Sprintf("Generated certificate at %s", tlsCertPath))
+			
+		} else if certOption == "existing" {
+			// CASE 2: Copy existing certificates to persistent location
+			sourceCertPath := viper.GetString("TLS_CERT")
+			sourceKeyPath := viper.GetString("TLS_KEY")
+			
+			// Validate source files exist
+			if sourceCertPath == "" || sourceKeyPath == "" {
+				return fmt.Errorf("TLS_CERT and TLS_KEY must be provided for existing certificates")
+			}
+			if _, err := os.Stat(sourceCertPath); os.IsNotExist(err) {
+				return fmt.Errorf("TLS certificate file not found: %s", sourceCertPath)
+			}
+			if _, err := os.Stat(sourceKeyPath); os.IsNotExist(err) {
+				return fmt.Errorf("TLS key file not found: %s", sourceKeyPath)
+			}
+			
+			// Copy to persistent location
+			tlsCertPath = filepath.Join(certDir, "tls.crt")
+			tlsKeyPath = filepath.Join(certDir, "tls.key")
+			
+			if err := copyFile(sourceCertPath, tlsCertPath); err != nil {
+				return fmt.Errorf("failed to copy certificate: %w", err)
+			}
+			if err := copyFile(sourceKeyPath, tlsKeyPath); err != nil {
+				return fmt.Errorf("failed to copy key: %w", err)
+			}
+			
+			LogMessage(Info, fmt.Sprintf("Copied existing certificate to %s", tlsCertPath))
+			
+		} else {
+			return fmt.Errorf("CERT_OPTION must be 'generate' or 'existing' when DOMAIN is specified")
+		}
+		
+		// Store paths for later use by CreateDomainConfigStep
+		viper.Set("RUNTIME_TLS_CERT", tlsCertPath)
+		viper.Set("RUNTIME_TLS_KEY", tlsKeyPath)
+		
+		// Create auth-config.yaml using the certificate
+		if err := createAuthConfig(domain, tlsCertPath); err != nil {
+			return fmt.Errorf("failed to create auth config: %w", err)
+		}
+		
+		// Add authentication-config to RKE2 config
+		if err := addAuthConfigToRKE2(); err != nil {
+			return fmt.Errorf("failed to update RKE2 config: %w", err)
+		}
+		
+		LogMessage(Info, "Authentication configuration completed")
 	}
 
 	return nil
@@ -374,5 +458,78 @@ func PreloadImages() error {
 		return fmt.Errorf("failed to write preload images file %s: %v", preloadImagesList, err)
 	}
 
+	return nil
+}
+
+func copyFile(src, dst string) error {
+	input, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	
+	err = os.WriteFile(dst, input, 0644)
+	if err != nil {
+		return err
+	}
+	
+	return nil
+}
+
+func createAuthConfig(domain, certPath string) error {
+	// Read certificate data
+	certData, err := os.ReadFile(certPath)
+	if err != nil {
+		return fmt.Errorf("failed to read certificate file: %w", err)
+	}
+
+	// Indent certificate data properly for YAML
+	certLines := strings.Split(strings.TrimSpace(string(certData)), "\n")
+	var indentedLines []string
+	for _, line := range certLines {
+		if line != "" {
+			indentedLines = append(indentedLines, "      "+line)
+		}
+	}
+	indentedCertData := strings.Join(indentedLines, "\n")
+
+	// Generate OIDC domain with kc. prefix and create auth-config.yaml
+	oidcDomain := fmt.Sprintf("kc.%s", domain)
+	authConfigContent := fmt.Sprintf(authConfigTemplate, oidcDomain, indentedCertData, oidcDomain, indentedCertData)
+
+	// Create auth directory
+	authDir := "/etc/rancher/rke2/auth"
+	if err := os.MkdirAll(authDir, 0755); err != nil {
+		return fmt.Errorf("failed to create auth directory: %w", err)
+	}
+
+	// Write auth-config.yaml
+	authConfigPath := filepath.Join(authDir, "auth-config.yaml")
+	if err := os.WriteFile(authConfigPath, []byte(authConfigContent), 0644); err != nil {
+		return fmt.Errorf("failed to write auth-config.yaml: %w", err)
+	}
+
+	LogMessage(Info, "Successfully created authentication configuration file")
+	return nil
+}
+
+func addAuthConfigToRKE2() error {
+	rke2ConfigPath := "/etc/rancher/rke2/config.yaml"
+	
+	rke2AuthConfig := `
+kube-apiserver-arg:
+  - "--authentication-config=/etc/rancher/rke2/auth/auth-config.yaml"
+`
+	
+	file, err := os.OpenFile(rke2ConfigPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open RKE2 config file: %w", err)
+	}
+	defer file.Close()
+
+	if _, err = file.WriteString(rke2AuthConfig); err != nil {
+		return fmt.Errorf("failed to append to RKE2 config: %w", err)
+	}
+
+	LogMessage(Info, "Successfully added authentication-config to RKE2 configuration")
 	return nil
 }

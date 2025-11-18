@@ -753,8 +753,6 @@ var CreateDomainConfigStep = Step{
 		time.Sleep(5 * time.Second)
 
 		// Create domain ConfigMap
-		useCertManager := viper.GetBool("USE_CERT_MANAGER")
-
 		configMapYAML := fmt.Sprintf(`apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -762,8 +760,7 @@ metadata:
   namespace: default
 data:
   domain: "%s"
-  use-cert-manager: "%t"
-`, domain, useCertManager)
+`, domain)
 
 		// Write ConfigMap to temporary file and apply
 		tmpFile, err := os.CreateTemp("", "domain-configmap-*.yaml")
@@ -789,121 +786,26 @@ data:
 
 		LogMessage(Info, "Successfully created domain ConfigMap")
 
-		// Handle TLS certificates
-		if !useCertManager {
-			certOption := viper.GetString("CERT_OPTION")
-			tlsCertPath := viper.GetString("TLS_CERT")
-			tlsKeyPath := viper.GetString("TLS_KEY")
-
-			// Handle certificate generation or use existing
-			if certOption == "generate" {
-				LogMessage(Info, "Generating self-signed certificate for domain: "+domain)
-
-				// Create temporary directory for certificate files
-				tempDir, err := os.MkdirTemp("", "bloom-tls-*")
-				if err != nil {
-					LogMessage(Error, fmt.Sprintf("Failed to create temp directory: %v", err))
-					return StepResult{Error: fmt.Errorf("failed to create temp directory: %w", err)}
-				}
-				defer os.RemoveAll(tempDir)
-
-				tlsCertPath = filepath.Join(tempDir, "tls.crt")
-				tlsKeyPath = filepath.Join(tempDir, "tls.key")
-
-				// Generate self-signed certificate using openssl
-				cmd := exec.Command("openssl", "req", "-x509", "-nodes", "-days", "365", "-newkey", "rsa:2048",
-					"-keyout", tlsKeyPath,
-					"-out", tlsCertPath,
-					"-subj", fmt.Sprintf("/CN=%s", domain),
-					"-addext", fmt.Sprintf("subjectAltName=DNS:%s,DNS:*.%s", domain, domain))
-
-				output, err := cmd.CombinedOutput()
-				if err != nil {
-					LogMessage(Error, fmt.Sprintf("Failed to generate self-signed certificate: %v, output: %s", err, string(output)))
-					return StepResult{Error: fmt.Errorf("failed to generate self-signed certificate: %w", err)}
-				}
-				LogMessage(Info, "Successfully generated self-signed certificate")
-			} else if certOption == "existing" {
-				// Verify certificate and key files exist
-				if tlsCertPath == "" || tlsKeyPath == "" {
-					LogMessage(Error, "CERT_OPTION is 'existing' but TLS_CERT or TLS_KEY not provided")
-					return StepResult{Error: fmt.Errorf("TLS certificate files not provided")}
-				}
-				if _, err := os.Stat(tlsCertPath); os.IsNotExist(err) {
-					LogMessage(Error, fmt.Sprintf("TLS certificate file not found: %s", tlsCertPath))
-					return StepResult{Error: fmt.Errorf("TLS certificate file not found: %s", tlsCertPath)}
-				}
-				if _, err := os.Stat(tlsKeyPath); os.IsNotExist(err) {
-					LogMessage(Error, fmt.Sprintf("TLS key file not found: %s", tlsKeyPath))
-					return StepResult{Error: fmt.Errorf("TLS key file not found: %s", tlsKeyPath)}
-				}
-			} else {
-				LogMessage(Info, "Domain configured but no certificate option specified")
-				return StepResult{Message: "Domain ConfigMap created but no TLS configuration applied"}
-			}
-
-			// Create auth-config.yaml for authentication configuration
-			LogMessage(Info, "Creating authentication configuration file")
+		// Handle TLS secret creation using persistent certificates from PrepareRKE2
+		if domain != "" {
+			// Get certificate paths from PrepareRKE2Step
+			tlsCertPath := viper.GetString("RUNTIME_TLS_CERT")
+			tlsKeyPath := viper.GetString("RUNTIME_TLS_KEY")
 			
-			// Read certificate data
-			certData, err := os.ReadFile(tlsCertPath)
-			if err != nil {
-				LogMessage(Error, fmt.Sprintf("Failed to read certificate file: %v", err))
-				return StepResult{Error: fmt.Errorf("failed to read certificate file: %w", err)}
+			if tlsCertPath == "" || tlsKeyPath == "" {
+				LogMessage(Error, "Certificate paths not found - PrepareRKE2 may have failed")
+				return StepResult{Error: fmt.Errorf("certificate paths not found - PrepareRKE2 may have failed")}
 			}
-
-			// Indent certificate data properly for YAML
-			certLines := strings.Split(strings.TrimSpace(string(certData)), "\n")
-			var indentedLines []string
-			for _, line := range certLines {
-				if line != "" {
-					indentedLines = append(indentedLines, "      "+line)
-				}
-			}
-			indentedCertData := strings.Join(indentedLines, "\n")
-
-			// Generate OIDC domain with kc. prefix and create auth-config.yaml
-			oidcDomain := fmt.Sprintf("kc.%s", domain)
-			authConfigContent := fmt.Sprintf(authConfigTemplate, oidcDomain, indentedCertData, oidcDomain, indentedCertData)
-
-			// Create auth directory
-			authDir := "/etc/rancher/rke2/auth"
-			if err := os.MkdirAll(authDir, 0755); err != nil {
-				LogMessage(Error, fmt.Sprintf("Failed to create auth directory: %v", err))
-				return StepResult{Error: fmt.Errorf("failed to create auth directory: %w", err)}
-			}
-
-			// Write auth-config.yaml
-			authConfigPath := filepath.Join(authDir, "auth-config.yaml")
-			if err := os.WriteFile(authConfigPath, []byte(authConfigContent), 0644); err != nil {
-				LogMessage(Error, fmt.Sprintf("Failed to write auth-config.yaml: %v", err))
-				return StepResult{Error: fmt.Errorf("failed to write auth-config.yaml: %w", err)}
-			}
-
-			LogMessage(Info, "Successfully created authentication configuration file")
-
-			// Add authentication-config to RKE2 config
-			LogMessage(Info, "Adding authentication-config to RKE2 configuration")
-			rke2ConfigPath := "/etc/rancher/rke2/config.yaml"
 			
-			rke2AuthConfig := `
-kube-apiserver-arg:
-  - "--authentication-config=/etc/rancher/rke2/auth/auth-config.yaml"
-`
-			
-			file, err := os.OpenFile(rke2ConfigPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
-			if err != nil {
-				LogMessage(Error, fmt.Sprintf("Failed to open RKE2 config file: %v", err))
-				return StepResult{Error: fmt.Errorf("failed to open RKE2 config file: %w", err)}
+			// Verify files still exist
+			if _, err := os.Stat(tlsCertPath); os.IsNotExist(err) {
+				LogMessage(Error, fmt.Sprintf("Certificate file missing: %s", tlsCertPath))
+				return StepResult{Error: fmt.Errorf("certificate file missing: %s", tlsCertPath)}
 			}
-			defer file.Close()
-
-			if _, err = file.WriteString(rke2AuthConfig); err != nil {
-				LogMessage(Error, fmt.Sprintf("Failed to append to RKE2 config: %v", err))
-				return StepResult{Error: fmt.Errorf("failed to append to RKE2 config: %w", err)}
+			if _, err := os.Stat(tlsKeyPath); os.IsNotExist(err) {
+				LogMessage(Error, fmt.Sprintf("Key file missing: %s", tlsKeyPath))
+				return StepResult{Error: fmt.Errorf("key file missing: %s", tlsKeyPath)}
 			}
-
-			LogMessage(Info, "Successfully added authentication-config to RKE2 configuration")
 
 			// Create ClusterRoleBindings for OIDC authorization
 			LogMessage(Info, "Creating OIDC ClusterRoleBindings")
@@ -997,10 +899,9 @@ metadata:
 
 			LogMessage(Info, "Successfully created TLS secret")
 			return StepResult{Message: "Domain ConfigMap and TLS secret created successfully"}
-		} else {
-			LogMessage(Info, "Cert-manager will be used for TLS certificates")
-			return StepResult{Message: "Domain ConfigMap created, cert-manager will handle TLS"}
 		}
+		
+		return StepResult{Message: "Domain ConfigMap created successfully"}
 	},
 }
 
