@@ -24,6 +24,7 @@ import (
 	"github.com/spf13/viper"
 )
 
+// if the audit-log settings are modified, also update pkg/system/logrotate/conf/rke2.conf
 var rke2ConfigContent = `
 cni: cilium
 cluster-cidr: 10.242.0.0/16
