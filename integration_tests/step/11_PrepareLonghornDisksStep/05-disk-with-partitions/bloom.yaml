@@ -1,0 +1,42 @@
+ENABLED_STEPS: PrepareLonghornDisksStep
+CLUSTER_DISKS: /dev/sdc
+
+mocks:
+  PrepareLonghornDisksStep.ReadFstab:
+    output: ""
+  PrepareLonghornDisksStep.ListMounts:
+    output: ""
+    args: ["sh", "-c", "mount | awk '/\\/mnt\\/disk[0-9]+/ {print $3}'"]
+  PrepareLonghornDisksStep.CheckFilesystem./dev/sdc:
+    output: "NAME FSTYPE\nsdc  ntfs"
+    args: ["lsblk", "-f", "/dev/sdc"]
+  PrepareLonghornDisksStep.CheckPartitionType./dev/sdc:
+    output: "0x83"
+    args: ["lsblk", "-no", "PARTTYPE", "/dev/sdc"]
+  PrepareLonghornDisksStep.WipePartitions./dev/sdc:
+    output: ""
+    args: ["sudo", "wipefs", "-a", "/dev/sdc"]
+  PrepareLonghornDisksStep.FormatDisk./dev/sdc:
+    output: ""
+    args: ["mkfs.ext4", "-F", "-F", "/dev/sdc"]
+  PrepareLonghornDisksStep.GetUUID./dev/sdc:
+    output: "def-456-ghi-789"
+    args: ["blkid", "-s", "UUID", "-o", "value", "/dev/sdc"]
+  PrepareLonghornDisksStep.CreateMountPoint./mnt/disk0:
+    output: ""
+    args: ["mkdir", "-p", "/mnt/disk0"]
+  PrepareLonghornDisksStep.MountDrive./dev/sdc:
+    output: ""
+    args: ["mount", "/dev/sdc", "/mnt/disk0"]
+  PersistMountedDisks.BackupFstab:
+    output: ""
+    args: ["sudo", "cp", "/etc/fstab", "/etc/fstab.bak"]
+  PersistMountedDisks.GetUUID./dev/sdc-def-456-ghi-789:
+    output: "def-456-ghi-789"
+    args: ["blkid", "-s", "UUID", "-o", "value", "/dev/sdc"]
+  PersistMountedDisks.AddFstabEntry./mnt/disk0:
+    output: ""
+    args: ["sh", "-c", "echo 'UUID=def-456-ghi-789 /mnt/disk0 ext4 defaults,nofail 0 2 # managed by cluster-bloom' | sudo tee -a /etc/fstab"]
+  PersistMountedDisks.RemountAll:
+    output: ""
+    args: ["sudo", "mount", "-a"]

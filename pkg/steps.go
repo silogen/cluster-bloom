@@ -117,6 +117,21 @@ var CreateChronyConfigStep = Step{
 	},
 }
 
+var PreloadImagesStep = Step{
+	Id:          "PreloadImagesStep",
+	Name:        "Start Image Preload",
+	Description: "Start Preloading requested container images",
+	Action: func() StepResult {
+		if viper.GetBool("FIRST_NODE") && viper.GetString("PRELOAD_IMAGES") != "" {
+			err := PreloadImages()
+			if err != nil {
+				return StepResult{Error: err}
+			}
+		}
+		return StepResult{Error: nil}
+	},
+}
+
 var OpenPortsStep = Step{
 	Id:          "OpenPortsStep",
 	Name:        "Open Ports",
@@ -202,8 +217,15 @@ var SetupAndCheckRocmStep = Step{
 		}
 		// Check if the first characters are an integer
 		lines := strings.Split(string(output), "\n")
+		validLineFound := false
 		for _, line := range lines {
 			if len(line) > 0 {
+				// Skip lines that start with WARNING:
+				trimmedLine := strings.TrimSpace(line)
+				if strings.HasPrefix(trimmedLine, "WARNING:") {
+					continue
+				}
+				
 				parts := strings.Fields(line)
 				if len(parts) > 0 {
 					if _, err := strconv.Atoi(parts[0]); err != nil {
@@ -212,7 +234,15 @@ var SetupAndCheckRocmStep = Step{
 							Error: fmt.Errorf("rocm-smi did not return any GPUs: %s", string(output)),
 						}
 					}
+					validLineFound = true
 				}
+			}
+		}
+		
+		if !validLineFound {
+			LogMessage(Error, "rocm-smi did not return any valid GPU lines: "+string(output))
+			return StepResult{
+				Error: fmt.Errorf("rocm-smi did not return any valid GPU lines: %s", string(output)),
 			}
 		}
 		// Log the output of rocm-smi
@@ -273,6 +303,13 @@ var UpdateModprobeStep = Step{
 	Id:          "UpdateModprobeStep",
 	Name:        "Update Modprobe",
 	Description: "Update Modprobe to unblacklist amdgpu",
+	Skip: func() bool {
+		if !viper.GetBool("GPU_NODE") {
+			LogMessage(Info, "Skipping ROCm setup for non-GPU node")
+			return true
+		}
+		return false
+	},
 	Action: func() StepResult {
 		err := updateModprobe()
 		if err != nil {
@@ -408,6 +445,26 @@ var SetupMetallbStep = Step{
 			}
 		} else {
 			return StepResult{Error: nil}
+		}
+		return StepResult{Error: nil}
+	},
+}
+
+var LonghornPreflightCheckStep = Step{
+	Id:          "LonghornPreflightCheckStep",
+	Name:        "Longhorn Preflight Check",
+	Description: "Validate system passes Longhorn preflight checks before setting up Longhorn",
+	Skip: func() bool {
+		if !viper.GetBool("FIRST_NODE") {
+			LogMessage(Info, "Skipping for additional nodes.")
+			return true
+		}
+		return false
+	},
+	Action: func() StepResult {
+		err := LonghornPreflightCheck()
+		if err != nil {
+			return StepResult{Error: fmt.Errorf("failed to run Longhorn preflight check: %v", err)}
 		}
 		return StepResult{Error: nil}
 	},
@@ -725,7 +782,6 @@ func CreateBloomConfigMapStepFunc(version string) Step {
 			if viper.GetBool("FIRST_NODE") {
 				LogMessage(Info, "Waiting for cluster to be ready...")
 
-				time.Sleep(10 * time.Second)
 				err := CreateConfigMap(version)
 				if err != nil {
 					LogMessage(Error, fmt.Sprintf("Failed to create bloom ConfigMap: %v", err))
@@ -921,9 +977,11 @@ metadata:
 }
 
 var WaitForClusterReady = Step{
+	// wrapper for any post creation validations
+	// presently just validates Longhorn PVC creation on first node
 	Id:          "WaitForClusterReady",
 	Name:        "Wait for Cluster to be Ready",
-	Description: "A wait step to ensure the cluster is ready",
+	Description: "A wait step to ensure the cluster is ready (first node only)",
 	Skip: func() bool {
 		if !viper.GetBool("FIRST_NODE") {
 			LogMessage(Info, "Skipping for additional nodes.")
@@ -932,9 +990,9 @@ var WaitForClusterReady = Step{
 		return false
 	},
 	Action: func() StepResult {
-		err := LonghornPreflightCheck()
+		err := LonghornValidatePVCCreation()
 		if err != nil {
-			return StepResult{Error: fmt.Errorf("failed to run Longhorn preflight check: %v", err)}
+			return StepResult{Error: fmt.Errorf("failed to valite Longhorn is able to create PVCs: %v", err)}
 		}
 		return StepResult{Error: nil}
 	},
@@ -998,10 +1056,7 @@ var FinalOutput = Step{
 			LogMessage(Info, "To setup additional nodes to join the cluster, copy and run the command from additional_node_command.txt")
 			return StepResult{Message: "To setup additional nodes to join the cluster, copy and run the command from additional_node_command.txt"}
 		} else {
-			message := "The content of longhorn_drive_setup.txt must be run in order to mount drives properly. " +
-				"This can be done in the control node, which was installed first, or with a valid kubeconfig for the cluster."
-			LogMessage(Info, message)
-			return StepResult{Message: message}
+			return StepResult{Error: nil}
 		}
 	},
 }

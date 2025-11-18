@@ -35,23 +35,23 @@ type StepStatus struct {
 }
 
 type BloomStatus struct {
-	LogFile         string
-	LastModified    time.Time
-	Steps           []StepStatus
-	Kubeconfig      string
-	ClusterDisks            []string
-	ClusterPremountedDisks  []string
-	Domain          string
-	FirstNode       bool
-	ControlPlane    bool
-	GPUNode         bool
-	ServerIP        string
-	ClusterForge    string
-	Errors          []string
-	OSError         string
-	TotalSteps      int
+	LogFile                string
+	LastModified           time.Time
+	Steps                  []StepStatus
+	Kubeconfig             string
+	ClusterDisks           []string
+	ClusterPremountedDisks []string
+	Domain                 string
+	FirstNode              bool
+	ControlPlane           bool
+	GPUNode                bool
+	ServerIP               string
+	ClusterForge           string
+	Errors                 []string
+	OSError                string
+	TotalSteps             int
 	// Additional config values
-	ConfigValues    map[string]string
+	ConfigValues map[string]string
 }
 
 func ParseBloomLog(logPath string) (*BloomStatus, error) {
@@ -116,7 +116,7 @@ func ParseBloomLog(logPath string) (*BloomStatus, error) {
 
 					// Don't store messages that are clearly not config
 					if !strings.Contains(key, "Starting") && !strings.Contains(key, "Completed") &&
-					   !strings.Contains(key, "Execution") && !strings.Contains(key, "Error") {
+						!strings.Contains(key, "Execution") && !strings.Contains(key, "Error") {
 						// Store in ConfigValues map
 						status.ConfigValues[key] = value
 
@@ -440,8 +440,6 @@ func DisplayBloomStatus(status *BloomStatus) {
 		fmt.Println("   • Restart your session to enable k9s")
 		if status.FirstNode {
 			fmt.Println("   • Run the command in additional_node_command.txt to add nodes")
-		} else {
-			fmt.Println("   • Run the content of longhorn_drive_setup.txt to mount drives")
 		}
 	}
 

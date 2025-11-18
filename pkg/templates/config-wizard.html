@@ -340,6 +340,28 @@
                 </div>
             </div>
 
+            <!-- CLI Options Help -->
+            <div class="config-section">
+                <div class="section-header">💻 Command Line Options</div>
+                <div class="section-content">
+                    <div class="description" style="margin-bottom: 15px;">
+                        After generating your configuration, you can run bloom in different modes:
+                    </div>
+                    <div style="background: #f8f9fa; padding: 15px; border-radius: 4px; font-family: monospace; margin-bottom: 10px;">
+                        <div style="margin-bottom: 8px;"><strong>Web interface mode (default):</strong></div>
+                        <div style="color: #666;">bloom --config bloom.yaml</div>
+                    </div>
+                    <div style="background: #f8f9fa; padding: 15px; border-radius: 4px; font-family: monospace; margin-bottom: 10px;">
+                        <div style="margin-bottom: 8px;"><strong>Terminal-only mode:</strong></div>
+                        <div style="color: #666;">bloom cli --config bloom.yaml</div>
+                    </div>
+                    <div style="background: #f8f9fa; padding: 15px; border-radius: 4px; font-family: monospace;">
+                        <div style="margin-bottom: 8px;"><strong>Automated mode (no interaction):</strong></div>
+                        <div style="color: #666;">bloom --one-shot --config bloom.yaml</div>
+                    </div>
+                </div>
+            </div>
+
             <div class="actions">
                 <button type="button" class="btn btn-secondary" onclick="resetForm()">Reset</button>
                 <button type="submit" class="btn">Generate Configuration & Start Installation</button>
@@ -951,6 +973,8 @@
                         window.isOneShot = data.oneShot;
 
                         // Show banner indicating pre-filled configuration
+                        // we have three sources for the pre-filled info, glossing over some bugs 
+                        // todo: update how we load default -vs- existing bloom.yaml content
                         const banner = document.getElementById('error-banner');
                         const title = document.getElementById('error-title');
                         const message = document.getElementById('error-message');
@@ -960,13 +984,13 @@
                             banner.style.background = '#e8f5e8';
                             banner.style.border = '2px solid #2e7d32';
                             title.style.color = '#2e7d32';
-                            title.textContent = '📄 Configuration Loaded from File';
-                            message.textContent = 'Configuration has been pre-filled from your config file.';
+                            title.textContent = '📄 Configuration has been pre-filled';
+                            message.textContent = 'Configuration has been pre-filled';
 
                             if (data.oneShot) {
                                 suggestion.textContent = 'One-shot mode enabled - auto-proceeding...';
                             } else {
-                                suggestion.textContent = 'Please review the configuration below and click "Generate Configuration & Start Installation" to proceed.';
+                                suggestion.textContent = 'Please update or review the configuration below and click "Generate Configuration & Start Installation" to proceed.';
                             }
 
                             banner.style.display = 'block';

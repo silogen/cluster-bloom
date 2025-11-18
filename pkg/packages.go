@@ -28,12 +28,20 @@ import (
 	"github.com/spf13/viper"
 )
 
-//go:embed scripts/longhornPreflight.sh
+//go:embed scripts/longhorn_preflight_check.sh
 var longhornPreflightScript []byte
+
+//go:embed scripts/longhorn_validate_pvc_creation.sh
+var longhornPVCValidationScript []byte
 
 func CheckPackageInstallConnections() error {
 	cmd := exec.Command("apt-get", "update")
-	cmd.Env = os.Environ()
+	env := os.Environ()
+	// Add environment variables to prevent interactive prompts
+	env = append(env, "DEBIAN_FRONTEND=noninteractive")
+	env = append(env, "NEEDRESTART_MODE=a")
+	env = append(env, "NEEDRESTART_SUSPEND=1")
+	cmd.Env = env
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("Failed to verify apt-get connection: %w\nOutput: %s", err, output)
@@ -96,7 +104,12 @@ func InstallDependentPackages() error {
 
 func installpackage(pkgName string) error {
 	cmd := exec.Command("apt-get", "install", "-y", pkgName)
-	cmd.Env = os.Environ()
+	env := os.Environ()
+	// Add environment variables to prevent interactive prompts
+	env = append(env, "DEBIAN_FRONTEND=noninteractive")
+	env = append(env, "NEEDRESTART_MODE=a")
+	env = append(env, "NEEDRESTART_SUSPEND=1")
+	cmd.Env = env
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to install package: %w\nOutput: %s", err, output)
@@ -193,7 +206,7 @@ func SetupClusterForge() error {
 		LogMessage(Info, "Successfully downloaded ClusterForge")
 	}
 
-	cmd = exec.Command("tar", "-xzvf", "clusterforge.tar.gz")
+	cmd = exec.Command("tar", "-xzvf", "clusterforge.tar.gz", "--no-same-owner")
 	output, err = cmd.Output()
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to unzip clusterforge.tar.gz: %v, output %v", err, output))
@@ -206,14 +219,17 @@ func SetupClusterForge() error {
 
 	// Get the original user when running with sudo
 	originalUser := os.Getenv("SUDO_USER")
-
-	cmd = exec.Command("sudo", "chown", "-R", fmt.Sprintf("%s:%s", originalUser, originalUser), "cluster-forge")
-	output, err = cmd.Output()
-	if err != nil {
-		LogMessage(Error, fmt.Sprintf("Failed to change ownership of Clusterforge folder: %v, output %v", err, output))
-		return err
+	if originalUser != "" {
+		cmd = exec.Command("sudo", "chown", "-R", fmt.Sprintf("%s:%s", originalUser, originalUser), "cluster-forge")
+		output, err = cmd.Output()
+		if err != nil {
+			LogMessage(Error, fmt.Sprintf("Failed to change ownership of Clusterforge folder: %v, output %v", err, output))
+			return err
+		} else {
+			LogMessage(Info, fmt.Sprintf("Successfully updated ownership of Clusterforge folder to %s", originalUser))
+		}
 	} else {
-		LogMessage(Info, fmt.Sprintf("Successfully updated ownership of Clusterforge folder to %s", originalUser))
+		LogMessage(Info, "Sudo user returned nil, not attempting to change ownership of Clusterforge folder")
 	}
 
 	scriptsDir := "cluster-forge/scripts"
@@ -237,39 +253,31 @@ func SetupClusterForge() error {
 }
 
 func LonghornPreflightCheck() error {
-	// Create a temporary file with the embedded script content
-	tmpFile, err := os.CreateTemp("", "longhornPreflight-*.sh")
-	if err != nil {
-		LogMessage(Error, fmt.Sprintf("Failed to create temporary script file: %v", err))
-		return err
-	}
-	defer os.Remove(tmpFile.Name()) // Clean up the temporary file
-
-	// Write the embedded script content to the temporary file
-	if _, err := tmpFile.Write(longhornPreflightScript); err != nil {
-		LogMessage(Error, fmt.Sprintf("Failed to write script content: %v", err))
-		tmpFile.Close()
-		return err
-	}
-	tmpFile.Close()
-
-	// Make the script executable
-	if err := os.Chmod(tmpFile.Name(), 0755); err != nil {
-		LogMessage(Error, fmt.Sprintf("Failed to make script executable: %v", err))
-		return err
-	}
-
-	cmd := exec.Command("bash", tmpFile.Name())
+	// runs a system-level check to ensure Longhorn can be installed successfully
+	cmd := exec.Command("bash", "-s")
+	cmd.Stdin = strings.NewReader(string(longhornPreflightScript))
 	cmd.Env = os.Environ()
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
 
-	err = cmd.Run()
-	if err != nil {
+	if err := cmd.Run(); err != nil {
 		LogMessage(Error, fmt.Sprintf("Longhorn preflight check failed: %v", err))
 		return err
 	}
 
 	LogMessage(Info, "Longhorn preflight check completed successfully")
+	return nil
+}
+
+func LonghornValidatePVCCreation() error {
+	// runs a cluster-level check to ensure Longhorn can create PVCs successfully
+	cmd := exec.Command("bash", "-s")
+	cmd.Stdin = strings.NewReader(string(longhornPVCValidationScript))
+	cmd.Env = os.Environ()
+
+	if err := cmd.Run(); err != nil {
+		LogMessage(Error, fmt.Sprintf("Longhorn PVC creation check failed: %v", err))
+		return err
+	}
+
+	LogMessage(Info, "Longhorn PVC creation check completed successfully")
 	return nil
 }
