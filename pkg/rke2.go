@@ -180,11 +180,19 @@ func PrepareRKE2() error {
 }
 
 func SetupFirstRKE2() error {
+	installCommand := "curl -sfL " + viper.GetString("RKE2_INSTALLATION_URL")
+	rke2Version := viper.GetString("RKE2_VERSION")
+	if rke2Version != "" {
+		installCommand += " | INSTALL_RKE2_VERSION=\"" + rke2Version + "\" sh -"
+	} else {
+		installCommand += " | sh -"
+	}
+
 	commands := []struct {
 		command string
 		args    []string
 	}{
-		{"sh", []string{"-c", "curl -sfL " + viper.GetString("RKE2_INSTALLATION_URL") + " | sh -"}},
+		{"sh", []string{"-c", installCommand}},
 		{"systemctl", []string{"enable", "rke2-server.service"}},
 	}
 
