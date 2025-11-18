@@ -517,13 +517,6 @@ var ConfigLogrotateStep = Step{
 	Id:          "ConfigLogrotateStep",
 	Name:        "Configure logrotate",
 	Description: "Configure logrotate with aggressive, size-based rotation settings",
-	Skip: func() bool {
-		if !viper.GetBool("FIRST_NODE") {
-			LogMessage(Info, "Skipping for additional nodes.")
-			return true
-		}
-		return false
-	},
 	Action: func() StepResult {
 		err := logrotate.Configure()
 		if err != nil {
@@ -539,13 +532,6 @@ var ConfigRsyslogStep = Step{
 	Id:          "ConfigRsyslogStep",
 	Name:        "Configure rsyslog rate limiting",
 	Description: "Configure rsyslog rate limiting to prevent possible iSCSI log flooding",
-	Skip: func() bool {
-		if !viper.GetBool("FIRST_NODE") {
-			LogMessage(Info, "Skipping for additional nodes.")
-			return true
-		}
-		return false
-	},
 	Action: func() StepResult {
 		err := rsyslog.Configure()
 		if err != nil {
