@@ -215,8 +215,15 @@ var SetupAndCheckRocmStep = Step{
 		}
 		// Check if the first characters are an integer
 		lines := strings.Split(string(output), "\n")
+		validLineFound := false
 		for _, line := range lines {
 			if len(line) > 0 {
+				// Skip lines that start with WARNING:
+				trimmedLine := strings.TrimSpace(line)
+				if strings.HasPrefix(trimmedLine, "WARNING:") {
+					continue
+				}
+				
 				parts := strings.Fields(line)
 				if len(parts) > 0 {
 					if _, err := strconv.Atoi(parts[0]); err != nil {
@@ -225,7 +232,15 @@ var SetupAndCheckRocmStep = Step{
 							Error: fmt.Errorf("rocm-smi did not return any GPUs: %s", string(output)),
 						}
 					}
+					validLineFound = true
 				}
+			}
+		}
+		
+		if !validLineFound {
+			LogMessage(Error, "rocm-smi did not return any valid GPU lines: "+string(output))
+			return StepResult{
+				Error: fmt.Errorf("rocm-smi did not return any valid GPU lines: %s", string(output)),
 			}
 		}
 		// Log the output of rocm-smi
