@@ -84,6 +84,7 @@ func InstallDependentPackages() error {
 		"jq",
 		"nfs-common",
 		"chrony",
+		"curl",
 	}
 
 	for _, pkg := range packagesToInstall {
@@ -121,10 +122,10 @@ func installpackage(pkgName string) error {
 
 func installK8sTools() error {
 	cmds := [][]string{
-		{"snap", "install", "kubectl", "--classic"},
 		{"snap", "install", "k9s"},
-		{"snap", "install", "helm", "--classic"},
-		{"snap", "install", "yq"},
+		{"curl", "-fsSL", "-o", "/usr/local/bin/yq", "https://github.com/mikefarah/yq/releases/download/v4.46.1/yq_linux_amd64", "&&", "chmod", "ugo+x", "/usr/local/bin/yq"},
+		{"curl", "-fsSL", "-o", "/usr/local/bin/kubectl", "-LO", "https://dl.k8s.io/release/v1.34.2/bin/linux/amd64/kubectl", "&&", "chmod", "ugo+x", "/usr/local/bin/kubectl"},
+		{"curl", "-fsSL", "https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-4", "|", "DESIRED_VERSION=v4.0.0", "bash"},
 	}
 
 	for _, cmd := range cmds {
