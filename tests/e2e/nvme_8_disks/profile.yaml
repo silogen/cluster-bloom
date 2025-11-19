@@ -1,6 +1,9 @@
 # QEMU VM Profile Configuration
 # This file defines the VM's hardware configuration
 
+# CPU cores
+cpus: 8
+
 # Memory allocation (supports K, M, G suffixes)
 memory: 10G
 

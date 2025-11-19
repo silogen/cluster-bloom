@@ -22,6 +22,7 @@ if [ ! -f "$PROFILE_YAML" ]; then
 fi
 
 # Parse profile YAML using basic grep/awk (works without yq)
+VM_CPUS=$(grep "^cpus:" "$PROFILE_YAML" | awk '{print $2}' | tr -d '"' || echo "2")
 VM_MEMORY=$(grep "^memory:" "$PROFILE_YAML" | awk '{print $2}' | tr -d '"' || echo "10G")
 ROOT_DISK_SIZE=$(grep "^root_disk_size:" "$PROFILE_YAML" | awk '{print $2}' | tr -d '"' || echo "100G")
 DISK_COUNT=$(grep -A 100 "^disks:" "$PROFILE_YAML" | grep "  - size:" | wc -l)
@@ -93,6 +94,7 @@ else
 fi
 
 echo "VM Profile Configuration:"
+echo "  CPUs: $VM_CPUS"
 echo "  Memory: $VM_MEMORY"
 echo "  Root disk size: $ROOT_DISK_SIZE"
 echo "  Number of disks: $DISK_COUNT"
@@ -266,7 +268,7 @@ echo ""
 qemu-system-x86_64 \\
   -machine q35,accel=kvm \\
   -cpu host \\
-  -smp 2 \\
+  -smp $VM_CPUS \\
   -m $VM_MEMORY \\
   -drive if=pflash,format=raw,readonly=on,file=$OVMF_CODE \\
   -drive if=pflash,format=raw,file="\$SCRIPT_DIR/OVMF_VARS.fd" \\
@@ -385,14 +387,14 @@ echo ""
 echo "Test execution completed"
 echo "Results saved to: test-results.yaml"
 
-# Clean up VM
-echo ""
-echo "Cleaning up VM..."
-bash "$VM_NAME/stop-vm.sh" || killall qemu-system-x86_64 2>/dev/null || true
-sleep 2
+# # Clean up VM
+# echo ""
+# echo "Cleaning up VM..."
+# bash "$VM_NAME/stop-vm.sh" || killall qemu-system-x86_64 2>/dev/null || true
+# sleep 2
 
-echo "Removing $VM_NAME directory..."
-rm -rf "$VM_NAME"
+# echo "Removing $VM_NAME directory..."
+# rm -rf "$VM_NAME"
 
-echo ""
-echo "✓ VM deleted and cleaned up"
+# echo ""
+# echo "✓ VM deleted and cleaned up"

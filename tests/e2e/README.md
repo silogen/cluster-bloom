@@ -7,10 +7,13 @@ End-to-end tests for Cluster-Bloom that validate complete workflows in real or v
 ```
 tests/e2e/
 ├── README.md                   # This file
-├── qemu/                       # QEMU-based VM tests
-│   └── qemu-disk-test.sh       # Script for testing with QEMU VMs
-└── test_case_1/                # Test case configurations
-    └── bloom.yaml              # Configuration for test case 1
+├── qemu/                       # QEMU-based VM infrastructure
+│   ├── qemu-disk-test.sh       # Script for testing with QEMU VMs
+│   └── prepull-images.sh       # Pre-pull container images for faster testing
+└── nvme_8_disks/               # 8-disk NVMe test configuration
+    ├── profile.yaml            # VM hardware profile (8 CPUs, 10GB RAM, 8 NVMe disks)
+    ├── first_bloom.yaml        # Initial cluster setup configuration
+    └── rebloom_bloom.yaml      # Re-bloom test configuration
 ```
 
 ## QEMU VM Tests
@@ -72,40 +75,52 @@ groups | grep kvm
 
 ### Running QEMU Tests
 
-#### Basic Usage
-```bash
-# Run with a single test configuration
-bash tests/e2e/qemu/qemu-disk-test.sh <vm-name> <bloom-binary> <bloom-yaml>
+#### Profile-Based Testing (Recommended)
+The new profile-based approach allows configuring VM hardware and multiple test scenarios in YAML:
 
-# Example
-bash tests/e2e/qemu/qemu-disk-test.sh nvme-test-vm dist/bloom tests/e2e/test_case_1/bloom.yaml
+```bash
+# Run tests using a profile configuration
+bash tests/e2e/qemu/qemu-disk-test.sh <vm-name> <profile.yaml> <bloom-binary>
+
+# Example: 8-disk NVMe test
+bash tests/e2e/qemu/qemu-disk-test.sh nvme-test-vm tests/e2e/nvme_8_disks/profile.yaml ./cluster-bloom
 ```
 
-#### Multiple Test Configurations
+The profile.yaml defines:
+- VM hardware (CPUs, memory, root disk size)
+- Disk configuration (count, type, size, format)
+- Bloom test configurations to run sequentially
+
+#### Legacy Single Configuration (Still Supported)
 ```bash
-# Run multiple configurations sequentially
-bash tests/e2e/qemu/qemu-disk-test.sh nvme-test-vm dist/bloom \
-    tests/e2e/test_case_1/bloom.yaml \
-    tests/e2e/test_case_2/bloom.yaml
+# Run with a single bloom.yaml configuration
+bash tests/e2e/qemu/qemu-disk-test.sh <vm-name> <bloom.yaml> <bloom-binary>
+
+# Example
+bash tests/e2e/qemu/qemu-disk-test.sh nvme-test-vm tests/e2e/nvme_8_disks/first_bloom.yaml ./cluster-bloom
 ```
 
 ### What the QEMU Test Does
 
 1. **VM Setup**
-   - Creates a QEMU VM with 8 NVMe drives
-   - Uses Ubuntu 24.04 cloud image
-   - Configures cloud-init for SSH access
-   - Sets up UEFI boot with OVMF
+   - Creates a QEMU VM with configurable hardware (CPUs, memory, disks)
+   - Supports multiple disk types: NVMe, VirtIO, SCSI, IDE
+   - Uses Ubuntu 24.04 cloud image (cached at `~/ci/` for speed)
+   - Configures cloud-init for passwordless SSH access
+   - Sets up UEFI boot with OVMF firmware
 
 2. **Test Execution**
-   - Copies bloom binary to VM
-   - Runs bloom with provided configuration(s)
-   - Captures test results
-   - Outputs structured YAML results
+   - Copies bloom binary and configuration files to VM
+   - Runs bloom test command for each configuration in profile
+   - Captures structured test results in YAML format
+   - Preserves VM for debugging (cleanup is disabled by default)
 
-3. **Cleanup**
-   - Stops QEMU VM
-   - Preserves test results in `<vm-name>-test-results.yaml`
+3. **Results & Debugging**
+   - Test results saved to `<vm-name>-test-results.yaml`
+   - VM remains running for post-test inspection
+   - Access VM via: `cd <vm-name> && ./ssh-vm.sh`
+   - View logs: `tail -f <vm-name>/startup.log`
+   - Stop VM: `cd <vm-name> && ./stop-vm.sh`
 
 ### Test Results
 
@@ -122,12 +137,17 @@ Results include:
 
 ### CI/CD Integration
 
-The workflow in `.github/workflows/run-tests.yml` includes QEMU tests:
+Example workflow integration:
 
 ```yaml
-- name: QEMU Disk Test
+- name: Build Cluster-Bloom
+  run: go build -v .
+
+- name: Run QEMU E2E Tests
   run: |
-    bash tests/e2e/qemu/qemu-disk-test.sh nvme-test-vm dist/bloom tests/e2e/test_case_1/bloom.yaml
+    bash tests/e2e/qemu/qemu-disk-test.sh nvme-test-vm \
+      tests/e2e/nvme_8_disks/profile.yaml \
+      ./cluster-bloom
 
 - name: Check Test Results
   run: |
@@ -141,23 +161,54 @@ The workflow in `.github/workflows/run-tests.yml` includes QEMU tests:
 
 ## Creating New Test Cases
 
-1. Create a new directory under `tests/e2e/`:
+### Profile-Based Test Case
+
+1. Create a new test directory:
    ```bash
-   mkdir tests/e2e/test_case_2
+   mkdir tests/e2e/my_test_case
+   cd tests/e2e/my_test_case
    ```
 
-2. Add a `bloom.yaml` configuration:
+2. Create `profile.yaml` with VM hardware configuration:
    ```yaml
-   DOMAIN: test.local
+   # VM hardware configuration
+   cpus: 4
+   memory: 8G
+   root_disk_size: 50G
+
+   # Bloom configurations to run
+   bloom_configs:
+     - first_bloom.yaml
+     - second_bloom.yaml
+
+   # Disk configuration
+   disks:
+     - size: 10G
+       type: nvme
+       format: raw
+     - size: 10G
+       type: nvme
+       format: raw
+   ```
+
+3. Create bloom configuration files (`first_bloom.yaml`, etc.):
+   ```yaml
+   CLUSTERFORGE_RELEASE: none
+   DOMAIN: test.silogen.ai
    FIRST_NODE: true
    GPU_NODE: false
    CLUSTER_DISKS: /dev/nvme0n1,/dev/nvme1n1
+   NO_DISKS_FOR_CLUSTER: false
+   USE_CERT_MANAGER: false
    CERT_OPTION: generate
+   PRELOAD_IMAGES: ""
    ```
 
-3. Run the test:
+4. Run the test:
    ```bash
-   bash tests/e2e/qemu/qemu-disk-test.sh test-vm dist/bloom tests/e2e/test_case_2/bloom.yaml
+   bash tests/e2e/qemu/qemu-disk-test.sh my-vm \
+     tests/e2e/my_test_case/profile.yaml \
+     ./cluster-bloom
    ```
 
 ## Troubleshooting

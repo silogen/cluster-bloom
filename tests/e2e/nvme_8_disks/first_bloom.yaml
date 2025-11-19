@@ -6,3 +6,4 @@ CLUSTER_DISKS: /dev/nvme0n1,/dev/nvme1n1,/dev/nvme2n1,/dev/nvme3n1,/dev/nvme4n1,
 NO_DISKS_FOR_CLUSTER: false
 USE_CERT_MANAGER: false
 CERT_OPTION: generate
+PRELOAD_IMAGES: ""
