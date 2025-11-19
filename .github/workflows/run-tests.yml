@@ -31,7 +31,7 @@ jobs:
 
           # Run UI tests
           cd tests/ui
-          go test -v -run TestConfigBasedTests
+          devbox run go test -v -run TestConfigBasedTests
 
           # Cleanup
           docker stop chrome-test || true
