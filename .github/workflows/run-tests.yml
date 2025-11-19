@@ -26,7 +26,7 @@ jobs:
               --name chrome-test \
               -p 9222:9222 \
               -e "PORT=9222" \
-              browserless/chrome:latest \
+              browserless/chrome:latest
 
             # Wait for Chrome to be ready
             sleep 5
