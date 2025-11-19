@@ -34,12 +34,11 @@ jobs:
           fi
 
           # Run UI tests
-          cd tests/ui
-          devbox run go test -v -run TestConfigBasedTests
+          devbox run -- bash -c "cd tests/ui && go test -v -run TestConfigBasedTests"
 
       - name: QEMU Disk Test
         run: |
-          bash tests/e2e/qemu/qemu-disk-test.sh nvme-test-vm tests/e2e/test_case_1/profile.yaml dist/bloom
+          bash tests/e2e/qemu/qemu-disk-test.sh nvme-test-vm tests/e2e/nvme_8_disks/profile.yaml dist/bloom
 
       - name: Check Test Results
         run: |
