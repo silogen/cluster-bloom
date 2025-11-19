@@ -25,9 +25,8 @@ jobs:
             docker run -d --rm \
               --name chrome-test \
               --network host \
+              -e "PORT=9222" \
               browserless/chrome:latest \
-              --remote-debugging-address=0.0.0.0 \
-              --remote-debugging-port=9222
 
             # Wait for Chrome to be ready
             sleep 5
