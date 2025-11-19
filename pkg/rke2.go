@@ -93,6 +93,20 @@ func PrepareRKE2() error {
 		return err
 	}
 
+	extraConfig := viper.GetString("RKE2_EXTRA_CONFIG")
+	if extraConfig != "" {
+		file, err := os.OpenFile(rke2ConfigPath, os.O_APPEND|os.O_WRONLY, 0644)
+		if err != nil {
+			return fmt.Errorf("failed to open %s for appending extra config: %v", rke2ConfigPath, err)
+		}
+		defer file.Close()
+
+		if _, err := file.WriteString("\n" + extraConfig + "\n"); err != nil {
+			return fmt.Errorf("failed to append extra config to %s: %v", rke2ConfigPath, err)
+		}
+		LogMessage(Info, "Appended RKE2_EXTRA_CONFIG to config.yaml")
+	}
+
 	certPath := "/etc/rancher/rke2/oidc-ca.crt"
 	if _, err := os.Stat(certPath); err == nil {
 		if err := os.Remove(certPath); err != nil {
