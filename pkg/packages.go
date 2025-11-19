@@ -80,11 +80,11 @@ func CheckPackageInstallConnections() error {
 
 func InstallDependentPackages() error {
 	packagesToInstall := []string{
-		"open-iscsi",
-		"jq",
-		"nfs-common",
-		"chrony",
-		"curl",
+		"open-iscsi=2.1.5-1ubuntu1.1",
+		"jq=1.6-2.1ubuntu3.1",
+		"nfs-common=1:2.6.1-1ubuntu1.2",
+		"chrony=4.2-2ubuntu2",
+		"curl=7.81.0-1ubuntu1.21",
 	}
 
 	for _, pkg := range packagesToInstall {
