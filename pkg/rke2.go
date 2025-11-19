@@ -324,9 +324,9 @@ func PrepareRKE2() error {
 			return fmt.Errorf("failed to parse OIDC configuration: %w", err)
 		}
 		
-		// Validate OIDC URLs and fetch certificates
+		// Validate additional OIDC providers and fetch certificates
 		if len(oidcConfigs) > 0 {
-			if valid, err := validateOIDCURLs(oidcConfigs); !valid {
+			if valid, err := validateOIDCURLs(oidcConfigs, domain); !valid {
 				return fmt.Errorf("OIDC validation failed: %w", err)
 			}
 		}
@@ -585,10 +585,10 @@ kube-apiserver-arg:
 func parseOIDCConfiguration() ([]OIDCConfig, error) {
 	var oidcConfigs []OIDCConfig
 	
-	// Get OIDC_URLS from viper configuration
-	oidcURLsInterface := viper.Get("OIDC_URLS")
+	// Get ADDITIONAL_OIDC_PROVIDERS from viper configuration
+	oidcURLsInterface := viper.Get("ADDITIONAL_OIDC_PROVIDERS")
 	if oidcURLsInterface == nil {
-		LogMessage(Info, "No OIDC_URLS configured, using default configuration only")
+		LogMessage(Info, "No ADDITIONAL_OIDC_PROVIDERS configured, using default configuration only")
 		return oidcConfigs, nil
 	}
 	
@@ -616,23 +616,23 @@ func parseOIDCConfiguration() ([]OIDCConfig, error) {
 			}
 			
 			if !ok {
-				return nil, fmt.Errorf("OIDC_URLS[%d] must be an object with 'url' and 'audiences' fields", i)
+				return nil, fmt.Errorf("ADDITIONAL_OIDC_PROVIDERS[%d] must be an object with 'url' and 'audiences' fields", i)
 			}
 			
 			// Extract URL
 			urlInterface, exists := itemMap["url"]
 			if !exists {
-				return nil, fmt.Errorf("OIDC_URLS[%d] missing required 'url' field", i)
+				return nil, fmt.Errorf("ADDITIONAL_OIDC_PROVIDERS[%d] missing required 'url' field", i)
 			}
 			url, ok := urlInterface.(string)
 			if !ok {
-				return nil, fmt.Errorf("OIDC_URLS[%d].url must be a string", i)
+				return nil, fmt.Errorf("ADDITIONAL_OIDC_PROVIDERS[%d].url must be a string", i)
 			}
 			
 			// Extract audiences
 			audiencesInterface, exists := itemMap["audiences"]
 			if !exists {
-				return nil, fmt.Errorf("OIDC_URLS[%d] missing required 'audiences' field", i)
+				return nil, fmt.Errorf("ADDITIONAL_OIDC_PROVIDERS[%d] missing required 'audiences' field", i)
 			}
 			
 			var audiences []string
@@ -641,7 +641,7 @@ func parseOIDCConfiguration() ([]OIDCConfig, error) {
 				for j, audItem := range aud {
 					audStr, ok := audItem.(string)
 					if !ok {
-						return nil, fmt.Errorf("OIDC_URLS[%d].audiences[%d] must be a string", i, j)
+						return nil, fmt.Errorf("ADDITIONAL_OIDC_PROVIDERS[%d].audiences[%d] must be a string", i, j)
 					}
 					audiences = append(audiences, audStr)
 				}
@@ -649,11 +649,11 @@ func parseOIDCConfiguration() ([]OIDCConfig, error) {
 				// Single audience as string
 				audiences = append(audiences, aud)
 			default:
-				return nil, fmt.Errorf("OIDC_URLS[%d].audiences must be a string or array of strings", i)
+				return nil, fmt.Errorf("ADDITIONAL_OIDC_PROVIDERS[%d].audiences must be a string or array of strings", i)
 			}
 			
 			if len(audiences) == 0 {
-				return nil, fmt.Errorf("OIDC_URLS[%d] must have at least one audience", i)
+				return nil, fmt.Errorf("ADDITIONAL_OIDC_PROVIDERS[%d] must have at least one audience", i)
 			}
 			
 			oidcConfigs = append(oidcConfigs, OIDCConfig{
@@ -665,16 +665,16 @@ func parseOIDCConfiguration() ([]OIDCConfig, error) {
 		// Already parsed format (unlikely but handle it)
 		oidcConfigs = v
 	default:
-		return nil, fmt.Errorf("OIDC_URLS must be an array of objects")
+		return nil, fmt.Errorf("ADDITIONAL_OIDC_PROVIDERS must be an array of objects")
 	}
 	
 	// Validate configuration
 	for i, config := range oidcConfigs {
 		if config.URL == "" {
-			return nil, fmt.Errorf("OIDC_URLS[%d] URL cannot be empty", i)
+			return nil, fmt.Errorf("ADDITIONAL_OIDC_PROVIDERS[%d] URL cannot be empty", i)
 		}
 		if len(config.Audiences) == 0 {
-			return nil, fmt.Errorf("OIDC_URLS[%d] must have at least one audience", i)
+			return nil, fmt.Errorf("ADDITIONAL_OIDC_PROVIDERS[%d] must have at least one audience", i)
 		}
 	}
 	
@@ -682,28 +682,90 @@ func parseOIDCConfiguration() ([]OIDCConfig, error) {
 	return oidcConfigs, nil
 }
 
-func validateOIDCURLs(oidcConfigs []OIDCConfig) (bool, error) {
+func validateOIDCURLs(oidcConfigs []OIDCConfig, domain string) (bool, error) {
 	if len(oidcConfigs) == 0 {
-		LogMessage(Info, "No OIDC URLs to validate")
+		LogMessage(Info, "No additional OIDC providers to validate")
 		return true, nil
 	}
 	
 	LogMessage(Info, fmt.Sprintf("Validating %d OIDC provider URLs", len(oidcConfigs)))
 	
+	// Build expected same-domain hostname pattern
+	expectedHostname := fmt.Sprintf("kc.%s", domain)
+	
 	for i, config := range oidcConfigs {
 		LogMessage(Info, fmt.Sprintf("Validating OIDC URL [%d]: %s", i, config.URL))
 		
-		// Call the modified FetchAndSaveOIDCCertificate with index
-		if err := FetchAndSaveOIDCCertificate(config.URL, i); err != nil {
-			LogMessage(Error, fmt.Sprintf("Failed to validate OIDC URL [%d] %s: %v", i, config.URL, err))
-			return false, fmt.Errorf("OIDC URL %s is not reachable or has certificate issues: %w", config.URL, err)
+		// Check if this provider uses the same domain as the default
+		if isSameDomainProvider(config.URL, expectedHostname) {
+			LogMessage(Info, fmt.Sprintf("OIDC URL [%d] uses same domain as default (%s), skipping reachability check and using domain certificate", i, expectedHostname))
+			
+			// Copy domain certificate instead of fetching
+			if err := copyDomainCertificateForOIDC(i); err != nil {
+				LogMessage(Error, fmt.Sprintf("Failed to copy domain certificate for OIDC provider [%d]: %v", i, err))
+				return false, fmt.Errorf("Failed to copy domain certificate for same-domain OIDC provider %s: %w", config.URL, err)
+			}
+		} else {
+			// Different domain - do reachability check and fetch certificate
+			if err := FetchAndSaveOIDCCertificate(config.URL, i); err != nil {
+				LogMessage(Error, fmt.Sprintf("Failed to validate OIDC URL [%d] %s: %v", i, config.URL, err))
+				return false, fmt.Errorf("OIDC URL %s is not reachable or has certificate issues: %w", config.URL, err)
+			}
 		}
 		
 		LogMessage(Info, fmt.Sprintf("Successfully validated OIDC URL [%d]: %s", i, config.URL))
 	}
 	
-	LogMessage(Info, "All OIDC URLs validated successfully")
+	LogMessage(Info, "All additional OIDC providers validated successfully")
 	return true, nil
+}
+
+func isSameDomainProvider(providerURL, expectedHostname string) bool {
+	// Extract hostname from provider URL
+	var hostname string
+	if strings.HasPrefix(providerURL, "https://") {
+		// Remove https:// prefix
+		hostname = strings.TrimPrefix(providerURL, "https://")
+		// Remove path if present (e.g., "/realms/admin")
+		if slashIndex := strings.Index(hostname, "/"); slashIndex != -1 {
+			hostname = hostname[:slashIndex]
+		}
+	} else if strings.HasPrefix(providerURL, "http://") {
+		// Remove http:// prefix (though this shouldn't be used for OIDC)
+		hostname = strings.TrimPrefix(providerURL, "http://")
+		if slashIndex := strings.Index(hostname, "/"); slashIndex != -1 {
+			hostname = hostname[:slashIndex]
+		}
+	} else {
+		// Assume it's just a hostname
+		hostname = providerURL
+		if slashIndex := strings.Index(hostname, "/"); slashIndex != -1 {
+			hostname = hostname[:slashIndex]
+		}
+	}
+	
+	// Compare with expected hostname
+	return hostname == expectedHostname
+}
+
+func copyDomainCertificateForOIDC(index int) error {
+	oidcCertDir := "/etc/rancher/rke2/certs"
+	domainCertPath := filepath.Join(oidcCertDir, "tls.crt")
+	oidcCertPath := filepath.Join(oidcCertDir, fmt.Sprintf("oidc-provider-%d.crt", index))
+	
+	// Read domain certificate
+	domainCertData, err := os.ReadFile(domainCertPath)
+	if err != nil {
+		return fmt.Errorf("failed to read domain certificate from %s: %w", domainCertPath, err)
+	}
+	
+	// Write as OIDC provider certificate
+	if err := os.WriteFile(oidcCertPath, domainCertData, 0644); err != nil {
+		return fmt.Errorf("failed to write OIDC certificate to %s: %w", oidcCertPath, err)
+	}
+	
+	LogMessage(Info, fmt.Sprintf("Successfully copied domain certificate to %s for same-domain OIDC provider", oidcCertPath))
+	return nil
 }
 
 func createDynamicAuthConfig(domain string, oidcConfigs []OIDCConfig) error {
