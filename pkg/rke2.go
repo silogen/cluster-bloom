@@ -148,6 +148,7 @@ jwt:
 {{.Certificate}}
     audiences:
 {{range .Audiences}}    - {{.}}
+{{end}}{{if gt (len .Audiences) 1}}    audienceMatchPolicy: MatchAny
 {{end}}  claimMappings:
     username:
       claim: preferred_username
