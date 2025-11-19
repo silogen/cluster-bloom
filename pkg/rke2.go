@@ -587,7 +587,24 @@ func parseOIDCConfiguration() ([]OIDCConfig, error) {
 	case []interface{}:
 		// YAML array format
 		for i, item := range v {
-			itemMap, ok := item.(map[interface{}]interface{})
+			// Try both map[string]interface{} and map[interface{}]interface{}
+			var itemMap map[string]interface{}
+			var ok bool
+			
+			if mapStringInterface, isStringMap := item.(map[string]interface{}); isStringMap {
+				itemMap = mapStringInterface
+				ok = true
+			} else if mapInterfaceInterface, isInterfaceMap := item.(map[interface{}]interface{}); isInterfaceMap {
+				// Convert map[interface{}]interface{} to map[string]interface{}
+				itemMap = make(map[string]interface{})
+				for k, v := range mapInterfaceInterface {
+					if keyStr, keyOk := k.(string); keyOk {
+						itemMap[keyStr] = v
+					}
+				}
+				ok = true
+			}
+			
 			if !ok {
 				return nil, fmt.Errorf("OIDC_URLS[%d] must be an object with 'url' and 'audiences' fields", i)
 			}
