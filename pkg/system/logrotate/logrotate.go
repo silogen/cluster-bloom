@@ -249,6 +249,11 @@ func setupCronJob() error {
 
 	log.Info("Cron job created/updated at ", cronFilePath)
 
+	// Ensure cron service is running and enabled
+	if err := ensureCronServiceRunning(); err != nil {
+		return fmt.Errorf("failed to ensure cron service is running: %w", err)
+	}
+
 	return ensureCronLogFile()
 }
 
@@ -285,6 +290,42 @@ func applyConfigs(configs []logrotateConfig) error {
 		} else {
 			log.Infof("✓ Successfully validated logrotate config: %s", cfg.destPath)
 		}
+	}
+
+	return nil
+}
+
+func ensureCronServiceRunning() error {
+	// Check if cron service is active
+	statusCmd := exec.Command("sudo", "systemctl", "is-active", "cron")
+	output, err := statusCmd.CombinedOutput()
+	isActive := err == nil && strings.TrimSpace(string(output)) == "active"
+
+	if !isActive {
+		log.Info("Cron service is not running, starting it...")
+		startCmd := exec.Command("sudo", "systemctl", "start", "cron")
+		if err := startCmd.Run(); err != nil {
+			return fmt.Errorf("failed to start cron service: %w", err)
+		}
+		log.Info("Cron service started successfully")
+	} else {
+		log.Debug("Cron service is already running")
+	}
+
+	// Check if cron service is enabled (persists across reboots)
+	enabledCmd := exec.Command("sudo", "systemctl", "is-enabled", "cron")
+	output, err = enabledCmd.CombinedOutput()
+	isEnabled := err == nil && strings.TrimSpace(string(output)) == "enabled"
+
+	if !isEnabled {
+		log.Info("Enabling cron service to persist across reboots...")
+		enableCmd := exec.Command("sudo", "systemctl", "enable", "cron")
+		if err := enableCmd.Run(); err != nil {
+			return fmt.Errorf("failed to enable cron service: %w", err)
+		}
+		log.Info("Cron service enabled successfully")
+	} else {
+		log.Debug("Cron service is already enabled")
 	}
 
 	return nil
