@@ -183,3 +183,29 @@ func ReadFile(mockID string, filename string) ([]byte, error) {
 	log.Infof("mockablecmd.ReadFile: no mock found for %q, reading real file: %s", mockID, filename)
 	return os.ReadFile(filename)
 }
+
+// Stat checks if a file exists and returns its info
+// mockID is a string identifier for mocking purposes (e.g., "AddRootDeviceToConfig.StatConfigFile")
+func Stat(mockID string, filename string) (os.FileInfo, error) {
+	log.Infof("mockablecmd.Stat: mockID=%q, filename=%q", mockID, filename)
+
+	// Normalize mockID to lowercase for case-insensitive lookup
+	mockIDLower := strings.ToLower(mockID)
+
+	// Check if mock exists for this ID
+	if mock, exists := mocks[mockIDLower]; exists {
+		log.Infof("mockablecmd.Stat: using mock for %q (normalized to %q)", mockID, mockIDLower)
+
+		if mock.Error != "" {
+			log.Infof("mockablecmd.Stat: returning mocked error for %q: %s", mockID, mock.Error)
+			return nil, fmt.Errorf("%s", mock.Error)
+		}
+		log.Infof("mockablecmd.Stat: returning success (file exists) for %q", mockID)
+		// Return nil FileInfo but no error to indicate file exists
+		return nil, nil
+	}
+
+	// No mock found, stat the actual file
+	log.Infof("mockablecmd.Stat: no mock found for %q, checking real file: %s", mockID, filename)
+	return os.Stat(filename)
+}

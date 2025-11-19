@@ -1,0 +1,25 @@
+DOMAIN: autodetect-mixed.local
+FIRST_NODE: true
+GPU_NODE: false
+CERT_OPTION: generate
+
+mocks:
+  addrootdevicetoconfig.statconfigfile:
+    error: "no such file or directory"
+  getunmountedphysicaldisks.listblockdevices:
+    output: |
+      nvme0n1 disk
+      sda disk
+      sdb disk
+  getunmountedphysicaldisks.checkmount.nvme0n1:
+    output: ""
+  getunmountedphysicaldisks.checkmount.sda:
+    output: ""
+  getunmountedphysicaldisks.checkmount.sdb:
+    output: "/mnt/data"
+  getunmountedphysicaldisks.udevinfo.sda:
+    output: |
+      ID_BUS=scsi
+      ID_MODEL=Samsung_SSD_870
+
+expected_cluster_disks: "/dev/nvme0n1,/dev/sda"

@@ -31,6 +31,8 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v2"
+
+	"github.com/silogen/cluster-bloom/pkg/mockablecmd"
 )
 
 //go:embed templates/*
@@ -46,20 +48,20 @@ const (
 )
 
 type WebHandlerService struct {
-	monitor              *WebMonitor
-	configMode           bool
-	config               map[string]interface{}
-	lastError            string
-	errorType            ErrorType
-	configVersion        int
-	prefilledConfig      map[string]interface{}
-	oneShot              bool
-	validationFailed     bool
-	validationErrors     []string
-	steps                []Step
-	startInstallation    func() error
-	shouldStartInstall   bool
-	configSavedOnly      bool
+	monitor            *WebMonitor
+	configMode         bool
+	config             map[string]interface{}
+	lastError          string
+	errorType          ErrorType
+	configVersion      int
+	prefilledConfig    map[string]interface{}
+	oneShot            bool
+	validationFailed   bool
+	validationErrors   []string
+	steps              []Step
+	startInstallation  func() error
+	shouldStartInstall bool
+	configSavedOnly    bool
 }
 
 func NewWebHandlerService(monitor *WebMonitor) *WebHandlerService {
@@ -81,6 +83,10 @@ func NewWebHandlerService(monitor *WebMonitor) *WebHandlerService {
 func (h *WebHandlerService) SetInstallationHandler(steps []Step, startCallback func() error) {
 	h.steps = steps
 	h.startInstallation = startCallback
+}
+
+func (h *WebHandlerService) GetPrefilledConfig() map[string]interface{} {
+	return h.prefilledConfig
 }
 
 func NewWebHandlerServiceConfig() *WebHandlerService {
@@ -142,6 +148,25 @@ func (h *WebHandlerService) AddRootDeviceToConfig() {
 		LogMessage(Error, fmt.Sprintf("error trying to get disk where root partition is: %v", err))
 	} else {
 		h.prefilledConfig["root_device"] = rootDisk
+	}
+
+	// Auto-detect unmounted physical disks and pre-fill CLUSTER_DISKS
+	// Only do this if no config file was provided or it doesn't exist
+	configFile := viper.ConfigFileUsed()
+	configFileExists := false
+	if configFile != "" {
+		if _, err := mockablecmd.Stat("AddRootDeviceToConfig.StatConfigFile", configFile); err == nil {
+			configFileExists = true
+		}
+	}
+	if !configFileExists {
+		unmountedDisks, err := GetUnmountedPhysicalDisks()
+		if err != nil {
+			LogMessage(Error, fmt.Sprintf("error trying to detect unmounted disks: %v", err))
+		} else if len(unmountedDisks) > 0 {
+			h.prefilledConfig["cluster_disks"] = strings.Join(unmountedDisks, ",")
+			LogMessage(Info, fmt.Sprintf("Auto-detected %d unmounted disk(s) for cluster use: %s", len(unmountedDisks), strings.Join(unmountedDisks, ",")))
+		}
 	}
 }
 
@@ -310,12 +335,20 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	_, longhornPreviousDisks, err := GetDisksFromSelectedConfig(h.prefilledConfig["cluster_disks"].(string))
+	clusterDisksStr, ok := h.prefilledConfig["cluster_disks"].(string)
+	if !ok {
+		clusterDisksStr = ""
+	}
+	_, longhornPreviousDisks, err := GetDisksFromSelectedConfig(clusterDisksStr)
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Error getting prior Longhorn previous format targets: %v", err))
 	}
 
-	_, longhornPreviousMountpoints, err := GetDisksFromLonghornConfig(h.prefilledConfig["cluster_premounted_disks"].(string))
+	clusterPremountedDisksStr, ok := h.prefilledConfig["cluster_premounted_disks"].(string)
+	if !ok {
+		clusterPremountedDisksStr = ""
+	}
+	_, longhornPreviousMountpoints, err := GetDisksFromLonghornConfig(clusterPremountedDisksStr)
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Error getting prior Longhorn mount points: %v", err))
 	}
