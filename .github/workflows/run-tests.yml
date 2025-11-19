@@ -20,21 +20,22 @@ jobs:
 
       - name: Run UI tests
         run: |
-          # Start Chrome in Docker container with remote debugging
-          docker run -d --rm \
-            --name chrome-test \
-            -p 9222:3000 \
-            browserless/chrome:latest
+          # Start Chrome if not already running
+          if ! docker ps --format '{{.Names}}' | grep -q '^chrome-test$'; then
+            docker run -d --rm \
+              --name chrome-test \
+              -p 9222:3000 \
+              browserless/chrome:latest
 
-          # Wait for Chrome to be ready
-          sleep 5
+            # Wait for Chrome to be ready
+            sleep 5
+          else
+            echo "Chrome container already running"
+          fi
 
           # Run UI tests
           cd tests/ui
           devbox run go test -v -run TestConfigBasedTests
-
-          # Cleanup
-          docker stop chrome-test || true
 
       - name: QEMU Disk Test
         run: |
