@@ -308,6 +308,16 @@ func PrepareRKE2() error {
 		viper.Set("RUNTIME_TLS_CERT", tlsCertPath)
 		viper.Set("RUNTIME_TLS_KEY", tlsKeyPath)
 		
+		// Clean up old OIDC provider certificates before processing new configuration
+		oidcCertDir := "/etc/rancher/rke2/certs"
+		if files, err := filepath.Glob(filepath.Join(oidcCertDir, "oidc-provider-*.crt")); err == nil {
+			for _, file := range files {
+				if err := os.Remove(file); err == nil {
+					LogMessage(Info, fmt.Sprintf("Removed old OIDC certificate: %s", filepath.Base(file)))
+				}
+			}
+		}
+		
 		// Parse OIDC_URLS configuration
 		oidcConfigs, err := parseOIDCConfiguration()
 		if err != nil {
