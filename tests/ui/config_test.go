@@ -187,7 +187,7 @@ func runConfigTest(t *testing.T, testCaseFile string) {
 	time.Sleep(500 * time.Millisecond)
 
 	// Create browser context
-	ctx, cancel := chromedp.NewRemoteAllocator(context.Background(), "ws://127.0.0.1:9222")
+	ctx, cancel := chromedp.NewRemoteAllocator(context.Background(), "http://127.0.0.1:9222")
 	defer cancel()
 
 	ctx, cancel = chromedp.NewContext(ctx)
