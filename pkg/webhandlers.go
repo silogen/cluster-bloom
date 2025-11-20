@@ -165,7 +165,7 @@ func (h *WebHandlerService) AddRootDeviceToConfig() {
 			LogMessage(Error, fmt.Sprintf("error trying to detect unmounted disks: %v", err))
 		} else if len(unmountedDisks) > 0 {
 			h.prefilledConfig["cluster_disks"] = strings.Join(unmountedDisks, ",")
-			LogMessage(Info, fmt.Sprintf("Auto-detected %d unmounted disk(s) for cluster use: %s", len(unmountedDisks), strings.Join(unmountedDisks, ",")))
+			LogMessage(Debug, fmt.Sprintf("Auto-detected %d unmounted disk(s) for cluster use: %s", len(unmountedDisks), strings.Join(unmountedDisks, ",")))
 		}
 	}
 }

@@ -93,14 +93,14 @@ func Run(mockID string, name string, args ...string) ([]byte, error) {
 	if len(args) > 0 {
 		cmdString = fmt.Sprintf("%s %s", name, strings.Join(args, " "))
 	}
-	log.Infof("mockablecmd.Run: mockID=%q, cmd=%q", mockID, cmdString)
+	log.Debugf("mockablecmd.Run: mockID=%q, cmd=%q", mockID, cmdString)
 
 	// Normalize mockID to lowercase for case-insensitive lookup (viper lowercases keys)
 	mockIDLower := strings.ToLower(mockID)
 
 	// Check if mock exists for this ID
 	if mock, exists := mocks[mockIDLower]; exists {
-		log.Infof("mockablecmd.Run: using mock for %q (normalized to %q)", mockID, mockIDLower)
+		log.Debugf("mockablecmd.Run: using mock for %q (normalized to %q)", mockID, mockIDLower)
 
 		// Validate args if specified in mock
 		if len(mock.Args) > 0 {
@@ -111,15 +111,15 @@ func Run(mockID string, name string, args ...string) ([]byte, error) {
 		}
 
 		if mock.Error != "" {
-			log.Infof("mockablecmd.Run: returning mocked error for %q: %s", mockID, mock.Error)
+			log.Debugf("mockablecmd.Run: returning mocked error for %q: %s", mockID, mock.Error)
 			return []byte(mock.Output), fmt.Errorf("%s", mock.Error)
 		}
-		log.Infof("mockablecmd.Run: returning mocked output for %q", mockID)
+		log.Debugf("mockablecmd.Run: returning mocked output for %q", mockID)
 		return []byte(mock.Output), nil
 	}
 
 	// No mock found, execute the actual command
-	log.Infof("mockablecmd.Run: no mock found for %q, executing real command: %s", mockID, cmdString)
+	log.Debugf("mockablecmd.Run: no mock found for %q, executing real command: %s", mockID, cmdString)
 	cmd := exec.Command(name, args...)
 	return cmd.Output()
 }
@@ -162,50 +162,50 @@ func validateArgs(expectedArgs []interface{}, actualName string, actualArgs []st
 // ReadFile reads a file and returns its contents
 // mockID is a string identifier for mocking purposes (e.g., "PrepareLonghornDisksStep.ReadFstab")
 func ReadFile(mockID string, filename string) ([]byte, error) {
-	log.Infof("mockablecmd.ReadFile: mockID=%q, filename=%q", mockID, filename)
+	log.Debugf("mockablecmd.ReadFile: mockID=%q, filename=%q", mockID, filename)
 
 	// Normalize mockID to lowercase for case-insensitive lookup
 	mockIDLower := strings.ToLower(mockID)
 
 	// Check if mock exists for this ID
 	if mock, exists := mocks[mockIDLower]; exists {
-		log.Infof("mockablecmd.ReadFile: using mock for %q (normalized to %q)", mockID, mockIDLower)
+		log.Debugf("mockablecmd.ReadFile: using mock for %q (normalized to %q)", mockID, mockIDLower)
 
 		if mock.Error != "" {
-			log.Infof("mockablecmd.ReadFile: returning mocked error for %q: %s", mockID, mock.Error)
+			log.Debugf("mockablecmd.ReadFile: returning mocked error for %q: %s", mockID, mock.Error)
 			return []byte(mock.Output), fmt.Errorf("%s", mock.Error)
 		}
-		log.Infof("mockablecmd.ReadFile: returning mocked output for %q", mockID)
+		log.Debugf("mockablecmd.ReadFile: returning mocked output for %q", mockID)
 		return []byte(mock.Output), nil
 	}
 
 	// No mock found, read the actual file
-	log.Infof("mockablecmd.ReadFile: no mock found for %q, reading real file: %s", mockID, filename)
+	log.Debugf("mockablecmd.ReadFile: no mock found for %q, reading real file: %s", mockID, filename)
 	return os.ReadFile(filename)
 }
 
 // Stat checks if a file exists and returns its info
 // mockID is a string identifier for mocking purposes (e.g., "AddRootDeviceToConfig.StatConfigFile")
 func Stat(mockID string, filename string) (os.FileInfo, error) {
-	log.Infof("mockablecmd.Stat: mockID=%q, filename=%q", mockID, filename)
+	log.Debugf("mockablecmd.Stat: mockID=%q, filename=%q", mockID, filename)
 
 	// Normalize mockID to lowercase for case-insensitive lookup
 	mockIDLower := strings.ToLower(mockID)
 
 	// Check if mock exists for this ID
 	if mock, exists := mocks[mockIDLower]; exists {
-		log.Infof("mockablecmd.Stat: using mock for %q (normalized to %q)", mockID, mockIDLower)
+		log.Debugf("mockablecmd.Stat: using mock for %q (normalized to %q)", mockID, mockIDLower)
 
 		if mock.Error != "" {
-			log.Infof("mockablecmd.Stat: returning mocked error for %q: %s", mockID, mock.Error)
+			log.Debugf("mockablecmd.Stat: returning mocked error for %q: %s", mockID, mock.Error)
 			return nil, fmt.Errorf("%s", mock.Error)
 		}
-		log.Infof("mockablecmd.Stat: returning success (file exists) for %q", mockID)
+		log.Debugf("mockablecmd.Stat: returning success (file exists) for %q", mockID)
 		// Return nil FileInfo but no error to indicate file exists
 		return nil, nil
 	}
 
 	// No mock found, stat the actual file
-	log.Infof("mockablecmd.Stat: no mock found for %q, checking real file: %s", mockID, filename)
+	log.Debugf("mockablecmd.Stat: no mock found for %q, checking real file: %s", mockID, filename)
 	return os.Stat(filename)
 }

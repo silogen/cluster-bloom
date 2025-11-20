@@ -285,12 +285,13 @@ func GetUnmountedPhysicalDisks() ([]string, error) {
 		}
 		devPath := "/dev/" + name
 
-		// Check if disk is mounted
+		// Check if disk is mounted or used as swap
 		mountOut, err := mockablecmd.Run(fmt.Sprintf("GetUnmountedPhysicalDisks.CheckMount.%s", name), "lsblk", "-no", "MOUNTPOINT", devPath)
 		if err != nil {
 			continue
 		}
-		if strings.Contains(string(mountOut), "/") {
+		mountStr := string(mountOut)
+		if strings.Contains(mountStr, "/") || strings.Contains(mountStr, "[SWAP]") {
 			continue
 		}
 

@@ -183,9 +183,6 @@ func runConfigTest(t *testing.T, testCaseFile string) {
 	go server.ListenAndServe()
 	defer server.Close()
 
-	// Wait for server to start
-	time.Sleep(500 * time.Millisecond)
-
 	// Create browser context
 	ctx, cancel := chromedp.NewRemoteAllocator(context.Background(), "http://127.0.0.1:9222")
 	defer cancel()
@@ -200,7 +197,6 @@ func runConfigTest(t *testing.T, testCaseFile string) {
 	actions := chromedp.Tasks{
 		chromedp.Navigate(url),
 		chromedp.WaitVisible(`#config-form`, chromedp.ByID),
-		chromedp.Sleep(500 * time.Millisecond),
 	}
 
 	// Fill in fields from test case
@@ -232,7 +228,6 @@ func runConfigTest(t *testing.T, testCaseFile string) {
 	// Add save button click
 	actions = append(actions,
 		chromedp.Click(`button.btn-secondary:nth-of-type(2)`, chromedp.ByQuery),
-		chromedp.Sleep(3*time.Second),
 	)
 
 	// Run browser automation

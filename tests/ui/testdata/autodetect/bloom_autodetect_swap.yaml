@@ -1,0 +1,31 @@
+DOMAIN: autodetect-swap.local
+FIRST_NODE: true
+GPU_NODE: false
+CERT_OPTION: generate
+
+mocks:
+  addrootdevicetoconfig.statconfigfile:
+    error: "no such file or directory"
+  getunmountedphysicaldisks.listblockdevices:
+    output: |
+      nvme0n1 disk
+      sda disk
+      sdb disk
+  getunmountedphysicaldisks.checkmount.nvme0n1:
+    output: ""
+  getunmountedphysicaldisks.checkmount.sda:
+    output: ""
+  getunmountedphysicaldisks.checkmount.sdb:
+    output: "[SWAP]"
+  getunmountedphysicaldisks.udevinfo.sda:
+    output: |
+      ID_BUS=scsi
+      ID_MODEL=Samsung_SSD_870
+  getunmountedphysicaldisks.udevinfo.sdb:
+    output: |
+      ID_BUS=scsi
+      ID_MODEL=WD_Blue_1TB
+
+# sdb is used for swap, so it should be excluded
+# Expected: only nvme0n1 and sda should be detected
+expected_cluster_disks: "/dev/nvme0n1,/dev/sda"
