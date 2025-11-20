@@ -387,14 +387,14 @@ echo ""
 echo "Test execution completed"
 echo "Results saved to: test-results.yaml"
 
-# # Clean up VM
-# echo ""
-# echo "Cleaning up VM..."
-# bash "$VM_NAME/stop-vm.sh" || killall qemu-system-x86_64 2>/dev/null || true
-# sleep 2
+# Clean up VM
+echo ""
+echo "Cleaning up VM..."
+bash "$VM_NAME/stop-vm.sh" || killall qemu-system-x86_64 2>/dev/null || true
+sleep 2
 
-# echo "Removing $VM_NAME directory..."
-# rm -rf "$VM_NAME"
+echo "Removing $VM_NAME directory..."
+rm -rf "$VM_NAME"
 
-# echo ""
-# echo "✓ VM deleted and cleaned up"
+echo ""
+echo "✓ VM deleted and cleaned up"

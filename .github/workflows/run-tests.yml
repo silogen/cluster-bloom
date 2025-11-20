@@ -13,10 +13,10 @@ jobs:
         run: devbox run build
 
       - name: Run unit tests
-        run: devbox run  go test -v ./pkg
+        run: devbox run go test -v ./pkg/...
 
-      - name: Run step integration tests
-        run: dist/bloom test tests/integration/step/*/*/bloom.yaml
+      - name: Run integration tests
+        run: devbox run go test -v ./tests/integration
 
       - name: Run UI tests
         run: |
@@ -35,7 +35,7 @@ jobs:
           fi
 
           # Run UI tests
-          devbox run -- bash -c "cd tests/ui && go test -v -run TestConfigBasedTests"
+          devbox run go test -v ./tests/ui
 
       - name: QEMU Disk Test
         run: |
