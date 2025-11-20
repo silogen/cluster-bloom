@@ -27,6 +27,8 @@ import (
 	"time"
 
 	"github.com/silogen/cluster-bloom/pkg/args"
+	"github.com/silogen/cluster-bloom/pkg/system/logrotate"
+	"github.com/silogen/cluster-bloom/pkg/system/rsyslog"
 	"github.com/silogen/cluster-bloom/pkg/sysvalidation"
 	"github.com/spf13/viper"
 )
@@ -383,7 +385,7 @@ var PrepareLonghornDisksStep = Step{
 				if err := os.Rename(longhornConfigPath, backupPath); err != nil {
 					LogMessage(Warn, fmt.Sprintf("Failed to backup longhorn-disk.cfg: %v", err))
 				} else {
-					LogMessage(Info, fmt.Sprintf("Backed up and removed longhorn-disk.cfg"))
+					LogMessage(Info, "Backed up and removed longhorn-disk.cfg")
 				}
 			}
 
@@ -394,7 +396,7 @@ var PrepareLonghornDisksStep = Step{
 				if err := os.Rename(replicasPath, backupPath); err != nil {
 					LogMessage(Warn, fmt.Sprintf("Failed to backup replicas directory: %v", err))
 				} else {
-					LogMessage(Info, fmt.Sprintf("Backed up and removed replicas directory"))
+					LogMessage(Info, "Backed up and removed replicas directory")
 				}
 			}
 		}
@@ -508,6 +510,36 @@ var SetupLonghornStep = Step{
 			return StepResult{Error: nil}
 		}
 		return StepResult{Error: nil}
+	},
+}
+
+var ConfigLogrotateStep = Step{
+	Id:          "ConfigLogrotateStep",
+	Name:        "Configure logrotate",
+	Description: "Configure logrotate with aggressive, size-based rotation settings",
+	Action: func() StepResult {
+		err := logrotate.Configure()
+		if err != nil {
+			LogMessage(Error, fmt.Sprintf("Failed to configure logrotate: %v", err))
+		} else {
+			LogMessage(Info, "logrotate configuration applied (/etc/logrotate.d/iscsi-aggressive.conf)")
+		}
+		return StepResult{Error: err}
+	},
+}
+
+var ConfigRsyslogStep = Step{
+	Id:          "ConfigRsyslogStep",
+	Name:        "Configure rsyslog rate limiting",
+	Description: "Configure rsyslog rate limiting to prevent possible iSCSI log flooding",
+	Action: func() StepResult {
+		err := rsyslog.Configure()
+		if err != nil {
+			LogMessage(Error, fmt.Sprintf("Failed to configure rsyslog: %v", err))
+		} else {
+			LogMessage(Info, "rsyslog configured successfully")
+		}
+		return StepResult{Error: err}
 	},
 }
 
