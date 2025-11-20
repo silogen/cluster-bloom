@@ -24,7 +24,7 @@ jobs:
           if ! docker ps --format '{{.Names}}' | grep -q '^chrome-test$'; then
             docker run -d --rm \
               --name chrome-test \
-              -p 9222:9222 \
+              --net=host \
               -e "PORT=9222" \
               browserless/chrome:latest
 
