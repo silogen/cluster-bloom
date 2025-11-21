@@ -1,7 +1,8 @@
-DOMAIN: autodetect-nodisks.local
-FIRST_NODE: true
-GPU_NODE: false
-CERT_OPTION: generate
+input:
+  DOMAIN: autodetect-nodisks.local
+  FIRST_NODE: true
+  GPU_NODE: false
+  CERT_OPTION: generate
 
 mocks:
   addrootdevicetoconfig.statconfigfile:
@@ -12,4 +13,9 @@ mocks:
   getunmountedphysicaldisks.checkmount.sda:
     output: "/"
 
-expected_cluster_disks: ""
+output:
+  DOMAIN: autodetect-nodisks.local
+  FIRST_NODE: true
+  GPU_NODE: false
+  CERT_OPTION: generate
+  CLUSTER_DISKS: ""

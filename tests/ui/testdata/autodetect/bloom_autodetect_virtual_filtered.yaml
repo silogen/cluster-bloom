@@ -1,7 +1,8 @@
-DOMAIN: autodetect-virtual.local
-FIRST_NODE: true
-GPU_NODE: false
-CERT_OPTION: generate
+input:
+  DOMAIN: autodetect-virtual.local
+  FIRST_NODE: true
+  GPU_NODE: false
+  CERT_OPTION: generate
 
 mocks:
   addrootdevicetoconfig.statconfigfile:
@@ -24,4 +25,9 @@ mocks:
       ID_BUS=scsi
       ID_MODEL=Samsung_SSD_870
 
-expected_cluster_disks: "/dev/sdb"
+output:
+  DOMAIN: autodetect-virtual.local
+  FIRST_NODE: true
+  GPU_NODE: false
+  CERT_OPTION: generate
+  CLUSTER_DISKS: "/dev/sdb"

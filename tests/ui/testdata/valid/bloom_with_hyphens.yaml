@@ -1,5 +1,6 @@
-DOMAIN: test-123.example-domain.com
-CLUSTER_DISKS: /dev/sdb
-CERT_OPTION: generate
-FIRST_NODE: true
-GPU_NODE: false
+input:
+  DOMAIN: test-123.example-domain.com
+  CLUSTER_DISKS: /dev/sdb
+  CERT_OPTION: generate
+  FIRST_NODE: true
+  GPU_NODE: false

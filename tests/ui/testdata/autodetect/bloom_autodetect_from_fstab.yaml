@@ -1,7 +1,8 @@
-DOMAIN: autodetect-fstab.local
-FIRST_NODE: true
-GPU_NODE: false
-CERT_OPTION: generate
+input:
+  DOMAIN: autodetect-fstab.local
+  FIRST_NODE: true
+  GPU_NODE: false
+  CERT_OPTION: generate
 
 mocks:
   addrootdevicetoconfig.statconfigfile:
@@ -20,5 +21,9 @@ mocks:
     output: "/dev/nvme1n1"
     args: ["blkid", "-U", "ghi-789"]
 
-# Should detect disks from fstab, NOT run GetUnmountedPhysicalDisks
-expected_cluster_disks: "/dev/nvme0n1,/dev/nvme1n1"
+output:
+  DOMAIN: autodetect-fstab.local
+  FIRST_NODE: true
+  GPU_NODE: false
+  CERT_OPTION: generate
+  CLUSTER_DISKS: "/dev/nvme0n1,/dev/nvme1n1"

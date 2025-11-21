@@ -36,18 +36,56 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-// TestConfig represents a test case configuration
+// TestConfig represents a test case configuration (new format)
 type TestConfig struct {
-	Domain                 string `yaml:"DOMAIN"`
-	ClusterDisks           string `yaml:"CLUSTER_DISKS"`
-	CertOption             string `yaml:"CERT_OPTION"`
-	FirstNode              bool   `yaml:"FIRST_NODE"`
-	GPUNode                bool   `yaml:"GPU_NODE"`
-	ServerIP               string `yaml:"SERVER_IP,omitempty"`
-	JoinToken              string `yaml:"JOIN_TOKEN,omitempty"`
-	ClusterPremountedDisks string `yaml:"CLUSTER_PREMOUNTED_DISKS,omitempty"`
-	ExpectedError          string `yaml:"expected_error,omitempty"`
-	ExpectedClusterDisks   string `yaml:"expected_cluster_disks,omitempty"`
+	Input  map[string]interface{} `yaml:"input"`
+	Mocks  map[string]interface{} `yaml:"mocks,omitempty"`
+	Output map[string]interface{} `yaml:"output,omitempty"`
+}
+
+// Helper methods to extract values from the new format
+func (tc *TestConfig) GetInputString(key string) string {
+	if v, ok := tc.Input[key].(string); ok {
+		return v
+	}
+	return ""
+}
+
+func (tc *TestConfig) GetInputBool(key string) bool {
+	if v, ok := tc.Input[key].(bool); ok {
+		return v
+	}
+	return false
+}
+
+func (tc *TestConfig) GetOutputString(key string) string {
+	if tc.Output == nil {
+		return ""
+	}
+	if v, ok := tc.Output[key].(string); ok {
+		return v
+	}
+	return ""
+}
+
+func (tc *TestConfig) GetExpectedError(field string) string {
+	if tc.Output == nil {
+		return ""
+	}
+	if errorMap, ok := tc.Output["error"].(map[interface{}]interface{}); ok {
+		if errMsg, ok := errorMap[field].(string); ok {
+			return errMsg
+		}
+	}
+	return ""
+}
+
+func (tc *TestConfig) HasErrors() bool {
+	if tc.Output == nil {
+		return false
+	}
+	_, hasError := tc.Output["error"]
+	return hasError
 }
 
 // loadTestCase reads a test case from a YAML file
@@ -105,8 +143,9 @@ func runConfigTest(t *testing.T, testCaseFile string) {
 	}
 
 	t.Logf("Running test: %s", testCaseFile)
-	if testCase.ExpectedClusterDisks != "" {
-		t.Logf("Expected CLUSTER_DISKS: %s", testCase.ExpectedClusterDisks)
+	expectedClusterDisks := testCase.GetOutputString("CLUSTER_DISKS")
+	if expectedClusterDisks != "" {
+		t.Logf("Expected CLUSTER_DISKS: %s", expectedClusterDisks)
 	}
 
 	// Create temporary directory for this test
@@ -170,10 +209,10 @@ func runConfigTest(t *testing.T, testCaseFile string) {
 	}
 
 	// Verify auto-detected value (only for autodetect tests)
-	if testCase.ExpectedClusterDisks != "" {
-		if actualClusterDisks != testCase.ExpectedClusterDisks {
+	if expectedClusterDisks != "" {
+		if actualClusterDisks != expectedClusterDisks {
 			t.Errorf("❌ Auto-detected CLUSTER_DISKS mismatch")
-			t.Errorf("   Expected: %s", testCase.ExpectedClusterDisks)
+			t.Errorf("   Expected: %s", expectedClusterDisks)
 			t.Errorf("   Actual:   %v", actualClusterDisks)
 		} else {
 			t.Logf("✅ Auto-detected CLUSTER_DISKS correctly: %v", actualClusterDisks)
@@ -211,35 +250,38 @@ func runConfigTest(t *testing.T, testCaseFile string) {
 		chromedp.WaitVisible(`#config-form`, chromedp.ByID),
 	}
 
-	// Fill in fields from test case
-	if testCase.Domain != "" {
-		actions = append(actions, chromedp.SetValue(`#DOMAIN`, testCase.Domain, chromedp.ByID))
+	// Fill in fields from test case input
+	if domain := testCase.GetInputString("DOMAIN"); domain != "" {
+		actions = append(actions, chromedp.SetValue(`#DOMAIN`, domain, chromedp.ByID))
 	}
 
 	// For auto-detect tests, verify pre-filled value instead of setting it
 	var actualFormClusterDisks string
-	if testCase.ExpectedClusterDisks != "" {
+	if expectedClusterDisks != "" {
 		// This is an auto-detect test - read the pre-filled value
 		actions = append(actions, chromedp.Value(`#CLUSTER_DISKS`, &actualFormClusterDisks, chromedp.ByID))
-	} else if testCase.ClusterDisks != "" {
+	} else if clusterDisks := testCase.GetInputString("CLUSTER_DISKS"); clusterDisks != "" {
 		// Normal test - set the value
-		actions = append(actions, chromedp.SetValue(`#CLUSTER_DISKS`, testCase.ClusterDisks, chromedp.ByID))
+		actions = append(actions, chromedp.SetValue(`#CLUSTER_DISKS`, clusterDisks, chromedp.ByID))
 	}
 
-	if testCase.CertOption != "" {
-		actions = append(actions, chromedp.SetValue(`#CERT_OPTION`, testCase.CertOption, chromedp.ByID))
+	if certOption := testCase.GetInputString("CERT_OPTION"); certOption != "" {
+		actions = append(actions, chromedp.SetValue(`#CERT_OPTION`, certOption, chromedp.ByID))
 	}
-	if testCase.ClusterPremountedDisks != "" {
-		actions = append(actions, chromedp.SetValue(`#CLUSTER_PREMOUNTED_DISKS`, testCase.ClusterPremountedDisks, chromedp.ByID))
+	if clusterPremountedDisks := testCase.GetInputString("CLUSTER_PREMOUNTED_DISKS"); clusterPremountedDisks != "" {
+		actions = append(actions, chromedp.SetValue(`#CLUSTER_PREMOUNTED_DISKS`, clusterPremountedDisks, chromedp.ByID))
 	}
-	if testCase.ServerIP != "" {
-		actions = append(actions, chromedp.SetValue(`#SERVER_IP`, testCase.ServerIP, chromedp.ByID))
+	if serverIP := testCase.GetInputString("SERVER_IP"); serverIP != "" {
+		actions = append(actions, chromedp.SetValue(`#SERVER_IP`, serverIP, chromedp.ByID))
 	}
-	if testCase.JoinToken != "" {
-		actions = append(actions, chromedp.SetValue(`#JOIN_TOKEN`, testCase.JoinToken, chromedp.ByID))
+	if joinToken := testCase.GetInputString("JOIN_TOKEN"); joinToken != "" {
+		actions = append(actions, chromedp.SetValue(`#JOIN_TOKEN`, joinToken, chromedp.ByID))
 	}
 
 	// Boolean fields (checkboxes) - set value and trigger updateConditionals
+	firstNode := testCase.GetInputBool("FIRST_NODE")
+	gpuNode := testCase.GetInputBool("GPU_NODE")
+
 	var updateResult string
 	actions = append(actions, chromedp.Evaluate(fmt.Sprintf(`
 		(function() {
@@ -254,14 +296,14 @@ func runConfigTest(t *testing.T, testCaseFile string) {
 				return 'updateConditionals not found';
 			}
 		})()
-	`, testCase.FirstNode), &updateResult))
-	if testCase.ExpectedError != "" {
+	`, firstNode), &updateResult))
+	if testCase.HasErrors() {
 		t.Logf("After updateConditionals: %s", updateResult)
 	}
-	actions = append(actions, chromedp.Evaluate(fmt.Sprintf(`document.getElementById('GPU_NODE').checked = %v`, testCase.GPUNode), nil))
+	actions = append(actions, chromedp.Evaluate(fmt.Sprintf(`document.getElementById('GPU_NODE').checked = %v`, gpuNode), nil))
 
 	// If this is an expected error test, click submit and check for validation errors
-	if testCase.ExpectedError != "" {
+	if testCase.HasErrors() {
 		// Force update by unchecking then rechecking FIRST_NODE to trigger updateConditionals
 		actions = append(actions,
 			chromedp.Evaluate(fmt.Sprintf(`
@@ -269,17 +311,26 @@ func runConfigTest(t *testing.T, testCaseFile string) {
 				if (typeof updateConditionals === 'function') updateConditionals();
 				document.getElementById('FIRST_NODE').checked = %v;
 				if (typeof updateConditionals === 'function') updateConditionals();
-			`, testCase.FirstNode), nil),
+			`, firstNode), nil),
 			chromedp.Sleep(200*time.Millisecond), // Wait for DOM update
 			chromedp.Click(`button[type="submit"]`, chromedp.ByQuery),
 			chromedp.Sleep(500*time.Millisecond), // Wait for validation
 		)
 
-		// Check for validation messages - try both modal and HTML5 validation
+		// Collect validation messages for all fields that might have errors
 		var pageHTML string
 		var formSubmitted bool
-		var serverIPValidation string
-		var joinTokenValidation string
+		validationVars := make(map[string]*string)
+		fields := []string{"DOMAIN", "SERVER_IP", "JOIN_TOKEN", "TLS_CERT", "TLS_KEY"}
+
+		for _, field := range fields {
+			varPtr := new(string)
+			validationVars[field] = varPtr
+			actions = append(actions, chromedp.Evaluate(fmt.Sprintf(
+				`document.getElementById('%s') ? document.getElementById('%s').validationMessage : ''`,
+				field, field), varPtr))
+		}
+
 		actions = append(actions,
 			chromedp.InnerHTML(`body`, &pageHTML, chromedp.ByQuery),
 			// Check if form was submitted (result div would be visible)
@@ -287,9 +338,6 @@ func runConfigTest(t *testing.T, testCaseFile string) {
 				const resultDiv = document.getElementById('result');
 				resultDiv ? (resultDiv.style.display !== 'none') : false;
 			`, &formSubmitted),
-			// Get validation messages from the fields
-			chromedp.Evaluate(`document.getElementById('SERVER_IP') ? document.getElementById('SERVER_IP').validationMessage : ''`, &serverIPValidation),
-			chromedp.Evaluate(`document.getElementById('JOIN_TOKEN') ? document.getElementById('JOIN_TOKEN').validationMessage : ''`, &joinTokenValidation),
 		)
 
 		// Run browser automation
@@ -298,27 +346,28 @@ func runConfigTest(t *testing.T, testCaseFile string) {
 			t.Fatalf("❌ Browser automation failed: %v", err)
 		}
 
-		// Check if expected error text appears in page HTML or validation blocked submission
-		if strings.Contains(pageHTML, testCase.ExpectedError) {
-			t.Logf("✅ Validation error correctly shown in modal: contains '%s'", testCase.ExpectedError)
-		} else if !formSubmitted && (serverIPValidation != "" || joinTokenValidation != "") {
-			// HTML5 validation prevented submission
-			t.Logf("✅ HTML5 validation prevented submission")
-			if serverIPValidation != "" {
-				t.Logf("   SERVER_IP: %s", serverIPValidation)
+		// Check each expected field error
+		allErrorsFound := true
+		for _, field := range fields {
+			expectedError := testCase.GetExpectedError(field)
+			if expectedError != "" {
+				actualValidation := *validationVars[field]
+				// Check both validationMessage and page HTML (for modal errors)
+				if strings.Contains(actualValidation, expectedError) || strings.Contains(pageHTML, expectedError) {
+					t.Logf("✅ %s validation error found: contains '%s'", field, expectedError)
+				} else {
+					// Error message must match - no leniency
+					t.Errorf("❌ Expected %s error not found", field)
+					t.Errorf("   Expected error containing: %s", expectedError)
+					t.Errorf("   Actual validationMessage: %s", actualValidation)
+					t.Errorf("   Form submitted: %v", formSubmitted)
+					allErrorsFound = false
+				}
 			}
-			if joinTokenValidation != "" {
-				t.Logf("   JOIN_TOKEN: %s", joinTokenValidation)
-			}
-		} else if !formSubmitted {
-			// Form didn't submit, validation likely triggered (HTML5 native)
-			t.Logf("✅ Validation prevented form submission (HTML5 native validation)")
-		} else {
-			t.Errorf("❌ Expected validation error not found or form submitted")
-			t.Errorf("   Expected error containing: %s", testCase.ExpectedError)
-			t.Errorf("   Form submitted: %v", formSubmitted)
-			t.Errorf("   SERVER_IP validationMessage: %s", serverIPValidation)
-			t.Errorf("   JOIN_TOKEN validationMessage: %s", joinTokenValidation)
+		}
+
+		if allErrorsFound && !formSubmitted {
+			t.Logf("✅ All expected validation errors found, form not submitted")
 		}
 	} else {
 		// For non-error tests, check that form is valid before submitting
@@ -365,10 +414,10 @@ func runConfigTest(t *testing.T, testCaseFile string) {
 	}
 
 	// Verify the pre-filled value appears in browser form
-	if testCase.ExpectedClusterDisks != "" {
-		if actualFormClusterDisks != testCase.ExpectedClusterDisks {
+	if expectedClusterDisks != "" {
+		if actualFormClusterDisks != expectedClusterDisks {
 			t.Errorf("❌ Browser form field mismatch")
-			t.Errorf("   Expected: %s", testCase.ExpectedClusterDisks)
+			t.Errorf("   Expected: %s", expectedClusterDisks)
 			t.Errorf("   Actual:   %s", actualFormClusterDisks)
 		} else {
 			t.Logf("✅ Browser form field correctly shows: %s", actualFormClusterDisks)

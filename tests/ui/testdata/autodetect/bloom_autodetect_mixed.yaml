@@ -1,7 +1,8 @@
-DOMAIN: autodetect-mixed.local
-FIRST_NODE: true
-GPU_NODE: false
-CERT_OPTION: generate
+input:
+  DOMAIN: autodetect-mixed.local
+  FIRST_NODE: true
+  GPU_NODE: false
+  CERT_OPTION: generate
 
 mocks:
   addrootdevicetoconfig.statconfigfile:
@@ -22,4 +23,9 @@ mocks:
       ID_BUS=scsi
       ID_MODEL=Samsung_SSD_870
 
-expected_cluster_disks: "/dev/nvme0n1,/dev/sda"
+output:
+  DOMAIN: autodetect-mixed.local
+  FIRST_NODE: true
+  GPU_NODE: false
+  CERT_OPTION: generate
+  CLUSTER_DISKS: "/dev/nvme0n1,/dev/sda"

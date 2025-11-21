@@ -1,9 +1,11 @@
-DOMAIN: cluster.test.local
-CLUSTER_DISKS: /dev/sdb
-CERT_OPTION: generate
-FIRST_NODE: false
-GPU_NODE: false
-SERVER_IP: 192.168.1.100
-# Missing JOIN_TOKEN - should fail validation
+input:
+  DOMAIN: cluster.test.local
+  CLUSTER_DISKS: /dev/sdb
+  CERT_OPTION: generate
+  FIRST_NODE: false
+  GPU_NODE: false
+  SERVER_IP: 192.168.1.100
 
-expected_error: "Join Token is required"
+output:
+  error:
+    JOIN_TOKEN: "This field is required"

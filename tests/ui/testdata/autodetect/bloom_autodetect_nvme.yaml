@@ -1,7 +1,8 @@
-DOMAIN: autodetect-nvme.local
-FIRST_NODE: true
-GPU_NODE: false
-CERT_OPTION: generate
+input:
+  DOMAIN: autodetect-nvme.local
+  FIRST_NODE: true
+  GPU_NODE: false
+  CERT_OPTION: generate
 
 mocks:
   addrootdevicetoconfig.statconfigfile:
@@ -18,4 +19,9 @@ mocks:
   getunmountedphysicaldisks.checkmount.nvme2n1:
     output: "/"
 
-expected_cluster_disks: "/dev/nvme0n1,/dev/nvme1n1"
+output:
+  DOMAIN: autodetect-nvme.local
+  FIRST_NODE: true
+  GPU_NODE: false
+  CERT_OPTION: generate
+  CLUSTER_DISKS: "/dev/nvme0n1,/dev/nvme1n1"

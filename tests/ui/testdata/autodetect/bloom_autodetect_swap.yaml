@@ -1,7 +1,8 @@
-DOMAIN: autodetect-swap.local
-FIRST_NODE: true
-GPU_NODE: false
-CERT_OPTION: generate
+input:
+  DOMAIN: autodetect-swap.local
+  FIRST_NODE: true
+  GPU_NODE: false
+  CERT_OPTION: generate
 
 mocks:
   addrootdevicetoconfig.statconfigfile:
@@ -26,6 +27,9 @@ mocks:
       ID_BUS=scsi
       ID_MODEL=WD_Blue_1TB
 
-# sdb is used for swap, so it should be excluded
-# Expected: only nvme0n1 and sda should be detected
-expected_cluster_disks: "/dev/nvme0n1,/dev/sda"
+output:
+  DOMAIN: autodetect-swap.local
+  FIRST_NODE: true
+  GPU_NODE: false
+  CERT_OPTION: generate
+  CLUSTER_DISKS: "/dev/nvme0n1,/dev/sda"

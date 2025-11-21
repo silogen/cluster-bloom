@@ -1,10 +1,10 @@
 input:
-  DOMAIN: INVALID-DOMAIN-WITH-CAPS
+  DOMAIN: -starts-with-hyphen.com
   CLUSTER_DISKS: /dev/sdb
   CERT_OPTION: generate
   FIRST_NODE: true
-  GPU_NODE: true
+  GPU_NODE: false
 
 output:
   error:
-    DOMAIN: "Valid domain format"
+    DOMAIN: "Invalid format"

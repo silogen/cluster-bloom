@@ -1,9 +1,11 @@
-DOMAIN: cluster.test.local
-CLUSTER_DISKS: /dev/sdb
-CERT_OPTION: generate
-FIRST_NODE: false
-GPU_NODE: false
-JOIN_TOKEN: K10abc123def456
-# Missing SERVER_IP - should fail validation
+input:
+  DOMAIN: cluster.test.local
+  CLUSTER_DISKS: /dev/sdb
+  CERT_OPTION: generate
+  FIRST_NODE: false
+  GPU_NODE: false
+  JOIN_TOKEN: K10abc123def456
 
-expected_error: "Server IP is required"
+output:
+  error:
+    SERVER_IP: "This field is required"
