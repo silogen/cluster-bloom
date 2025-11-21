@@ -364,8 +364,8 @@
                         </div>
                         <button type="button" class="btn btn-secondary" onclick="addOIDCProvider()" style="margin-top: 10px;">+ Add OIDC Provider</button>
                         <small class="help-text" style="color: #666; font-size: 12px; margin-top: 8px; display: block;">
-                            ✓ URL: https://keycloak.example.com/realms/main<br>
-                            ✓ Audiences: Client IDs from your OIDC provider<br>
+                            ✓ URL: Must be HTTPS (e.g., https://keycloak.example.com/realms/main)<br>
+                            ✓ Audiences: Exact client ID names from your OIDC provider configuration<br>
                             ✓ Leave empty to skip additional OIDC setup
                         </small>
                     </div>
@@ -1288,7 +1288,9 @@
                            title="Comma-separated client IDs (e.g., k8s,api)"
                            required>
                     <small class="help-text" style="color: #666; font-size: 12px; margin-top: 4px; display: block;">
-                        Comma-separated list of client IDs from your OIDC provider
+                        <strong>Important:</strong> Enter the exact client ID names configured in your OIDC provider.<br>
+                        For Keycloak: Go to Clients → [Your Realm] → Check "Client ID" field<br>
+                        Comma-separated list (e.g., k8s, api, kubernetes)
                     </small>
                 </div>
             `;
