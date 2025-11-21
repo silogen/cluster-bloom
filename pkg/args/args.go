@@ -11,6 +11,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
+	"gopkg.in/yaml.v3"
 )
 
 type Arg struct {
@@ -231,6 +232,24 @@ func ValidateLonghornDisksArg(disks string) error {
 	// At least one must be set
 	if disks == "" && selectedDisks == "" {
 		return fmt.Errorf("either CLUSTER_PREMOUNTED_DISKS or CLUSTER_DISKS must be set")
+	}
+
+	return nil
+}
+
+// ValidateYAMLFormat validates that the provided string is valid YAML
+func ValidateYAMLFormat(yamlStr string) error {
+	if yamlStr == "" {
+		return nil
+	}
+
+	var data interface{}
+	if err := yaml.Unmarshal([]byte(yamlStr), &data); err != nil {
+		return fmt.Errorf("invalid YAML format: %v", err)
+	}
+
+	if data == nil {
+		return fmt.Errorf("YAML content cannot be empty or null")
 	}
 
 	return nil

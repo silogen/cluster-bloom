@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./dist/bloom help:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

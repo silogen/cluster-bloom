@@ -204,6 +204,8 @@ func rootSteps() []pkg.Step {
 		pkg.SetupAndCheckRocmStep,
 		pkg.OpenPortsStep,
 		pkg.UpdateUdevRulesStep,
+		pkg.ConfigLogrotateStep,
+		pkg.ConfigRsyslogStep,
 	}
 	k8Ssteps := []pkg.Step{
 		pkg.SetupRKE2Step,
