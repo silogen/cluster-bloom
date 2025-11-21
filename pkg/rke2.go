@@ -141,7 +141,7 @@ jwt:
     groups:
       claim: groups
       prefix: "oidc:"
-{{range .OIDCProviders}}
+{{if .OIDCProviders}}{{range .OIDCProviders}}
 - issuer:
     url: {{.URL}}
     certificateAuthority: |
@@ -156,7 +156,7 @@ jwt:
     groups:
       claim: groups
       prefix: "oidc:"
-{{end}}`
+{{end}}{{end}}`
 
 func FetchAndSaveOIDCCertificate(url string, index int) error {
 	// Parse URL to extract hostname
