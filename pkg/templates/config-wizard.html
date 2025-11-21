@@ -661,6 +661,15 @@
 
             // Handle OIDC providers separately using our helper function
             const oidcProviders = getAllOIDCProviders();
+
+            // Validate required fields
+            const firstNode = config.FIRST_NODE !== false;
+            const useCertManager = config.USE_CERT_MANAGER === true;
+            const certOption = config.CERT_OPTION;
+
+            let errors = [];
+
+            // Validate OIDC providers for duplicates and conflicts
             if (oidcProviders.length > 0) {
                 // Validate for duplicate URLs and conflicts with default provider
                 const domain = config.DOMAIN || '';
@@ -693,19 +702,11 @@
                 if (duplicateError) {
                     console.log('OIDC Duplicate Error Found:', duplicateError);
                     errors.push(duplicateError);
-                }
-                
-                if (!duplicateError) {
+                } else {
+                    // Only add OIDC providers if no duplicates found
                     config.ADDITIONAL_OIDC_PROVIDERS = oidcProviders;
                 }
             }
-
-            // Validate required fields
-            const firstNode = config.FIRST_NODE !== false;
-            const useCertManager = config.USE_CERT_MANAGER === true;
-            const certOption = config.CERT_OPTION;
-
-            let errors = [];
 
             // Log all form fields for debugging
             console.log('=== Form Validation Debug ===');
