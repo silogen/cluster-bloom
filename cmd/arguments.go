@@ -144,6 +144,13 @@ func SetArguments() {
 			Type:        "non-empty-url",
 		},
 		{
+			Key:         "RKE2_EXTRA_CONFIG",
+			Default:     "",
+			Description: "Additional RKE2 configuration in YAML format to append to /etc/rancher/rke2/config.yaml. Example: \"node-name: my-node\\ntls-san:\\n  - example.com\".",
+			Type:        "string",
+			Validators:  []func(value string) error{args.ValidateYAMLFormat},
+		},
+		{
 			Key:         "CLUSTERFORGE_RELEASE",
 			Default:     "https://github.com/silogen/cluster-forge/releases/download/v1.5.2/release-enterprise-ai-v1.5.2.tar.gz",
 			Description: "The version of Cluster-Forge to install. Pass the URL for a specific release, or 'none' to not install ClusterForge.",

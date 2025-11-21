@@ -17,28 +17,6 @@
 - ROCm-compatible AMD GPUs (for GPU nodes)
 - Root/sudo access
 
-## Installation
-
-### Using Devbox
-
-1. Install Devbox if you haven't already:
-   ```sh
-   curl -fsSL https://get.jetpack.io/devbox | bash
-   ```
-
-2. Clone the repository:
-   ```sh
-   git clone https://github.com/silogen/cluster-bloom.git
-   cd cluster-bloom
-   ```
-
-3. Build with Devbox:
-   ```sh
-   devbox run build
-   ```
-
-The binary will be created in the dist directory as `bloom`.
-
 ## Usage
 
 ### First Node Setup
@@ -160,80 +138,6 @@ Cluster-Bloom performs the following steps during installation:
 6. Configures storage with Longhorn
 7. Sets up Kubernetes tools and configuration
 8. Installs ClusterForge
-
-## Roadmap
-
-### Phase 1: Foundation & Quality (High Priority)
-
-#### 🔧 Testing & Validation
-- **Task 1**: Implement Comprehensive Unit Tests for All Exported Functions in pkg/
-  - Create thorough unit tests for steps.go, disks.go, rke2.go, rocm.go, and view.go
-  - Ensure code quality and reliability foundation
-
-#### 🛡️ Configuration & Security  
-- **Task 4**: Enhance Configuration Validation with Comprehensive Checks
-  - Robust validation logic for all configuration parameters
-  - Check interdependencies and best practices adherence
-
-### Phase 2: Enterprise Features (Medium Priority)
-
-#### 💾 Data Protection
-- **Task 2**: Implement Cluster State Backup and Recovery Functionality
-  - etcd data backup capabilities
-  - Configuration file backup and restore
-  - *Depends on: Task 1*
-
-#### 📊 Observability
-- **Task 3**: Add Built-in Monitoring Stack Deployment with Prometheus and Grafana
-  - Automated monitoring stack deployment
-  - Kubernetes manifests and installation scripts
-  - *Depends on: Task 1*
-
-#### 🔐 Certificate Management
-- **Task 5**: Implement Automated Certificate Lifecycle Management for Cluster
-  - Seamless certificate issuance, renewal, and rotation
-  - Minimize manual intervention and outage risks
-  - *Depends on: Task 4*
-
-#### 🌐 Advanced Networking
-- **Task 6**: Implement Network Policy Management and Advanced Networking Features
-  - Network policies, security policies, resource quotas
-  - Enhanced cluster security and traffic control
-  - *Depends on: Tasks 4, 5*
-
-#### ⚡ High Availability
-- **Task 7**: Add High Availability Configuration Support for etcd and Control Plane Components
-  - HA configuration for etcd and control plane
-  - Ensure cluster resilience and fault tolerance
-  - *Depends on: Tasks 4, 5*
-
-### Phase 3: Automation & Scalability (Low Priority)
-
-#### 📈 Auto-scaling
-- **Task 8**: Implement Automated Cluster Scaling and Workload-Based Autoscaling
-  - Node addition/removal automation
-  - Workload-based scaling decisions
-  - *Depends on: Tasks 4, 7*
-
-#### 🐧 Multi-OS Support
-- **Task 9**: Add CentOS/RHEL Compatibility for Multi-OS Cluster Support
-  - Extend beyond Ubuntu-only compatibility
-  - Enable multi-OS Kubernetes cluster deployments
-  - *Depends on: Task 4*
-
-#### ☁️ Cloud Integration
-- **Task 10**: Implement Cloud Provider Integration for AWS, Azure, and GCP
-  - Integration modules for major cloud providers
-  - Cloud-native Kubernetes cluster deployment and management
-  - *Depends on: Task 4*
-
-### Development Status
-
-**Current Focus**: Foundation phase with emphasis on testing and configuration validation.
-
-**Progress**: 0/10 tasks completed (0% complete)
-
-**Next Milestone**: Complete comprehensive unit testing to establish a solid foundation for advanced features.
 
 ## Dependencies
 
