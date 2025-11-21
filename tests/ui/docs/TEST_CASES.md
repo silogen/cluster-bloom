@@ -2,563 +2,627 @@
 
 This document outlines test cases for validating the Cluster-Bloom WebUI configuration wizard.
 
-## Test Case Categories
+## Test Case Format
 
-### 1. Form Validation Tests
+All test cases use a three-section YAML format:
 
-#### TC-001: Valid Domain Name
-**Objective:** Verify that valid domain names are accepted
+```yaml
+input:
+  DOMAIN: <value>
+  CLUSTER_DISKS: <value>  # Optional - omit to trigger auto-detection
+  CERT_OPTION: <value>
+  FIRST_NODE: <boolean>
+  GPU_NODE: <boolean>
 
-**Test Data:**
-- `test.local`
-- `subdomain.example.com`
-- `multi-level.sub.domain.com`
-- `test-123.example.com`
+mocks:  # Optional - for auto-detection tests
+  <function>.<command>.<argument>:
+    output: "<command output>"
+    error: "<error message>"
+
+output:
+  <field>: <expected_value>
+  error:  # For validation tests
+    <field>: "<expected error message>"
+```
+
+## Test Categories
+
+### 1. Valid Configuration Tests (`testdata/valid/`)
+
+These tests verify that valid inputs are accepted and correctly saved to bloom.yaml.
+
+#### TC-001: Basic First Node Configuration
+**File:** `bloom_basic_first_node.yaml`
+
+**Input:**
+```yaml
+input:
+  DOMAIN: test-basic.local
+  CLUSTER_DISKS: /dev/sdb,/dev/sdc
+  CERT_OPTION: generate
+  FIRST_NODE: true
+  GPU_NODE: true
+```
 
 **Expected Result:**
-- Form validation passes
-- Configuration can be saved
-- bloom.yaml contains correct DOMAIN value
-
-**YAML File:** `bloom_valid_domain.yaml`
+- Configuration saved successfully
+- bloom.yaml contains all input values
+- No validation errors
 
 ---
 
-#### TC-002: Invalid Domain Name - Uppercase Characters
-**Objective:** Verify uppercase characters are rejected
+#### TC-002: Minimal No GPU Configuration
+**File:** `bloom_minimal_no_gpu.yaml`
 
-**Test Data:**
-- `INVALID-DOMAIN-WITH-CAPS`
-- `Test.Local`
-- `EXAMPLE.COM`
+**Input:**
+```yaml
+input:
+  DOMAIN: minimal.local
+  CLUSTER_DISKS: /dev/sdb
+  CERT_OPTION: generate
+  FIRST_NODE: true
+  GPU_NODE: false
+```
 
 **Expected Result:**
+- Configuration saved with GPU_NODE: false
+- Single disk accepted
+
+---
+
+#### TC-003: Single Disk Selection
+**File:** `bloom_single_disk.yaml`
+
+**Input:**
+```yaml
+input:
+  DOMAIN: single-disk.local
+  CLUSTER_DISKS: /dev/nvme0n1
+  CERT_OPTION: generate
+  FIRST_NODE: true
+  GPU_NODE: false
+```
+
+**Expected Result:**
+- Single disk configuration accepted
+- NVMe device path stored correctly
+
+---
+
+#### TC-004: Additional Node Configuration
+**File:** `bloom_additional_node.yaml`
+
+**Input:**
+```yaml
+input:
+  DOMAIN: cluster.local
+  CLUSTER_DISKS: /dev/sdb
+  SERVER_IP: 192.168.1.100
+  CERT_OPTION: generate
+  FIRST_NODE: false
+  GPU_NODE: false
+```
+
+**Expected Result:**
+- FIRST_NODE: false accepted
+- SERVER_IP field visible and saved
+
+---
+
+#### TC-005: Valid Subdomain
+**File:** `bloom_valid_subdomain.yaml`
+
+**Input:**
+```yaml
+input:
+  DOMAIN: sub.domain.example.com
+  CLUSTER_DISKS: /dev/sdb
+  CERT_OPTION: generate
+  FIRST_NODE: true
+  GPU_NODE: false
+```
+
+**Expected Result:**
+- Multi-level subdomain accepted
+- Configuration saved successfully
+
+---
+
+#### TC-006: Domain with Hyphens
+**File:** `bloom_with_hyphens.yaml`
+
+**Input:**
+```yaml
+input:
+  DOMAIN: test-cluster-123.local
+  CLUSTER_DISKS: /dev/sdb
+  CERT_OPTION: generate
+  FIRST_NODE: true
+  GPU_NODE: false
+```
+
+**Expected Result:**
+- Hyphens in domain name accepted
+- Numbers in domain name accepted
+
+---
+
+### 2. Invalid Configuration Tests (`testdata/invalid/`)
+
+These tests verify that invalid inputs are rejected with appropriate field-specific error messages.
+
+#### TC-007: Invalid Domain Name
+**File:** `bloom_invalid_domain.yaml`
+
+**Input:**
+```yaml
+input:
+  DOMAIN: INVALID-DOMAIN-WITH-CAPS
+  CLUSTER_DISKS: /dev/sdb
+  CERT_OPTION: generate
+  FIRST_NODE: true
+  GPU_NODE: false
+
+output:
+  error:
+    DOMAIN: "Please match the requested format"
+```
+
+**Expected Result:**
+- HTML5 validation error displayed on DOMAIN field
+- Error message contains "Please match the requested format"
+- bloom.yaml is NOT created
+- Save button is blocked by browser validation
+
+---
+
+#### TC-008: Invalid Special Characters
+**File:** `bloom_invalid_special_chars.yaml`
+
+**Input:**
+```yaml
+input:
+  DOMAIN: domain_with_underscore.com
+  CLUSTER_DISKS: /dev/sdb
+  CERT_OPTION: generate
+  FIRST_NODE: true
+  GPU_NODE: false
+
+output:
+  error:
+    DOMAIN: "Please match the requested format"
+```
+
+**Expected Result:**
+- Underscore in domain name rejected
+- HTML5 validation error on DOMAIN field
+- bloom.yaml is NOT created
+
+---
+
+#### TC-009: Invalid Domain Format
+**File:** `bloom_invalid_format.yaml`
+
+**Input:**
+```yaml
+input:
+  DOMAIN: -starts-with-hyphen.com
+  CLUSTER_DISKS: /dev/sdb
+  CERT_OPTION: generate
+  FIRST_NODE: true
+  GPU_NODE: false
+
+output:
+  error:
+    DOMAIN: "Please match the requested format"
+```
+
+**Expected Result:**
+- Domain starting with hyphen rejected
 - HTML5 validation error displayed
-- Error message contains "Valid domain format"
-- bloom.yaml is NOT created
-- Save/Submit buttons are blocked by browser validation
-
-**YAML File:** `bloom_invalid_domain.yaml` (existing)
-
----
-
-#### TC-003: Invalid Domain Name - Special Characters
-**Objective:** Verify special characters (except dots and hyphens) are rejected
-
-**Test Data:**
-- `domain_with_underscore.com`
-- `domain@example.com`
-- `domain#test.com`
-- `domain!.com`
-
-**Expected Result:**
-- HTML5 validation error displayed
 - bloom.yaml is NOT created
 
-**YAML File:** `bloom_invalid_special_chars.yaml`
-
 ---
 
-#### TC-004: Invalid Domain Name - Invalid Format
-**Objective:** Verify malformed domains are rejected
+#### TC-010: Missing Server IP for Additional Node
+**File:** `bloom_additional_node_missing_server_ip.yaml`
 
-**Test Data:**
-- `-starts-with-hyphen.com`
-- `ends-with-hyphen-.com`
-- `.starts-with-dot.com`
-- `ends-with-dot.com.`
-- `double..dots.com`
+**Input:**
+```yaml
+input:
+  DOMAIN: cluster.local
+  CLUSTER_DISKS: /dev/sdb
+  CERT_OPTION: generate
+  FIRST_NODE: false
+  GPU_NODE: false
+
+output:
+  error:
+    SERVER_IP: "Please fill out this field"
+```
 
 **Expected Result:**
-- HTML5 validation error displayed
+- Required field validation error on SERVER_IP
+- Error message: "Please fill out this field"
 - bloom.yaml is NOT created
 
-**YAML File:** `bloom_invalid_format.yaml`
-
 ---
 
-#### TC-005: Empty Domain Field
-**Objective:** Verify empty required field is rejected
+### 3. Auto-Detection Tests (`testdata/autodetect/`)
 
-**Test Data:**
-- DOMAIN: ""
+These tests verify disk auto-detection functionality using mocked system commands.
+
+#### TC-011: NVMe Disk Auto-Detection
+**File:** `bloom_autodetect_nvme.yaml`
+
+**Input:**
+```yaml
+input:
+  DOMAIN: autodetect-nvme.local
+  FIRST_NODE: true
+  GPU_NODE: false
+  CERT_OPTION: generate
+
+mocks:
+  addrootdevicetoconfig.statconfigfile:
+    error: "no such file or directory"
+  getunmountedphysicaldisks.listblockdevices:
+    output: |
+      nvme0n1 disk
+      nvme1n1 disk
+      nvme2n1 disk
+  getunmountedphysicaldisks.checkmount.nvme0n1:
+    output: ""
+  getunmountedphysicaldisks.checkmount.nvme1n1:
+    output: ""
+  getunmountedphysicaldisks.checkmount.nvme2n1:
+    output: "/"
+
+output:
+  CLUSTER_DISKS: "/dev/nvme0n1,/dev/nvme1n1"
+```
 
 **Expected Result:**
-- HTML5 required field validation error
-- bloom.yaml is NOT created
-
-**YAML File:** `bloom_empty_domain.yaml`
+- nvme0n1 and nvme1n1 detected (unmounted)
+- nvme2n1 excluded (mounted on /)
+- CLUSTER_DISKS auto-filled in UI
+- Configuration saves with detected disks
 
 ---
 
-### 2. Disk Selection Tests
+#### TC-012: Mixed Drive Auto-Detection
+**File:** `bloom_autodetect_mixed.yaml`
 
-#### TC-006: Single Disk Selection
-**Objective:** Verify single disk can be selected
+**Input:**
+```yaml
+input:
+  DOMAIN: autodetect-mixed.local
+  FIRST_NODE: true
+  GPU_NODE: false
+  CERT_OPTION: generate
 
-**Test Data:**
-- CLUSTER_DISKS: `/dev/sdb`
-- CLUSTER_DISKS: `/dev/nvme0n1`
+mocks:
+  addrootdevicetoconfig.statconfigfile:
+    error: "no such file or directory"
+  getunmountedphysicaldisks.listblockdevices:
+    output: |
+      nvme0n1 disk
+      sda disk
+      sdb disk
+  getunmountedphysicaldisks.checkmount.nvme0n1:
+    output: ""
+  getunmountedphysicaldisks.checkmount.sda:
+    output: ""
+  getunmountedphysicaldisks.checkmount.sdb:
+    output: ""
+  getunmountedphysicaldisks.udevinfo.sda:
+    output: |
+      ID_BUS=scsi
+      ID_MODEL=Samsung_SSD_870
+  getunmountedphysicaldisks.udevinfo.sdb:
+    output: |
+      ID_BUS=scsi
+      ID_MODEL=WD_Blue_1TB
+
+output:
+  CLUSTER_DISKS: "/dev/nvme0n1,/dev/sda,/dev/sdb"
+```
+
+**Expected Result:**
+- NVMe and SCSI/SATA drives both detected
+- All unmounted disks included
+- Correct ordering in output
+
+---
+
+#### TC-013: Virtual Disk Filtering
+**File:** `bloom_autodetect_virtual_filtered.yaml`
+
+**Input:**
+```yaml
+input:
+  DOMAIN: autodetect-virtual.local
+  FIRST_NODE: true
+  GPU_NODE: false
+  CERT_OPTION: generate
+
+mocks:
+  addrootdevicetoconfig.statconfigfile:
+    error: "no such file or directory"
+  getunmountedphysicaldisks.listblockdevices:
+    output: |
+      sda disk
+      sdb disk
+      sdc disk
+  getunmountedphysicaldisks.checkmount.sda:
+    output: "/"
+  getunmountedphysicaldisks.checkmount.sdb:
+    output: ""
+  getunmountedphysicaldisks.checkmount.sdc:
+    output: ""
+  getunmountedphysicaldisks.udevinfo.sdb:
+    output: |
+      ID_BUS=scsi
+      ID_MODEL=QEMU_HARDDISK
+  getunmountedphysicaldisks.udevinfo.sdc:
+    output: |
+      ID_BUS=scsi
+      ID_MODEL=Samsung_SSD_870
+
+output:
+  CLUSTER_DISKS: "/dev/sdc"
+```
+
+**Expected Result:**
+- sda excluded (mounted)
+- sdb excluded (QEMU virtual disk)
+- sdc included (real Samsung SSD)
+- Only physical disks detected
+
+---
+
+#### TC-014: Swap Disk Filtering
+**File:** `bloom_autodetect_swap.yaml`
+
+**Input:**
+```yaml
+input:
+  DOMAIN: autodetect-swap.local
+  FIRST_NODE: true
+  GPU_NODE: false
+  CERT_OPTION: generate
+
+mocks:
+  addrootdevicetoconfig.statconfigfile:
+    error: "no such file or directory"
+  getunmountedphysicaldisks.listblockdevices:
+    output: |
+      nvme0n1 disk
+      sda disk
+      sdb disk
+  getunmountedphysicaldisks.checkmount.nvme0n1:
+    output: ""
+  getunmountedphysicaldisks.checkmount.sda:
+    output: ""
+  getunmountedphysicaldisks.checkmount.sdb:
+    output: "[SWAP]"
+  getunmountedphysicaldisks.udevinfo.sda:
+    output: |
+      ID_BUS=scsi
+      ID_MODEL=Samsung_SSD_870
+  getunmountedphysicaldisks.udevinfo.sdb:
+    output: |
+      ID_BUS=scsi
+      ID_MODEL=WD_Blue_1TB
+
+output:
+  CLUSTER_DISKS: "/dev/nvme0n1,/dev/sda"
+```
+
+**Expected Result:**
+- sdb excluded (in use for swap)
+- nvme0n1 and sda included (available)
+- Swap disks filtered out
+
+---
+
+#### TC-015: No Available Disks
+**File:** `bloom_autodetect_no_disks.yaml`
+
+**Input:**
+```yaml
+input:
+  DOMAIN: autodetect-none.local
+  FIRST_NODE: true
+  GPU_NODE: false
+  CERT_OPTION: generate
+
+mocks:
+  addrootdevicetoconfig.statconfigfile:
+    error: "no such file or directory"
+  getunmountedphysicaldisks.listblockdevices:
+    output: |
+      sda disk
+      sdb disk
+  getunmountedphysicaldisks.checkmount.sda:
+    output: "/"
+  getunmountedphysicaldisks.checkmount.sdb:
+    output: "/mnt/data"
+
+output:
+  CLUSTER_DISKS: ""
+```
+
+**Expected Result:**
+- All disks mounted, none available
+- CLUSTER_DISKS field empty
+- User must manually specify disks or validation fails
+
+---
+
+### 4. Integration Tests (`testdata/integration/`)
+
+These tests verify end-to-end workflows.
+
+#### TC-016: Complete First Node Setup
+**File:** `bloom_e2e_first_node.yaml`
+
+**Input:**
+```yaml
+input:
+  DOMAIN: cluster.test.local
+  CLUSTER_DISKS: /dev/sdb,/dev/sdc
+  CERT_OPTION: generate
+  FIRST_NODE: true
+  GPU_NODE: true
+```
 
 **Expected Result:**
 - Configuration saved successfully
-- bloom.yaml contains correct disk
-
-**YAML File:** `bloom_single_disk.yaml`
+- All fields validated
+- bloom.yaml created with all values
+- Ready for installation
 
 ---
 
-#### TC-007: Multiple Disk Selection
-**Objective:** Verify multiple disks can be selected
+#### TC-017: Complete Additional Node Setup
+**File:** `bloom_e2e_additional_node.yaml`
 
-**Test Data:**
-- CLUSTER_DISKS: `/dev/sdb,/dev/sdc`
-- CLUSTER_DISKS: `/dev/nvme0n1,/dev/nvme0n2,/dev/nvme0n3`
+**Input:**
+```yaml
+input:
+  DOMAIN: cluster.test.local
+  CLUSTER_DISKS: /dev/sdb
+  SERVER_IP: 192.168.1.100
+  CERT_OPTION: generate
+  FIRST_NODE: false
+  GPU_NODE: false
+```
 
 **Expected Result:**
-- Configuration saved successfully
-- bloom.yaml contains all disks in comma-separated format
-
-**YAML File:** `bloom_basic_first_node.yaml` (existing)
-
----
-
-#### TC-008: Root Device Conflict
-**Objective:** Verify selecting root device shows warning
-
-**Test Data:**
-- CLUSTER_DISKS: `/dev/sda` (assuming sda is root device)
-
-**Expected Result:**
-- Error modal displayed
-- Warning about root device conflict
-- bloom.yaml is NOT created
-
-**YAML File:** `bloom_root_device_conflict.yaml`
+- Additional node configuration accepted
+- SERVER_IP field validated and saved
+- FIRST_NODE: false saved correctly
+- Ready to join cluster
 
 ---
 
-#### TC-009: Empty Disk Selection
-**Objective:** Verify empty disk field is rejected
+## Running Specific Test Categories
 
-**Test Data:**
-- CLUSTER_DISKS: ""
+```bash
+# Run all valid configuration tests
+go test -v -run TestConfigBasedTests/.*valid
 
-**Expected Result:**
-- HTML5 required field validation error
-- bloom.yaml is NOT created
+# Run all invalid/validation tests
+go test -v -run TestConfigBasedTests/.*invalid
 
-**YAML File:** `bloom_empty_disks.yaml`
+# Run all auto-detection tests
+go test -v -run TestConfigBasedTests/.*autodetect
 
----
+# Run all integration tests
+go test -v -run TestConfigBasedTests/.*e2e
 
-### 3. Certificate Option Tests
-
-#### TC-010: Generate Certificate Option
-**Objective:** Verify "generate" certificate option
-
-**Test Data:**
-- CERT_OPTION: `generate`
-
-**Expected Result:**
-- Configuration saved successfully
-- bloom.yaml contains `CERT_OPTION: generate`
-
-**YAML File:** `bloom_basic_first_node.yaml` (existing)
-
----
-
-#### TC-011: Provide Certificate Option
-**Objective:** Verify "provide" certificate option
-
-**Test Data:**
-- CERT_OPTION: `provide`
-
-**Expected Result:**
-- Configuration saved successfully
-- bloom.yaml contains `CERT_OPTION: provide`
-
-**YAML File:** `bloom_cert_provide.yaml`
-
----
-
-#### TC-012: Skip Certificate Option
-**Objective:** Verify "skip" certificate option
-
-**Test Data:**
-- CERT_OPTION: `skip`
-
-**Expected Result:**
-- Configuration saved successfully
-- bloom.yaml contains `CERT_OPTION: skip`
-
-**YAML File:** `bloom_cert_skip.yaml`
-
----
-
-### 4. Checkbox Tests
-
-#### TC-013: First Node Checkbox - Checked
-**Objective:** Verify FIRST_NODE checkbox can be checked
-
-**Test Data:**
-- FIRST_NODE: `true`
-
-**Expected Result:**
-- Configuration saved successfully
-- bloom.yaml contains `FIRST_NODE: true`
-
-**YAML File:** `bloom_basic_first_node.yaml` (existing)
-
----
-
-#### TC-014: First Node Checkbox - Unchecked
-**Objective:** Verify FIRST_NODE checkbox can be unchecked
-
-**Test Data:**
-- FIRST_NODE: `false`
-
-**Expected Result:**
-- Configuration saved successfully
-- bloom.yaml contains `FIRST_NODE: false`
-
-**YAML File:** `bloom_additional_node.yaml`
-
----
-
-#### TC-015: GPU Node Checkbox - Checked
-**Objective:** Verify GPU_NODE checkbox can be checked
-
-**Test Data:**
-- GPU_NODE: `true`
-
-**Expected Result:**
-- Configuration saved successfully
-- bloom.yaml contains `GPU_NODE: true`
-
-**YAML File:** `bloom_basic_first_node.yaml` (existing)
-
----
-
-#### TC-016: GPU Node Checkbox - Unchecked
-**Objective:** Verify GPU_NODE checkbox can be unchecked
-
-**Test Data:**
-- GPU_NODE: `false`
-
-**Expected Result:**
-- Configuration saved successfully
-- bloom.yaml contains `GPU_NODE: false`
-
-**YAML File:** `bloom_minimal_no_gpu.yaml` (existing)
-
----
-
-### 5. Button Functionality Tests
-
-#### TC-017: Save Configuration Button
-**Objective:** Verify Save Configuration button saves without starting installation
-
-**Test Data:**
-- Valid configuration
-
-**Expected Result:**
-- bloom.yaml is created
-- Success message displayed
-- Installation does NOT start
-- Web interface remains on configuration page
-
-**YAML File:** `bloom_basic_first_node.yaml` (existing)
-
----
-
-#### TC-018: Save and Install Button
-**Objective:** Verify Save and Install button saves and starts installation
-
-**Test Data:**
-- Valid configuration
-
-**Expected Result:**
-- bloom.yaml is created
-- Installation process starts
-- UI switches to monitoring view
-- Progress steps are displayed
-
-**Note:** This requires integration testing, not just browser automation
-
----
-
-#### TC-019: Reset Form Button
-**Objective:** Verify form can be reset to defaults
-
-**Test Data:**
-- Fill form with custom values
-- Click reset/clear button (if available)
-
-**Expected Result:**
-- Form returns to default/empty state
-- No configuration is saved
-
----
-
-### 6. Prefilled Configuration Tests
-
-#### TC-020: Prefilled Domain
-**Objective:** Verify prefilled domain values are loaded
-
-**Test Data:**
-- Start bloom with existing bloom.yaml containing DOMAIN
-
-**Expected Result:**
-- DOMAIN field is prefilled with value from bloom.yaml
-- User can modify the value
-- User can save with modified value
-
----
-
-#### TC-021: Prefilled Disk Selection
-**Objective:** Verify prefilled disk values are loaded
-
-**Test Data:**
-- Start bloom with existing bloom.yaml containing CLUSTER_DISKS
-
-**Expected Result:**
-- CLUSTER_DISKS field is prefilled
-- Disks are properly displayed (comma-separated)
-- User can modify selection
-
----
-
-### 7. Error Handling Tests
-
-#### TC-022: Network Error During Save
-**Objective:** Verify error handling when network fails during save
-
-**Test Data:**
-- Valid configuration
-- Simulate network failure
-
-**Expected Result:**
-- Error message displayed to user
-- bloom.yaml is NOT created
-- User can retry
-
-**Note:** Requires manual testing or network simulation
-
----
-
-#### TC-023: Invalid Server Response
-**Objective:** Verify error handling for invalid server responses
-
-**Test Data:**
-- Valid configuration
-- Server returns 500 error
-
-**Expected Result:**
-- Error message displayed
-- bloom.yaml may not be created
-- Error details shown to user
-
-**Note:** Requires server error simulation
-
----
-
-### 8. UI/UX Tests
-
-#### TC-024: Form Field Labels
-**Objective:** Verify all form fields have clear labels
-
-**Expected Result:**
-- All fields have visible labels
-- Labels accurately describe the field
-- Required fields are marked with *
-
----
-
-#### TC-025: Help Text Display
-**Objective:** Verify help text is shown for complex fields
-
-**Expected Result:**
-- DOMAIN field shows format examples
-- CLUSTER_DISKS shows selection instructions
-- Help text is readable and helpful
-
----
-
-#### TC-026: Responsive Design
-**Objective:** Verify form works on different screen sizes
-
-**Test Data:**
-- Desktop (1920x1080)
-- Tablet (768x1024)
-- Mobile (375x667)
-
-**Expected Result:**
-- Form is usable on all screen sizes
-- No horizontal scrolling required
-- Buttons are accessible
-
-**Note:** Requires viewport testing
-
----
-
-#### TC-027: Error Modal Display
-**Objective:** Verify error modal appears correctly
-
-**Test Data:**
-- Trigger validation error
-
-**Expected Result:**
-- Modal appears centered on screen
-- Error message is readable
-- Modal can be dismissed
-- Background is dimmed
-
----
-
-### 9. Integration Tests
-
-#### TC-028: End-to-End First Node Setup
-**Objective:** Complete first node setup workflow
-
-**Test Data:**
-- DOMAIN: `cluster.test.local`
-- CLUSTER_DISKS: `/dev/sdb,/dev/sdc`
-- CERT_OPTION: `generate`
-- FIRST_NODE: `true`
-- GPU_NODE: `true`
-
-**Expected Result:**
-- Configuration saved
-- Installation starts
-- All setup steps complete successfully
-- Cluster is operational
-
-**YAML File:** `bloom_e2e_first_node.yaml`
-
----
-
-#### TC-029: End-to-End Additional Node Setup
-**Objective:** Complete additional node setup workflow
-
-**Test Data:**
-- DOMAIN: `cluster.test.local`
-- CLUSTER_DISKS: `/dev/sdb`
-- CERT_OPTION: `generate`
-- FIRST_NODE: `false`
-- GPU_NODE: `false`
-
-**Expected Result:**
-- Configuration saved
-- Node joins existing cluster
-- All setup steps complete successfully
-
-**YAML File:** `bloom_e2e_additional_node.yaml`
-
----
-
-### 10. Security Tests
-
-#### TC-030: Localhost-Only Access
-**Objective:** Verify web interface is only accessible from localhost
-
-**Test Data:**
-- Access from 127.0.0.1
-- Access from external IP
-
-**Expected Result:**
-- Localhost access succeeds
-- External access is blocked
-- Appropriate error message shown
-
-**Note:** Requires network testing
-
----
-
-#### TC-031: Input Sanitization
-**Objective:** Verify inputs are sanitized to prevent XSS
-
-**Test Data:**
-- DOMAIN: `<script>alert('xss')</script>.com`
-- DOMAIN: `test';DROP TABLE users;--.com`
-
-**Expected Result:**
-- Input is rejected by validation
-- Or input is properly escaped/sanitized
-- No script execution occurs
-
----
+# Run a specific test
+go test -v -run TestConfigBasedTests/bloom_autodetect_nvme
+```
 
 ## Test Execution Priority
 
 ### P0 - Critical (Must Pass)
-- TC-001: Valid Domain Name
-- TC-002: Invalid Domain Name - Uppercase
-- TC-006: Single Disk Selection
-- TC-007: Multiple Disk Selection
-- TC-017: Save Configuration Button
-- TC-030: Localhost-Only Access
+- TC-001: Basic First Node Configuration
+- TC-002: Minimal No GPU Configuration
+- TC-007: Invalid Domain Name
+- TC-011: NVMe Disk Auto-Detection
 
 ### P1 - High (Should Pass)
-- TC-003 through TC-005: Domain validation
-- TC-008: Root Device Conflict
-- TC-010 through TC-012: Certificate options
-- TC-013 through TC-016: Checkbox tests
-- TC-028: End-to-End First Node
+- TC-003 through TC-006: Valid configuration variations
+- TC-008 through TC-010: Validation tests
+- TC-012 through TC-014: Auto-detection scenarios
+- TC-016: Complete First Node Setup
 
 ### P2 - Medium (Nice to Have)
-- TC-020 through TC-021: Prefilled configuration
-- TC-024 through TC-027: UI/UX tests
-- TC-029: Additional node setup
+- TC-015: No Available Disks
+- TC-017: Complete Additional Node Setup
 
-### P3 - Low (Future)
-- TC-022 through TC-023: Error handling
-- TC-026: Responsive design
-- TC-031: Input sanitization
+## Adding New Test Cases
 
-## Test Case Format
+1. Choose appropriate directory: `valid/`, `invalid/`, `autodetect/`, or `integration/`
+2. Create YAML file following naming: `bloom_descriptive_name.yaml`
+3. Use three-section format:
+   - `input`: Form fields to fill
+   - `mocks`: Command mocks (if auto-detection)
+   - `output`: Expected values or errors
+4. For validation tests, specify `output.error.<field>`
+5. For auto-detection, specify `output.CLUSTER_DISKS`
+6. Document the test case in this file
+7. Run tests to verify:
+   ```bash
+   go test -v -run TestConfigBasedTests/bloom_your_new_test
+   ```
 
-Each test case YAML file should follow this format:
+## Mock System Reference
+
+### Mock Key Format
+```
+<function>.<command>.<argument>
+```
+
+### Available Mock Functions
+
+- `addrootdevicetoconfig.statconfigfile` - File existence check
+  ```yaml
+  error: "no such file or directory"  # Triggers auto-detection
+  ```
+
+- `getunmountedphysicaldisks.listblockdevices` - List all block devices
+  ```yaml
+  output: |
+    nvme0n1 disk
+    sda disk
+  ```
+
+- `getunmountedphysicaldisks.checkmount.<disk>` - Check mount status
+  ```yaml
+  output: ""              # Not mounted (available)
+  output: "/"             # Mounted (unavailable)
+  output: "[SWAP]"        # Swap (unavailable)
+  ```
+
+- `getunmountedphysicaldisks.udevinfo.<disk>` - Get device properties
+  ```yaml
+  output: |
+    ID_BUS=scsi
+    ID_MODEL=Samsung_SSD_870    # Physical disk
+    # or
+    ID_MODEL=QEMU_HARDDISK      # Virtual disk (filtered)
+  ```
+
+## Validation Error Checking
+
+The test framework checks for field-specific HTML5 validation errors:
 
 ```yaml
-# Test case description and ID
-DOMAIN: <value>
-CLUSTER_DISKS: <value>
-CERT_OPTION: <value>
-FIRST_NODE: <boolean>
-GPU_NODE: <boolean>
-
-# Optional: For validation failure tests
-expected_error: "<error text to verify>"
-
-# Optional: For specific behavior tests
-expected_behavior: "<expected behavior description>"
+output:
+  error:
+    DOMAIN: "Please match the requested format"
+    SERVER_IP: "Please fill out this field"
 ```
 
-## Running Tests
-
-```bash
-# Run all UI tests
-./run_ui_tests.sh
-
-# Run specific test case
-BLOOM_YAML_PATH=/tmp/bloom.yaml go test -v -run TestWebFormE2E/bloom_specific_test.yaml
-
-# Run with verbose output
-BLOOM_YAML_PATH=/tmp/bloom.yaml go test -v -run TestWebFormE2E
-```
+Tests verify:
+- Error is associated with correct form field
+- Error message matches expected text
+- Form submission is blocked
+- bloom.yaml is NOT created
 
 ## Test Coverage Goals
 
 - **Form Validation:** 100% of validation rules covered
 - **User Workflows:** All primary user journeys tested
+- **Auto-Detection:** All disk detection scenarios tested
 - **Error Scenarios:** All expected error conditions tested
-- **UI Components:** All interactive elements tested
 
-## Notes
+## References
 
-- Test cases are implemented as YAML files matching pattern `bloom_*.yaml`
-- Each test case is run as a subtest using Go's `t.Run()`
-- Browser automation uses chromedp connecting to remote Chrome on port 9222
-- Tests should be idempotent and independent
-- Cleanup happens automatically via test script
+- Main README: `/workspace/tests/ui/README.md`
+- Test Runner: `/workspace/tests/ui/config_test.go`
+- Test Data: `/workspace/tests/ui/testdata/`

@@ -36,9 +36,22 @@ tests/ui/
 
 ## Prerequisites
 
-**Chromium with remote debugging**
+### Running Browser with Docker
+
+The tests require a headless Chrome browser. Start it using Docker:
+
 ```bash
-chromium --remote-debugging-port=9222 --headless --no-sandbox &
+docker run -d --rm \
+  --name chrome-test \
+  --net=host \
+  -e "PORT=9222" \
+  browserless/chrome:latest
+```
+
+To stop the browser when done:
+
+```bash
+docker stop chrome-test
 ```
 
 ## Running Tests
@@ -64,26 +77,47 @@ go test -v -run TestConfigBasedTests/.*autodetect
 go test -v -run TestConfigBasedTests/bloom_basic
 
 # Run a specific test case
-go test -v -run TestConfigBasedTests/bloom_autodetect_nvme.yaml
+go test -v -run TestConfigBasedTests/bloom_autodetect_nvme
 ```
 
 ## Test Case Format
 
+Test cases use a YAML format with three sections: `input`, `mocks`, and `output`.
+
 ### Valid Configuration Test
+
 ```yaml
-DOMAIN: test.local
-CLUSTER_DISKS: /dev/sdb,/dev/sdc
-CERT_OPTION: generate
-FIRST_NODE: true
-GPU_NODE: true
+input:
+  DOMAIN: test-basic.local
+  CLUSTER_DISKS: /dev/sdb,/dev/sdc
+  CERT_OPTION: generate
+  FIRST_NODE: true
+  GPU_NODE: true
+```
+
+### Invalid Configuration Test
+
+```yaml
+input:
+  DOMAIN: -invalid-domain-format.com
+  CLUSTER_DISKS: /dev/sdb
+  CERT_OPTION: generate
+  FIRST_NODE: true
+  GPU_NODE: false
+
+output:
+  error:
+    DOMAIN: "Please match the requested format"
 ```
 
 ### Auto-Detection Test with Mocks
+
 ```yaml
-DOMAIN: autodetect-nvme.local
-FIRST_NODE: true
-GPU_NODE: false
-CERT_OPTION: generate
+input:
+  DOMAIN: autodetect-nvme.local
+  FIRST_NODE: true
+  GPU_NODE: false
+  CERT_OPTION: generate
 
 mocks:
   addrootdevicetoconfig.statconfigfile:
@@ -100,8 +134,29 @@ mocks:
   getunmountedphysicaldisks.checkmount.nvme2n1:
     output: "/"
 
-expected_cluster_disks: "/dev/nvme0n1,/dev/nvme1n1"
+output:
+  CLUSTER_DISKS: "/dev/nvme0n1,/dev/nvme1n1"
 ```
+
+## Test Sections
+
+### `input`
+Contains the initial form values to fill in the WebUI. If a field is omitted, auto-detection is triggered (for CLUSTER_DISKS).
+
+### `mocks` (optional)
+Defines mock command responses for disk auto-detection testing. Available mocks:
+
+- `addrootdevicetoconfig.statconfigfile` - Mock file existence check
+- `getunmountedphysicaldisks.listblockdevices` - Mock lsblk output
+- `getunmountedphysicaldisks.checkmount.<disk>` - Mock mount status per disk
+- `getunmountedphysicaldisks.udevinfo.<disk>` - Mock udev properties per disk
+
+### `output`
+Specifies expected results:
+
+- **Valid tests**: Expected values in bloom.yaml (e.g., `DOMAIN: test.local`)
+- **Invalid tests**: Expected validation errors (e.g., `error: { DOMAIN: "error message" }`)
+- **Auto-detect tests**: Expected auto-detected values (e.g., `CLUSTER_DISKS: "/dev/nvme0n1"`)
 
 ## Test Categories
 
@@ -112,8 +167,9 @@ expected_cluster_disks: "/dev/nvme0n1,/dev/nvme1n1"
 
 ### Invalid Tests (`testdata/invalid/`)
 - Test form validation
-- Verify error messages are displayed
+- Verify field-specific error messages are displayed
 - Ensure bloom.yaml is NOT created on validation failure
+- Tests use HTML5 validation checking
 
 ### Integration Tests (`testdata/integration/`)
 - End-to-end workflows
@@ -127,37 +183,31 @@ expected_cluster_disks: "/dev/nvme0n1,/dev/nvme1n1"
 - Test mount status checking
 - Each test creates its own server with test-specific mocks
 
-## Mock System
-
-The mock system allows testing disk auto-detection without real hardware:
-
-### Available Mocks
-
-- `addrootdevicetoconfig.statconfigfile` - Mock file existence check
-- `getunmountedphysicaldisks.listblockdevices` - Mock lsblk output
-- `getunmountedphysicaldisks.checkmount.<disk>` - Mock mount status per disk
-- `getunmountedphysicaldisks.udevinfo.<disk>` - Mock udev properties per disk
-
-### Mock Scenarios
+## Mock Scenarios
 
 1. **NVMe Detection** - Multiple NVMe drives with mount filtering
 2. **Mixed Drives** - NVMe + SCSI/SATA detection
 3. **Virtual Filtering** - Exclude QEMU/VMware virtual disks
-4. **No Disks** - All disks mounted (empty detection)
+4. **Swap Filtering** - Exclude disks in use for swap
+5. **No Disks** - All disks mounted or otherwise unavailable (empty detection)
 
 ## Adding New Test Cases
 
 1. Create a YAML file in the appropriate `testdata/` subdirectory
 2. Follow naming convention: `bloom_descriptive_name.yaml`
-3. For autodetect tests, include `mocks` section and `expected_cluster_disks`
-4. Run tests to verify:
+3. Use the three-section format: `input`, `mocks` (if needed), `output`
+4. For validation tests, specify `output.error.<field>` with expected error message
+5. For autodetect tests, include `mocks` section and `output.CLUSTER_DISKS`
+6. Run tests to verify:
    ```bash
    go test -v -run TestConfigBasedTests
    ```
 
 ## CI/CD Integration
 
-Skip tests in environments without browser support:
+The tests are integrated into the GitHub Actions workflow. See `.github/workflows/run-tests.yml` for the complete CI/CD configuration.
+
+To skip tests in environments without browser support:
 
 ```bash
 SKIP_BROWSER_TESTS=1 go test -v
@@ -165,38 +215,70 @@ SKIP_BROWSER_TESTS=1 go test -v
 
 ## Test Output
 
+### Passing Valid Configuration Test
+```
+=== RUN   TestConfigBasedTests/bloom_basic_first_node
+    config_test.go:100: ✅ All output values match expected
+--- PASS: TestConfigBasedTests/bloom_basic_first_node (2.31s)
+```
+
+### Passing Invalid Configuration Test
+```
+=== RUN   TestConfigBasedTests/bloom_invalid_domain
+    config_test.go:150: ✅ Validation error correctly displayed for DOMAIN
+--- PASS: TestConfigBasedTests/bloom_invalid_domain (1.82s)
+```
+
 ### Passing Auto-Detection Test
 ```
-=== RUN   TestConfigBasedTests/bloom_autodetect_nvme.yaml
-    config_test.go:73: Running test: testdata/autodetect/bloom_autodetect_nvme.yaml
-    config_test.go:75: Expected CLUSTER_DISKS: /dev/nvme0n1,/dev/nvme1n1
-    config_test.go:137: ✅ Auto-detected CLUSTER_DISKS correctly: /dev/nvme0n1,/dev/nvme1n1
-    config_test.go:221: ✅ Browser form field correctly shows: /dev/nvme0n1,/dev/nvme1n1
---- PASS: TestConfigBasedTests/bloom_autodetect_nvme.yaml (4.62s)
+=== RUN   TestConfigBasedTests/bloom_autodetect_nvme
+    config_test.go:100: ✅ All output values match expected
+    config_test.go:105: ✅ Auto-detected CLUSTER_DISKS: /dev/nvme0n1,/dev/nvme1n1
+--- PASS: TestConfigBasedTests/bloom_autodetect_nvme (3.45s)
 ```
 
 ## Troubleshooting
 
+### Chrome container not running
+```bash
+# Check if container is running
+docker ps | grep chrome-test
+
+# Start the container using the command from Prerequisites section
+docker run -d --rm --name chrome-test --net=host -e "PORT=9222" browserless/chrome:latest
+```
+
 ### Port 9222 already in use
 ```bash
+# Stop existing Chrome container
+docker stop chrome-test
+
+# Or if running locally without Docker
 pkill -9 chromium
-chromium --remote-debugging-port=9222 --headless --no-sandbox &
 ```
 
 ### Tests timeout
-- Check if chromium is running on port 9222
-- Increase timeout in config_test.go (default 30s)
+- Check if Chrome is running on port 9222: `curl http://localhost:9222/json/version`
+- Increase timeout in config_test.go if needed (default 30s)
+- Check Docker logs: `docker logs chrome-test`
+
+### Mock not working
+- Verify mock key format matches function.command.argument pattern
+- Check that all required mocks for a disk are defined
+- Review test output for mock loading messages
 
 ## Contributing
 
 When adding new test cases:
 1. Document the test case in `docs/TEST_CASES.md`
 2. Create YAML file in appropriate `testdata/` subdirectory
-3. For autodetect tests, define all required mocks
-4. Ensure test name is descriptive
-5. Run full test suite before committing
+3. Use the three-section format (`input`, `mocks`, `output`)
+4. For autodetect tests, define all required mocks
+5. Ensure test name is descriptive
+6. Run full test suite before committing
 
 ## References
 
 - [chromedp Documentation](https://github.com/chromedp/chromedp)
+- [browserless/chrome Docker Image](https://hub.docker.com/r/browserless/chrome)
 - [Go Testing Package](https://pkg.go.dev/testing)
