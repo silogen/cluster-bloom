@@ -665,6 +665,9 @@
                 // Validate for duplicate URLs and conflicts with default provider
                 const domain = config.DOMAIN || '';
                 const defaultOidcUrl = `https://kc.${domain}/realms/airm`;
+                console.log('OIDC Validation - Domain:', domain);
+                console.log('OIDC Validation - Default URL:', defaultOidcUrl);
+                console.log('OIDC Validation - Providers:', oidcProviders);
                 
                 const providedUrls = new Set();
                 let duplicateError = null;
@@ -688,6 +691,7 @@
                 }
                 
                 if (duplicateError) {
+                    console.log('OIDC Duplicate Error Found:', duplicateError);
                     errors.push(duplicateError);
                 }
                 
