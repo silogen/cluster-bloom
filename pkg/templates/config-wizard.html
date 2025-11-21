@@ -308,15 +308,15 @@
                 <div class="section-header">⚙️ Advanced Configuration</div>
                 <div class="section-content">
                     <div class="form-group">
-                        <label for="OIDC_URL">OIDC Provider URL</label>
-                        <div class="description">URL of the OIDC provider for authentication. Leave empty to skip OIDC configuration.</div>
-                        <input type="url" id="OIDC_URL" name="OIDC_URL" placeholder="https://your-oidc-provider.com"
-                               pattern="^https?://.*$|^$"
-                               title="Must be a valid HTTP or HTTPS URL">
+                        <label for="RKE2_VERSION">RKE2 Version</label>
+                        <div class="description">Specific RKE2 version to install. Leave empty for latest version.</div>
+                        <input type="text" id="RKE2_VERSION" name="RKE2_VERSION" placeholder="v1.34.1+rke2r1" value="v1.34.1+rke2r1"
+                               pattern="^v[0-9]+\.[0-9]+\.[0-9]+(\+rke2r[0-9]+)?$|^$"
+                               title="Must be a valid RKE2 version format (e.g., v1.34.1+rke2r1)">
                         <small class="help-text" style="color: #666; font-size: 12px; margin-top: 4px; display: block;">
-                            ✓ Format: https://provider.com or http://provider.local<br>
-                            ✓ Must be accessible from the cluster<br>
-                            ✓ Leave empty to skip OIDC setup
+                            ✓ Format: v1.34.1+rke2r1 or similar<br>
+                            ✓ Leave empty for latest version<br>
+                            ✓ Must be a valid RKE2 release
                         </small>
                     </div>
 
@@ -707,11 +707,11 @@
                 }
             }
 
-            // Validate OIDC URL if provided
-            if (config.OIDC_URL) {
-                validateField('OIDC_URL', 'OIDC_URL');
-                if (!document.getElementById('OIDC_URL').validity.valid) {
-                    errors.push('❌ Invalid OIDC URL - Must be a valid HTTP or HTTPS URL');
+            // Validate RKE2_VERSION if provided
+            if (config.RKE2_VERSION) {
+                validateField('RKE2_VERSION', 'RKE2_VERSION');
+                if (!document.getElementById('RKE2_VERSION').validity.valid) {
+                    errors.push('❌ Invalid RKE2 version format - Must be like v1.34.1+rke2r1');
                 }
             }
 
@@ -1030,7 +1030,7 @@
                             'JOIN_TOKEN': 'join_token',
                             'CLUSTER_DISKS': 'cluster_disks',
                             'CLUSTER_PREMOUNTED_DISKS': 'cluster_premounted_disks',
-                            'OIDC_URL': 'oidc_url',
+                            'RKE2_VERSION': 'rke2_version',
                             'CLUSTERFORGE_RELEASE': 'clusterforge_release',
                             'DISABLED_STEPS': 'disabled_steps',
                             'ENABLED_STEPS': 'enabled_steps',
