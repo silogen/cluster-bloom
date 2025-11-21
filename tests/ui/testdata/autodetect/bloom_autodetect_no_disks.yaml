@@ -7,6 +7,8 @@ input:
 mocks:
   addrootdevicetoconfig.statconfigfile:
     error: "no such file or directory"
+  addrootdevicetoconfig.readfstab:
+    output: ""
   getunmountedphysicaldisks.listblockdevices:
     output: |
       sda disk
