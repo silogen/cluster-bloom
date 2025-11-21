@@ -28,6 +28,8 @@ import (
 	"github.com/spf13/viper"
 )
 
+// if the audit-log settings are modified, also update pkg/system/logrotate/conf/rke2.conf
+
 // OIDCConfig represents configuration for an OIDC provider
 type OIDCConfig struct {
 	URL       string   `yaml:"url"`
@@ -237,6 +239,27 @@ func PrepareRKE2() error {
 	if err := os.WriteFile(rke2ConfigPath, []byte(rke2ConfigContent), 0644); err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to write to %s: %v", rke2ConfigPath, err))
 		return err
+	}
+
+	extraConfig := viper.GetString("RKE2_EXTRA_CONFIG")
+	if extraConfig != "" {
+		file, err := os.OpenFile(rke2ConfigPath, os.O_APPEND|os.O_WRONLY, 0644)
+		if err != nil {
+			return fmt.Errorf("failed to open %s for appending extra config: %v", rke2ConfigPath, err)
+		}
+		defer file.Close()
+
+		if _, err := file.WriteString("\n" + extraConfig + "\n"); err != nil {
+			return fmt.Errorf("failed to append extra config to %s: %v", rke2ConfigPath, err)
+		}
+		LogMessage(Info, "Appended RKE2_EXTRA_CONFIG to config.yaml")
+	}
+
+	certPath := "/etc/rancher/rke2/oidc-ca.crt"
+	if _, err := os.Stat(certPath); err == nil {
+		if err := os.Remove(certPath); err != nil {
+			return fmt.Errorf("failed to remove existing certificate at %s: %v", certPath, err)
+		}
 	}
 
 	// Handle certificate and authentication configuration
