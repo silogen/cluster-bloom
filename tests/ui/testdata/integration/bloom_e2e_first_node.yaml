@@ -1,0 +1,6 @@
+input:
+  DOMAIN: cluster.test.local
+  CLUSTER_DISKS: /dev/sdb,/dev/sdc
+  CERT_OPTION: generate
+  FIRST_NODE: true
+  GPU_NODE: true

@@ -31,6 +31,8 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v2"
+
+	"github.com/silogen/cluster-bloom/pkg/mockablecmd"
 )
 
 //go:embed templates/*
@@ -46,31 +48,35 @@ const (
 )
 
 type WebHandlerService struct {
-	monitor           *WebMonitor
-	configMode        bool
-	config            map[string]interface{}
-	lastError         string
-	errorType         ErrorType
-	configVersion     int
-	prefilledConfig   map[string]interface{}
-	oneShot           bool
-	validationFailed  bool
-	validationErrors  []string
-	steps             []Step
-	startInstallation func() error
+	monitor            *WebMonitor
+	configMode         bool
+	config             map[string]interface{}
+	lastError          string
+	errorType          ErrorType
+	configVersion      int
+	prefilledConfig    map[string]interface{}
+	oneShot            bool
+	validationFailed   bool
+	validationErrors   []string
+	steps              []Step
+	startInstallation  func() error
+	shouldStartInstall bool
+	configSavedOnly    bool
 }
 
 func NewWebHandlerService(monitor *WebMonitor) *WebHandlerService {
 	return &WebHandlerService{
-		monitor:           monitor,
-		configMode:        false,
-		config:            make(map[string]interface{}),
-		errorType:         ErrorTypeGeneral,
-		configVersion:     0,
-		prefilledConfig:   make(map[string]interface{}),
-		oneShot:           false,
-		steps:             nil,
-		startInstallation: nil,
+		monitor:            monitor,
+		configMode:         false,
+		config:             make(map[string]interface{}),
+		errorType:          ErrorTypeGeneral,
+		configVersion:      0,
+		prefilledConfig:    make(map[string]interface{}),
+		oneShot:            false,
+		steps:              nil,
+		startInstallation:  nil,
+		shouldStartInstall: false,
+		configSavedOnly:    false,
 	}
 }
 
@@ -79,15 +85,21 @@ func (h *WebHandlerService) SetInstallationHandler(steps []Step, startCallback f
 	h.startInstallation = startCallback
 }
 
+func (h *WebHandlerService) GetPrefilledConfig() map[string]interface{} {
+	return h.prefilledConfig
+}
+
 func NewWebHandlerServiceConfig() *WebHandlerService {
 	return &WebHandlerService{
-		monitor:         nil,
-		configMode:      true,
-		config:          make(map[string]interface{}),
-		errorType:       ErrorTypeGeneral,
-		configVersion:   0,
-		prefilledConfig: make(map[string]interface{}),
-		oneShot:         false,
+		monitor:            nil,
+		configMode:         true,
+		config:             make(map[string]interface{}),
+		errorType:          ErrorTypeGeneral,
+		configVersion:      0,
+		prefilledConfig:    make(map[string]interface{}),
+		oneShot:            false,
+		shouldStartInstall: false,
+		configSavedOnly:    false,
 	}
 }
 
@@ -137,6 +149,78 @@ func (h *WebHandlerService) AddRootDeviceToConfig() {
 	} else {
 		h.prefilledConfig["root_device"] = rootDisk
 	}
+
+	// Auto-detect unmounted physical disks and pre-fill CLUSTER_DISKS
+	// Only do this if no config file was provided or it doesn't exist
+	configFile := viper.ConfigFileUsed()
+	configFileExists := false
+	if configFile != "" {
+		if _, err := mockablecmd.Stat("AddRootDeviceToConfig.StatConfigFile", configFile); err == nil {
+			configFileExists = true
+		}
+	}
+	if !configFileExists {
+		// First, check if there are already bloom-managed disks in fstab
+		bloomDisks, err := getBloomManagedDisksFromFstab()
+		if err != nil {
+			LogMessage(Debug, fmt.Sprintf("error reading bloom disks from fstab: %v", err))
+		}
+
+		if len(bloomDisks) > 0 {
+			// Use existing bloom-managed disks
+			h.prefilledConfig["cluster_disks"] = strings.Join(bloomDisks, ",")
+			LogMessage(Debug, fmt.Sprintf("Found %d bloom-managed disk(s) in fstab: %s", len(bloomDisks), strings.Join(bloomDisks, ",")))
+		} else {
+			// No bloom disks in fstab, auto-detect unmounted disks
+			unmountedDisks, err := GetUnmountedPhysicalDisks()
+			if err != nil {
+				LogMessage(Error, fmt.Sprintf("error trying to detect unmounted disks: %v", err))
+			} else if len(unmountedDisks) > 0 {
+				h.prefilledConfig["cluster_disks"] = strings.Join(unmountedDisks, ",")
+				LogMessage(Debug, fmt.Sprintf("Auto-detected %d unmounted disk(s) for cluster use: %s", len(unmountedDisks), strings.Join(unmountedDisks, ",")))
+			}
+		}
+	}
+}
+
+func getBloomManagedDisksFromFstab() ([]string, error) {
+	const bloomFstabTag = "# managed by cluster-bloom"
+	var disks []string
+
+	fstabContent, err := mockablecmd.ReadFile("AddRootDeviceToConfig.ReadFstab", "/etc/fstab")
+	if err != nil {
+		return nil, err
+	}
+
+	lines := strings.Split(string(fstabContent), "\n")
+	for _, line := range lines {
+		trimmedLine := strings.TrimSpace(line)
+		if strings.HasSuffix(trimmedLine, bloomFstabTag) {
+			// Parse fstab entry: UUID=xxx /mnt/diskN ext4 defaults,nofail 0 2 # managed by cluster-bloom
+			fields := strings.Fields(trimmedLine)
+			if len(fields) >= 1 {
+				// First field is UUID=xxx or device path
+				deviceField := fields[0]
+				if strings.HasPrefix(deviceField, "UUID=") {
+					// Extract UUID and find corresponding device
+					uuid := strings.TrimPrefix(deviceField, "UUID=")
+					// Use blkid to find device by UUID
+					mockID := fmt.Sprintf("AddRootDeviceToConfig.BlkidUUID.%s", uuid)
+					output, err := mockablecmd.Run(mockID, "blkid", "-U", uuid)
+					if err == nil {
+						device := strings.TrimSpace(string(output))
+						if device != "" {
+							disks = append(disks, device)
+						}
+					}
+				} else if strings.HasPrefix(deviceField, "/dev/") {
+					disks = append(disks, deviceField)
+				}
+			}
+		}
+	}
+
+	return disks, nil
 }
 
 func getRootDiskCmd() (string, error) {
@@ -304,12 +388,20 @@ func (h *WebHandlerService) ConfigWizardHandler(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	_, longhornPreviousDisks, err := GetDisksFromSelectedConfig(h.prefilledConfig["cluster_disks"].(string))
+	clusterDisksStr, ok := h.prefilledConfig["cluster_disks"].(string)
+	if !ok {
+		clusterDisksStr = ""
+	}
+	_, longhornPreviousDisks, err := GetDisksFromSelectedConfig(clusterDisksStr)
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Error getting prior Longhorn previous format targets: %v", err))
 	}
 
-	_, longhornPreviousMountpoints, err := GetDisksFromLonghornConfig(h.prefilledConfig["cluster_premounted_disks"].(string))
+	clusterPremountedDisksStr, ok := h.prefilledConfig["cluster_premounted_disks"].(string)
+	if !ok {
+		clusterPremountedDisksStr = ""
+	}
+	_, longhornPreviousMountpoints, err := GetDisksFromLonghornConfig(clusterPremountedDisksStr)
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Error getting prior Longhorn mount points: %v", err))
 	}
@@ -394,7 +486,8 @@ func (h *WebHandlerService) ConfigAPIHandler(w http.ResponseWriter, r *http.Requ
 
 	h.config = config
 	h.configVersion++
-	h.lastError = "" // Clear any previous errors
+	h.lastError = ""            // Clear any previous errors
+	h.shouldStartInstall = true // Signal that installation should start
 
 	// Don't start installation automatically to avoid concurrent Viper access
 	// The user will need to restart bloom with the new configuration
@@ -411,6 +504,58 @@ func (h *WebHandlerService) ConfigAPIHandler(w http.ResponseWriter, r *http.Requ
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"message": "Configuration saved successfully. Please restart bloom to apply changes.",
+		"file":    filename,
+	})
+}
+
+func (h *WebHandlerService) ConfigOnlyAPIHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var config map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&config); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Invalid JSON: " + err.Error(),
+		})
+		return
+	}
+
+	yamlData, err := yaml.Marshal(config)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Failed to generate YAML: " + err.Error(),
+		})
+		return
+	}
+
+	filename := "bloom.yaml"
+	if err := os.WriteFile(filename, yamlData, 0644); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Failed to save configuration: " + err.Error(),
+		})
+		return
+	}
+
+	h.config = config
+	h.configVersion++
+	h.lastError = ""             // Clear any previous errors
+	h.shouldStartInstall = false // Do NOT signal installation to start
+	h.configSavedOnly = false    // Do NOT signal to exit - just save the config
+
+	log.Debug("Configuration saved without starting installation")
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Configuration saved successfully. You can start the installation manually when ready.",
 		"file":    filename,
 	})
 }
@@ -441,7 +586,7 @@ func (h *WebHandlerService) SetError(errorMsg string) {
 }
 
 func (h *WebHandlerService) ConfigChanged() bool {
-	return h.configVersion > 1 // First config is version 1, changes are version 2+
+	return h.configVersion > 1 && h.shouldStartInstall // First config is version 1, changes are version 2+, and installation should start
 }
 
 func (h *WebHandlerService) GetLastError() string {
