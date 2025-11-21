@@ -118,6 +118,42 @@
         }
         .error { color: #d32f2f; margin-top: 5px; font-size: 14px; }
         .success { color: #2e7d32; margin-top: 5px; font-size: 14px; }
+        .oidc-provider {
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 15px;
+            background-color: #fafafa;
+            position: relative;
+        }
+        .oidc-provider-header {
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #333;
+        }
+        .oidc-provider-remove {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: #d32f2f;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 25px;
+            height: 25px;
+            cursor: pointer;
+            font-size: 14px;
+            line-height: 1;
+        }
+        .oidc-provider-remove:hover {
+            background: #b71c1c;
+        }
+        .oidc-provider .form-group {
+            margin-bottom: 15px;
+        }
+        .oidc-provider .form-group:last-child {
+            margin-bottom: 0;
+        }
     </style>
 </head>
 <body>
@@ -317,6 +353,20 @@
                             ✓ Format: v1.34.1+rke2r1 or similar<br>
                             ✓ Leave empty for latest version<br>
                             ✓ Must be a valid RKE2 release
+                        </small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="ADDITIONAL_OIDC_PROVIDERS">Additional OIDC Providers</label>
+                        <div class="description">Configure additional OIDC providers for authentication. Each provider needs a URL and at least one audience (client ID).</div>
+                        <div id="oidc-providers-container">
+                            <!-- Dynamic OIDC providers will be added here -->
+                        </div>
+                        <button type="button" class="btn btn-secondary" onclick="addOIDCProvider()" style="margin-top: 10px;">+ Add OIDC Provider</button>
+                        <small class="help-text" style="color: #666; font-size: 12px; margin-top: 8px; display: block;">
+                            ✓ URL: https://keycloak.example.com/realms/main<br>
+                            ✓ Audiences: Client IDs from your OIDC provider<br>
+                            ✓ Leave empty to skip additional OIDC setup
                         </small>
                     </div>
 
@@ -1150,6 +1200,12 @@
             checkForErrors();
                 styleLonghornDiskInfo();
             // updateProgress is called inside loadPrefilledConfig
+        }
+
+        // Placeholder function for OIDC provider management (Step 3 will implement this)
+        function addOIDCProvider() {
+            console.log('Add OIDC Provider clicked - will be implemented in Step 3');
+            alert('OIDC Provider functionality will be added in the next step!');
         }
     </script>
 </body>
