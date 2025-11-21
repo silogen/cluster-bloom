@@ -800,8 +800,6 @@ var CreateDomainConfigStep = Step{
 		time.Sleep(5 * time.Second)
 
 		// Create domain ConfigMap
-		useCertManager := viper.GetBool("USE_CERT_MANAGER")
-
 		configMapYAML := fmt.Sprintf(`apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -809,8 +807,7 @@ metadata:
   namespace: default
 data:
   domain: "%s"
-  use-cert-manager: "%t"
-`, domain, useCertManager)
+`, domain)
 
 		// Write ConfigMap to temporary file and apply
 		tmpFile, err := os.CreateTemp("", "domain-configmap-*.yaml")
@@ -836,58 +833,52 @@ data:
 
 		LogMessage(Info, "Successfully created domain ConfigMap")
 
-		// Handle TLS certificates
-		if !useCertManager {
-			certOption := viper.GetString("CERT_OPTION")
-			tlsCertPath := viper.GetString("TLS_CERT")
-			tlsKeyPath := viper.GetString("TLS_KEY")
-
-			// Handle certificate generation or use existing
-			if certOption == "generate" {
-				LogMessage(Info, "Generating self-signed certificate for domain: "+domain)
-
-				// Create temporary directory for certificate files
-				tempDir, err := os.MkdirTemp("", "bloom-tls-*")
-				if err != nil {
-					LogMessage(Error, fmt.Sprintf("Failed to create temp directory: %v", err))
-					return StepResult{Error: fmt.Errorf("failed to create temp directory: %w", err)}
-				}
-				defer os.RemoveAll(tempDir)
-
-				tlsCertPath = filepath.Join(tempDir, "tls.crt")
-				tlsKeyPath = filepath.Join(tempDir, "tls.key")
-
-				// Generate self-signed certificate using openssl
-				cmd := exec.Command("openssl", "req", "-x509", "-nodes", "-days", "365", "-newkey", "rsa:2048",
-					"-keyout", tlsKeyPath,
-					"-out", tlsCertPath,
-					"-subj", fmt.Sprintf("/CN=%s", domain),
-					"-addext", fmt.Sprintf("subjectAltName=DNS:%s,DNS:*.%s", domain, domain))
-
-				output, err := cmd.CombinedOutput()
-				if err != nil {
-					LogMessage(Error, fmt.Sprintf("Failed to generate self-signed certificate: %v, output: %s", err, string(output)))
-					return StepResult{Error: fmt.Errorf("failed to generate self-signed certificate: %w", err)}
-				}
-				LogMessage(Info, "Successfully generated self-signed certificate")
-			} else if certOption == "existing" {
-				// Verify certificate and key files exist
-				if tlsCertPath == "" || tlsKeyPath == "" {
-					LogMessage(Error, "CERT_OPTION is 'existing' but TLS_CERT or TLS_KEY not provided")
-					return StepResult{Error: fmt.Errorf("TLS certificate files not provided")}
-				}
-				if _, err := os.Stat(tlsCertPath); os.IsNotExist(err) {
-					LogMessage(Error, fmt.Sprintf("TLS certificate file not found: %s", tlsCertPath))
-					return StepResult{Error: fmt.Errorf("TLS certificate file not found: %s", tlsCertPath)}
-				}
-				if _, err := os.Stat(tlsKeyPath); os.IsNotExist(err) {
-					LogMessage(Error, fmt.Sprintf("TLS key file not found: %s", tlsKeyPath))
-					return StepResult{Error: fmt.Errorf("TLS key file not found: %s", tlsKeyPath)}
-				}
-			} else {
-				LogMessage(Info, "Domain configured but no certificate option specified")
-				return StepResult{Message: "Domain ConfigMap created but no TLS configuration applied"}
+		// Handle TLS secret creation using persistent certificates from PrepareRKE2
+		if domain != "" {
+			// Get certificate paths from PrepareRKE2Step
+			tlsCertPath := viper.GetString("RUNTIME_TLS_CERT")
+			tlsKeyPath := viper.GetString("RUNTIME_TLS_KEY")
+			
+			if tlsCertPath == "" || tlsKeyPath == "" {
+				LogMessage(Error, "Certificate paths not found - PrepareRKE2 may have failed")
+				return StepResult{Error: fmt.Errorf("certificate paths not found - PrepareRKE2 may have failed")}
 			}
+			
+			// Verify files still exist
+			if _, err := os.Stat(tlsCertPath); os.IsNotExist(err) {
+				LogMessage(Error, fmt.Sprintf("Certificate file missing: %s", tlsCertPath))
+				return StepResult{Error: fmt.Errorf("certificate file missing: %s", tlsCertPath)}
+			}
+			if _, err := os.Stat(tlsKeyPath); os.IsNotExist(err) {
+				LogMessage(Error, fmt.Sprintf("Key file missing: %s", tlsKeyPath))
+				return StepResult{Error: fmt.Errorf("key file missing: %s", tlsKeyPath)}
+			}
+
+			// Create ClusterRoleBindings for OIDC authorization
+			LogMessage(Info, "Creating OIDC ClusterRoleBindings")
+			
+			clusterRoleBindingFile, err := os.CreateTemp("", "cluster-role-binding-*.yaml")
+			if err != nil {
+				LogMessage(Error, fmt.Sprintf("Failed to create temporary ClusterRoleBinding file: %v", err))
+				return StepResult{Error: fmt.Errorf("failed to create temporary ClusterRoleBinding file: %w", err)}
+			}
+			defer os.Remove(clusterRoleBindingFile.Name())
+
+			if _, err := clusterRoleBindingFile.WriteString(clusterRoleBindingTemplate); err != nil {
+				LogMessage(Error, fmt.Sprintf("Failed to write ClusterRoleBinding YAML: %v", err))
+				return StepResult{Error: fmt.Errorf("failed to write ClusterRoleBinding YAML: %w", err)}
+			}
+			clusterRoleBindingFile.Close()
+
+			// Apply the ClusterRoleBindings
+			cmd := exec.Command("/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "apply", "-f", clusterRoleBindingFile.Name())
+			output, err := cmd.CombinedOutput()
+			if err != nil {
+				LogMessage(Error, fmt.Sprintf("Failed to create ClusterRoleBindings: %v, output: %s", err, string(output)))
+				return StepResult{Error: fmt.Errorf("failed to create ClusterRoleBindings: %w", err)}
+			}
+
+			LogMessage(Info, "Successfully created OIDC ClusterRoleBindings")
 
 			// Create kgateway-system namespace
 			namespaceYAML := `apiVersion: v1
@@ -909,8 +900,8 @@ metadata:
 			tmpNsFile.Close()
 
 			// Apply the namespace
-			cmd := exec.Command("/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "apply", "-f", tmpNsFile.Name())
-			output, err := cmd.CombinedOutput()
+			cmd = exec.Command("/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "apply", "-f", tmpNsFile.Name())
+			output, err = cmd.CombinedOutput()
 			if err != nil {
 				LogMessage(Error, fmt.Sprintf("Failed to create kgateway-system namespace: %v, output: %s", err, string(output)))
 				return StepResult{Error: fmt.Errorf("failed to create kgateway-system namespace: %w", err)}
@@ -955,10 +946,9 @@ metadata:
 
 			LogMessage(Info, "Successfully created TLS secret")
 			return StepResult{Message: "Domain ConfigMap and TLS secret created successfully"}
-		} else {
-			LogMessage(Info, "Cert-manager will be used for TLS certificates")
-			return StepResult{Message: "Domain ConfigMap created, cert-manager will handle TLS"}
 		}
+		
+		return StepResult{Message: "Domain ConfigMap created successfully"}
 	},
 }
 
