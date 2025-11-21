@@ -129,6 +129,7 @@ ADDITIONAL_OIDC_PROVIDERS:
 - `audiences`: List of client IDs from your OIDC provider
 - `RKE2_VERSION`: Specify exact RKE2 version, or leave empty for latest
 - OIDC providers are optional - leave `ADDITIONAL_OIDC_PROVIDERS` empty to skip
+- **Default behavior**: If `ADDITIONAL_OIDC_PROVIDERS` is skipped, a default OIDC provider will be configured pointing to the internal Keycloak `airm` realm at `https://kc.{DOMAIN}/realms/airm`
 
 ### Using a Configuration File
 
