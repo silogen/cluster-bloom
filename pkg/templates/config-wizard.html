@@ -1202,10 +1202,105 @@
             // updateProgress is called inside loadPrefilledConfig
         }
 
-        // Placeholder function for OIDC provider management (Step 3 will implement this)
+        // OIDC Provider management functions
+        let oidcProviderCounter = 0;
+
         function addOIDCProvider() {
-            console.log('Add OIDC Provider clicked - will be implemented in Step 3');
-            alert('OIDC Provider functionality will be added in the next step!');
+            const container = document.getElementById('oidc-providers-container');
+            const providerId = oidcProviderCounter++;
+            
+            const providerDiv = document.createElement('div');
+            providerDiv.className = 'oidc-provider';
+            providerDiv.id = `oidc-provider-${providerId}`;
+            
+            providerDiv.innerHTML = `
+                <div class="oidc-provider-header">OIDC Provider ${providerId + 1}</div>
+                <button type="button" class="oidc-provider-remove" onclick="removeOIDCProvider(${providerId})" title="Remove this provider">×</button>
+                
+                <div class="form-group">
+                    <label for="oidc-url-${providerId}">Provider URL *</label>
+                    <input type="url" id="oidc-url-${providerId}" name="oidc-url-${providerId}" 
+                           placeholder="https://keycloak.example.com/realms/main"
+                           pattern="^https://.*$"
+                           title="Must be a valid HTTPS URL"
+                           required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="oidc-audiences-${providerId}">Audiences (Client IDs) *</label>
+                    <input type="text" id="oidc-audiences-${providerId}" name="oidc-audiences-${providerId}"
+                           placeholder="k8s,api,kubernetes"
+                           pattern="^[a-zA-Z0-9_-]+(\s*,\s*[a-zA-Z0-9_-]+)*$"
+                           title="Comma-separated client IDs (e.g., k8s,api)"
+                           required>
+                    <small class="help-text" style="color: #666; font-size: 12px; margin-top: 4px; display: block;">
+                        Comma-separated list of client IDs from your OIDC provider
+                    </small>
+                </div>
+            `;
+            
+            container.appendChild(providerDiv);
+            
+            // Add event listeners to the new inputs
+            const newInputs = providerDiv.querySelectorAll('input');
+            newInputs.forEach(input => {
+                input.addEventListener('input', function() {
+                    updateProgress();
+                    this.setCustomValidity('');
+                });
+                input.addEventListener('change', function() {
+                    updateProgress();
+                    this.setCustomValidity('');
+                });
+            });
+            
+            updateProgress();
+            console.log(`Added OIDC provider ${providerId + 1}`);
+        }
+
+        function removeOIDCProvider(providerId) {
+            const providerDiv = document.getElementById(`oidc-provider-${providerId}`);
+            if (providerDiv) {
+                providerDiv.remove();
+                renumberOIDCProviders();
+                updateProgress();
+                console.log(`Removed OIDC provider ${providerId + 1}`);
+            }
+        }
+
+        function renumberOIDCProviders() {
+            const providers = document.querySelectorAll('.oidc-provider');
+            providers.forEach((provider, index) => {
+                const header = provider.querySelector('.oidc-provider-header');
+                if (header) {
+                    header.textContent = `OIDC Provider ${index + 1}`;
+                }
+            });
+        }
+
+        function getAllOIDCProviders() {
+            const providers = [];
+            const providerDivs = document.querySelectorAll('.oidc-provider');
+            
+            providerDivs.forEach((providerDiv) => {
+                const urlInput = providerDiv.querySelector('input[type="url"]');
+                const audiencesInput = providerDiv.querySelector('input[name*="audiences"]');
+                
+                if (urlInput && audiencesInput && urlInput.value.trim() && audiencesInput.value.trim()) {
+                    const url = urlInput.value.trim();
+                    const audiencesStr = audiencesInput.value.trim();
+                    const audiences = audiencesStr.split(',').map(a => a.trim()).filter(a => a.length > 0);
+                    
+                    if (audiences.length > 0) {
+                        providers.push({
+                            url: url,
+                            audiences: audiences
+                        });
+                    }
+                }
+            });
+            
+            return providers;
         }
     </script>
 </body>
