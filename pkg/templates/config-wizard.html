@@ -1153,6 +1153,12 @@
                             }
                         });
 
+                        // Load OIDC providers from additional_oidc_providers
+                        if (config.additional_oidc_providers && Array.isArray(config.additional_oidc_providers)) {
+                            console.log('Loading', config.additional_oidc_providers.length, 'OIDC providers from config');
+                            loadOIDCProvidersFromConfig(config.additional_oidc_providers);
+                        }
+
                         console.log('Fields successfully set:', fieldsSet);
                         if (fieldsNotFound.length > 0) {
                             console.warn('Fields not found in DOM:', fieldsNotFound);
@@ -1349,6 +1355,45 @@
             });
             
             return providers;
+        }
+
+        function loadOIDCProvidersFromConfig(oidcProviders) {
+            console.log('loadOIDCProvidersFromConfig called with:', oidcProviders);
+            
+            // Clear any existing providers
+            const container = document.getElementById('oidc-providers-container');
+            if (container) {
+                container.innerHTML = '';
+                oidcProviderCounter = 0;
+            }
+            
+            // Add each provider from the config
+            oidcProviders.forEach((provider, index) => {
+                if (provider.url && provider.audiences && Array.isArray(provider.audiences)) {
+                    console.log(`Loading OIDC provider ${index + 1}: ${provider.url} with audiences:`, provider.audiences);
+                    
+                    // Add the provider form
+                    addOIDCProvider();
+                    
+                    // Fill in the values
+                    const providerId = oidcProviderCounter - 1; // addOIDCProvider incremented counter
+                    const urlInput = document.getElementById(`oidc-url-${providerId}`);
+                    const audiencesInput = document.getElementById(`oidc-audiences-${providerId}`);
+                    
+                    if (urlInput) {
+                        urlInput.value = provider.url;
+                    }
+                    
+                    if (audiencesInput) {
+                        // Convert audiences array to comma-separated string
+                        audiencesInput.value = provider.audiences.join(', ');
+                    }
+                    
+                    console.log(`Populated OIDC provider ${index + 1}: URL=${provider.url}, Audiences=${provider.audiences.join(', ')}`);
+                }
+            });
+            
+            console.log(`Successfully loaded ${oidcProviders.length} OIDC providers from config`);
         }
     </script>
 </body>
