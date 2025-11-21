@@ -255,13 +255,6 @@ func PrepareRKE2() error {
 		LogMessage(Info, "Appended RKE2_EXTRA_CONFIG to config.yaml")
 	}
 
-	certPath := "/etc/rancher/rke2/oidc-ca.crt"
-	if _, err := os.Stat(certPath); err == nil {
-		if err := os.Remove(certPath); err != nil {
-			return fmt.Errorf("failed to remove existing certificate at %s: %v", certPath, err)
-		}
-	}
-
 	// Handle certificate and authentication configuration
 	domain := viper.GetString("DOMAIN")
 	if domain != "" {
@@ -272,6 +265,7 @@ func PrepareRKE2() error {
 		if err := os.MkdirAll(certDir, 0755); err != nil {
 			return fmt.Errorf("failed to create cert directory: %w", err)
 		}
+		LogMessage(Info, fmt.Sprintf("Created certificate directory: %s", certDir))
 		
 		var tlsCertPath, tlsKeyPath string
 		
@@ -318,11 +312,12 @@ func PrepareRKE2() error {
 			if err := copyFile(sourceCertPath, tlsCertPath); err != nil {
 				return fmt.Errorf("failed to copy certificate: %w", err)
 			}
+			LogMessage(Info, fmt.Sprintf("Copied certificate from %s to %s", sourceCertPath, tlsCertPath))
+			
 			if err := copyFile(sourceKeyPath, tlsKeyPath); err != nil {
 				return fmt.Errorf("failed to copy key: %w", err)
 			}
-			
-			LogMessage(Info, fmt.Sprintf("Copied existing certificate to %s", tlsCertPath))
+			LogMessage(Info, fmt.Sprintf("Copied key from %s to %s", sourceKeyPath, tlsKeyPath))
 			
 		} else {
 			return fmt.Errorf("CERT_OPTION must be 'generate' or 'existing' when DOMAIN is specified")
@@ -335,11 +330,18 @@ func PrepareRKE2() error {
 		// Clean up old OIDC provider certificates before processing new configuration
 		oidcCertDir := "/etc/rancher/rke2/certs"
 		if files, err := filepath.Glob(filepath.Join(oidcCertDir, "oidc-provider-*.crt")); err == nil {
+			if len(files) > 0 {
+				LogMessage(Info, fmt.Sprintf("Cleaning up %d old OIDC provider certificates", len(files)))
+			}
 			for _, file := range files {
 				if err := os.Remove(file); err == nil {
 					LogMessage(Info, fmt.Sprintf("Removed old OIDC certificate: %s", filepath.Base(file)))
+				} else {
+					LogMessage(Error, fmt.Sprintf("Failed to remove OIDC certificate %s: %v", filepath.Base(file), err))
 				}
 			}
+		} else {
+			LogMessage(Error, fmt.Sprintf("Failed to list OIDC certificates for cleanup: %v", err))
 		}
 		
 		// Parse OIDC_URLS configuration
