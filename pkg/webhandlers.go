@@ -160,14 +160,67 @@ func (h *WebHandlerService) AddRootDeviceToConfig() {
 		}
 	}
 	if !configFileExists {
-		unmountedDisks, err := GetUnmountedPhysicalDisks()
+		// First, check if there are already bloom-managed disks in fstab
+		bloomDisks, err := getBloomManagedDisksFromFstab()
 		if err != nil {
-			LogMessage(Error, fmt.Sprintf("error trying to detect unmounted disks: %v", err))
-		} else if len(unmountedDisks) > 0 {
-			h.prefilledConfig["cluster_disks"] = strings.Join(unmountedDisks, ",")
-			LogMessage(Debug, fmt.Sprintf("Auto-detected %d unmounted disk(s) for cluster use: %s", len(unmountedDisks), strings.Join(unmountedDisks, ",")))
+			LogMessage(Debug, fmt.Sprintf("error reading bloom disks from fstab: %v", err))
+		}
+
+		if len(bloomDisks) > 0 {
+			// Use existing bloom-managed disks
+			h.prefilledConfig["cluster_disks"] = strings.Join(bloomDisks, ",")
+			LogMessage(Debug, fmt.Sprintf("Found %d bloom-managed disk(s) in fstab: %s", len(bloomDisks), strings.Join(bloomDisks, ",")))
+		} else {
+			// No bloom disks in fstab, auto-detect unmounted disks
+			unmountedDisks, err := GetUnmountedPhysicalDisks()
+			if err != nil {
+				LogMessage(Error, fmt.Sprintf("error trying to detect unmounted disks: %v", err))
+			} else if len(unmountedDisks) > 0 {
+				h.prefilledConfig["cluster_disks"] = strings.Join(unmountedDisks, ",")
+				LogMessage(Debug, fmt.Sprintf("Auto-detected %d unmounted disk(s) for cluster use: %s", len(unmountedDisks), strings.Join(unmountedDisks, ",")))
+			}
 		}
 	}
+}
+
+func getBloomManagedDisksFromFstab() ([]string, error) {
+	const bloomFstabTag = "# managed by cluster-bloom"
+	var disks []string
+
+	fstabContent, err := mockablecmd.ReadFile("AddRootDeviceToConfig.ReadFstab", "/etc/fstab")
+	if err != nil {
+		return nil, err
+	}
+
+	lines := strings.Split(string(fstabContent), "\n")
+	for _, line := range lines {
+		trimmedLine := strings.TrimSpace(line)
+		if strings.HasSuffix(trimmedLine, bloomFstabTag) {
+			// Parse fstab entry: UUID=xxx /mnt/diskN ext4 defaults,nofail 0 2 # managed by cluster-bloom
+			fields := strings.Fields(trimmedLine)
+			if len(fields) >= 1 {
+				// First field is UUID=xxx or device path
+				deviceField := fields[0]
+				if strings.HasPrefix(deviceField, "UUID=") {
+					// Extract UUID and find corresponding device
+					uuid := strings.TrimPrefix(deviceField, "UUID=")
+					// Use blkid to find device by UUID
+					mockID := fmt.Sprintf("AddRootDeviceToConfig.BlkidUUID.%s", uuid)
+					output, err := mockablecmd.Run(mockID, "blkid", "-U", uuid)
+					if err == nil {
+						device := strings.TrimSpace(string(output))
+						if device != "" {
+							disks = append(disks, device)
+						}
+					}
+				} else if strings.HasPrefix(deviceField, "/dev/") {
+					disks = append(disks, deviceField)
+				}
+			}
+		}
+	}
+
+	return disks, nil
 }
 
 func getRootDiskCmd() (string, error) {
@@ -497,7 +550,7 @@ func (h *WebHandlerService) ConfigOnlyAPIHandler(w http.ResponseWriter, r *http.
 	h.shouldStartInstall = false // Do NOT signal installation to start
 	h.configSavedOnly = false    // Do NOT signal to exit - just save the config
 
-	log.Info("Configuration saved without starting installation")
+	log.Debug("Configuration saved without starting installation")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{

@@ -380,10 +380,19 @@
 
             // Show/hide additional node section
             const additionalNodeSection = document.getElementById('additional-node-section');
+            const serverIPInput = document.getElementById('SERVER_IP');
+            const joinTokenInput = document.getElementById('JOIN_TOKEN');
+
             if (firstNode) {
                 additionalNodeSection.classList.remove('show');
+                // Remove required from hidden additional node fields
+                if (serverIPInput) serverIPInput.removeAttribute('required');
+                if (joinTokenInput) joinTokenInput.removeAttribute('required');
             } else {
                 additionalNodeSection.classList.add('show');
+                // Add required to visible additional node fields
+                if (serverIPInput) serverIPInput.setAttribute('required', 'required');
+                if (joinTokenInput) joinTokenInput.setAttribute('required', 'required');
             }
 
             // Show/hide certificate options
@@ -593,10 +602,17 @@
 
         function saveConfig() {
             const form = document.getElementById('config-form');
+            const saveBtn = event.target;
 
             // Use shared validation helpers
             if (!checkRootDeviceConflict()) return;
             if (!validateForm(form)) return;
+
+            // Disable button and show loading state
+            saveBtn.disabled = true;
+            const originalText = saveBtn.textContent;
+            saveBtn.textContent = 'Saving...';
+            saveBtn.style.background = '#999';
 
             // Collect form data using shared helper
             const config = collectFormData();
@@ -609,7 +625,20 @@
             })
             .then(response => response.json())
             .then(data => {
+                // Re-enable button
+                saveBtn.disabled = false;
+                saveBtn.textContent = originalText;
+                saveBtn.style.background = '';
+
                 if (data.success) {
+                    // Show success feedback on button
+                    saveBtn.textContent = '✅ Saved!';
+                    saveBtn.style.background = '#2e7d32';
+                    setTimeout(() => {
+                        saveBtn.textContent = originalText;
+                        saveBtn.style.background = '';
+                    }, 2000);
+
                     document.getElementById('result').innerHTML = `
                         <div class="success">
                             <h3>✅ Configuration Saved!</h3>
@@ -618,7 +647,17 @@
                         </div>
                     `;
                     document.getElementById('result').style.display = 'block';
+
+                    // Scroll to result
+                    document.getElementById('result').scrollIntoView({ behavior: 'smooth' });
                 } else {
+                    saveBtn.textContent = '❌ Failed';
+                    saveBtn.style.background = '#d32f2f';
+                    setTimeout(() => {
+                        saveBtn.textContent = originalText;
+                        saveBtn.style.background = '';
+                    }, 2000);
+
                     document.getElementById('result').innerHTML = `
                         <div class="error">
                             <h3>❌ Save Failed</h3>
@@ -626,9 +665,19 @@
                         </div>
                     `;
                     document.getElementById('result').style.display = 'block';
+                    document.getElementById('result').scrollIntoView({ behavior: 'smooth' });
                 }
             })
             .catch(error => {
+                // Re-enable button
+                saveBtn.disabled = false;
+                saveBtn.textContent = '❌ Error';
+                saveBtn.style.background = '#d32f2f';
+                setTimeout(() => {
+                    saveBtn.textContent = originalText;
+                    saveBtn.style.background = '';
+                }, 2000);
+
                 document.getElementById('result').innerHTML = `
                     <div class="error">
                         <h3>❌ Save Failed</h3>
@@ -636,6 +685,7 @@
                     </div>
                 `;
                 document.getElementById('result').style.display = 'block';
+                document.getElementById('result').scrollIntoView({ behavior: 'smooth' });
             });
         }
 
@@ -718,14 +768,11 @@
                 errors.push('❌ Invalid domain format - Must be a valid domain like example.com or sub.example.com');
             }
 
+            // SERVER_IP and JOIN_TOKEN are now validated by HTML5 required attribute
+            // Only validate format if they have values
             if (!firstNode) {
-                if (!config.SERVER_IP) {
-                    errors.push('❌ Server IP is required - Please enter the IP address of the first node (e.g., 192.168.1.100)');
-                } else if (!validateField('SERVER_IP', 'SERVER_IP')) {
+                if (config.SERVER_IP && !validateField('SERVER_IP', 'SERVER_IP')) {
                     errors.push('❌ Invalid IP address format - Must be a valid IPv4 address (e.g., 192.168.1.100)');
-                }
-                if (!config.JOIN_TOKEN) {
-                    errors.push('❌ Join Token is required - Please enter the token from the first node installation');
                 }
             }
 

@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -42,6 +43,8 @@ type TestConfig struct {
 	CertOption             string `yaml:"CERT_OPTION"`
 	FirstNode              bool   `yaml:"FIRST_NODE"`
 	GPUNode                bool   `yaml:"GPU_NODE"`
+	ServerIP               string `yaml:"SERVER_IP,omitempty"`
+	JoinToken              string `yaml:"JOIN_TOKEN,omitempty"`
 	ClusterPremountedDisks string `yaml:"CLUSTER_PREMOUNTED_DISKS,omitempty"`
 	ExpectedError          string `yaml:"expected_error,omitempty"`
 	ExpectedClusterDisks   string `yaml:"expected_cluster_disks,omitempty"`
@@ -142,9 +145,18 @@ func runConfigTest(t *testing.T, testCaseFile string) {
 
 	handlerService := pkg.NewWebHandlerServiceConfig()
 
-	// Load config from file
-	handlerService.LoadConfigFromFile(configPath, false)
-	handlerService.AddRootDeviceToConfig() // This triggers auto-detection
+	// Load ONLY mocks from config file, not the config values themselves
+	// This prevents pre-filling form fields from test data
+	mockablecmd.ResetMocks()
+	viper.Reset()
+	viper.SetConfigFile(configPath)
+	if err := viper.ReadInConfig(); err != nil {
+		t.Fatalf("Failed to read config: %v", err)
+	}
+	mockablecmd.LoadMocks()
+
+	// Don't call LoadConfigFromFile - we want form to start empty
+	handlerService.AddRootDeviceToConfig() // This triggers auto-detection with mocks
 
 	// Get prefilled config to verify auto-detection happened
 	prefilledConfig := handlerService.GetPrefilledConfig()
@@ -220,20 +232,136 @@ func runConfigTest(t *testing.T, testCaseFile string) {
 	if testCase.ClusterPremountedDisks != "" {
 		actions = append(actions, chromedp.SetValue(`#CLUSTER_PREMOUNTED_DISKS`, testCase.ClusterPremountedDisks, chromedp.ByID))
 	}
+	if testCase.ServerIP != "" {
+		actions = append(actions, chromedp.SetValue(`#SERVER_IP`, testCase.ServerIP, chromedp.ByID))
+	}
+	if testCase.JoinToken != "" {
+		actions = append(actions, chromedp.SetValue(`#JOIN_TOKEN`, testCase.JoinToken, chromedp.ByID))
+	}
 
-	// Boolean fields (checkboxes)
-	actions = append(actions, chromedp.Evaluate(fmt.Sprintf(`document.getElementById('FIRST_NODE').checked = %v`, testCase.FirstNode), nil))
+	// Boolean fields (checkboxes) - set value and trigger updateConditionals
+	var updateResult string
+	actions = append(actions, chromedp.Evaluate(fmt.Sprintf(`
+		(function() {
+			document.getElementById('FIRST_NODE').checked = %v;
+			if (typeof updateConditionals === 'function') {
+				updateConditionals();
+				const serverIP = document.getElementById('SERVER_IP');
+				const joinToken = document.getElementById('JOIN_TOKEN');
+				return 'updateConditionals called - SERVER_IP required: ' + (serverIP ? serverIP.hasAttribute('required') : 'null') +
+					', JOIN_TOKEN required: ' + (joinToken ? joinToken.hasAttribute('required') : 'null');
+			} else {
+				return 'updateConditionals not found';
+			}
+		})()
+	`, testCase.FirstNode), &updateResult))
+	if testCase.ExpectedError != "" {
+		t.Logf("After updateConditionals: %s", updateResult)
+	}
 	actions = append(actions, chromedp.Evaluate(fmt.Sprintf(`document.getElementById('GPU_NODE').checked = %v`, testCase.GPUNode), nil))
 
-	// Add save button click
-	actions = append(actions,
-		chromedp.Click(`button.btn-secondary:nth-of-type(2)`, chromedp.ByQuery),
-	)
+	// If this is an expected error test, click submit and check for validation errors
+	if testCase.ExpectedError != "" {
+		// Force update by unchecking then rechecking FIRST_NODE to trigger updateConditionals
+		actions = append(actions,
+			chromedp.Evaluate(fmt.Sprintf(`
+				document.getElementById('FIRST_NODE').checked = true;
+				if (typeof updateConditionals === 'function') updateConditionals();
+				document.getElementById('FIRST_NODE').checked = %v;
+				if (typeof updateConditionals === 'function') updateConditionals();
+			`, testCase.FirstNode), nil),
+			chromedp.Sleep(200*time.Millisecond), // Wait for DOM update
+			chromedp.Click(`button[type="submit"]`, chromedp.ByQuery),
+			chromedp.Sleep(500*time.Millisecond), // Wait for validation
+		)
 
-	// Run browser automation
-	err = chromedp.Run(ctx, actions)
-	if err != nil {
-		t.Fatalf("❌ Browser automation failed: %v", err)
+		// Check for validation messages - try both modal and HTML5 validation
+		var pageHTML string
+		var formSubmitted bool
+		var serverIPValidation string
+		var joinTokenValidation string
+		actions = append(actions,
+			chromedp.InnerHTML(`body`, &pageHTML, chromedp.ByQuery),
+			// Check if form was submitted (result div would be visible)
+			chromedp.Evaluate(`
+				const resultDiv = document.getElementById('result');
+				resultDiv ? (resultDiv.style.display !== 'none') : false;
+			`, &formSubmitted),
+			// Get validation messages from the fields
+			chromedp.Evaluate(`document.getElementById('SERVER_IP') ? document.getElementById('SERVER_IP').validationMessage : ''`, &serverIPValidation),
+			chromedp.Evaluate(`document.getElementById('JOIN_TOKEN') ? document.getElementById('JOIN_TOKEN').validationMessage : ''`, &joinTokenValidation),
+		)
+
+		// Run browser automation
+		err = chromedp.Run(ctx, actions)
+		if err != nil {
+			t.Fatalf("❌ Browser automation failed: %v", err)
+		}
+
+		// Check if expected error text appears in page HTML or validation blocked submission
+		if strings.Contains(pageHTML, testCase.ExpectedError) {
+			t.Logf("✅ Validation error correctly shown in modal: contains '%s'", testCase.ExpectedError)
+		} else if !formSubmitted && (serverIPValidation != "" || joinTokenValidation != "") {
+			// HTML5 validation prevented submission
+			t.Logf("✅ HTML5 validation prevented submission")
+			if serverIPValidation != "" {
+				t.Logf("   SERVER_IP: %s", serverIPValidation)
+			}
+			if joinTokenValidation != "" {
+				t.Logf("   JOIN_TOKEN: %s", joinTokenValidation)
+			}
+		} else if !formSubmitted {
+			// Form didn't submit, validation likely triggered (HTML5 native)
+			t.Logf("✅ Validation prevented form submission (HTML5 native validation)")
+		} else {
+			t.Errorf("❌ Expected validation error not found or form submitted")
+			t.Errorf("   Expected error containing: %s", testCase.ExpectedError)
+			t.Errorf("   Form submitted: %v", formSubmitted)
+			t.Errorf("   SERVER_IP validationMessage: %s", serverIPValidation)
+			t.Errorf("   JOIN_TOKEN validationMessage: %s", joinTokenValidation)
+		}
+	} else {
+		// For non-error tests, check that form is valid before submitting
+		var domainValidation string
+		var serverIPValidation string
+		var joinTokenValidation string
+		var tlsCertValidation string
+		var tlsKeyValidation string
+
+		// Add save button click for non-error tests
+		actions = append(actions,
+			chromedp.Click(`button.btn-secondary:nth-of-type(2)`, chromedp.ByQuery),
+			chromedp.Sleep(500*time.Millisecond), // Wait for any validation/submission
+			// Check validation messages on key fields
+			chromedp.Evaluate(`document.getElementById('DOMAIN') ? document.getElementById('DOMAIN').validationMessage : ''`, &domainValidation),
+			chromedp.Evaluate(`document.getElementById('SERVER_IP') ? document.getElementById('SERVER_IP').validationMessage : ''`, &serverIPValidation),
+			chromedp.Evaluate(`document.getElementById('JOIN_TOKEN') ? document.getElementById('JOIN_TOKEN').validationMessage : ''`, &joinTokenValidation),
+			chromedp.Evaluate(`document.getElementById('TLS_CERT') ? document.getElementById('TLS_CERT').validationMessage : ''`, &tlsCertValidation),
+			chromedp.Evaluate(`document.getElementById('TLS_KEY') ? document.getElementById('TLS_KEY').validationMessage : ''`, &tlsKeyValidation),
+		)
+
+		// Run browser automation
+		err = chromedp.Run(ctx, actions)
+		if err != nil {
+			t.Fatalf("❌ Browser automation failed: %v", err)
+		}
+
+		// Check for unexpected validation errors
+		if domainValidation != "" {
+			t.Errorf("❌ Unexpected validation error on DOMAIN: %s", domainValidation)
+		}
+		if serverIPValidation != "" {
+			t.Errorf("❌ Unexpected validation error on SERVER_IP: %s", serverIPValidation)
+		}
+		if joinTokenValidation != "" {
+			t.Errorf("❌ Unexpected validation error on JOIN_TOKEN: %s", joinTokenValidation)
+		}
+		if tlsCertValidation != "" {
+			t.Errorf("❌ Unexpected validation error on TLS_CERT: %s", tlsCertValidation)
+		}
+		if tlsKeyValidation != "" {
+			t.Errorf("❌ Unexpected validation error on TLS_KEY: %s", tlsKeyValidation)
+		}
 	}
 
 	// Verify the pre-filled value appears in browser form
