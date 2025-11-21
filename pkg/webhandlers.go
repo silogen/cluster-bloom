@@ -181,6 +181,7 @@ func (h *WebHandlerService) LoadConfigFromFile(configFile string, oneShot bool) 
 		// Convert viper keys to uppercase format expected by the rest of the system
 		keyMapping := map[string]string{
 			"domain":                   "DOMAIN",
+			"cf_values":                "CF_VALUES",
 			"server_ip":                "SERVER_IP",
 			"join_token":               "JOIN_TOKEN",
 			"first_node":               "FIRST_NODE",
