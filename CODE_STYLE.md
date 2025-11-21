@@ -484,7 +484,10 @@ If building interactive terminal applications:
 ### Test File Organization
 - Place unit tests in `*_test.go` files alongside source code
 - Use `integration_test.go` with build tags for integration tests
-- Create separate `test/` directory for VM and system tests
+- Create separate `tests/` directory for organized test suites:
+  - `tests/ui/` - Browser-based UI tests
+  - `tests/integration/` - Go integration tests
+  - `tests/e2e/` - End-to-end system tests (QEMU/VM)
 - Organize mocks in `mocks_test.go` files
 - Step integration tests go in `tests/integration/step/<StepName>/` directories
   - Each test scenario in its own subdirectory with `bloom.yaml` config
@@ -626,6 +629,121 @@ For full system testing that requires actual Ubuntu environments:
 - Validate multi-node cluster setup
 - Test with real hardware constraints
 
+### UI Testing with Browser Automation
+
+#### Browser-Based Testing Infrastructure
+For web UI components, use chromedp with Docker-based headless Chrome:
+
+**Setup:**
+```bash
+# Start Chrome container
+docker run -d --rm \
+  --name chrome-test \
+  --net=host \
+  -e "PORT=9222" \
+  browserless/chrome:latest
+```
+
+**Test Structure:**
+```
+tests/ui/
+├── config_test.go           # Main test file with chromedp
+├── testdata/
+│   ├── valid/              # Valid configuration tests
+│   ├── invalid/            # Validation error tests
+│   ├── autodetect/         # Auto-detection tests
+│   └── integration/        # E2E integration tests
+├── docs/
+│   └── TEST_CASES.md       # Detailed test case documentation
+└── README.md               # Test infrastructure docs
+```
+
+**Test Format (YAML):**
+```yaml
+input:
+  DOMAIN: test.local
+  CLUSTER_DISKS: /dev/sdb,/dev/sdc
+  FIRST_NODE: true
+  GPU_NODE: false
+  CERT_OPTION: generate
+
+mocks:  # Optional - for auto-detection tests
+  addrootdevicetoconfig.statconfigfile:
+    error: "no such file or directory"
+  addrootdevicetoconfig.readfstab:
+    output: ""
+  getunmountedphysicaldisks.listblockdevices:
+    output: |
+      nvme0n1 disk
+      nvme1n1 disk
+
+output:
+  DOMAIN: test.local
+  CLUSTER_DISKS: "/dev/nvme0n1,/dev/nvme1n1"
+  # For validation tests:
+  error:
+    DOMAIN: "Please match the requested format"
+```
+
+**Test Implementation Pattern:**
+```go
+func TestConfigBasedTests(t *testing.T) {
+    if os.Getenv("SKIP_BROWSER_TESTS") != "" {
+        t.Skip("Skipping browser tests")
+    }
+
+    // Find all test YAML files
+    testFiles, _ := filepath.Glob("testdata/*/*.yaml")
+
+    for _, testFile := range testFiles {
+        testName := filepath.Base(testFile)
+        t.Run(testName, func(t *testing.T) {
+            runConfigTest(t, testFile)
+        })
+    }
+}
+
+func runConfigTest(t *testing.T, testCaseFile string) {
+    // Load test case
+    testCase, _ := loadTestCase(testCaseFile)
+
+    // Reset and reload mocks
+    mockablecmd.ResetMocks()
+    viper.Reset()
+    viper.SetConfigFile(configPath)
+    viper.ReadInConfig()
+    mockablecmd.ReloadMocks()  // Use ReloadMocks to bypass sync.Once
+
+    // Start test server with mocks
+    // Execute browser automation
+    // Verify results
+}
+```
+
+**Key Testing Patterns:**
+- Use `mockablecmd.ReloadMocks()` instead of `LoadMocks()` after `ResetMocks()` to bypass `sync.Once`
+- Always mock `addrootdevicetoconfig.readfstab` to prevent reading real fstab in tests
+- Test both auto-detection and manual configuration workflows
+- Verify field-specific validation errors using chromedp to check HTML5 validation messages
+- Test dynamic form behavior (conditional field visibility)
+
+**Running UI Tests:**
+```bash
+# Start browser container first
+docker run -d --rm --name chrome-test --net=host -e "PORT=9222" browserless/chrome:latest
+
+# Run all UI tests
+go test -v ./tests/ui
+
+# Run specific test categories
+go test -v -run TestConfigBasedTests/.*autodetect ./tests/ui
+go test -v -run TestConfigBasedTests/.*invalid ./tests/ui
+go test -v -run TestConfigBasedTests/.*valid ./tests/ui
+
+# Skip browser tests (for environments without Chrome)
+SKIP_BROWSER_TESTS=1 go test ./tests/ui
+```
+
 ### Test Execution Commands
 ```bash
 # Unit tests only
@@ -638,8 +756,12 @@ go test ./pkg/...
 export CLUSTER_BLOOM_TEST_ENV=true
 go test -tags=integration ./pkg/...
 
-# VM-based tests
-cd test/vm && ./run-vm-tests.sh
+# UI tests (requires Chrome container)
+docker run -d --rm --name chrome-test --net=host -e "PORT=9222" browserless/chrome:latest
+go test -v ./tests/ui
+
+# E2E/VM-based tests
+cd tests/e2e && ./qemu-disk-test.sh
 ```
 
 ### Test Coverage and CI
@@ -648,6 +770,11 @@ cd test/vm && ./run-vm-tests.sh
 - Mock external dependencies (exec.Command, file I/O, network)
 - Test error conditions explicitly
 - Include tests in CI/CD pipeline with multiple Ubuntu versions
+- **UI Testing Coverage:**
+  - 22 browser-based test cases covering form validation, auto-detection, and workflows
+  - Tests pass in containerized, development, and bare-metal environments
+  - Automated browser setup in GitHub Actions workflow
+  - Mock system ensures environment portability
 
 ## Code Organization Principles
 
