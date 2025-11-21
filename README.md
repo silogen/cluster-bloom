@@ -86,7 +86,8 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 |----------|-------------|---------|
 | FIRST_NODE | Set to true if this is the first node in the cluster | true |
 | GPU_NODE | Set to true if this node has GPUs | true |
-| OIDC_URL | The URL of the OIDC provider | "" |
+| RKE2_VERSION | Specific RKE2 version to install (e.g., "v1.34.1+rke2r1") | "" |
+| ADDITIONAL_OIDC_PROVIDERS | List of additional OIDC providers for authentication (see examples below) | [] |
 | SERVER_IP | The IP address of the RKE2 server (required for additional nodes) | |
 | JOIN_TOKEN | The token used to join additional nodes to the cluster | |
 | NO_DISKS_FOR_CLUSTER | Set to true to skip disk-related operations | false |
@@ -103,6 +104,31 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | TLS_CERT | Path to TLS certificate file for ingress (required if CERT_OPTION is 'existing') | "" |
 | TLS_KEY | Path to TLS private key file for ingress (required if CERT_OPTION is 'existing') | "" |
 
+### OIDC Configuration Examples
+
+**Single OIDC Provider:**
+```yaml
+RKE2_VERSION: v1.34.1+rke2r1
+ADDITIONAL_OIDC_PROVIDERS:
+  - url: "https://keycloak.example.com/realms/main"
+    audiences: ["k8s"]
+```
+
+**Multiple OIDC Providers:**
+```yaml
+RKE2_VERSION: v1.34.1+rke2r1
+ADDITIONAL_OIDC_PROVIDERS:
+  - url: "https://kc.plat-dev-3.silogen.ai/realms/airm"
+    audiences: ["k8s"]
+  - url: "https://kc.plat-dev-4.silogen.ai/realms/k8s"
+    audiences: ["kubernetes", "api"]
+```
+
+**Notes:**
+- `url`: HTTPS URL of your OIDC provider (Keycloak, Auth0, etc.)
+- `audiences`: List of client IDs from your OIDC provider
+- `RKE2_VERSION`: Specify exact RKE2 version, or leave empty for latest
+- OIDC providers are optional - leave `ADDITIONAL_OIDC_PROVIDERS` empty to skip
 
 ### Using a Configuration File
 
@@ -111,6 +137,7 @@ Create a YAML configuration file (e.g., `bloom.yaml`):
 ```yaml
 FIRST_NODE: true
 GPU_NODE: true
+RKE2_VERSION: v1.34.1+rke2r1
 NO_DISKS_FOR_CLUSTER: true
 ```
 
