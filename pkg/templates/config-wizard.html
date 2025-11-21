@@ -648,9 +648,21 @@
             for (let [key, value] of formData.entries()) {
                 const input = document.querySelector(`[name="${key}"]`);
                 if (!input) continue;
+                
+                // Skip individual OIDC provider fields - we'll handle them separately
+                if (key.startsWith('oidc-url-') || key.startsWith('oidc-audiences-')) {
+                    continue;
+                }
+                
                 if (input.type !== 'checkbox' && value.trim()) {
                     config[key] = value.trim();
                 }
+            }
+
+            // Handle OIDC providers separately using our helper function
+            const oidcProviders = getAllOIDCProviders();
+            if (oidcProviders.length > 0) {
+                config.ADDITIONAL_OIDC_PROVIDERS = oidcProviders;
             }
 
             // Validate required fields
