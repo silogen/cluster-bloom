@@ -662,7 +662,38 @@
             // Handle OIDC providers separately using our helper function
             const oidcProviders = getAllOIDCProviders();
             if (oidcProviders.length > 0) {
-                config.ADDITIONAL_OIDC_PROVIDERS = oidcProviders;
+                // Validate for duplicate URLs and conflicts with default provider
+                const domain = config.DOMAIN || '';
+                const defaultOidcUrl = `https://kc.${domain}/realms/airm`;
+                
+                const providedUrls = new Set();
+                let duplicateError = null;
+                
+                for (let i = 0; i < oidcProviders.length; i++) {
+                    const provider = oidcProviders[i];
+                    
+                    // Check for conflict with default provider
+                    if (provider.url === defaultOidcUrl) {
+                        duplicateError = `❌ OIDC Provider ${i + 1}: URL "${provider.url}" conflicts with the default OIDC provider. The default provider already uses this URL for the "airm" realm. Please use a different realm or domain.`;
+                        break;
+                    }
+                    
+                    // Check for duplicates among additional providers
+                    if (providedUrls.has(provider.url)) {
+                        duplicateError = `❌ OIDC Provider ${i + 1}: Duplicate URL "${provider.url}". Each OIDC provider must have a unique URL.`;
+                        break;
+                    }
+                    
+                    providedUrls.add(provider.url);
+                }
+                
+                if (duplicateError) {
+                    errors.push(duplicateError);
+                }
+                
+                if (!duplicateError) {
+                    config.ADDITIONAL_OIDC_PROVIDERS = oidcProviders;
+                }
             }
 
             // Validate required fields
