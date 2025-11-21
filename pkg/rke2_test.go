@@ -57,8 +57,8 @@ func TestPrepareRKE2(t *testing.T) {
 	}
 
 	tests := []struct {
-		name     string
-		oidcURL  string
+		name    string
+		oidcURL string
 	}{
 		{"without OIDC", ""},
 		{"with invalid OIDC", "invalid-url"},
@@ -110,7 +110,7 @@ func TestSetupRKE2Additional(t *testing.T) {
 			viper.Set("SERVER_IP", tt.serverIP)
 			viper.Set("JOIN_TOKEN", tt.joinToken)
 			viper.Set("RKE2_INSTALLATION_URL", "https://get.rke2.io")
-			
+
 			err := SetupRKE2Additional()
 			if tt.expectError && err == nil {
 				t.Errorf("Expected error but got none")
@@ -165,12 +165,12 @@ func TestRKE2ConfigContent(t *testing.T) {
 
 func TestOIDCConfigTemplate(t *testing.T) {
 	config := oidcConfigTemplate
-	
+
 	if !strings.Contains(config, "--oidc-issuer-url=%s") {
 		t.Errorf("Expected oidcConfigTemplate to contain '--oidc-issuer-url=%%s'")
 	}
-	if !strings.Contains(config, "--oidc-client-id=rke-clusters") {
-		t.Errorf("Expected oidcConfigTemplate to contain '--oidc-client-id=rke-clusters'")
+	if !strings.Contains(config, "--oidc-client-id=k8s") {
+		t.Errorf("Expected oidcConfigTemplate to contain '--oidc-client-id=k8s'")
 	}
 	if !strings.Contains(config, "--oidc-username-claim=preferred_username") {
 		t.Errorf("Expected oidcConfigTemplate to contain '--oidc-username-claim=preferred_username'")

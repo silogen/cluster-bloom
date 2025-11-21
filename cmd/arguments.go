@@ -99,14 +99,14 @@ func SetArguments() {
 		// ROCm configuration (depends on GPU_NODE)
 		{
 			Key:          "ROCM_BASE_URL",
-			Default:      "https://repo.radeon.com/amdgpu-install/6.3.2/ubuntu/",
+			Default:      "https://repo.radeon.com/amdgpu-install/7.0.2/ubuntu/",
 			Description:  "ROCm base repository URL.",
 			Type:         "non-empty-url",
 			Dependencies: "GPU_NODE=true",
 		},
 		{
 			Key:          "ROCM_DEB_PACKAGE",
-			Default:      "amdgpu-install_6.3.60302-1_all.deb",
+			Default:      "amdgpu-install_7.0.2.70002-1_all.deb",
 			Description:  "ROCm DEB package name.",
 			Type:         "non-empty-string",
 			Dependencies: "GPU_NODE=true",
@@ -150,8 +150,15 @@ func SetArguments() {
 			Type:        "non-empty-url",
 		},
 		{
+			Key:         "RKE2_EXTRA_CONFIG",
+			Default:     "",
+			Description: "Additional RKE2 configuration in YAML format to append to /etc/rancher/rke2/config.yaml. Example: \"node-name: my-node\\ntls-san:\\n  - example.com\".",
+			Type:        "string",
+			Validators:  []func(value string) error{args.ValidateYAMLFormat},
+		},
+		{
 			Key:         "CLUSTERFORGE_RELEASE",
-			Default:     "https://github.com/silogen/cluster-forge/releases/download/deploy/deploy-release.tar.gz",
+			Default:     "https://github.com/silogen/cluster-forge/releases/download/v1.5.2/release-enterprise-ai-v1.5.2.tar.gz",
 			Description: "The version of Cluster-Forge to install. Pass the URL for a specific release, or 'none' to not install ClusterForge.",
 			Type:        "url",
 		},

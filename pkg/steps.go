@@ -27,6 +27,8 @@ import (
 	"time"
 
 	"github.com/silogen/cluster-bloom/pkg/args"
+	"github.com/silogen/cluster-bloom/pkg/system/logrotate"
+	"github.com/silogen/cluster-bloom/pkg/system/rsyslog"
 	"github.com/silogen/cluster-bloom/pkg/sysvalidation"
 	"github.com/spf13/viper"
 )
@@ -215,8 +217,15 @@ var SetupAndCheckRocmStep = Step{
 		}
 		// Check if the first characters are an integer
 		lines := strings.Split(string(output), "\n")
+		validLineFound := false
 		for _, line := range lines {
 			if len(line) > 0 {
+				// Skip lines that start with WARNING:
+				trimmedLine := strings.TrimSpace(line)
+				if strings.HasPrefix(trimmedLine, "WARNING:") {
+					continue
+				}
+				
 				parts := strings.Fields(line)
 				if len(parts) > 0 {
 					if _, err := strconv.Atoi(parts[0]); err != nil {
@@ -225,7 +234,15 @@ var SetupAndCheckRocmStep = Step{
 							Error: fmt.Errorf("rocm-smi did not return any GPUs: %s", string(output)),
 						}
 					}
+					validLineFound = true
 				}
+			}
+		}
+		
+		if !validLineFound {
+			LogMessage(Error, "rocm-smi did not return any valid GPU lines: "+string(output))
+			return StepResult{
+				Error: fmt.Errorf("rocm-smi did not return any valid GPU lines: %s", string(output)),
 			}
 		}
 		// Log the output of rocm-smi
@@ -286,6 +303,13 @@ var UpdateModprobeStep = Step{
 	Id:          "UpdateModprobeStep",
 	Name:        "Update Modprobe",
 	Description: "Update Modprobe to unblacklist amdgpu",
+	Skip: func() bool {
+		if !viper.GetBool("GPU_NODE") {
+			LogMessage(Info, "Skipping ROCm setup for non-GPU node")
+			return true
+		}
+		return false
+	},
 	Action: func() StepResult {
 		err := updateModprobe()
 		if err != nil {
@@ -361,7 +385,7 @@ var PrepareLonghornDisksStep = Step{
 				if err := os.Rename(longhornConfigPath, backupPath); err != nil {
 					LogMessage(Warn, fmt.Sprintf("Failed to backup longhorn-disk.cfg: %v", err))
 				} else {
-					LogMessage(Info, fmt.Sprintf("Backed up and removed longhorn-disk.cfg"))
+					LogMessage(Info, "Backed up and removed longhorn-disk.cfg")
 				}
 			}
 
@@ -372,7 +396,7 @@ var PrepareLonghornDisksStep = Step{
 				if err := os.Rename(replicasPath, backupPath); err != nil {
 					LogMessage(Warn, fmt.Sprintf("Failed to backup replicas directory: %v", err))
 				} else {
-					LogMessage(Info, fmt.Sprintf("Backed up and removed replicas directory"))
+					LogMessage(Info, "Backed up and removed replicas directory")
 				}
 			}
 		}
@@ -486,6 +510,36 @@ var SetupLonghornStep = Step{
 			return StepResult{Error: nil}
 		}
 		return StepResult{Error: nil}
+	},
+}
+
+var ConfigLogrotateStep = Step{
+	Id:          "ConfigLogrotateStep",
+	Name:        "Configure logrotate",
+	Description: "Configure logrotate with aggressive, size-based rotation settings",
+	Action: func() StepResult {
+		err := logrotate.Configure()
+		if err != nil {
+			LogMessage(Error, fmt.Sprintf("Failed to configure logrotate: %v", err))
+		} else {
+			LogMessage(Info, "logrotate configuration applied (/etc/logrotate.d/iscsi-aggressive.conf)")
+		}
+		return StepResult{Error: err}
+	},
+}
+
+var ConfigRsyslogStep = Step{
+	Id:          "ConfigRsyslogStep",
+	Name:        "Configure rsyslog rate limiting",
+	Description: "Configure rsyslog rate limiting to prevent possible iSCSI log flooding",
+	Action: func() StepResult {
+		err := rsyslog.Configure()
+		if err != nil {
+			LogMessage(Error, fmt.Sprintf("Failed to configure rsyslog: %v", err))
+		} else {
+			LogMessage(Info, "rsyslog configured successfully")
+		}
+		return StepResult{Error: err}
 	},
 }
 
@@ -714,7 +768,6 @@ func CreateBloomConfigMapStepFunc(version string) Step {
 			if viper.GetBool("FIRST_NODE") {
 				LogMessage(Info, "Waiting for cluster to be ready...")
 
-				time.Sleep(10 * time.Second)
 				err := CreateConfigMap(version)
 				if err != nil {
 					LogMessage(Error, fmt.Sprintf("Failed to create bloom ConfigMap: %v", err))
@@ -989,10 +1042,7 @@ var FinalOutput = Step{
 			LogMessage(Info, "To setup additional nodes to join the cluster, copy and run the command from additional_node_command.txt")
 			return StepResult{Message: "To setup additional nodes to join the cluster, copy and run the command from additional_node_command.txt"}
 		} else {
-			message := "The content of longhorn_drive_setup.txt must be run in order to mount drives properly. " +
-				"This can be done in the control node, which was installed first, or with a valid kubeconfig for the cluster."
-			LogMessage(Info, message)
-			return StepResult{Message: message}
+			return StepResult{Error: nil}
 		}
 	},
 }

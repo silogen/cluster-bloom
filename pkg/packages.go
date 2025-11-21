@@ -36,7 +36,12 @@ var longhornPVCValidationScript []byte
 
 func CheckPackageInstallConnections() error {
 	cmd := exec.Command("apt-get", "update")
-	cmd.Env = os.Environ()
+	env := os.Environ()
+	// Add environment variables to prevent interactive prompts
+	env = append(env, "DEBIAN_FRONTEND=noninteractive")
+	env = append(env, "NEEDRESTART_MODE=a")
+	env = append(env, "NEEDRESTART_SUSPEND=1")
+	cmd.Env = env
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("Failed to verify apt-get connection: %w\nOutput: %s", err, output)
@@ -75,10 +80,11 @@ func CheckPackageInstallConnections() error {
 
 func InstallDependentPackages() error {
 	packagesToInstall := []string{
-		"open-iscsi",
-		"jq",
-		"nfs-common",
-		"chrony",
+		"open-iscsi=2.1.5-1ubuntu1.1",
+		"jq=1.6-2.1ubuntu3.1",
+		"nfs-common=1:2.6.1-1ubuntu1.2",
+		"chrony=4.2-2ubuntu2",
+		"curl=7.81.0-1ubuntu1.21",
 	}
 
 	for _, pkg := range packagesToInstall {
@@ -99,7 +105,12 @@ func InstallDependentPackages() error {
 
 func installpackage(pkgName string) error {
 	cmd := exec.Command("apt-get", "install", "-y", pkgName)
-	cmd.Env = os.Environ()
+	env := os.Environ()
+	// Add environment variables to prevent interactive prompts
+	env = append(env, "DEBIAN_FRONTEND=noninteractive")
+	env = append(env, "NEEDRESTART_MODE=a")
+	env = append(env, "NEEDRESTART_SUSPEND=1")
+	cmd.Env = env
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to install package: %w\nOutput: %s", err, output)
@@ -111,10 +122,18 @@ func installpackage(pkgName string) error {
 
 func installK8sTools() error {
 	cmds := [][]string{
-		{"snap", "install", "kubectl", "--classic"},
 		{"snap", "install", "k9s"},
-		{"snap", "install", "helm", "--classic"},
-		{"snap", "install", "yq"},
+
+		{"curl", "-fsSL", "-o", "/usr/local/bin/yq", "https://github.com/mikefarah/yq/releases/download/v4.46.1/yq_linux_amd64"},
+		{"chmod", "ugo+x", "/usr/local/bin/yq"},
+
+		{"curl", "-fsSL", "-o", "/usr/local/bin/kubectl", "-LO", "https://dl.k8s.io/release/v1.34.2/bin/linux/amd64/kubectl"},
+		{"chmod", "ugo+x", "/usr/local/bin/kubectl"},
+
+		{"curl", "-fsSL", "-o", "/tmp/get-helm-4.sh", "https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-4"},
+		{"chmod", "ugo+x", "/tmp/get-helm-4.sh"},
+		{"DESIRED_VERSION=v4.0.0", "/tmp/get-helm-4.sh"},
+		{"rm", "/tmp/get-helm-4.sh"},
 	}
 
 	for _, cmd := range cmds {
@@ -196,7 +215,7 @@ func SetupClusterForge() error {
 		LogMessage(Info, "Successfully downloaded ClusterForge")
 	}
 
-	cmd = exec.Command("tar", "-xzvf", "clusterforge.tar.gz")
+	cmd = exec.Command("tar", "-xzvf", "clusterforge.tar.gz", "--no-same-owner")
 	output, err = cmd.Output()
 	if err != nil {
 		LogMessage(Error, fmt.Sprintf("Failed to unzip clusterforge.tar.gz: %v, output %v", err, output))
@@ -210,14 +229,17 @@ func SetupClusterForge() error {
 
 	// Get the original user when running with sudo
 	originalUser := os.Getenv("SUDO_USER")
-
-	cmd = exec.Command("sudo", "chown", "-R", fmt.Sprintf("%s:%s", originalUser, originalUser), "cluster-forge")
-	output, err = cmd.Output()
-	if err != nil {
-		LogMessage(Error, fmt.Sprintf("Failed to change ownership of Clusterforge folder: %v, output %v", err, output))
-		return err
+	if originalUser != "" {
+		cmd = exec.Command("sudo", "chown", "-R", fmt.Sprintf("%s:%s", originalUser, originalUser), "cluster-forge")
+		output, err = cmd.Output()
+		if err != nil {
+			LogMessage(Error, fmt.Sprintf("Failed to change ownership of Clusterforge folder: %v, output %v", err, output))
+			return err
+		} else {
+			LogMessage(Info, fmt.Sprintf("Successfully updated ownership of Clusterforge folder to %s", originalUser))
+		}
 	} else {
-		LogMessage(Info, fmt.Sprintf("Successfully updated ownership of Clusterforge folder to %s", originalUser))
+		LogMessage(Info, "Sudo user returned nil, not attempting to change ownership of Clusterforge folder")
 	}
 
 	scriptsDir := "cluster-forge/scripts"

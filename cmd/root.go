@@ -58,11 +58,11 @@ var rootCmd = &cobra.Command{
 			return
 		}
 
-		// Check if bloom.log exists when no config provided
+		// Check if bloom.log exists with meaningful content when no config provided
 		if _, err := os.Stat(cfgFile); err != nil {
 			currentDir, _ := os.Getwd()
 			logPath := filepath.Join(currentDir, "bloom.log")
-			if _, err := os.Stat(logPath); err == nil {
+			if hasMeaningfulLogContent(logPath) {
 				// bloom.log exists - start webui for monitoring
 				fmt.Println("🔍 Found existing bloom.log - starting monitoring interface...")
 				fmt.Println()
@@ -101,11 +101,9 @@ func init() {
 }
 
 func initConfig() {
-	// Setup logging first so we can capture any errors
-	setupLogging()
-
 	viper.SetConfigFile(cfgFile)
-	viper.WatchConfig()
+	// Note: WatchConfig() is removed to prevent concurrent map write issues
+	// when multiple web handlers access viper simultaneously
 	SetArguments()
 	// Set defaults from args package
 	for _, arg := range args.Arguments {
@@ -113,14 +111,12 @@ func initConfig() {
 	}
 	viper.AutomaticEnv()
 	if err := viper.ReadInConfig(); err == nil {
-		log.Infof("Using config file: %s", viper.ConfigFileUsed())
+		// Only log if we're not in the default UI mode
+		// (setupLogging and logConfigValues will be called later when needed)
 	}
 
 	// Load mocks from config if present
 	mockablecmd.LoadMocks()
-
-	// Log config BEFORE any validation that might exit
-	logConfigValues()
 }
 
 func setupLogging() {
@@ -171,6 +167,23 @@ func logConfigValues() {
 	}
 }
 
+// hasMeaningfulLogContent checks if bloom.log exists and contains meaningful installation data
+// Returns true only if the log file exists and has actual step execution logs
+func hasMeaningfulLogContent(logPath string) bool {
+	// Check if file exists and is not empty
+	if stat, err := os.Stat(logPath); err != nil || stat.Size() == 0 {
+		return false
+	}
+
+	// Try to parse the log - if parsing succeeds and contains steps or meaningful data, it's valid
+	if status, err := pkg.ParseBloomLog(logPath); err == nil {
+		// Consider the log meaningful if it has steps or configuration values or errors
+		return len(status.Steps) > 0 || len(status.ConfigValues) > 0 || len(status.Errors) > 0
+	}
+
+	return false
+}
+
 func rootSteps() []pkg.Step {
 	preK8Ssteps := []pkg.Step{
 		pkg.ValidateArgsStep,
@@ -191,6 +204,8 @@ func rootSteps() []pkg.Step {
 		pkg.SetupAndCheckRocmStep,
 		pkg.OpenPortsStep,
 		pkg.UpdateUdevRulesStep,
+		pkg.ConfigLogrotateStep,
+		pkg.ConfigRsyslogStep,
 	}
 	k8Ssteps := []pkg.Step{
 		pkg.SetupRKE2Step,
@@ -204,8 +219,8 @@ func rootSteps() []pkg.Step {
 		pkg.SetupMetallbStep,
 		pkg.CreateMetalLBConfigStep,
 		pkg.CreateDomainConfigStep,
-		pkg.CreateBloomConfigMapStepFunc(Version),
 		pkg.WaitForClusterReady,
+		pkg.CreateBloomConfigMapStepFunc(Version),
 		pkg.SetupClusterForgeStep,
 	}
 
@@ -281,6 +296,10 @@ func startWebUIMonitoring() {
 	fmt.Println()
 	fmt.Println("💡 To run a new installation instead, use:")
 	fmt.Println("   bloom --config <config-file>")
+	fmt.Println()
+	fmt.Println("🔗 For remote access, create an SSH tunnel:")
+	fmt.Printf("   ssh -L %d:127.0.0.1:%d user@remote-server\n", portNum, portNum)
+	fmt.Printf("   Then access: http://127.0.0.1:%d\n\n", portNum)
 	fmt.Println()
 
 	// Start web interface in monitoring mode
@@ -502,7 +521,9 @@ This mode is useful for:
 			os.Exit(1)
 		}
 
-		// Note: setupLogging and logConfigValues already called in initConfig
+		// Setup logging and log config values for CLI mode
+		setupLogging()
+		logConfigValues()
 
 		fmt.Println("🚀 Starting Cluster-Bloom in CLI mode...")
 		fmt.Printf("📄 Using configuration: %s\n", cfgFile)
