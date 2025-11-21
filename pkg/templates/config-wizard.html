@@ -1277,7 +1277,7 @@
                     <label for="oidc-audiences-${providerId}">Audiences (Client IDs) *</label>
                     <input type="text" id="oidc-audiences-${providerId}" name="oidc-audiences-${providerId}"
                            placeholder="k8s,api,kubernetes"
-                           pattern="^[a-zA-Z0-9_-]+(\s*,\s*[a-zA-Z0-9_-]+)*$"
+                           pattern="^[a-zA-Z0-9_-]+(\\s*,\\s*[a-zA-Z0-9_-]+)*$"
                            title="Comma-separated client IDs (e.g., k8s,api)"
                            required>
                     <small class="help-text" style="color: #666; font-size: 12px; margin-top: 4px; display: block;">
