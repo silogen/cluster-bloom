@@ -622,6 +622,12 @@
                 }
             }
 
+            // Handle OIDC providers separately using our helper function
+            const oidcProviders = getAllOIDCProviders();
+            if (oidcProviders.length > 0) {
+                config.ADDITIONAL_OIDC_PROVIDERS = oidcProviders;
+            }
+
             return config;
         }
 
@@ -761,6 +767,9 @@
 
             // Collect form data using shared helper
             const config = collectFormData();
+
+            // Get OIDC providers for validation
+            const oidcProviders = getAllOIDCProviders();
 
             // Validate required fields
             const firstNode = config.FIRST_NODE !== false;
