@@ -238,12 +238,12 @@
                     <div class="form-group">
                         <label for="CLUSTER_PREMOUNTED_DISKS">Longhorn Mount Points</label>
                         <div class="description">Comma-separated list of disk paths for Longhorn storage (used as-is without formatting). Leave empty for automatic configuration.</div>
-                        <input type="text" id="CLUSTER_PREMOUNTED_DISKS" name="CLUSTER_PREMOUNTED_DISKS" placeholder="/dev/sdb,/dev/sdc"
-                               pattern="^(disk[0-9]+)(,disk[0-9]+)*$|^$"
-                               title="Format: diskx or comma-separated diskx,disky">
+                        <input type="text" id="CLUSTER_PREMOUNTED_DISKS" name="CLUSTER_PREMOUNTED_DISKS" placeholder="/mnt/disk0,/mnt/disk1"
+                               pattern="^(/mnt/disk[0-9]+)(,/mnt/disk[0-9]+)*$|^$"
+                               title="Format: /mnt/disk0 or comma-separated /mnt/disk0,/mnt/disk1">
                         <small class="help-text" style="color: #666; font-size: 12px; margin-top: 4px; display: block;">
                             🛈 Disk => Mountpoint: {{ .LonghornPreviousMountpoints }}<br>
-                            ✓ Format: disk0 or disk0,disk1,...<br>
+                            ✓ Format: /mnt/disk0 or /mnt/disk0,/mnt/disk1,...<br>
                             ✓ Must be existing block devices<br>
                             ✓ Will be formatted for Longhorn storage<br>
                             ⚠️ Data on specified disks will be erased
