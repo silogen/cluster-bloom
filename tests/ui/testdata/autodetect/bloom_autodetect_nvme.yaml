@@ -1,0 +1,29 @@
+input:
+  DOMAIN: autodetect-nvme.local
+  FIRST_NODE: true
+  GPU_NODE: false
+  CERT_OPTION: generate
+
+mocks:
+  addrootdevicetoconfig.statconfigfile:
+    error: "no such file or directory"
+  addrootdevicetoconfig.readfstab:
+    output: ""
+  getunmountedphysicaldisks.listblockdevices:
+    output: |
+      nvme0n1 disk
+      nvme1n1 disk
+      nvme2n1 disk
+  getunmountedphysicaldisks.checkmount.nvme0n1:
+    output: ""
+  getunmountedphysicaldisks.checkmount.nvme1n1:
+    output: ""
+  getunmountedphysicaldisks.checkmount.nvme2n1:
+    output: "/"
+
+output:
+  DOMAIN: autodetect-nvme.local
+  FIRST_NODE: true
+  GPU_NODE: false
+  CERT_OPTION: generate
+  CLUSTER_DISKS: "/dev/nvme0n1,/dev/nvme1n1"

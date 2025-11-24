@@ -1,0 +1,6 @@
+input:
+  DOMAIN: cert-existing.local
+  CLUSTER_DISKS: /dev/sdb
+  CERT_OPTION: existing
+  FIRST_NODE: true
+  GPU_NODE: false

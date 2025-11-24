@@ -1,0 +1,10 @@
+input:
+  DOMAIN: domain_with_underscore.com
+  CLUSTER_DISKS: /dev/sdb
+  CERT_OPTION: generate
+  FIRST_NODE: true
+  GPU_NODE: false
+
+output:
+  error:
+    DOMAIN: "Valid domain format"

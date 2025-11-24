@@ -225,7 +225,7 @@ var SetupAndCheckRocmStep = Step{
 				if strings.HasPrefix(trimmedLine, "WARNING:") {
 					continue
 				}
-				
+
 				parts := strings.Fields(line)
 				if len(parts) > 0 {
 					if _, err := strconv.Atoi(parts[0]); err != nil {
@@ -238,7 +238,7 @@ var SetupAndCheckRocmStep = Step{
 				}
 			}
 		}
-		
+
 		if !validLineFound {
 			LogMessage(Error, "rocm-smi did not return any valid GPU lines: "+string(output))
 			return StepResult{
@@ -1097,20 +1097,6 @@ var CleanLonghornMountsStep = Step{
 		for i := 0; i < 3; i++ {
 			// Unmount Longhorn device files
 			stepResult = shellCmdHelper("sudo umount -lf /dev/longhorn/pvc* 2>/dev/null || true")
-			if stepResult.Error != nil {
-				return stepResult
-			}
-
-			// Find /mnt/disk* mount points that contain longhorn-disk.cfg and unmount them
-			shellCmd := `
-				for mount_point in /mnt/disk*; do
-					if [ -d "$mount_point" ] && find "$mount_point" -name "longhorn-disk.cfg" 2>/dev/null | grep -q .; then
-						echo "Found longhorn-disk.cfg in $mount_point, unmounting..."
-						sudo umount -lf "$mount_point" 2>/dev/null || true
-					fi
-				done
-			`
-			stepResult = shellCmdHelper(shellCmd)
 			if stepResult.Error != nil {
 				return stepResult
 			}

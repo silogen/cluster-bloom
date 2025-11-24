@@ -1,0 +1,9 @@
+ENABLED_STEPS: ValidateArgsStep
+DISABLED_STEPS: SetupRKE2Step
+FIRST_NODE: true
+DOMAIN: example.com
+USE_CERT_MANAGER: false
+CERT_OPTION: generate
+CLUSTER_DISKS: /dev/nvme0n1
+
+expected_error: "DISABLED_STEPS and ENABLED_STEPS cannot both be set"

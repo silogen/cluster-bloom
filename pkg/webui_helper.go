@@ -181,7 +181,7 @@ func GetDisksFromSelectedConfig(longhornFromConfig string) (disks []string, moun
 		mountPoints[disk] = getMountpointsFromDevice(disk)
 	}
 
-	LogMessage(Info, fmt.Sprintf("Found %d disks from CLUSTER_DISKS:\n%s", len(targetDisks), diskInfo))
+	LogMessage(Debug, fmt.Sprintf("Found %d disks from CLUSTER_DISKS:\n%s", len(targetDisks), diskInfo))
 	return targetDisks, mountPoints, nil
 }
 
