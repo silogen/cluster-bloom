@@ -17,6 +17,7 @@ package pkg
 
 import (
 	"embed"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"os/exec"
@@ -1029,7 +1030,72 @@ var FinalOutput = Step{
 				return StepResult{Error: fmt.Errorf("failed to write to additional_node_command.txt: %w", err)}
 			}
 
+			// Create kubeconfig template for OIDC authentication
+			domain := viper.GetString("DOMAIN")
+			if domain != "" {
+				// Read the CA certificate from RKE2
+				var caCertData string
+				caCertPath := "/var/lib/rancher/rke2/server/tls/server-ca.crt"
+				if caCertBytes, err := os.ReadFile(caCertPath); err != nil {
+					LogMessage(Error, fmt.Sprintf("Failed to read CA certificate from %s: %v", caCertPath, err))
+					// Fallback to insecure mode with warning
+					caCertData = "insecure-skip-tls-verify: true\n    # WARNING: Replace with proper certificate-authority-data for production use"
+				} else {
+					// Encode CA certificate as base64
+					caCertBase64 := base64.StdEncoding.EncodeToString(caCertBytes)
+					caCertData = fmt.Sprintf("certificate-authority-data: %s", caCertBase64)
+				}
+
+				kubeconfigTemplate := fmt.Sprintf(`apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    %s
+    server: https://k8s.%s:9443
+  name: %s-cluster
+contexts:
+- context:
+    cluster: %s-cluster
+    user: oidc-user
+  name: %s
+current-context: %s
+users:
+- name: oidc-user
+  user:
+    exec:
+      apiVersion: client.authentication.k8s.io/v1beta1
+      command: kubectl
+      args:
+      - oidc-login
+      - get-token
+      - --oidc-issuer-url=https://kc.%s/realms/airm
+      - --oidc-client-id=k8s
+      - --oidc-client-secret=<REPLACE-WITH-YOUR-CLIENT-SECRET>
+      - --oidc-extra-scope=groups,email
+      env: null
+      interactiveMode: IfAvailable
+      provideClusterInfo: false
+`, caCertData, domain, domain, domain, domain, domain, domain)
+
+				kubeconfigFile, err := os.Create("kubeconfig-oidc-template.yaml")
+				if err != nil {
+					LogMessage(Error, fmt.Sprintf("Failed to create kubeconfig-oidc-template.yaml: %v", err))
+					// Don't return error, just log it since this is supplementary
+				} else {
+					defer kubeconfigFile.Close()
+					_, err = kubeconfigFile.WriteString(kubeconfigTemplate)
+					if err != nil {
+						LogMessage(Error, fmt.Sprintf("Failed to write to kubeconfig-oidc-template.yaml: %v", err))
+					} else {
+						LogMessage(Info, "Created kubeconfig-oidc-template.yaml for OIDC authentication setup")
+					}
+				}
+			}
+
 			LogMessage(Info, "To setup additional nodes to join the cluster, copy and run the command from additional_node_command.txt")
+			if domain != "" {
+				LogMessage(Info, "For OIDC authentication, configure kubectl using kubeconfig-oidc-template.yaml")
+			}
 			return StepResult{Message: "To setup additional nodes to join the cluster, copy and run the command from additional_node_command.txt"}
 		} else {
 			return StepResult{Error: nil}
