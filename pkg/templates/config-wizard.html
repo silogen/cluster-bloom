@@ -239,8 +239,8 @@
                         <label for="CLUSTER_PREMOUNTED_DISKS">Longhorn Mount Points</label>
                         <div class="description">Comma-separated list of disk paths for Longhorn storage (used as-is without formatting). Leave empty for automatic configuration.</div>
                         <input type="text" id="CLUSTER_PREMOUNTED_DISKS" name="CLUSTER_PREMOUNTED_DISKS" placeholder="/mnt/disk0,/mnt/disk1"
-                               pattern="^(/mnt/disk[0-9]+)(,/mnt/disk[0-9]+)*$|^$"
-                               title="Format: /mnt/disk0 or comma-separated /mnt/disk0,/mnt/disk1">
+                               pattern="^/[^\s,]+(,/[^\s,]+)*$|^$"
+                               title="Format: /mnt/disk0 or comma-separated /mnt/disk0,/mnt/disk1 (must start with / and contain no spaces)">
                         <small class="help-text" style="color: #666; font-size: 12px; margin-top: 4px; display: block;">
                             🛈 Disk => Mountpoint: {{ .LonghornPreviousMountpoints }}<br>
                             ✓ Format: /mnt/disk0 or /mnt/disk0,/mnt/disk1,...<br>
