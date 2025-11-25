@@ -221,32 +221,32 @@
                     </div>
 
                     <div class="form-group">
-                        <label for="CLUSTER_DISKS">Longhorn Format & Mount Targets</label>
-                        <div class="description">Comma-separated list of specific disk devices to format and use with Longhorn (e.g., /dev/sdb,/dev/sdc). Leave empty for automatic selection.</div>
-                        <input type="text" id="CLUSTER_DISKS" name="CLUSTER_DISKS" placeholder="/dev/sdb,/dev/sdc"
+                        <label for="CLUSTER_DISKS">Disk Devices to Format</label>
+                        <div class="description">Comma-separated list of disk devices to format and mount for Longhorn storage (e.g., /dev/sdb,/dev/nvme0n1). Leave empty for automatic selection.</div>
+                        <input type="text" id="CLUSTER_DISKS" name="CLUSTER_DISKS" placeholder="/dev/sdb,/dev/nvme0n1"
                                pattern="^(/dev/[a-zA-Z0-9]+)(,/dev/[a-zA-Z0-9]+)*$|^$"
-                               title="Format: /dev/xxx or comma-separated /dev/xxx,/dev/yyy">
+                               title="Format: /dev/xxx or comma-separated /dev/xxx,/dev/yyy (e.g., /dev/sdb,/dev/nvme0n1)">
                         <small class="help-text" style="color: #666; font-size: 12px; margin-top: 4px; display: block;">
                             <span id="longhorn-target-info-line">🛈 Target Info: <span id="longhorn-previous-disks">{{ .LonghornPreviousDisks }}</span></span><br>
-                            ✓ Format: /dev/sdb or /dev/sdb,/dev/sdc<br>
-                            ✓ Must be valid block device paths<br>
+                            ✓ Format: /dev/sdb or /dev/sdb,/dev/nvme0n1<br>
+                            ✓ Must be block devices (e.g., /dev/sd*, /dev/nvme*)<br>
                             ✓ Leave empty for auto-detection<br>
-                            ✗ Ensure devices exist and are not in use
+                            ⚠️ Devices will be formatted - all data will be lost
                         </small>
                     </div>
 
                     <div class="form-group">
-                        <label for="CLUSTER_PREMOUNTED_DISKS">Longhorn Mount Points</label>
-                        <div class="description">Comma-separated list of disk paths for Longhorn storage (used as-is without formatting). Leave empty for automatic configuration.</div>
+                        <label for="CLUSTER_PREMOUNTED_DISKS">Pre-Mounted Disk Paths</label>
+                        <div class="description">Comma-separated list of absolute paths where disks are already mounted for Longhorn storage (e.g., /mnt/disk0,/mnt/disk1). Leave empty for automatic configuration.</div>
                         <input type="text" id="CLUSTER_PREMOUNTED_DISKS" name="CLUSTER_PREMOUNTED_DISKS" placeholder="/mnt/disk0,/mnt/disk1"
                                pattern="^/[^\s,]+(,/[^\s,]+)*$|^$"
-                               title="Format: /mnt/disk0 or comma-separated /mnt/disk0,/mnt/disk1 (must start with / and contain no spaces)">
+                               title="Format: /path/to/mount or comma-separated absolute paths (must start with / and contain no spaces)">
                         <small class="help-text" style="color: #666; font-size: 12px; margin-top: 4px; display: block;">
                             🛈 Disk => Mountpoint: {{ .LonghornPreviousMountpoints }}<br>
-                            ✓ Format: /mnt/disk0 or /mnt/disk0,/mnt/disk1,...<br>
-                            ✓ Must be existing block devices<br>
-                            ✓ Will be formatted for Longhorn storage<br>
-                            ⚠️ Data on specified disks will be erased
+                            ✓ Format: /mnt/disk0 or /mnt/disk0,/mnt/disk1<br>
+                            ✓ Must be absolute paths to existing mount points<br>
+                            ✓ Disks must already be formatted and mounted<br>
+                            ✓ Used as-is without formatting
                         </small>
                     </div>
                 </div>
@@ -803,7 +803,7 @@
             if (config.CLUSTER_PREMOUNTED_DISKS) {
                 validateField('CLUSTER_PREMOUNTED_DISKS', 'CLUSTER_PREMOUNTED_DISKS');
                 if (!document.getElementById('CLUSTER_PREMOUNTED_DISKS').validity.valid) {
-                    errors.push('❌ Invalid Longhorn disk format - Must be /dev/xxx or comma-separated list. Note: specified disks must exist on the system');
+                    errors.push('❌ Invalid mount path format - Must be absolute path (e.g., /mnt/disk0) or comma-separated list. Note: paths must be existing mount points');
                 }
             }
 
