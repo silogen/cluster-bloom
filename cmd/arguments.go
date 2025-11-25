@@ -144,6 +144,12 @@ func SetArguments() {
 			Type:        "non-empty-url",
 		},
 		{
+			Key:         "RKE2_VERSION",
+			Default:     "v1.34.1+rke2r1",
+			Description: "Specific RKE2 version to install (e.g., \"v1.34.1+rke2r1\").",
+			Type:        "string",
+		},
+		{
 			Key:         "RKE2_EXTRA_CONFIG",
 			Default:     "",
 			Description: "Additional RKE2 configuration in YAML format to append to /etc/rancher/rke2/config.yaml. Example: \"node-name: my-node\\ntls-san:\\n  - example.com\".",
