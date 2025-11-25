@@ -262,6 +262,7 @@ func RunWebInterfaceWithConfig(port string, steps []Step, configFile string, one
 	go func() {
 		for {
 			time.Sleep(1 * time.Second)
+
 			if handlerService.ConfigChanged() {
 				configReceived <- true
 				break
@@ -307,6 +308,11 @@ func RunWebInterfaceWithConfig(port string, steps []Step, configFile string, one
 			fmt.Println("🔄 Starting installation...")
 			fmt.Println()
 
+			// Setup logging now that we're about to start installation
+			if setupLogging != nil {
+				setupLogging()
+			}
+
 			// Update viper with the new configuration from web interface
 			config := handlerService.GetConfig()
 			if config != nil {
@@ -314,11 +320,6 @@ func RunWebInterfaceWithConfig(port string, steps []Step, configFile string, one
 					viper.Set(key, value)
 				}
 				log.Infof("Updated viper with %d config values from web interface", len(config))
-			}
-
-			// Setup logging now that we're about to start installation
-			if setupLogging != nil {
-				setupLogging()
 			}
 
 			// Log the configuration values

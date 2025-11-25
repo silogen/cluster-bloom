@@ -292,6 +292,10 @@ func (h *WebHandlerService) LoadConfigFromFile(configFile string, oneShot bool) 
 				h.config[strings.ToUpper(viperKey)] = value
 			}
 		}
+
+		// Set flags to trigger ConfigChanged() detection
+		h.configVersion = 2 // Set to 2 so ConfigChanged() returns true (needs > 1)
+		h.shouldStartInstall = true
 	}
 
 }
