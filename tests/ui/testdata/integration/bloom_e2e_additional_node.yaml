@@ -1,0 +1,8 @@
+input:
+  DOMAIN: cluster.test.local
+  CLUSTER_DISKS: /dev/sdb
+  CERT_OPTION: generate
+  FIRST_NODE: false
+  GPU_NODE: false
+  SERVER_IP: 192.168.1.100
+  JOIN_TOKEN: K10abc123def456

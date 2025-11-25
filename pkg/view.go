@@ -98,6 +98,7 @@ func RunStepsWithUI(steps []Step) error {
 	mux.HandleFunc("/api/steps", handlerService.StepsAPIHandler)
 	mux.HandleFunc("/api/error", handlerService.ErrorAPIHandler)
 	mux.HandleFunc("/api/config", handlerService.ConfigAPIHandler)
+	mux.HandleFunc("/api/config-only", handlerService.ConfigOnlyAPIHandler)
 	mux.HandleFunc("/configure", handlerService.ConfigWizardHandler)
 
 	handler := LocalhostOnly(mux)
@@ -234,6 +235,7 @@ func RunWebInterfaceWithConfig(port string, steps []Step, configFile string, one
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", handlerService.DashboardHandler)
 	mux.HandleFunc("/api/config", handlerService.ConfigAPIHandler)
+	mux.HandleFunc("/api/config-only", handlerService.ConfigOnlyAPIHandler)
 	mux.HandleFunc("/api/error", handlerService.ErrorAPIHandler)
 	mux.HandleFunc("/api/validation-error", handlerService.ValidationErrorAPIHandler)
 	mux.HandleFunc("/monitor", handlerService.MonitorHandler)
@@ -260,7 +262,7 @@ func RunWebInterfaceWithConfig(port string, steps []Step, configFile string, one
 	go func() {
 		for {
 			time.Sleep(1 * time.Second)
-			if handlerService.GetConfig() != nil {
+			if handlerService.ConfigChanged() {
 				configReceived <- true
 				break
 			}
@@ -279,8 +281,27 @@ func RunWebInterfaceWithConfig(port string, steps []Step, configFile string, one
 		}
 	}()
 
+	// Check for config-only saves (save without installation)
+	configSavedOnly := make(chan bool)
+	go func() {
+		for {
+			time.Sleep(100 * time.Millisecond)
+			if handlerService.configSavedOnly {
+				configSavedOnly <- true
+				break
+			}
+		}
+	}()
+
 	for {
 		select {
+		case <-configSavedOnly:
+			fmt.Println("✅ Configuration saved successfully")
+			fmt.Printf("📄 Configuration file: bloom.yaml\n")
+			fmt.Println("🔄 To start installation, run: bloom --config bloom.yaml")
+			server.Close()
+			return nil
+
 		case <-configReceived:
 			fmt.Println("✅ Configuration received from web interface")
 			fmt.Println("🔄 Starting installation...")

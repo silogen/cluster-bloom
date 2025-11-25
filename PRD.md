@@ -276,7 +276,42 @@ sudo ./bloom demo-ui
 - Executes enabled steps with mocked commands for each config
 - Outputs structured YAML results showing pass/fail status
 - Useful for validating installation steps without system modifications
-- Example: `./bloom test integration_tests/step/*/bloom.yaml`
+- Example: `./bloom test tests/integration/step/*/bloom.yaml`
+
+#### UI Testing Framework
+```bash
+# Start Chrome container for browser-based testing
+docker run -d --rm --name chrome-test --net=host -e "PORT=9222" browserless/chrome:latest
+
+# Run all UI tests
+go test -v ./tests/ui
+
+# Run specific test categories
+go test -v -run TestConfigBasedTests/.*autodetect ./tests/ui
+go test -v -run TestConfigBasedTests/.*invalid ./tests/ui
+```
+
+**Test Infrastructure Features:**
+- **Browser Automation**: chromedp-based testing with headless Chrome
+- **Mock System**: Comprehensive command mocking for disk detection and system calls
+- **Test Categories**:
+  - Valid configuration tests (7 cases)
+  - Invalid/validation error tests (4 cases)
+  - Disk auto-detection tests (6 cases)
+  - End-to-end integration tests (2 cases)
+  - Additional node validation tests (3 cases)
+- **Structured Test Format**: YAML-based test definitions with `input`/`mocks`/`output` sections
+- **Environment Portability**: Tests pass in containerized, development, and bare-metal environments
+- **CI/CD Integration**: Automated browser setup in GitHub Actions workflow
+
+**Test Coverage Areas:**
+- Form validation with HTML5 patterns
+- Field-specific error message display
+- Disk auto-detection with various hardware configurations
+- Virtual disk filtering (QEMU, VMware)
+- Swap partition detection and exclusion
+- Dynamic form behavior (conditional field visibility)
+- Configuration save vs save-and-install workflows
 
 #### Web UI Installation Workflow
 
@@ -348,7 +383,7 @@ sudo ./bloom demo-ui
 5. **Scaling Automation**: Manual process for cluster scaling operations
 
 ### Technical Debt
-1. **Testing Coverage**: Limited unit and integration test coverage
+1. **Testing Coverage**: Comprehensive browser-based UI testing implemented (22 test cases). Integration testing framework established with mock-based validation. Additional unit test coverage needed for backend components.
 2. **Documentation**: Missing detailed operational procedures
 3. **Configuration Validation**: Basic validation without comprehensive checks
 4. **Log Management**: Basic logging without centralized log aggregation
@@ -397,7 +432,7 @@ sudo ./bloom demo-ui
 ## Future Roadmap
 
 ### Near-term Enhancements (3-6 months)
-1. **Enhanced Testing**: Comprehensive test suite development
+1. **Enhanced Testing**: ✅ Browser-based UI testing complete (22 test cases). Next: Backend unit tests and E2E installation testing
 2. **Backup Integration**: Automated backup solution implementation
 3. **Monitoring Stack**: Built-in Prometheus/Grafana deployment
 4. **Documentation**: Comprehensive operational documentation

@@ -1,0 +1,9 @@
+ENABLED_STEPS: ValidateArgsStep
+FIRST_NODE: true
+DOMAIN: example.com
+USE_CERT_MANAGER: false
+CERT_OPTION: generate
+CLUSTER_DISKS: /dev/nvme0n1
+CLUSTER_PREMOUNTED_DISKS: /tmp
+
+expected_error: "CLUSTER_PREMOUNTED_DISKS and CLUSTER_DISKS cannot both be set"

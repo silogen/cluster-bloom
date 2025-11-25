@@ -374,6 +374,7 @@
 
             <div class="actions">
                 <button type="button" class="btn btn-secondary" onclick="resetForm()">Reset</button>
+                <button type="button" class="btn btn-secondary" onclick="saveConfig()">Save Configuration</button>
                 <button type="submit" class="btn">Generate Configuration & Start Installation</button>
             </div>
         </form>
@@ -389,10 +390,19 @@
 
             // Show/hide additional node section
             const additionalNodeSection = document.getElementById('additional-node-section');
+            const serverIPInput = document.getElementById('SERVER_IP');
+            const joinTokenInput = document.getElementById('JOIN_TOKEN');
+
             if (firstNode) {
                 additionalNodeSection.classList.remove('show');
+                // Remove required from hidden additional node fields
+                if (serverIPInput) serverIPInput.removeAttribute('required');
+                if (joinTokenInput) joinTokenInput.removeAttribute('required');
             } else {
                 additionalNodeSection.classList.add('show');
+                // Add required to visible additional node fields
+                if (serverIPInput) serverIPInput.setAttribute('required', 'required');
+                if (joinTokenInput) joinTokenInput.setAttribute('required', 'required');
             }
 
             // Show/hide certificate options
@@ -494,117 +504,70 @@
             updateConditionals();
         }
 
-        document.getElementById('config-form').addEventListener('submit', function(e) {
-            e.preventDefault();
-            // Check if any selected disk is the root device
+        // Shared validation helper: Check for root device conflict
+        function checkRootDeviceConflict() {
             const selectedDisksValue = document.getElementById("CLUSTER_DISKS").value.trim();
-            if (selectedDisksValue && window.prefilledData?.root_device) {
-                const selectedDisks = selectedDisksValue.split(",").map(d => d.trim());
-                const rootDevice = window.prefilledData.root_device;
-                
-                const conflictingDisk = selectedDisks.find(disk => disk === rootDevice);
-                if (conflictingDisk) {
-                    // Show error modal for root device conflict
-                    const errorDiv = document.createElement("div");
-                    errorDiv.innerHTML = "<h3 style='color: #d32f2f;'>❌ Cannot Use Root Device</h3>" +
-                        "<p style='color: #666;'>You cannot select the root device <strong>" + rootDevice + "</strong> for Longhorn storage.</p>" +
-                        "<p style='color: #666;'>The root device contains your operating system and cannot be used for data storage.</p>" +
-                        "<p style='color: #666; font-style: italic;'>Please select different disk devices for Longhorn storage.</p>";
-                    
-                    const modal = document.createElement("div");
-                    modal.style.cssText = "position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); " +
-                        "background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); " +
-                        "z-index: 10000; max-width: 500px; max-height: 80vh; overflow-y: auto;";
-                    modal.appendChild(errorDiv);
-                    
-                    const closeBtn = document.createElement("button");
-                    closeBtn.textContent = "OK";
-                    closeBtn.style.cssText = "background: #4CAF50; color: white; border: none; padding: 10px 20px; " +
-                        "border-radius: 4px; cursor: pointer; margin-top: 15px; font-size: 16px;";
-                    closeBtn.onclick = () => {
-                        document.body.removeChild(modal);
-                        document.body.removeChild(overlay);
-                        document.getElementById("CLUSTER_DISKS").focus();
-                    };
-                    modal.appendChild(closeBtn);
-                    
-                    const overlay = document.createElement("div");
-                    overlay.style.cssText = "position: fixed; top: 0; left: 0; right: 0; bottom: 0; " +
-                        "background: rgba(0,0,0,0.5); z-index: 9999;";
-                    
-                    document.body.appendChild(overlay);
-                    document.body.appendChild(modal);
-                    return;
-                }
+            if (!selectedDisksValue || !window.prefilledData?.root_device) {
+                return true; // No conflict
             }
 
+            const selectedDisks = selectedDisksValue.split(",").map(d => d.trim());
+            const rootDevice = window.prefilledData.root_device;
+            const conflictingDisk = selectedDisks.find(disk => disk === rootDevice);
 
-            // First check if the form is valid according to HTML5 validation
-            const form = e.target;
-            console.log('Form validity check:', form.checkValidity());
+            if (conflictingDisk) {
+                showErrorModal(
+                    "❌ Cannot Use Root Device",
+                    `You cannot select the root device <strong>${rootDevice}</strong> for Longhorn storage.<br>` +
+                    "The root device contains your operating system and cannot be used for data storage.<br>" +
+                    "Please select different disk devices for Longhorn storage.",
+                    () => document.getElementById("CLUSTER_DISKS").focus()
+                );
+                return false;
+            }
+            return true;
+        }
 
-            // If form is invalid, show which fields are invalid
-            if (!form.checkValidity()) {
-                console.error('Form has HTML5 validation errors');
+        // Shared validation helper: Validate form fields
+        function validateForm(form) {
+            if (form.checkValidity()) {
+                return true;
+            }
 
-                // Find all invalid fields
-                const allInputs = form.querySelectorAll('input, select, textarea');
-                let invalidFields = [];
-
-                allInputs.forEach(input => {
-                    if (!input.validity.valid) {
-                        const parent = input.closest('.form-group');
-                        const isVisible = parent && window.getComputedStyle(parent).display !== 'none';
-
-                        // Set custom validation message
-                        let message = '';
-                        if (input.validity.patternMismatch) {
-                            const helpText = input.nextElementSibling ? input.nextElementSibling.textContent : '';
-                            message = 'Invalid format. ' + helpText;
-                        } else if (input.validity.valueMissing) {
-                            message = 'This field is required';
-                        } else if (input.validity.typeMismatch) {
-                            message = 'Please enter a valid value';
-                        }
-
-                        input.setCustomValidity(message);
-
-                        invalidFields.push({
-                            name: input.name || input.id,
-                            value: input.value,
-                            pattern: input.getAttribute('pattern'),
-                            required: input.hasAttribute('required'),
-                            visible: isVisible,
-                            validity: {
-                                patternMismatch: input.validity.patternMismatch,
-                                valueMissing: input.validity.valueMissing,
-                                typeMismatch: input.validity.typeMismatch
-                            },
-                            message: message
-                        });
-                    } else {
-                        // Clear any custom validation message for valid fields
-                        input.setCustomValidity('');
+            const allInputs = form.querySelectorAll('input, select, textarea');
+            allInputs.forEach(input => {
+                if (!input.validity.valid) {
+                    let message = '';
+                    if (input.validity.patternMismatch) {
+                        const helpText = input.nextElementSibling ? input.nextElementSibling.textContent : '';
+                        message = 'Invalid format. ' + helpText;
+                    } else if (input.validity.valueMissing) {
+                        message = 'This field is required';
+                    } else if (input.validity.typeMismatch) {
+                        message = 'Please enter a valid value';
                     }
-                });
+                    input.setCustomValidity(message);
+                } else {
+                    input.setCustomValidity('');
+                }
+            });
 
-                console.error('Invalid fields:', invalidFields);
+            form.reportValidity();
+            return false;
+        }
 
-                // Show the validation messages
-                form.reportValidity();
-                return;
-            }
-
-            const formData = new FormData(this);
+        // Shared helper: Collect form data into config object
+        function collectFormData() {
+            const formData = new FormData(document.getElementById('config-form'));
             const config = {};
 
-            // First, handle all checkboxes (including unchecked ones)
+            // Handle checkboxes
             const checkboxes = document.querySelectorAll('input[type="checkbox"]');
             checkboxes.forEach(checkbox => {
                 config[checkbox.name] = checkbox.checked;
             });
 
-            // Then handle other form fields
+            // Handle other fields
             for (let [key, value] of formData.entries()) {
                 const input = document.querySelector(`[name="${key}"]`);
                 if (!input) continue;
@@ -612,6 +575,146 @@
                     config[key] = value.trim();
                 }
             }
+
+            return config;
+        }
+
+        // Shared helper: Show error modal
+        function showErrorModal(title, message, onClose) {
+            const errorDiv = document.createElement("div");
+            errorDiv.innerHTML = `<h3 style='color: #d32f2f;'>${title}</h3>` +
+                `<p style='color: #666;'>${message}</p>`;
+
+            const modal = document.createElement("div");
+            modal.style.cssText = "position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); " +
+                "background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); " +
+                "z-index: 10000; max-width: 500px; max-height: 80vh; overflow-y: auto;";
+            modal.appendChild(errorDiv);
+
+            const closeBtn = document.createElement("button");
+            closeBtn.textContent = "OK";
+            closeBtn.style.cssText = "background: #4CAF50; color: white; border: none; padding: 10px 20px; " +
+                "border-radius: 4px; cursor: pointer; margin-top: 15px; font-size: 16px;";
+            closeBtn.onclick = () => {
+                document.body.removeChild(modal);
+                document.body.removeChild(overlay);
+                if (onClose) onClose();
+            };
+            modal.appendChild(closeBtn);
+
+            const overlay = document.createElement("div");
+            overlay.style.cssText = "position: fixed; top: 0; left: 0; right: 0; bottom: 0; " +
+                "background: rgba(0,0,0,0.5); z-index: 9999;";
+
+            document.body.appendChild(overlay);
+            document.body.appendChild(modal);
+        }
+
+        function saveConfig() {
+            const form = document.getElementById('config-form');
+            const saveBtn = event.target;
+
+            // Use shared validation helpers
+            if (!checkRootDeviceConflict()) return;
+            if (!validateForm(form)) return;
+
+            // Disable button and show loading state
+            saveBtn.disabled = true;
+            const originalText = saveBtn.textContent;
+            saveBtn.textContent = 'Saving...';
+            saveBtn.style.background = '#999';
+
+            // Collect form data using shared helper
+            const config = collectFormData();
+
+            // Submit configuration without installation
+            fetch('/api/config-only', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(config)
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Re-enable button
+                saveBtn.disabled = false;
+                saveBtn.textContent = originalText;
+                saveBtn.style.background = '';
+
+                if (data.success) {
+                    // Show success feedback on button
+                    saveBtn.textContent = '✅ Saved!';
+                    saveBtn.style.background = '#2e7d32';
+                    setTimeout(() => {
+                        saveBtn.textContent = originalText;
+                        saveBtn.style.background = '';
+                    }, 2000);
+
+                    document.getElementById('result').innerHTML = `
+                        <div class="success">
+                            <h3>✅ Configuration Saved!</h3>
+                            <p>${data.message}</p>
+                            <p><strong>File:</strong> ${data.file}</p>
+                        </div>
+                    `;
+                    document.getElementById('result').style.display = 'block';
+
+                    // Scroll to result
+                    document.getElementById('result').scrollIntoView({ behavior: 'smooth' });
+                } else {
+                    saveBtn.textContent = '❌ Failed';
+                    saveBtn.style.background = '#d32f2f';
+                    setTimeout(() => {
+                        saveBtn.textContent = originalText;
+                        saveBtn.style.background = '';
+                    }, 2000);
+
+                    document.getElementById('result').innerHTML = `
+                        <div class="error">
+                            <h3>❌ Save Failed</h3>
+                            <p>${data.error}</p>
+                        </div>
+                    `;
+                    document.getElementById('result').style.display = 'block';
+                    document.getElementById('result').scrollIntoView({ behavior: 'smooth' });
+                }
+            })
+            .catch(error => {
+                // Re-enable button
+                saveBtn.disabled = false;
+                saveBtn.textContent = '❌ Error';
+                saveBtn.style.background = '#d32f2f';
+                setTimeout(() => {
+                    saveBtn.textContent = originalText;
+                    saveBtn.style.background = '';
+                }, 2000);
+
+                document.getElementById('result').innerHTML = `
+                    <div class="error">
+                        <h3>❌ Save Failed</h3>
+                        <p>Failed to save configuration: ${error.message}</p>
+                    </div>
+                `;
+                document.getElementById('result').style.display = 'block';
+                document.getElementById('result').scrollIntoView({ behavior: 'smooth' });
+            });
+        }
+
+        document.getElementById('config-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+
+            // Use shared validation helpers
+            if (!checkRootDeviceConflict()) return;
+
+            const form = e.target;
+            console.log('Form validity check:', form.checkValidity());
+
+            if (!validateForm(form)) {
+                console.error('Form has HTML5 validation errors');
+                return;
+            }
+
+            // Collect form data using shared helper
+            const config = collectFormData();
 
             // Validate required fields
             const firstNode = config.FIRST_NODE !== false;
@@ -675,14 +778,11 @@
                 errors.push('❌ Invalid domain format - Must be a valid domain like example.com or sub.example.com');
             }
 
+            // SERVER_IP and JOIN_TOKEN are now validated by HTML5 required attribute
+            // Only validate format if they have values
             if (!firstNode) {
-                if (!config.SERVER_IP) {
-                    errors.push('❌ Server IP is required - Please enter the IP address of the first node (e.g., 192.168.1.100)');
-                } else if (!validateField('SERVER_IP', 'SERVER_IP')) {
+                if (config.SERVER_IP && !validateField('SERVER_IP', 'SERVER_IP')) {
                     errors.push('❌ Invalid IP address format - Must be a valid IPv4 address (e.g., 192.168.1.100)');
-                }
-                if (!config.JOIN_TOKEN) {
-                    errors.push('❌ Join Token is required - Please enter the token from the first node installation');
                 }
             }
 
