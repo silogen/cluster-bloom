@@ -84,10 +84,10 @@ func SetArguments() {
 
 		// Authentication
 		{
-			Key:         "OIDC_URL",
-			Default:     "",
-			Description: "The URL of the OIDC provider.",
-			Type:        "url",
+			Key:         "ADDITIONAL_OIDC_PROVIDERS",
+			Default:     []interface{}{},
+			Description: "Additional OIDC providers for authentication. Each provider needs a URL and audiences. Example: [{\"url\": \"https://provider.com/realms/k8s\", \"audiences\": [\"k8s\"]}]",
+			Type:        "array",
 		},
 
 		// ROCm configuration (depends on GPU_NODE)

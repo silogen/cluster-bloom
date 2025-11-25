@@ -66,7 +66,11 @@ func TestPrepareRKE2(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			viper.Set("OIDC_URL", tt.oidcURL)
+			if tt.oidcURL != "" {
+				viper.Set("ADDITIONAL_OIDC_PROVIDERS", []map[string]interface{}{
+					{"url": tt.oidcURL, "audiences": []string{"k8s"}},
+				})
+			}
 			err := PrepareRKE2()
 			// May fail due to permissions, but function should exist
 			if err == nil {
