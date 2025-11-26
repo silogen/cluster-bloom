@@ -142,6 +142,10 @@ if [ -f /usr/share/OVMF/OVMF_CODE.fd ] && [ -f /usr/share/OVMF/OVMF_VARS.fd ]; t
 elif [ -f /usr/share/OVMF/OVMF_CODE_4M.fd ] && [ -f /usr/share/OVMF/OVMF_VARS_4M.fd ]; then
     OVMF_CODE="/usr/share/OVMF/OVMF_CODE_4M.fd"
     cp /usr/share/OVMF/OVMF_VARS_4M.fd "$VM_NAME/OVMF_VARS.fd"
+elif [ -f /opt/homebrew/Cellar/qemu/10.1.2/share/qemu/edk2-x86_64-code.fd ]; then
+    # macOS Homebrew QEMU paths
+    OVMF_CODE="/opt/homebrew/Cellar/qemu/10.1.2/share/qemu/edk2-x86_64-code.fd"
+    cp /opt/homebrew/Cellar/qemu/10.1.2/share/qemu/edk2-i386-vars.fd "$VM_NAME/OVMF_VARS.fd"
 else
     echo "ERROR: OVMF firmware files not found. Install ovmf package."
     exit 1
@@ -266,8 +270,8 @@ echo "  \$SCRIPT_DIR/ssh-vm.sh"
 echo ""
 
 qemu-system-x86_64 \\
-  -machine q35,accel=kvm \\
-  -cpu host \\
+  -machine q35$(if [[ "$OSTYPE" == "darwin"* ]]; then echo ""; else echo ",accel=kvm"; fi) \\
+  -cpu $(if [[ "$OSTYPE" == "darwin"* ]]; then echo "qemu64"; else echo "host"; fi) \\
   -smp $VM_CPUS \\
   -m $VM_MEMORY \\
   -drive if=pflash,format=raw,readonly=on,file=$OVMF_CODE \\
