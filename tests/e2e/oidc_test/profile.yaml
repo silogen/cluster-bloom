@@ -1,0 +1,13 @@
+# tests/e2e/oidc_test/profile.yaml
+# VM hardware configuration
+cpus: 2
+memory: 4G
+root_disk_size: 20G
+
+# List of bloom configs to test in sequence
+bloom_configs:
+  - oidc_basic.yaml
+  - oidc_no_providers.yaml
+
+# No storage disks needed for OIDC testing
+disks: []
