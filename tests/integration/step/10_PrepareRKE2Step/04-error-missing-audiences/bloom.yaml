@@ -1,0 +1,19 @@
+# tests/integration/step/10_PrepareRKE2Step/04-error-missing-audiences/bloom.yaml  
+# Test case: Missing audiences should cause validation error
+ENABLED_STEPS: PrepareRKE2Step
+DOMAIN: test.local
+FIRST_NODE: true
+GPU_NODE: false
+USE_CERT_MANAGER: false
+CERT_OPTION: generate
+
+ADDITIONAL_OIDC_PROVIDERS:
+  - url: "https://kc.test.local/realms/k8s"
+    # Missing audiences field
+
+expected_error: "missing required 'audiences' field"
+
+mocks:
+  PrepareRKE2.RunCommand.chmod:
+    output: ""
+    args: ["chmod", "0755", "/etc/rancher/rke2"]

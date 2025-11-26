@@ -8,6 +8,8 @@ root_disk_size: 20G
 bloom_configs:
   - oidc_basic.yaml
   - oidc_no_providers.yaml
+  - oidc_external_domain.yaml
+  - oidc_error_missing_audiences.yaml
 
 # No storage disks needed for OIDC testing
 disks: []

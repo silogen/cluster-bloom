@@ -1,0 +1,21 @@
+# tests/e2e/oidc_test/oidc_external_domain.yaml
+# E2E Test case: External domain OIDC provider (different from cluster domain)
+ENABLED_STEPS: PrepareRKE2Step
+DOMAIN: test.local
+FIRST_NODE: true
+GPU_NODE: false
+USE_CERT_MANAGER: false
+CERT_OPTION: generate
+
+# External OIDC provider - EDIT THIS WITH YOUR REAL ISSUER URL
+ADDITIONAL_OIDC_PROVIDERS:
+  - url: "https://YOUR_REAL_ISSUER_URL_HERE/realms/YOUR_REALM"
+    audiences: ["k8s", "kubernetes"]
+
+# Instructions for manual testing:
+# 1. SSH into QEMU VM: cd oidc-external && ./ssh-vm.sh  
+# 2. Edit this file: nano oidc_external_domain.yaml
+# 3. Replace YOUR_REAL_ISSUER_URL_HERE with actual issuer URL
+# 4. Replace YOUR_REALM with actual realm name
+# 5. Update audiences if needed
+# 6. Run test: sudo ./cluster-bloom test oidc_external_domain.yaml

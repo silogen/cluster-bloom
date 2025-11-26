@@ -1,0 +1,19 @@
+# tests/integration/step/10_PrepareRKE2Step/03-error-invalid-oidc-url/bloom.yaml
+# Test case: Invalid OIDC URL should cause validation error
+ENABLED_STEPS: PrepareRKE2Step
+DOMAIN: test.local
+FIRST_NODE: true
+GPU_NODE: false
+USE_CERT_MANAGER: false
+CERT_OPTION: generate
+
+ADDITIONAL_OIDC_PROVIDERS:
+  - url: "not-a-valid-url"
+    audiences: ["k8s"]
+
+expected_error: "invalid URL format"
+
+mocks:
+  PrepareRKE2.RunCommand.chmod:
+    output: ""
+    args: ["chmod", "0755", "/etc/rancher/rke2"]
