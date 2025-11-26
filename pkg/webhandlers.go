@@ -48,35 +48,33 @@ const (
 )
 
 type WebHandlerService struct {
-	monitor            *WebMonitor
-	configMode         bool
-	config             map[string]interface{}
-	lastError          string
-	errorType          ErrorType
-	configVersion      int
-	prefilledConfig    map[string]interface{}
-	oneShot            bool
-	validationFailed   bool
-	validationErrors   []string
-	steps              []Step
-	startInstallation  func() error
-	shouldStartInstall bool
-	configSavedOnly    bool
+	monitor           *WebMonitor
+	configMode        bool
+	config            map[string]interface{}
+	lastError         string
+	errorType         ErrorType
+	configVersion     int
+	lastConfigVersion int
+	prefilledConfig   map[string]interface{}
+	oneShot           bool
+	validationFailed  bool
+	validationErrors  []string
+	steps             []Step
+	startInstallation func() error
 }
 
 func NewWebHandlerService(monitor *WebMonitor) *WebHandlerService {
 	return &WebHandlerService{
-		monitor:            monitor,
-		configMode:         false,
-		config:             make(map[string]interface{}),
-		errorType:          ErrorTypeGeneral,
-		configVersion:      0,
-		prefilledConfig:    make(map[string]interface{}),
-		oneShot:            false,
-		steps:              nil,
-		startInstallation:  nil,
-		shouldStartInstall: false,
-		configSavedOnly:    false,
+		monitor:           monitor,
+		configMode:        false,
+		config:            make(map[string]interface{}),
+		errorType:         ErrorTypeGeneral,
+		configVersion:     0,
+		lastConfigVersion: 0,
+		prefilledConfig:   make(map[string]interface{}),
+		oneShot:           false,
+		steps:             nil,
+		startInstallation: nil,
 	}
 }
 
@@ -91,15 +89,14 @@ func (h *WebHandlerService) GetPrefilledConfig() map[string]interface{} {
 
 func NewWebHandlerServiceConfig() *WebHandlerService {
 	return &WebHandlerService{
-		monitor:            nil,
-		configMode:         true,
-		config:             make(map[string]interface{}),
-		errorType:          ErrorTypeGeneral,
-		configVersion:      0,
-		prefilledConfig:    make(map[string]interface{}),
-		oneShot:            false,
-		shouldStartInstall: false,
-		configSavedOnly:    false,
+		monitor:           nil,
+		configMode:        true,
+		config:            make(map[string]interface{}),
+		errorType:         ErrorTypeGeneral,
+		configVersion:     0,
+		lastConfigVersion: 0,
+		prefilledConfig:   make(map[string]interface{}),
+		oneShot:           false,
 	}
 }
 
@@ -294,8 +291,8 @@ func (h *WebHandlerService) LoadConfigFromFile(configFile string, oneShot bool) 
 		}
 
 		// Set flags to trigger ConfigChanged() detection
-		h.configVersion = 2 // Set to 2 so ConfigChanged() returns true (needs > 1)
-		h.shouldStartInstall = true
+		h.lastConfigVersion = 0
+		h.configVersion = 1
 	}
 
 }
@@ -489,20 +486,8 @@ func (h *WebHandlerService) ConfigAPIHandler(w http.ResponseWriter, r *http.Requ
 	}
 
 	h.config = config
-	h.configVersion++
-	h.lastError = ""            // Clear any previous errors
-	h.shouldStartInstall = true // Signal that installation should start
-
-	// Don't start installation automatically to avoid concurrent Viper access
-	// The user will need to restart bloom with the new configuration
-	// if h.startInstallation != nil {
-	// 	go func() {
-	// 		log.Info("Starting installation process after configuration save...")
-	// 		if err := h.startInstallation(); err != nil {
-	// 			log.Errorf("Failed to start installation: %v", err)
-	// 		}
-	// 	}()
-	// }
+	h.configVersion++ // Increment to signal that installation should start
+	h.lastError = ""  // Clear any previous errors
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -549,10 +534,8 @@ func (h *WebHandlerService) ConfigOnlyAPIHandler(w http.ResponseWriter, r *http.
 	}
 
 	h.config = config
-	h.configVersion++
-	h.lastError = ""             // Clear any previous errors
-	h.shouldStartInstall = false // Do NOT signal installation to start
-	h.configSavedOnly = false    // Do NOT signal to exit - just save the config
+	// Don't increment configVersion - we're only saving, not starting installation
+	h.lastError = "" // Clear any previous errors
 
 	log.Debug("Configuration saved without starting installation")
 
@@ -590,7 +573,11 @@ func (h *WebHandlerService) SetError(errorMsg string) {
 }
 
 func (h *WebHandlerService) ConfigChanged() bool {
-	return h.configVersion > 1 && h.shouldStartInstall // First config is version 1, changes are version 2+, and installation should start
+	return h.configVersion > h.lastConfigVersion
+}
+
+func (h *WebHandlerService) MarkConfigDeployed() {
+	h.lastConfigVersion = h.configVersion
 }
 
 func (h *WebHandlerService) GetLastError() string {
