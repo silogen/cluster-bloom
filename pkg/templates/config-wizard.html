@@ -170,6 +170,16 @@
                             ✗ No special characters except dots and hyphens
                         </small>
                     </div>
+
+                    <div class="form-group">
+                        <label for="CF_VALUES">ClusterForge Values File</label>
+                        <div class="description">Path to ClusterForge values file (e.g., values_cf.yaml). Optional.</div>
+                        <input type="text" id="CF_VALUES" name="CF_VALUES" placeholder="values_cf.yaml">
+                        <small class="help-text" style="color: #666; font-size: 12px; margin-top: 4px; display: block;">
+                            ✓ Optional parameter for ClusterForge configuration<br>
+                            ✓ Example: values_cf.yaml or custom-values.yaml
+                        </small>
+                    </div>
                 </div>
             </div>
 
@@ -1126,6 +1136,7 @@
                         // String fields - map form IDs to viper keys (lowercase)
                         const stringFieldMap = {
                             'DOMAIN': 'domain',
+                            'CF_VALUES': 'cf_values',
                             'SERVER_IP': 'server_ip',
                             'JOIN_TOKEN': 'join_token',
                             'CLUSTER_DISKS': 'cluster_disks',
