@@ -36,6 +36,11 @@ type OIDCConfig struct {
 	Audiences []string `yaml:"audiences"`
 }
 
+// TLSSANConfig represents configuration for TLS Subject Alternative Names
+type TLSSANConfig struct {
+	TLSSANs []string
+}
+
 var rke2ConfigContent = `
 cni: cilium
 cluster-cidr: 10.242.0.0/16
@@ -54,6 +59,10 @@ kube-apiserver-arg:
   - "--authentication-config=/etc/rancher/rke2/auth/auth-config.yaml"
 `
 
+var tlsSanConfigTemplate = `
+tls-san:
+{{range .TLSSANs}}  - {{.}}
+{{end}}`
 
 var clusterRoleBindingTemplate = `apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -255,8 +264,13 @@ func PrepareRKE2() error {
 		LogMessage(Info, "Appended RKE2_EXTRA_CONFIG to config.yaml")
 	}
 
-	// Handle certificate and authentication configuration
+	// Add TLS-SAN configuration
 	domain := viper.GetString("DOMAIN")
+	if err := addTLSSANToRKE2(domain); err != nil {
+		return fmt.Errorf("failed to add TLS-SAN configuration: %w", err)
+	}
+
+	// Handle certificate and authentication configuration
 	if domain != "" {
 		certOption := viper.GetString("CERT_OPTION")
 		
@@ -605,6 +619,61 @@ kube-apiserver-arg:
 	}
 
 	LogMessage(Info, "Successfully added authentication-config to RKE2 configuration")
+	return nil
+}
+
+func addTLSSANToRKE2(domain string) error {
+	var tlsSANs []string
+	
+	// Default: k8s.<domain>
+	if domain != "" {
+		defaultTLSSAN := fmt.Sprintf("k8s.%s", domain)
+		tlsSANs = append(tlsSANs, defaultTLSSAN)
+		LogMessage(Info, fmt.Sprintf("Added default TLS-SAN: %s", defaultTLSSAN))
+	}
+	
+	// Additional TLS SANs from configuration
+	additionalSANs := viper.GetStringSlice("ADDITIONAL_TLS_SAN_URLS")
+	if len(additionalSANs) > 0 {
+		tlsSANs = append(tlsSANs, additionalSANs...)
+		LogMessage(Info, fmt.Sprintf("Added %d additional TLS-SAN(s): %v", len(additionalSANs), additionalSANs))
+	}
+	
+	// If no TLS SANs to add, skip
+	if len(tlsSANs) == 0 {
+		LogMessage(Info, "No TLS-SAN configuration to add")
+		return nil
+	}
+	
+	// Prepare template data
+	templateData := TLSSANConfig{
+		TLSSANs: tlsSANs,
+	}
+	
+	// Parse and execute template
+	tmpl, err := template.New("tlsSanConfig").Parse(tlsSanConfigTemplate)
+	if err != nil {
+		return fmt.Errorf("failed to parse TLS-SAN config template: %w", err)
+	}
+	
+	var tlsSanConfigContent strings.Builder
+	if err := tmpl.Execute(&tlsSanConfigContent, templateData); err != nil {
+		return fmt.Errorf("failed to execute TLS-SAN config template: %w", err)
+	}
+	
+	// Append to RKE2 config file
+	rke2ConfigPath := "/etc/rancher/rke2/config.yaml"
+	file, err := os.OpenFile(rke2ConfigPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open RKE2 config file for TLS-SAN: %w", err)
+	}
+	defer file.Close()
+	
+	if _, err = file.WriteString(tlsSanConfigContent.String()); err != nil {
+		return fmt.Errorf("failed to append TLS-SAN config to RKE2 config: %w", err)
+	}
+	
+	LogMessage(Info, fmt.Sprintf("Successfully added TLS-SAN configuration with %d SAN(s)", len(tlsSANs)))
 	return nil
 }
 

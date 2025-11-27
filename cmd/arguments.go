@@ -89,6 +89,12 @@ func SetArguments() {
 			Description: "Additional OIDC providers for authentication. Each provider needs a URL and audiences. Example: [{\"url\": \"https://provider.com/realms/k8s\", \"audiences\": [\"k8s\"]}]",
 			Type:        "array",
 		},
+		{
+			Key:         "ADDITIONAL_TLS_SAN_URLS",
+			Default:     []string{},
+			Description: "Additional TLS Subject Alternative Name URLs for Kubernetes API server certificate. Example: [\"api.example.com\", \"kubernetes.example.com\"]",
+			Type:        "string-array",
+		},
 
 		// ROCm configuration (depends on GPU_NODE)
 		{
