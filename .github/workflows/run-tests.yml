@@ -15,8 +15,11 @@ jobs:
       - name: Run unit tests
         run: devbox run go test -v ./pkg/...
 
+      - name: Verify one-shot
+        run:  dist/bloom --one-shot --config tests/integration/step/01_ValidateArgsStep/01-valid-first-node/bloom.yaml
+
       - name: Run integration tests
-        run: devbox run go test -v ./tests/integration
+        run: dist/bloom test tests/integration/step/*/*/bloom.yaml
 
       - name: Run UI tests
         run: |

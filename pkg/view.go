@@ -262,6 +262,7 @@ func RunWebInterfaceWithConfig(port string, steps []Step, configFile string, one
 	go func() {
 		for {
 			time.Sleep(1 * time.Second)
+
 			if handlerService.ConfigChanged() {
 				configReceived <- true
 				break
@@ -281,31 +282,20 @@ func RunWebInterfaceWithConfig(port string, steps []Step, configFile string, one
 		}
 	}()
 
-	// Check for config-only saves (save without installation)
-	configSavedOnly := make(chan bool)
-	go func() {
-		for {
-			time.Sleep(100 * time.Millisecond)
-			if handlerService.configSavedOnly {
-				configSavedOnly <- true
-				break
-			}
-		}
-	}()
-
 	for {
 		select {
-		case <-configSavedOnly:
-			fmt.Println("✅ Configuration saved successfully")
-			fmt.Printf("📄 Configuration file: bloom.yaml\n")
-			fmt.Println("🔄 To start installation, run: bloom --config bloom.yaml")
-			server.Close()
-			return nil
-
 		case <-configReceived:
 			fmt.Println("✅ Configuration received from web interface")
 			fmt.Println("🔄 Starting installation...")
 			fmt.Println()
+
+			// Mark this config version as deployed to prevent infinite restart loop
+			handlerService.MarkConfigDeployed()
+
+			// Setup logging now that we're about to start installation
+			if setupLogging != nil {
+				setupLogging()
+			}
 
 			// Update viper with the new configuration from web interface
 			config := handlerService.GetConfig()
@@ -314,11 +304,6 @@ func RunWebInterfaceWithConfig(port string, steps []Step, configFile string, one
 					viper.Set(key, value)
 				}
 				log.Infof("Updated viper with %d config values from web interface", len(config))
-			}
-
-			// Setup logging now that we're about to start installation
-			if setupLogging != nil {
-				setupLogging()
 			}
 
 			// Log the configuration values

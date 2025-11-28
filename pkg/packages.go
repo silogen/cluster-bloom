@@ -80,11 +80,11 @@ func CheckPackageInstallConnections() error {
 
 func InstallDependentPackages() error {
 	packagesToInstall := []string{
-		"open-iscsi=2.1.5-1ubuntu1.1",
-		"jq=1.6-2.1ubuntu3.1",
-		"nfs-common=1:2.6.1-1ubuntu1.2",
-		"chrony=4.2-2ubuntu2",
-		"curl=7.81.0-1ubuntu1.21",
+		"open-iscsi",
+		"jq",
+		"nfs-common",
+		"chrony",
+		"curl",
 	}
 
 	for _, pkg := range packagesToInstall {
@@ -225,6 +225,7 @@ func SetupClusterForge() error {
 	}
 
 	domain := viper.GetString("DOMAIN")
+	valuesFile := viper.GetString("CF_VALUES")
 
 	// Get the original user when running with sudo
 	originalUser := os.Getenv("SUDO_USER")
@@ -242,12 +243,21 @@ func SetupClusterForge() error {
 	}
 
 	scriptsDir := "cluster-forge/scripts"
+
 	if originalUser != "" {
 		// Run as the original user to avoid sudo issues with bootstrap script
-		cmd = exec.Command("sudo", "-u", originalUser, "bash", "./bootstrap.sh", domain)
+		if valuesFile != "" {
+			cmd = exec.Command("sudo", "-u", originalUser, "bash", "./bootstrap.sh", domain, valuesFile)
+		} else {
+			cmd = exec.Command("sudo", "-u", originalUser, "bash", "./bootstrap.sh", domain)
+		}
 	} else {
 		// Fallback if not running with sudo
-		cmd = exec.Command("bash", "./bootstrap.sh", domain)
+		if valuesFile != "" {
+			cmd = exec.Command("bash", "./bootstrap.sh", domain, valuesFile)
+		} else {
+			cmd = exec.Command("bash", "./bootstrap.sh", domain)
+		}
 	}
 	cmd.Dir = scriptsDir
 	output, err = cmd.CombinedOutput()
