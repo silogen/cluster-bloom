@@ -336,6 +336,42 @@
                             ✓ Must be readable and should be protected (600 permissions)
                         </small>
                     </div>
+
+                    <div class="form-group">
+                        <label for="TLS_SAN_CONFIG">TLS Subject Alternative Names (SANs)</label>
+                        <div class="description">Configure additional domain names for your Kubernetes API server certificate.</div>
+                        
+                        <!-- Auto-generated default TLS-SAN display -->
+                        <div id="default-tls-san-display" style="background: #e8f5e8; border: 2px solid #2e7d32; border-radius: 4px; padding: 12px; margin-bottom: 10px;">
+                            <div style="font-weight: bold; color: #2e7d32; margin-bottom: 5px;">✓ Default TLS-SAN (Auto-generated):</div>
+                            <div id="default-tls-san-value" style="font-family: monospace; background: white; padding: 8px; border-radius: 2px; border: 1px solid #ddd;">
+                                k8s.<span id="domain-placeholder">your-domain.com</span>
+                            </div>
+                            <small style="color: #666; font-size: 11px;">This is automatically generated from your Domain field above</small>
+                        </div>
+
+                        <!-- Additional TLS-SANs input -->
+                        <label for="ADDITIONAL_TLS_SAN_URLS" style="margin-top: 15px; margin-bottom: 8px;">Additional TLS-SANs (Optional)</label>
+                        <input type="text" id="ADDITIONAL_TLS_SAN_URLS" name="ADDITIONAL_TLS_SAN_URLS" 
+                               placeholder="api.example.com, kubernetes.example.com"
+                               pattern="^([a-z0-9]([a-z0-9\\-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9\\-]*[a-z0-9])?)*)(\\s*,\\s*[a-z0-9]([a-z0-9\\-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9\\-]*[a-z0-9])?)*)*$|^$"
+                               title="Comma-separated list of valid domain names (e.g., api.example.com, kubernetes.example.com)"
+                               oninput="validateTLSSANs()">
+                        <small class="help-text" style="color: #666; font-size: 12px; margin-top: 4px; display: block;">
+                            ✓ Format: Comma-separated domain names (e.g., api.example.com, kubernetes.example.com)<br>
+                            ✓ Each domain must be valid (letters, numbers, hyphens, dots)<br>
+                            ⚠️ Do not include the auto-generated k8s.&lt;domain&gt; - it's added automatically
+                        </small>
+
+                        <!-- Validation warnings -->
+                        <div id="tls-san-warnings" style="display: none; margin-top: 10px;"></div>
+
+                        <!-- Preview of final TLS-SAN list -->
+                        <div id="tls-san-preview" style="display: none; margin-top: 10px; padding: 10px; background: #f5f5f5; border-radius: 4px; border: 1px solid #ddd;">
+                            <div style="font-weight: bold; margin-bottom: 5px;">📋 Final TLS-SAN List Preview:</div>
+                            <ul id="tls-san-preview-list" style="margin: 0; padding-left: 20px; font-family: monospace; font-size: 13px;"></ul>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -626,6 +662,18 @@
             const oidcProviders = getAllOIDCProviders();
             if (oidcProviders.length > 0) {
                 config.ADDITIONAL_OIDC_PROVIDERS = oidcProviders;
+            }
+
+            // Handle ADDITIONAL_TLS_SAN_URLS - convert comma-separated string to array
+            const additionalSANsInput = document.getElementById('ADDITIONAL_TLS_SAN_URLS');
+            if (additionalSANsInput && additionalSANsInput.value.trim()) {
+                const additionalSANs = additionalSANsInput.value.trim()
+                    .split(',')
+                    .map(san => san.trim())
+                    .filter(san => san.length > 0);
+                if (additionalSANs.length > 0) {
+                    config.ADDITIONAL_TLS_SAN_URLS = additionalSANs;
+                }
             }
 
             return config;
@@ -1240,7 +1288,8 @@
                             'ENABLED_STEPS': 'enabled_steps',
                             'CERT_OPTION': 'cert_option',
                             'TLS_CERT': 'tls_cert',
-                            'TLS_KEY': 'tls_key'
+                            'TLS_KEY': 'tls_key',
+                            'ADDITIONAL_TLS_SAN_URLS': 'additional_tls_san_urls'
                         };
 
                         Object.entries(stringFieldMap).forEach(([fieldId, configKey]) => {
@@ -1248,10 +1297,15 @@
                             if (element) {
                                 const value = config[configKey];
                                 if (value !== undefined && value !== null && value !== '') {
-                                    element.value = String(value);
+                                    // Special handling for ADDITIONAL_TLS_SAN_URLS - convert array to comma-separated string
+                                    if (fieldId === 'ADDITIONAL_TLS_SAN_URLS' && Array.isArray(value)) {
+                                        element.value = value.join(', ');
+                                    } else {
+                                        element.value = String(value);
+                                    }
                                     // Trigger change event to update any dependent fields
                                     element.dispatchEvent(new Event('change', { bubbles: true }));
-                                    console.log('Set text field', fieldId, 'to', value);
+                                    console.log('Set text field', fieldId, 'to', element.value);
                                     fieldsSet++;
                                 }
                             } else {
@@ -1350,6 +1404,7 @@
                 loadPrefilledConfig();
                 checkForErrors();
                 styleLonghornDiskInfo();
+                initializeTLSSANValidation();
                 // updateProgress is called inside loadPrefilledConfig
             });
         } else {
@@ -1358,7 +1413,8 @@
             // Don't call updateConditionals here - it's called inside loadPrefilledConfig
             loadPrefilledConfig();
             checkForErrors();
-                styleLonghornDiskInfo();
+            styleLonghornDiskInfo();
+            initializeTLSSANValidation();
             // updateProgress is called inside loadPrefilledConfig
         }
 
@@ -1502,6 +1558,160 @@
             });
             
             console.log(`Successfully loaded ${oidcProviders.length} OIDC providers from config`);
+        }
+
+        // TLS-SAN validation and preview functions
+        function updateDomainPlaceholder() {
+            const domainInput = document.getElementById('DOMAIN');
+            const placeholder = document.getElementById('domain-placeholder');
+            
+            if (domainInput && placeholder) {
+                const domain = domainInput.value.trim() || 'your-domain.com';
+                placeholder.textContent = domain;
+            }
+        }
+
+        function validateTLSSANs() {
+            const domainInput = document.getElementById('DOMAIN');
+            const additionalSANsInput = document.getElementById('ADDITIONAL_TLS_SAN_URLS');
+            const warningsDiv = document.getElementById('tls-san-warnings');
+            const previewDiv = document.getElementById('tls-san-preview');
+            const previewList = document.getElementById('tls-san-preview-list');
+            
+            if (!domainInput || !additionalSANsInput || !warningsDiv || !previewDiv || !previewList) {
+                return;
+            }
+
+            const domain = domainInput.value.trim();
+            const additionalSANsValue = additionalSANsInput.value.trim();
+            
+            // Update domain placeholder
+            updateDomainPlaceholder();
+            
+            // Clear previous warnings and preview
+            warningsDiv.innerHTML = '';
+            warningsDiv.style.display = 'none';
+            previewList.innerHTML = '';
+            
+            // Generate auto-generated TLS-SAN
+            const autoGeneratedSAN = domain ? `k8s.${domain}` : '';
+            const finalSANs = [];
+            const warnings = [];
+            
+            // Add auto-generated SAN first
+            if (autoGeneratedSAN) {
+                finalSANs.push(autoGeneratedSAN);
+            }
+            
+            // Parse additional SANs
+            if (additionalSANsValue) {
+                const additionalSANs = additionalSANsValue.split(',')
+                    .map(san => san.trim())
+                    .filter(san => san.length > 0);
+                
+                // Check for duplicates with auto-generated SAN
+                const duplicatesWithAuto = additionalSANs.filter(san => san === autoGeneratedSAN);
+                if (duplicatesWithAuto.length > 0) {
+                    warnings.push({
+                        type: 'warning',
+                        message: `⚠️ "${autoGeneratedSAN}" is already included by default. You can remove it from the additional list to avoid duplication.`,
+                        duplicates: duplicatesWithAuto
+                    });
+                }
+                
+                // Check for duplicates within additional SANs
+                const seenSANs = new Set();
+                const duplicatesWithinAdditional = [];
+                additionalSANs.forEach(san => {
+                    if (seenSANs.has(san)) {
+                        duplicatesWithinAdditional.push(san);
+                    } else {
+                        seenSANs.add(san);
+                    }
+                });
+                
+                if (duplicatesWithinAdditional.length > 0) {
+                    warnings.push({
+                        type: 'error',
+                        message: `❌ Duplicate entries found in additional TLS-SANs: ${duplicatesWithinAdditional.join(', ')}`,
+                        duplicates: duplicatesWithinAdditional
+                    });
+                }
+                
+                // Add all additional SANs to final list (including duplicates for preview)
+                finalSANs.push(...additionalSANs);
+            }
+            
+            // Show warnings if any
+            if (warnings.length > 0) {
+                warnings.forEach(warning => {
+                    const warningDiv = document.createElement('div');
+                    warningDiv.style.cssText = `
+                        padding: 10px; 
+                        margin-bottom: 5px; 
+                        border-radius: 4px; 
+                        ${warning.type === 'error' ? 
+                            'background: #ffebee; border: 2px solid #d32f2f; color: #d32f2f;' : 
+                            'background: #fff3e0; border: 2px solid #f57c00; color: #f57c00;'
+                        }
+                    `;
+                    warningDiv.innerHTML = `
+                        <div style="font-weight: bold; margin-bottom: 5px;">${warning.message}</div>
+                        ${warning.type === 'warning' ? 
+                            '<small>💡 Tip: The system will handle duplicates automatically, but clean configuration is recommended.</small>' : 
+                            '<small>❌ Please fix the duplicates before submitting.</small>'
+                        }
+                    `;
+                    warningsDiv.appendChild(warningDiv);
+                });
+                warningsDiv.style.display = 'block';
+            }
+            
+            // Show preview if there are SANs to show
+            if (finalSANs.length > 0) {
+                finalSANs.forEach((san, index) => {
+                    const li = document.createElement('li');
+                    const isDuplicate = finalSANs.indexOf(san) !== index;
+                    const isAutoGenerated = index === 0 && san === autoGeneratedSAN;
+                    
+                    li.style.cssText = `
+                        margin-bottom: 3px; 
+                        ${isDuplicate ? 'color: #d32f2f; text-decoration: line-through;' : ''} 
+                        ${isAutoGenerated ? 'font-weight: bold; color: #2e7d32;' : ''}
+                    `;
+                    
+                    li.textContent = san;
+                    if (isAutoGenerated) {
+                        li.title = 'Auto-generated from Domain field';
+                    } else if (isDuplicate) {
+                        li.title = 'Duplicate - will be ignored';
+                    }
+                    
+                    previewList.appendChild(li);
+                });
+                previewDiv.style.display = 'block';
+            } else {
+                previewDiv.style.display = 'none';
+            }
+        }
+
+        // Add event listener to DOMAIN field to update TLS-SAN preview
+        function initializeTLSSANValidation() {
+            const domainInput = document.getElementById('DOMAIN');
+            const additionalSANsInput = document.getElementById('ADDITIONAL_TLS_SAN_URLS');
+            
+            if (domainInput) {
+                domainInput.addEventListener('input', validateTLSSANs);
+                domainInput.addEventListener('change', validateTLSSANs);
+            }
+            
+            if (additionalSANsInput) {
+                additionalSANsInput.addEventListener('input', validateTLSSANs);
+                additionalSANsInput.addEventListener('change', validateTLSSANs);
+            }
+            
+            // Initial validation
+            validateTLSSANs();
         }
     </script>
 </body>
