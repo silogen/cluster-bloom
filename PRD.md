@@ -19,7 +19,7 @@ ClusterBloom automates the deployment of Kubernetes clusters with AMD GPU suppor
 
 ### 1. Automated RKE2 Kubernetes Deployment
 - **First Node Setup**: Initializes the primary cluster node with all necessary configurations
-- **Additional Node Joining**: Automated process for adding worker/control plane nodes
+- **Additional Node Joining**: Automated process for adding worker nodes or additional control plane nodes
 - **Cilium CNI Integration**: Pre-configured with Cilium for advanced networking
 - **Audit Logging**: Built-in audit policy configuration for compliance
 
@@ -75,6 +75,16 @@ ClusterBloom automates the deployment of Kubernetes clusters with AMD GPU suppor
 - **Responsive Design**: Mobile-friendly interface for remote management
 - **Form Validation**: Client-side validation with HTML5 patterns and JavaScript
 - **Automatic Redirects**: Seamless flow between configuration and monitoring modes
+
+### 10. Comprehensive Configuration Validation
+- **Pre-flight Validation**: Validates all configuration before any system modifications
+- **URL Validation**: Validates OIDC, ClusterForge, ROCm, and RKE2 installation URLs
+- **Network Validation**: IP address and token format validation
+- **Step Name Validation**: Ensures step control parameters reference valid steps
+- **Conflict Detection**: Identifies incompatible configuration combinations
+- **Resource Validation**: Verifies sufficient disk space, memory, and CPU cores
+- **OS Compatibility**: Checks Ubuntu version and kernel module availability
+- **Detailed Error Messages**: Clear, actionable error messages with suggested fixes
 
 ## Technical Architecture
 
@@ -207,13 +217,20 @@ The system executes a sequential pipeline of installation steps:
 - `CLUSTER_PREMOUNTED_DISKS`: Manual disk specification
 - `CLUSTERFORGE_RELEASE`: ClusterForge version specification
 - `CF_VALUES`: ClusterForge values file path specification (optional)
-- `DISABLED_STEPS`/`ENABLED_STEPS`: Step execution control
+- `DISABLED_STEPS`: Comma-separated list of step IDs to skip during installation (mutually exclusive with `ENABLED_STEPS`)
+- `ENABLED_STEPS`: Comma-separated list of step IDs to execute (if set, all other steps are skipped; mutually exclusive with `DISABLED_STEPS`)
 - `CLUSTER_DISKS`: Pre-selected disk devices (also skips NVME drive checks)
 - `DOMAIN`: Domain name for cluster ingress configuration
 - `USE_CERT_MANAGER`: Enable cert-manager with Let's Encrypt for TLS
 - `CERT_OPTION`: Certificate handling when cert-manager disabled ('existing' or 'generate')
 - `TLS_CERT`/`TLS_KEY`: Paths to TLS certificate files for ingress
 - `OIDC_URL`: OIDC provider URL for authentication
+- `RKE2_EXTRA_CONFIG`: Additional RKE2 configuration in YAML format to append to /etc/rancher/rke2/config.yaml
+- `PRELOAD_IMAGES`: Comma-separated list of container images to preload into the cluster
+- `SKIP_RANCHER_PARTITION_CHECK`: Skip validation of /var/lib/rancher partition size (useful for CPU-only nodes)
+- `ONEPASSWORD_CONNECT_TOKEN`: Token for 1Password Connect integration (optional)
+- `ONEPASSWORD_CONNECT_HOST`: Host URL for 1Password Connect service (optional)
+- `CERT_MANAGER_EMAIL`: Email address for Let's Encrypt certificate notifications (required when `USE_CERT_MANAGER: true`)
 
 #### Configuration Sources (Priority Order)
 1. Command-line flags
@@ -312,6 +329,29 @@ go test -v -run TestConfigBasedTests/.*invalid ./tests/ui
 - Swap partition detection and exclusion
 - Dynamic form behavior (conditional field visibility)
 - Configuration save vs save-and-install workflows
+
+### System Requirements Validation
+ClusterBloom validates system requirements before installation:
+
+1. **Disk Space Requirements**:
+   - Root partition: Minimum 20GB required
+   - Available space: Minimum 10GB required
+   - /var partition: 5GB recommended for container images
+   - /var/lib/ partition: 500GB recommended (for rancher directory, can be skipped with `SKIP_RANCHER_PARTITION_CHECK`)
+
+2. **System Resources**:
+   - Memory: Minimum 4GB required, 8GB recommended for Kubernetes
+   - CPU: Minimum 2 cores required, 4 cores recommended
+
+3. **Ubuntu Version Compatibility**:
+   - Supported versions: 20.04, 22.04, 24.04
+   - Other distributions may work but are not officially supported
+
+4. **Kernel Module Requirements**:
+   - Required: overlay, br_netfilter
+   - For GPU nodes: amdgpu module
+
+See [VALIDATION.md](VALIDATION.md) for complete validation system documentation.
 
 #### Web UI Installation Workflow
 
@@ -448,6 +488,523 @@ go test -v -run TestConfigBasedTests/.*invalid ./tests/ui
 2. **Multi-Cluster Management**: Centralized multi-cluster management
 3. **Advanced Security**: Security policy automation and compliance
 4. **Machine Learning Optimization**: ML-driven performance optimization
+
+## Manual Installation Guide
+
+For reference, this section documents the manual steps that ClusterBloom automates. This is useful for:
+- Understanding what ClusterBloom does under the hood
+- Troubleshooting installation issues
+- Performing custom installations outside of ClusterBloom
+- Adapting the process for non-Ubuntu systems
+
+### Prerequisites Verification
+
+#### System Requirements Check
+1. **Verify Ubuntu Version**:
+   ```bash
+   lsb_release -a
+   # Must be Ubuntu 20.04, 22.04, or 24.04
+   ```
+
+2. **Check Disk Space**:
+   ```bash
+   df -h /
+   # Root partition: minimum 20GB
+   # /var/lib/rancher: recommended 500GB
+   df -h /var
+   # /var partition: recommended 5GB for container images
+   ```
+
+3. **Verify Memory and CPU**:
+   ```bash
+   free -h
+   # Minimum 4GB RAM, recommended 8GB
+   nproc
+   # Minimum 2 cores, recommended 4 cores
+   ```
+
+4. **Check Kernel Modules**:
+   ```bash
+   lsmod | grep overlay
+   lsmod | grep br_netfilter
+   # For GPU nodes:
+   lsmod | grep amdgpu
+   ```
+
+### First Node Installation
+
+#### Phase 1: System Preparation
+
+1. **Update System and Install Dependencies**:
+   ```bash
+   sudo apt update
+   sudo apt install -y jq nfs-common open-iscsi chrony curl wget
+   ```
+
+2. **Configure Firewall Ports**:
+   ```bash
+   # RKE2 required ports
+   sudo ufw allow 6443/tcp     # Kubernetes API
+   sudo ufw allow 9345/tcp     # RKE2 supervisor
+   sudo ufw allow 10250/tcp    # kubelet
+   sudo ufw allow 2379:2380/tcp # etcd
+   sudo ufw allow 30000:32767/tcp # NodePort services
+   sudo ufw allow 8472/udp     # Cilium VXLAN
+   sudo ufw allow 4240/tcp     # Cilium health checks
+   ```
+
+3. **Configure inotify Limits** (for monitoring many files):
+   ```bash
+   echo "fs.inotify.max_user_instances = 8192" | sudo tee -a /etc/sysctl.conf
+   echo "fs.inotify.max_user_watches = 524288" | sudo tee -a /etc/sysctl.conf
+   sudo sysctl -p
+   ```
+
+4. **Install Kubernetes Tools**:
+   ```bash
+   # Install kubectl
+   curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+   sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+   
+   # Install k9s
+   wget https://github.com/derailed/k9s/releases/latest/download/k9s_Linux_amd64.tar.gz
+   tar -xzf k9s_Linux_amd64.tar.gz
+   sudo mv k9s /usr/local/bin/
+   ```
+
+#### Phase 2: Storage Configuration
+
+5. **Configure Multipath** (for disk reliability):
+   ```bash
+   sudo apt install -y multipath-tools
+   
+   # Create multipath blacklist configuration
+   cat <<EOF | sudo tee /etc/multipath.conf
+   blacklist {
+       devnode "^(ram|raw|loop|fd|md|dm-|sr|scd|st)[0-9]*"
+       devnode "^hd[a-z]"
+       devnode "^sd[a-z]"
+   }
+   EOF
+   
+   sudo systemctl restart multipathd
+   ```
+
+6. **Load Required Kernel Modules**:
+   ```bash
+   sudo modprobe overlay
+   sudo modprobe br_netfilter
+   
+   # Make persistent
+   cat <<EOF | sudo tee /etc/modules-load.d/k8s.conf
+   overlay
+   br_netfilter
+   EOF
+   ```
+
+7. **Identify and Prepare Disks for Longhorn**:
+   ```bash
+   # List available NVMe drives
+   lsblk | grep nvme
+   
+   # For each disk (e.g., /dev/nvme0n1):
+   # WARNING: This will erase all data on the disk
+   sudo wipefs -a /dev/nvme0n1
+   sudo mkfs.ext4 /dev/nvme0n1
+   
+   # Get UUID
+   UUID=$(sudo blkid -s UUID -o value /dev/nvme0n1)
+   
+   # Create mount point
+   sudo mkdir -p /mnt/disk0
+   
+   # Add to fstab for persistence
+   echo "UUID=$UUID /mnt/disk0 ext4 defaults,nofail 0 2" | sudo tee -a /etc/fstab
+   
+   # Mount the disk
+   sudo mount -a
+   ```
+
+8. **Configure rsyslog** (prevent iSCSI log flooding):
+   ```bash
+   cat <<EOF | sudo tee /etc/rsyslog.d/30-ratelimit.conf
+   # Limit iSCSI messages to prevent log flooding
+   :msg, contains, "iSCSI" stop
+   EOF
+   
+   sudo systemctl restart rsyslog
+   ```
+
+9. **Configure logrotate**:
+   ```bash
+   cat <<EOF | sudo tee /etc/logrotate.d/bloom
+   /var/log/bloom.log {
+       daily
+       rotate 7
+       compress
+       missingok
+       notifempty
+   }
+   EOF
+   ```
+
+#### Phase 3: GPU Setup (GPU Nodes Only)
+
+10. **Install ROCm Drivers**:
+    ```bash
+    # Get Ubuntu codename
+    CODENAME=$(grep VERSION_CODENAME /etc/os-release | cut -d= -f2)
+    KERNEL_VERSION=$(uname -r)
+    
+    # Install kernel headers
+    sudo apt install -y linux-headers-$KERNEL_VERSION linux-modules-extra-$KERNEL_VERSION
+    
+    # Install Python dependencies
+    sudo apt install -y python3-setuptools python3-wheel
+    
+    # Download and install amdgpu-install
+    wget https://repo.radeon.com/amdgpu-install/6.3.2/ubuntu/$CODENAME/amdgpu-install_6.3.60302-1_all.deb
+    sudo apt install -y ./amdgpu-install_6.3.60302-1_all.deb
+    
+    # Install ROCm
+    sudo amdgpu-install --usecase=rocm,dkms --yes
+    
+    # Load amdgpu module
+    sudo modprobe amdgpu
+    
+    # Verify installation
+    rocm-smi
+    ```
+
+11. **Configure GPU Permissions**:
+    ```bash
+    cat <<EOF | sudo tee /etc/udev/rules.d/70-amdgpu.rules
+    KERNEL=="kfd", MODE="0666"
+    SUBSYSTEM=="drm", KERNEL=="renderD*", MODE="0666"
+    EOF
+    
+    sudo udevadm control --reload-rules
+    sudo udevadm trigger
+    ```
+
+#### Phase 4: RKE2 Kubernetes Installation
+
+12. **Install RKE2**:
+    ```bash
+    # Download RKE2 installation script
+    curl -sfL https://get.rke2.io | sudo sh -
+    
+    # Create RKE2 configuration directory
+    sudo mkdir -p /etc/rancher/rke2
+    ```
+
+13. **Configure RKE2 for First Node**:
+    ```bash
+    cat <<EOF | sudo tee /etc/rancher/rke2/config.yaml
+    write-kubeconfig-mode: "0644"
+    cni: cilium
+    disable:
+      - rke2-ingress-nginx
+    tls-san:
+      - $(hostname -I | awk '{print $1}')
+    node-label:
+      - "node.longhorn.io/create-default-disk=config"
+    EOF
+    
+    # If GPU node, add GPU labels
+    # node-label:
+    #   - "gpu=true"
+    #   - "amd.com/gpu=true"
+    ```
+
+14. **Create Audit Policy** (for compliance):
+    ```bash
+    sudo mkdir -p /etc/rancher/rke2/audit
+    cat <<EOF | sudo tee /etc/rancher/rke2/audit/policy.yaml
+    apiVersion: audit.k8s.io/v1
+    kind: Policy
+    rules:
+      - level: Metadata
+    EOF
+    
+    # Update RKE2 config to enable audit logging
+    cat <<EOF | sudo tee -a /etc/rancher/rke2/config.yaml
+    audit-policy-file: /etc/rancher/rke2/audit/policy.yaml
+    EOF
+    ```
+
+15. **Start RKE2 Service**:
+    ```bash
+    sudo systemctl enable rke2-server.service
+    sudo systemctl start rke2-server.service
+    
+    # Wait for RKE2 to start (may take 2-5 minutes)
+    sudo systemctl status rke2-server.service
+    
+    # Check logs if needed
+    sudo journalctl -u rke2-server -f
+    ```
+
+16. **Configure kubectl Access**:
+    ```bash
+    # Copy kubeconfig to user directory
+    mkdir -p ~/.kube
+    sudo cp /etc/rancher/rke2/rke2.yaml ~/.kube/config
+    sudo chown $(id -u):$(id -g) ~/.kube/config
+    
+    # Add to PATH
+    echo 'export PATH=$PATH:/var/lib/rancher/rke2/bin' >> ~/.bashrc
+    export PATH=$PATH:/var/lib/rancher/rke2/bin
+    
+    # Verify cluster is running
+    kubectl get nodes
+    ```
+
+17. **Get Join Token for Additional Nodes**:
+    ```bash
+    sudo cat /var/lib/rancher/rke2/server/node-token
+    # Save this token for additional nodes
+    
+    # Get server IP
+    hostname -I | awk '{print $1}'
+    ```
+
+#### Phase 5: Storage and Networking Setup
+
+18. **Deploy Longhorn Storage** (First Node Only):
+    ```bash
+    # Create manifests directory
+    sudo mkdir -p /var/lib/rancher/rke2/server/manifests
+    
+    # Download Longhorn manifests
+    # (ClusterBloom includes pre-configured Longhorn manifests)
+    # Apply standard Longhorn installation or custom configuration
+    
+    # Wait for Longhorn pods to be ready
+    kubectl wait --for=condition=ready pod -l app=longhorn-manager -n longhorn-system --timeout=600s
+    ```
+
+19. **Deploy MetalLB Load Balancer**:
+    ```bash
+    # Get node IP for MetalLB pool
+    NODE_IP=$(hostname -I | awk '{print $1}')
+    
+    # Create MetalLB namespace and install
+    kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.13.12/config/manifests/metallb-native.yaml
+    
+    # Wait for MetalLB to be ready
+    kubectl wait --namespace metallb-system \
+      --for=condition=ready pod \
+      --selector=app=metallb \
+      --timeout=90s
+    
+    # Create IP address pool
+    cat <<EOF | kubectl apply -f -
+    apiVersion: metallb.io/v1beta1
+    kind: IPAddressPool
+    metadata:
+      name: cluster-bloom-ip-pool
+      namespace: metallb-system
+    spec:
+      addresses:
+      - $NODE_IP/32
+    ---
+    apiVersion: metallb.io/v1beta1
+    kind: L2Advertisement
+    metadata:
+      name: cluster-bloom-l2-adv
+      namespace: metallb-system
+    spec:
+      ipAddressPools:
+      - cluster-bloom-ip-pool
+    EOF
+    ```
+
+20. **Configure Chrony Time Synchronization**:
+    ```bash
+    cat <<EOF | sudo tee /etc/chrony/chrony.conf
+    server 0.ubuntu.pool.ntp.org iburst
+    server 1.ubuntu.pool.ntp.org iburst
+    server 2.ubuntu.pool.ntp.org iburst
+    server 3.ubuntu.pool.ntp.org iburst
+    allow 0.0.0.0/0
+    local stratum 10
+    EOF
+    
+    sudo systemctl restart chrony
+    ```
+
+21. **Configure Domain and TLS** (if using custom domain):
+    ```bash
+    DOMAIN="your.domain.com"
+    
+    # Option A: Using cert-manager with Let's Encrypt
+    kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
+    
+    cat <<EOF | kubectl apply -f -
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: cluster-domain
+      namespace: default
+    data:
+      domain: "$DOMAIN"
+      use-cert-manager: "true"
+    EOF
+    
+    # Option B: Using existing certificates
+    kubectl create secret tls cluster-tls \
+      --cert=/path/to/tls.crt \
+      --key=/path/to/tls.key \
+      -n default
+    
+    # Option C: Generate self-signed certificates
+    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+      -keyout tls.key -out tls.crt \
+      -subj "/CN=$DOMAIN/O=$DOMAIN"
+    
+    kubectl create secret tls cluster-tls \
+      --cert=tls.crt \
+      --key=tls.key \
+      -n default
+    ```
+
+22. **Deploy ClusterForge** (Optional):
+    ```bash
+    # Download ClusterForge release
+    wget https://github.com/silogen/cluster-forge/releases/download/deploy/deploy-release.tar.gz
+    tar -xzf deploy-release.tar.gz
+    cd deploy-release
+    
+    # Deploy ClusterForge
+    ./deploy.sh
+    ```
+
+### Additional Node Installation
+
+For adding worker or control plane nodes to an existing cluster:
+
+1. **Perform System Preparation** (Steps 1-11 from First Node, excluding cluster-specific steps)
+
+2. **Install RKE2 Agent** (for worker nodes):
+   ```bash
+   curl -sfL https://get.rke2.io | INSTALL_RKE2_TYPE="agent" sudo sh -
+   
+   # Configure RKE2 agent
+   sudo mkdir -p /etc/rancher/rke2
+   cat <<EOF | sudo tee /etc/rancher/rke2/config.yaml
+   server: https://<FIRST_NODE_IP>:9345
+   token: <JOIN_TOKEN>
+   EOF
+   
+   # Start agent service
+   sudo systemctl enable rke2-agent.service
+   sudo systemctl start rke2-agent.service
+   ```
+
+3. **Install RKE2 Server** (for additional control plane nodes):
+   ```bash
+   curl -sfL https://get.rke2.io | sudo sh -
+   
+   # Configure RKE2 server
+   sudo mkdir -p /etc/rancher/rke2
+   cat <<EOF | sudo tee /etc/rancher/rke2/config.yaml
+   server: https://<FIRST_NODE_IP>:9345
+   token: <JOIN_TOKEN>
+   write-kubeconfig-mode: "0644"
+   tls-san:
+     - $(hostname -I | awk '{print $1}')
+   EOF
+   
+   # Start server service
+   sudo systemctl enable rke2-server.service
+   sudo systemctl start rke2-server.service
+   ```
+
+4. **Configure Chrony** (sync with first node):
+   ```bash
+   cat <<EOF | sudo tee /etc/chrony/chrony.conf
+   server <FIRST_NODE_IP> iburst
+   EOF
+   
+   sudo systemctl restart chrony
+   ```
+
+5. **Verify Node Joined**:
+   ```bash
+   # On first node, check new node status
+   kubectl get nodes
+   ```
+
+### Post-Installation Verification
+
+1. **Verify All Pods Running**:
+   ```bash
+   kubectl get pods -A
+   ```
+
+2. **Check Longhorn Status**:
+   ```bash
+   kubectl get pods -n longhorn-system
+   ```
+
+3. **Verify MetalLB**:
+   ```bash
+   kubectl get pods -n metallb-system
+   ```
+
+4. **Test PVC Creation** (Longhorn validation):
+   ```bash
+   cat <<EOF | kubectl apply -f -
+   apiVersion: v1
+   kind: PersistentVolumeClaim
+   metadata:
+     name: test-pvc
+   spec:
+     accessModes:
+       - ReadWriteOnce
+     resources:
+       requests:
+         storage: 1Gi
+   EOF
+   
+   kubectl get pvc test-pvc
+   kubectl delete pvc test-pvc
+   ```
+
+5. **Check GPU Access** (GPU nodes):
+   ```bash
+   kubectl apply -f - <<EOF
+   apiVersion: v1
+   kind: Pod
+   metadata:
+     name: rocm-test
+   spec:
+     containers:
+     - name: rocm-test
+       image: rocm/pytorch:latest
+       command: ["rocm-smi"]
+     restartPolicy: Never
+   EOF
+   
+   kubectl logs rocm-test
+   kubectl delete pod rocm-test
+   ```
+
+### Key Differences Between Manual and Automated Installation
+
+ClusterBloom automates all of the above steps and provides additional benefits:
+
+1. **Interactive UI**: TUI and Web UI for configuration and monitoring
+2. **Validation**: Pre-flight checks before any system modifications
+3. **Error Recovery**: Automatic retry and reconfiguration on failures
+4. **State Management**: Tracks installation progress and resumes on interruption
+5. **Configuration Management**: YAML-based configuration with validation
+6. **Disk Auto-detection**: Intelligent disk selection and formatting
+7. **Integration**: Seamless ClusterForge and 1Password Connect integration
+8. **Monitoring**: Real-time progress tracking and detailed logging
+9. **Multi-node Coordination**: Automatic generation of join commands
+10. **Best Practices**: Built-in configurations following Kubernetes best practices
 
 ## Conclusion
 
