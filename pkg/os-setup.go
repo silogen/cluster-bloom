@@ -283,7 +283,6 @@ func HasSufficientRancherPartition() bool {
 	return false
 }
 
-
 func CreateMetalLBConfig() error {
 	cmd := exec.Command("sh", "-c", "ip route get 1 | awk '{print $7; exit}'")
 	output, err := cmd.Output()

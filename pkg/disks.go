@@ -265,6 +265,56 @@ func isVirtualDisk(udevOut []byte) bool {
 	return false
 }
 
+func GetUnmountedPhysicalDisks() ([]string, error) {
+	var result []string
+
+	out, err := mockablecmd.Run("GetUnmountedPhysicalDisks.ListBlockDevices", "lsblk", "-dn", "-o", "NAME,TYPE")
+	if err != nil {
+		return nil, fmt.Errorf("lsblk failed: %w", err)
+	}
+
+	scanner := bufio.NewScanner(bytes.NewReader(out))
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) != 2 || fields[1] != "disk" {
+			continue
+		}
+		name := fields[0]
+		if !strings.HasPrefix(name, "nvme") && !strings.HasPrefix(name, "sd") {
+			continue
+		}
+		devPath := "/dev/" + name
+
+		// Check if disk is mounted or used as swap
+		mountOut, err := mockablecmd.Run(fmt.Sprintf("GetUnmountedPhysicalDisks.CheckMount.%s", name), "lsblk", "-no", "MOUNTPOINT", devPath)
+		if err != nil {
+			continue
+		}
+		mountStr := string(mountOut)
+		if strings.Contains(mountStr, "/") || strings.Contains(mountStr, "[SWAP]") {
+			continue
+		}
+
+		// For sd* disks, check if they're virtual
+		if strings.HasPrefix(name, "sd") {
+			udevOut, err := mockablecmd.Run(fmt.Sprintf("GetUnmountedPhysicalDisks.UdevInfo.%s", name), "udevadm", "info", "--query=property", "--name", devPath)
+			if err != nil {
+				continue
+			}
+			if isVirtualDisk(udevOut) {
+				continue
+			}
+		}
+
+		result = append(result, devPath)
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("scanner error: %w", err)
+	}
+	return result, nil
+}
+
 func MountDrives(drives []string) (map[string]string, error) {
 	if viper.IsSet("CLUSTER_PREMOUNTED_DISKS") && viper.GetString("CLUSTER_PREMOUNTED_DISKS") != "" {
 		LogMessage(Info, "Skipping drive mounting as CLUSTER_PREMOUNTED_DISKS is set.")
@@ -420,4 +470,3 @@ func PersistMountedDisks(mountedMap map[string]string) error {
 
 	return nil
 }
-

@@ -1,0 +1,35 @@
+input:
+  DOMAIN: autodetect-virtual.local
+  FIRST_NODE: true
+  GPU_NODE: false
+  CERT_OPTION: generate
+
+mocks:
+  addrootdevicetoconfig.statconfigfile:
+    error: "no such file or directory"
+  addrootdevicetoconfig.readfstab:
+    output: ""
+  getunmountedphysicaldisks.listblockdevices:
+    output: |
+      sda disk
+      sdb disk
+  getunmountedphysicaldisks.checkmount.sda:
+    output: ""
+  getunmountedphysicaldisks.checkmount.sdb:
+    output: ""
+  getunmountedphysicaldisks.udevinfo.sda:
+    output: |
+      ID_BUS=scsi
+      ID_VENDOR=QEMU
+      ID_MODEL=QEMU_HARDDISK
+  getunmountedphysicaldisks.udevinfo.sdb:
+    output: |
+      ID_BUS=scsi
+      ID_MODEL=Samsung_SSD_870
+
+output:
+  DOMAIN: autodetect-virtual.local
+  FIRST_NODE: true
+  GPU_NODE: false
+  CERT_OPTION: generate
+  CLUSTER_DISKS: "/dev/sdb"

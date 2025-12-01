@@ -204,6 +204,8 @@ func rootSteps() []pkg.Step {
 		pkg.SetupAndCheckRocmStep,
 		pkg.OpenPortsStep,
 		pkg.UpdateUdevRulesStep,
+		pkg.ConfigLogrotateStep,
+		pkg.ConfigRsyslogStep,
 	}
 	k8Ssteps := []pkg.Step{
 		pkg.SetupRKE2Step,
@@ -449,6 +451,7 @@ func startWebUIMonitoring() {
 	mux.HandleFunc("/api/reconfigure", handlerService.ReconfigureHandler)
 	mux.HandleFunc("/api/prefilled-config", handlerService.PrefilledConfigAPIHandler)
 	mux.HandleFunc("/api/config", handlerService.ConfigAPIHandler)
+	mux.HandleFunc("/api/config-only", handlerService.ConfigOnlyAPIHandler)
 
 	handler := pkg.LocalhostOnly(mux)
 	server := &http.Server{

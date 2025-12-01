@@ -9,8 +9,10 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/silogen/cluster-bloom/pkg/mockablecmd"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
+	"gopkg.in/yaml.v3"
 )
 
 type Arg struct {
@@ -227,9 +229,72 @@ func ValidateSkipDiskCheckConsistency(skipDiskCheckStr string) error {
 	return nil
 }
 
+// validatePremountedNotBloomManaged checks that CLUSTER_PREMOUNTED_DISKS paths are not bloom-managed in /etc/fstab
+func validatePremountedNotBloomManaged(diskList []string) error {
+	const bloomFstabTag = "# managed by cluster-bloom"
+
+	fstabContent, err := mockablecmd.ReadFile("ValidateArgs.ReadFstab", "/etc/fstab")
+	if err != nil {
+		// If we can't read fstab, warn but don't fail validation
+		log.Warnf("Could not read /etc/fstab to validate CLUSTER_PREMOUNTED_DISKS: %v", err)
+		return nil
+	}
+
+	lines := strings.Split(string(fstabContent), "\n")
+	for lineNum, line := range lines {
+		trimmedLine := strings.TrimSpace(line)
+
+		// Skip lines that aren't bloom-managed
+		if !strings.HasSuffix(trimmedLine, bloomFstabTag) {
+			continue
+		}
+
+		// Extract mount point from bloom-managed entry
+		fields := strings.Fields(trimmedLine)
+		if len(fields) < 2 {
+			continue
+		}
+
+		mountPoint := fields[1]
+
+		// Check if this mount point is in CLUSTER_PREMOUNTED_DISKS
+		for _, disk := range diskList {
+			disk = strings.TrimSpace(disk)
+			if disk == mountPoint {
+				return fmt.Errorf("CLUSTER_PREMOUNTED_DISKS contains %s which is tagged '# managed by cluster-bloom' in /etc/fstab at line %d:\n  %s\nPlease delete the tag from the fstab line first or use a different mount point", disk, lineNum+1, trimmedLine)
+			}
+		}
+	}
+
+	return nil
+}
+
 // ValidateLonghornDisksArg validates CLUSTER_PREMOUNTED_DISKS configuration
 func ValidateLonghornDisksArg(disks string) error {
 	selectedDisks := viper.GetString("CLUSTER_DISKS")
+
+	// validate format of disks (comma-separated list) and each is an absolute path which exists
+	clusterPremountedDisks := viper.GetString("CLUSTER_PREMOUNTED_DISKS")
+	if clusterPremountedDisks != "" {
+		diskList := strings.Split(clusterPremountedDisks, ",")
+		for _, disk := range diskList {
+			disk = strings.TrimSpace(disk)
+			if disk == "" {
+				continue
+			}
+			if !filepath.IsAbs(disk) {
+				return fmt.Errorf("CLUSTER_PREMOUNTED_DISKS contains a non-absolute path: %s", disk)
+			}
+			if _, err := os.Stat(disk); os.IsNotExist(err) {
+				return fmt.Errorf("CLUSTER_PREMOUNTED_DISKS contains a path that does not exist: %s", disk)
+			}
+		}
+
+		// Check that none of the CLUSTER_PREMOUNTED_DISKS are bloom-managed in /etc/fstab
+		if err := validatePremountedNotBloomManaged(diskList); err != nil {
+			return err
+		}
+	}
 
 	// Both cannot be set
 	if disks != "" && selectedDisks != "" {
@@ -239,6 +304,24 @@ func ValidateLonghornDisksArg(disks string) error {
 	// At least one must be set
 	if disks == "" && selectedDisks == "" {
 		return fmt.Errorf("either CLUSTER_PREMOUNTED_DISKS or CLUSTER_DISKS must be set")
+	}
+
+	return nil
+}
+
+// ValidateYAMLFormat validates that the provided string is valid YAML
+func ValidateYAMLFormat(yamlStr string) error {
+	if yamlStr == "" {
+		return nil
+	}
+
+	var data interface{}
+	if err := yaml.Unmarshal([]byte(yamlStr), &data); err != nil {
+		return fmt.Errorf("invalid YAML format: %v", err)
+	}
+
+	if data == nil {
+		return fmt.Errorf("YAML content cannot be empty or null")
 	}
 
 	return nil

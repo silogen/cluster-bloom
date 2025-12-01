@@ -98,6 +98,7 @@ func RunStepsWithUI(steps []Step) error {
 	mux.HandleFunc("/api/steps", handlerService.StepsAPIHandler)
 	mux.HandleFunc("/api/error", handlerService.ErrorAPIHandler)
 	mux.HandleFunc("/api/config", handlerService.ConfigAPIHandler)
+	mux.HandleFunc("/api/config-only", handlerService.ConfigOnlyAPIHandler)
 	mux.HandleFunc("/configure", handlerService.ConfigWizardHandler)
 
 	handler := LocalhostOnly(mux)
@@ -234,6 +235,7 @@ func RunWebInterfaceWithConfig(port string, steps []Step, configFile string, one
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", handlerService.DashboardHandler)
 	mux.HandleFunc("/api/config", handlerService.ConfigAPIHandler)
+	mux.HandleFunc("/api/config-only", handlerService.ConfigOnlyAPIHandler)
 	mux.HandleFunc("/api/error", handlerService.ErrorAPIHandler)
 	mux.HandleFunc("/api/validation-error", handlerService.ValidationErrorAPIHandler)
 	mux.HandleFunc("/monitor", handlerService.MonitorHandler)
@@ -260,7 +262,8 @@ func RunWebInterfaceWithConfig(port string, steps []Step, configFile string, one
 	go func() {
 		for {
 			time.Sleep(1 * time.Second)
-			if handlerService.GetConfig() != nil {
+
+			if handlerService.ConfigChanged() {
 				configReceived <- true
 				break
 			}
@@ -286,6 +289,14 @@ func RunWebInterfaceWithConfig(port string, steps []Step, configFile string, one
 			fmt.Println("🔄 Starting installation...")
 			fmt.Println()
 
+			// Mark this config version as deployed to prevent infinite restart loop
+			handlerService.MarkConfigDeployed()
+
+			// Setup logging now that we're about to start installation
+			if setupLogging != nil {
+				setupLogging()
+			}
+
 			// Update viper with the new configuration from web interface
 			config := handlerService.GetConfig()
 			if config != nil {
@@ -293,11 +304,6 @@ func RunWebInterfaceWithConfig(port string, steps []Step, configFile string, one
 					viper.Set(key, value)
 				}
 				log.Infof("Updated viper with %d config values from web interface", len(config))
-			}
-
-			// Setup logging now that we're about to start installation
-			if setupLogging != nil {
-				setupLogging()
 			}
 
 			// Log the configuration values
