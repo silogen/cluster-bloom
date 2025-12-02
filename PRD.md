@@ -206,6 +206,7 @@ The system executes a sequential pipeline of installation steps:
 - `NO_DISKS_FOR_CLUSTER`: Bypasses disk-related operations
 - `CLUSTER_PREMOUNTED_DISKS`: Manual disk specification
 - `CLUSTERFORGE_RELEASE`: ClusterForge version specification
+- `CF_VALUES`: ClusterForge values file path specification (optional)
 - `DISABLED_STEPS`/`ENABLED_STEPS`: Step execution control
 - `CLUSTER_DISKS`: Pre-selected disk devices (also skips NVME drive checks)
 - `DOMAIN`: Domain name for cluster ingress configuration
