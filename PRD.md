@@ -18,35 +18,92 @@ ClusterBloom automates the deployment of Kubernetes clusters with AMD GPU suppor
 ## Core Features
 
 ### 1. Automated RKE2 Kubernetes Deployment
-- **First Node Setup**: Initializes the primary cluster node with all necessary configurations
-- **Additional Node Joining**: Automated process for adding worker nodes or additional control plane nodes
-- **Cilium CNI Integration**: Pre-configured with Cilium for advanced networking
-- **Audit Logging**: Built-in audit policy configuration for compliance
+Automated deployment of production-ready RKE2 clusters with first node initialization, additional node joining, Cilium CNI integration, and compliance-ready audit logging.
+
+```mermaid
+graph LR
+    A[First Node] --> B[RKE2 Server]
+    B --> C[Cilium CNI]
+    B --> D[Audit Logging]
+    E[Additional Nodes] --> F[RKE2 Agent/Server]
+    F --> B
+    style A fill:#4CAF50
+    style E fill:#4CAF50
+    style B fill:#2196F3
+```
+
+**[📄 Detailed Documentation](docs/prd/01-rke2-deployment.md)**
 
 ### 2. AMD GPU Support with ROCm
-- **ROCm Installation**: Automated ROCm driver and runtime installation
-- **GPU Detection**: Validates GPU availability and configuration
-- **Device Rules**: Configures udev rules for GPU access permissions
-- **Kernel Module Management**: Handles amdgpu module loading and configuration
+Automated AMD GPU driver installation, device detection, permission configuration, and Kubernetes GPU resource integration for AI/ML workloads.
+
+```mermaid
+graph LR
+    A[GPU Node] --> B[ROCm Installation]
+    B --> C[Device Rules]
+    C --> D[K8s GPU Scheduling]
+    B --> E[Driver Validation]
+    style A fill:#4CAF50
+    style B fill:#FF9800
+    style D fill:#9C27B0
+```
+
+**[📄 Detailed Documentation](docs/prd/02-rocm-support.md)**
 
 ### 3. Storage Management with Longhorn
-- **Disk Detection**: Automatically identifies and selects available NVMe drives
-- **Interactive Disk Selection**: TUI interface for manual disk selection
-- **Automated Mounting**: Formats and mounts selected drives with persistence
-- **Longhorn Integration**: Configures Longhorn distributed storage system
+Distributed block storage with automatic disk detection, interactive selection, persistent mounting, and Longhorn CSI integration for reliable persistent volumes.
+
+```mermaid
+graph LR
+    A[Disk Detection] --> B[Format & Mount]
+    B --> C[Longhorn Deploy]
+    C --> D[Storage Class]
+    D --> E[PVC Provisioning]
+    style A fill:#4CAF50
+    style C fill:#2196F3
+    style E fill:#9C27B0
+```
+
+**[📄 Detailed Documentation](docs/prd/03-storage-management.md)**
 
 ### 4. Network Configuration
-- **MetalLB Load Balancer**: Automated MetalLB installation and configuration
-- **IP Address Pool Management**: Dynamic IP pool configuration for services
-- **Firewall Configuration**: Opens required ports for cluster communication
-- **Multi-path Configuration**: Sets up multipath for storage reliability
+Comprehensive networking with MetalLB load balancing, firewall configuration, multipath storage networking, and time synchronization across cluster nodes.
+
+```mermaid
+graph LR
+    A[Firewall Setup] --> B[MetalLB Deploy]
+    B --> C[IP Pool Config]
+    C --> D[Service LoadBalancer]
+    A --> E[Multipath Config]
+    A --> F[Time Sync]
+    style A fill:#4CAF50
+    style B fill:#2196F3
+    style D fill:#FF9800
+```
+
+**[📄 Detailed Documentation](docs/prd/04-network-configuration.md)**
 
 ### 5. Interactive Terminal UI
-- **Real-time Progress Tracking**: Visual progress indicators for all installation steps
-- **Live Log Streaming**: Real-time log output with color coding
-- **Interactive Options**: Selection screens for disk management and configuration
-- **Error Handling**: Clear error reporting with continuation options
+Rich terminal interface with real-time progress tracking, live log streaming, interactive configuration wizards, and comprehensive error handling and recovery options.
 
+```mermaid
+graph TB
+    A[Terminal UI] --> B[Progress View]
+    A --> C[Log Streaming]
+    A --> D[Interactive Dialogs]
+    A --> E[Error Handling]
+    B --> F[Step Status]
+    C --> G[Color Coded Logs]
+    D --> H[Disk Selection]
+    E --> I[Retry/Skip/Abort]
+    style A fill:#4CAF50
+    style B fill:#2196F3
+    style C fill:#FF9800
+    style D fill:#9C27B0
+    style E fill:#F44336
+```
+
+**[📄 Detailed Documentation](docs/prd/05-terminal-ui.md)**
 ### 6. Configuration Management
 - **YAML Configuration**: Flexible configuration through YAML files
 - **Environment Variables**: Support for environment-based configuration
