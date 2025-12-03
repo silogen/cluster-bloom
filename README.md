@@ -1,6 +1,7 @@
 # ClusterBloom
 **ClusterBloom** is a tool for deploying and configuring Kubernetes clusters using RKE2, with specialized support for AMD GPU environments. It automates the process of setting up multi-node clusters, configuring storage with Longhorn, and integrating with various tools and services.
 
+
 ## Features
 
 - Automated RKE2 Kubernetes cluster deployment
@@ -79,6 +80,15 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 
 | Variable | Description | Default |
 |----------|-------------|---------|
+| CERT_OPTION | Certificate option when USE_CERT_MANAGER is false. Choose 'existing' or 'generate' | "" |
+| CF_VALUES | Path to ClusterForge values file (optional). Example: "values_cf.yaml" | "" |
+| CLUSTERFORGE_RELEASE | The version of Cluster-Forge to install. Pass the URL for a specific release, or 'none' to not install ClusterForge. | "https://github.com/silogen/cluster-forge/releases/download/deploy/deploy-release.tar.gz" |
+| CLUSTER_DISKS | Comma-separated list of disk devices. Example "/dev/sdb,/dev/sdc". Also skips NVME drive checks. | "" |
+| CLUSTER_PREMOUNTED_DISKS | Comma-separated list of absolute disk paths to use for Longhorn | "" |
+| CONTROL_PLANE |  Set to true if this node should be a control plane node |false, only applies when FIRST_NODE is false |
+| DISABLED_STEPS | Comma-separated list of steps to skip. Example "SetupLonghornStep,SetupMetallbStep" | "" |
+| DOMAIN | The domain name for the cluster (e.g., "cluster.example.com") (required). | "" |
+| ENABLED_STEPS | Comma-separated list of steps to perform. If empty, perform all. Example "SetupLonghornStep,SetupMetallbStep" | "" |
 | FIRST_NODE | Set to true if this is the first node in the cluster | true |
 | GPU_NODE | Set to true if this node has GPUs | true |
 | RKE2_VERSION | Specific RKE2 version to install (e.g., "v1.34.1+rke2r1") | "" |
@@ -86,6 +96,8 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | SERVER_IP | The IP address of the RKE2 server (required for additional nodes) | |
 | JOIN_TOKEN | The token used to join additional nodes to the cluster | |
 | NO_DISKS_FOR_CLUSTER | Set to true to skip disk-related operations | false |
+| OIDC_URL | The URL of the OIDC provider | "" |
+| SERVER_IP | The IP address of the RKE2 server (required for additional nodes) | |
 | SKIP_RANCHER_PARTITION_CHECK | Set to true to skip /var/lib/rancher partition size check | false |
 | CLUSTER_PREMOUNTED_DISKS | Comma-separated list of absolute disk paths to use for Longhorn | "" |
 | CLUSTERFORGE_RELEASE | The version of Cluster-Forge to install. Pass the URL for a specific release, or 'none' to not install ClusterForge. | "https://github.com/silogen/cluster-forge/releases/download/deploy/deploy-release.tar.gz" |
@@ -100,6 +112,7 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | CERT_OPTION | Certificate option when USE_CERT_MANAGER is false. Choose 'existing' or 'generate' | "" |
 | TLS_CERT | Path to TLS certificate file for ingress (required if CERT_OPTION is 'existing') | "" |
 | TLS_KEY | Path to TLS private key file for ingress (required if CERT_OPTION is 'existing') | "" |
+| USE_CERT_MANAGER | Use cert-manager with Let's Encrypt for automatic TLS certificates | false |
 
 ### OIDC Configuration Examples
 

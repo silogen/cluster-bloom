@@ -1,0 +1,999 @@
+# ClusterBloom Application Values for Cloud Platform Deployment
+# =============================================================================
+# This comprehensive values file provides configuration for applications built
+# on ClusterBloom to run seamlessly on managed Kubernetes platforms (EKS, AKS,
+# GKE) by abstracting infrastructure dependencies and managing conflicts.
+#
+# COMPATIBILITY MATRIX:
+# ┌─────────────────────┬──────────────┬─────┬─────┬─────┐
+# │ Component           │ ClusterBloom │ EKS │ AKS │ GKE │
+# ├─────────────────────┼──────────────┼─────┼─────┼─────┤
+# │ K8s Distribution    │ RKE2         │ ✓   │ ✓   │ ✓   │
+# │ CNI                 │ Cilium       │ ✓   │ ✓   │ ✓   │
+# │ Storage             │ Longhorn     │ EBS │ Disk│ PD  │
+# │ Load Balancer       │ MetalLB      │ NLB │ ALB │ LB  │
+# │ Ingress             │ User-defined │ ALB │ AGW │ GCE │
+# │ Certificates        │ cert-manager │ ACM │ KV  │ GMC │
+# │ GPU (AMD)           │ ROCm         │ ✓*  │ ✓*  │ ✓*  │
+# └─────────────────────┴──────────────┴─────┴─────┴─────┘
+# * GPU support requires cloud GPU instances with drivers
+#
+# CRITICAL CONFLICTS TO MANAGE:
+# 1. Storage Class Names: "mlstorage" vs cloud-specific classes
+# 2. Load Balancer IPs: Local/private (MetalLB) vs public (cloud)
+# 3. Ingress Annotations: MetalLB-specific vs cloud-specific
+# 4. Network CIDRs: RKE2 defaults vs cloud VPC ranges
+# 5. Certificate Provisioning: cert-manager vs cloud certificate managers
+# 6. GPU Resources: amd.com/gpu vs cloud instance types
+# 7. Volume Access Modes: Longhorn RWX vs cloud storage limitations
+# 8. Service Discovery: ClusterIP ranges differ across platforms
+#
+# Usage:
+#   # For ClusterBloom (default):
+#   helm install <app> <chart> -f cloud-platform-values.yaml
+#   
+#   # For EKS:
+#   helm install <app> <chart> -f cloud-platform-values.yaml \
+#     --set platform.type=eks \
+#     --set platform.cloud.provider=aws \
+#     --set storage.defaultStorageClass=gp3 \
+#     --set loadBalancer.type=aws-nlb
+#   
+#   # For AKS:
+#   helm install <app> <chart> -f cloud-platform-values.yaml \
+#     --set platform.type=aks \
+#     --set platform.cloud.provider=azure \
+#     --set storage.defaultStorageClass=managed-csi
+#   
+#   # For GKE:
+#   helm install <app> <chart> -f cloud-platform-values.yaml \
+#     --set platform.type=gke \
+#     --set platform.cloud.provider=gcp \
+#     --set storage.defaultStorageClass=standard-rwo
+#
+# or configure via ConfigMap/environment variables
+
+# ============================================================================
+# PLATFORM CONFIGURATION
+# ============================================================================
+# Corresponds to: Manual Installation Guide - Prerequisites Verification
+# PRD Section: Cloud Platform Compatibility - Overview
+platform:
+  # Platform type: clusterbloom, eks, aks, gke
+  # CONFLICT: Determines which infrastructure components are used
+  type: "clusterbloom"
+  
+  # Platform-specific metadata
+  cloud:
+    provider: ""  # aws, azure, gcp, or empty for bare-metal
+    region: ""    # us-west-2, eastus, us-central1, etc.
+    
+  # Operating system (ClusterBloom is Ubuntu-only)
+  os:
+    # ClusterBloom validates Ubuntu version
+    distribution: "ubuntu"  # ubuntu only for ClusterBloom
+    # Cloud platforms abstract OS (but typically use Ubuntu, Amazon Linux, etc.)
+    supportedVersions:
+      - "20.04"
+      - "22.04"
+      - "24.04"
+    
+  # Environment type
+  environment: "production"  # production, staging, development
+    
+# ============================================================================
+# KUBERNETES CONFIGURATION
+# ============================================================================
+# Corresponds to: Manual Installation Guide - Phase 4: RKE2 Kubernetes Installation
+# PRD Section: Kubernetes Distribution (RKE2)
+# KEY CONFLICTS:
+# - Network CIDRs must not overlap with VPC ranges in cloud
+# - CNI plugin differs (Cilium vs AWS VPC CNI vs Azure CNI)
+# - Control plane is self-managed (RKE2) vs managed (cloud)
+kubernetes:
+  # Kubernetes distribution
+  distribution: "rke2"  # rke2, eks, aks, gke
+  
+  # API server configuration
+  apiServer:
+    # Manual Step 13: Configure RKE2 for First Node
+    endpoint: ""  # Auto-detected for ClusterBloom, cloud-managed for EKS/AKS/GKE
+    port: 6443
+    
+    # Manual Step 14: Create Audit Policy
+    audit:
+      enabled: true
+      logPath: "/var/lib/rancher/rke2/server/logs/kube-apiserver-audit.log"
+      logMaxAge: 30
+      logMaxBackup: 10
+      logMaxSize: 100
+      policyFile: "/etc/rancher/rke2/audit-policy.yaml"
+      # CONFLICT: Cloud platforms have their own audit logging (CloudWatch, Azure Monitor, Cloud Logging)
+  
+  # Network configuration
+  network:
+    # Cluster CIDR (pod network)
+    # Manual Step 13: Part of RKE2 config.yaml
+    # CRITICAL CONFLICT: Must not overlap with VPC CIDR in cloud environments
+    clusterCIDR: "10.242.0.0/16"  # ClusterBloom/RKE2 default
+    # Cloud alternatives (ensure no overlap with VPC):
+    # clusterCIDR: "10.0.0.0/16"   # Example EKS (if VPC is different)
+    # clusterCIDR: "10.244.0.0/16" # Example AKS  
+    # clusterCIDR: "10.128.0.0/14" # Example GKE
+    
+    # Service CIDR
+    # CRITICAL CONFLICT: Must not overlap with cluster CIDR or VPC
+    serviceCIDR: "10.243.0.0/16"  # ClusterBloom/RKE2 default
+    # Cloud alternatives:
+    # serviceCIDR: "172.20.0.0/16" # Example EKS
+    # serviceCIDR: "10.0.0.0/16"   # Example AKS (different from cluster)
+    # serviceCIDR: "10.124.0.0/14" # Example GKE
+    
+    # DNS service IP (must be within serviceCIDR)
+    dnsServiceIP: "10.243.0.10"  # ClusterBloom default
+    
+    # CNI plugin configuration
+    cni:
+      # Manual Step 13: cni: cilium in RKE2 config
+      provider: "cilium"  # cilium, aws-vpc-cni, azure-cni, kubenet, gke-cni
+      
+      # CONFLICT: Different CNI plugins have different capabilities
+      # - Cilium: NetworkPolicy, encryption, service mesh, observability
+      # - AWS VPC CNI: Native VPC networking, security groups per pod
+      # - Azure CNI: Native VNet networking
+      # - GKE CNI: Native VPC networking, GKE-optimized
+      
+      # Cilium-specific (ClusterBloom default)
+      # Manual Step: Automatically configured by RKE2
+      cilium:
+        enabled: true
+        # Manual Port: 8472/udp (VXLAN) - Must be open in firewall
+        vxlanPort: 8472
+        # Manual Port: 4240/tcp (health checks) - Must be open
+        healthCheckPort: 4240
+        # Optional features
+        encryptionEnabled: false  # Enable for WireGuard encryption
+        serviceMeshEnabled: false # Enable for service mesh capabilities
+        hubbleEnabled: false      # Enable for network observability
+        hubbleUI: false
+        # Operator configuration
+        operator:
+          replicas: 1
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+      
+      # AWS VPC CNI specific (EKS)
+      # CONFLICT: Uses ENIs, different IP address management
+      awsVpcCni:
+        enabled: false
+        version: "v1.15.0"
+        # AWS-specific features
+        enablePodEni: false  # Use ENIs for pods (requires supported instance types)
+        securityGroupsForPods: false  # Assign security groups to pods
+        externalSnat: true   # Use VPC NAT gateway for egress
+        # IP address management
+        warmIpTarget: 1      # Number of IPs to keep available
+        minimumIpTarget: 3
+        # CONFLICT: Pod IPs come from VPC subnets, not separate CIDR
+        
+      # Azure CNI specific (AKS)
+      azureCni:
+        enabled: false
+        networkPlugin: "azure"  # azure or kubenet
+        # CONFLICT: Azure CNI assigns IPs from VNet subnet directly to pods
+        # kubenet creates a separate pod network
+        networkPolicy: "azure"  # azure, calico, or cilium
+        
+      # GKE CNI specific (GKE)
+      gkeCni:
+        enabled: false
+        # GKE uses VPC-native networking by default
+        enableIntraNodeVisibility: false
+        
+  # Network policies
+  # Manual Step: Implicitly enabled with Cilium
+  networkPolicy:
+    enabled: true
+    provider: "cilium"  # cilium, calico, aws-vpc-cni, azure-npm
+    # CONFLICT: NetworkPolicy support varies:
+    # - Cilium: Full support, advanced features
+    # - AWS VPC CNI: Requires Calico add-on
+    # - Azure CNI: Azure Network Policy Manager or Calico
+    # - GKE: Native support with Calico or Dataplane V2
+    
+  # Node configuration
+  nodes:
+    # Manual Step 13: node-label configuration
+    labels:
+      # ClusterBloom default labels
+      "node.longhorn.io/create-default-disk": "config"
+      # GPU labels (if GPU_NODE=true)
+      # "gpu": "true"
+      # "amd.com/gpu": "true"
+      
+    # Cloud-specific node labels (auto-applied)
+    # EKS:
+    # "node.kubernetes.io/instance-type": "m5.xlarge"
+    # "topology.kubernetes.io/zone": "us-west-2a"
+    # "eks.amazonaws.com/nodegroup": "nodegroup-name"
+    # AKS:
+    # "agentpool": "nodepool1"
+    # "kubernetes.azure.com/agentpool": "nodepool1"
+    # GKE:
+    # "cloud.google.com/gke-nodepool": "default-pool"
+    
+    # Taints (optional)
+    taints: []
+    # - key: "workload"
+    #   value: "gpu"
+    #   effect: "NoSchedule"
+
+# ============================================================================
+# STORAGE CONFIGURATION  
+# ============================================================================
+# Corresponds to: Manual Installation Guide - Phase 2: Storage Configuration
+# PRD Section: Storage Management with Longhorn
+# KEY MIGRATION CHECKLIST ITEMS:
+# ✓ Replace hardcoded "mlstorage" with environment variable
+# ✓ Update PVC volume binding mode if needed
+# ✓ Migrate backup/snapshot mechanisms
+# ✓ Test RWX volumes (behavior differs significantly)
+#
+# CRITICAL CONFLICTS:
+# 1. Storage Class Names: Applications using hardcoded "mlstorage" will fail
+# 2. Volume Modes: Longhorn supports Block+Filesystem; clouds may restrict
+# 3. Access Modes: RWX behavior differs (Longhorn=distributed, EBS=not supported, etc.)
+# 4. Performance: IOPS/throughput characteristics vary dramatically
+# 5. Snapshots: Longhorn built-in vs CSI snapshots vs cloud-native
+# 6. Backup: Longhorn S3/NFS vs cloud backup services
+# 7. Disk Paths: Longhorn uses /mnt/diskX; clouds abstract this completely
+storage:
+  # Default storage class name
+  # MIGRATION: Use ${STORAGE_CLASS_NAME:-mlstorage} in PVC specs
+  defaultStorageClass: "mlstorage"  # ClusterBloom default
+  # Cloud alternatives:
+  # defaultStorageClass: "gp3"           # EKS with EBS CSI
+  # defaultStorageClass: "managed-csi"   # AKS with Azure Disk
+  # defaultStorageClass: "standard-rwo"  # GKE with Persistent Disk
+  
+  # Storage provisioner
+  # MIGRATION: Abstract in application layer
+  provisioner: "driver.longhorn.io"  # ClusterBloom default
+  # Cloud alternatives:
+  # provisioner: "ebs.csi.aws.com"        # EKS
+  # provisioner: "disk.csi.azure.com"     # AKS  
+  # provisioner: "pd.csi.storage.gke.io"  # GKE
+  
+  # Storage class configurations
+  # Manual Step 7: Corresponds to disk preparation and Longhorn setup
+  classes:
+    # Primary storage class (maps to Longhorn "mlstorage")
+    - name: "mlstorage"
+      displayName: "ML Storage (Longhorn Distributed)"
+      description: "Distributed block storage with replication (ClusterBloom)"
+      provisioner: "driver.longhorn.io"
+      reclaimPolicy: "Delete"  # Delete or Retain
+      volumeBindingMode: "Immediate"  # Immediate or WaitForFirstConsumer
+      allowVolumeExpansion: true
+      
+      # Longhorn-specific parameters (ClusterBloom)
+      # Manual: Configured via Longhorn ConfigMap
+      parameters:
+        numberOfReplicas: "3"           # 1-3 replicas across nodes
+        staleReplicaTimeout: "2880"     # Minutes before replica considered stale
+        fromBackup: ""                   # Restore from backup
+        fsType: "ext4"                   # ext4 or xfs
+        dataLocality: "disabled"         # disabled, best-effort, strict
+        # CONFLICT: These parameters don't exist in cloud storage
+        
+      # Access modes supported
+      # CRITICAL CONFLICT: RWX behavior differs across platforms
+      accessModes:
+        - "ReadWriteOnce"   # RWO: Supported by all
+        - "ReadWriteMany"   # RWX: Longhorn supports, EBS does NOT, Azure/GCP limited
+        # MIGRATION WARNING: If using RWX, must migrate to RWO or use different storage
+        
+      # Cloud platform overrides (commented examples)
+      cloudOverride:
+        # Amazon EKS with EBS CSI Driver
+        eks:
+          name: "gp3"
+          displayName: "General Purpose SSD (gp3)"
+          provisioner: "ebs.csi.aws.com"
+          parameters:
+            type: "gp3"                # gp2, gp3, io1, io2, st1, sc1
+            iops: "3000"               # 3000-16000 for gp3
+            throughput: "125"          # 125-1000 MiB/s for gp3
+            encrypted: "true"
+            kmsKeyId: ""               # Optional KMS key
+            # CONFLICT: EBS volumes are single-AZ, no RWX support
+          accessModes:
+            - "ReadWriteOnce"
+            # No ReadWriteMany support
+          # MIGRATION: RWX volumes must use EFS instead
+            
+        # Azure AKS with Azure Disk CSI Driver
+        aks:
+          name: "managed-csi"
+          displayName: "Azure Managed Disk"
+          provisioner: "disk.csi.azure.com"
+          parameters:
+            storageaccounttype: "Premium_LRS"  # Standard_LRS, Premium_LRS, StandardSSD_LRS, UltraSSD_LRS
+            kind: "Managed"                     # Managed or Dedicated
+            cachingMode: "ReadOnly"             # None, ReadOnly, ReadWrite
+            # CONFLICT: Azure Disk is single-zone, limited RWX
+          accessModes:
+            - "ReadWriteOnce"
+            # ReadWriteMany requires Azure Files, not Disk
+            
+        # Google GKE with Persistent Disk CSI Driver
+        gke:
+          name: "standard-rwo"
+          displayName: "Standard Persistent Disk"
+          provisioner: "pd.csi.storage.gke.io"
+          parameters:
+            type: "pd-standard"        # pd-standard, pd-balanced, pd-ssd, pd-extreme
+            replication-type: "none"   # none or regional-pd
+            # CONFLICT: Single-zone unless using regional-pd (higher cost)
+          accessModes:
+            - "ReadWriteOnce"
+            - "ReadOnlyMany"
+            # ReadWriteMany requires Filestore, not PD
+    
+    # Fast storage class (for high-performance workloads)
+    - name: "fast-storage"
+      displayName: "Fast Storage (Longhorn Local)"
+      description: "High-performance storage with local data preference"
+      provisioner: "driver.longhorn.io"
+      reclaimPolicy: "Delete"
+      volumeBindingMode: "WaitForFirstConsumer"  # Wait for pod scheduling
+      allowVolumeExpansion: true
+      parameters:
+        numberOfReplicas: "2"
+        dataLocality: "best-effort"   # Prefer local replica
+        # CONFLICT: Cloud equivalents use higher IOPS tiers
+      accessModes:
+        - "ReadWriteOnce"
+        
+      cloudOverride:
+        eks:
+          name: "gp3-fast"
+          parameters:
+            type: "gp3"
+            iops: "16000"              # Maximum gp3 IOPS
+            throughput: "1000"         # Maximum gp3 throughput
+        aks:
+          name: "premium-ssd"
+          parameters:
+            storageaccounttype: "Premium_LRS"
+            cachingMode: "ReadWrite"   # Better performance for local access
+        gke:
+          name: "pd-ssd"
+          parameters:
+            type: "pd-ssd"             # SSD for better performance
+  
+    # Shared storage class (for ReadWriteMany workloads)
+    # CRITICAL MIGRATION: This requires different storage systems in cloud
+    - name: "shared-storage"
+      displayName: "Shared Storage (RWX)"
+      description: "Multi-node shared storage"
+      provisioner: "driver.longhorn.io"
+      reclaimPolicy: "Retain"  # Retain data for shared volumes
+      volumeBindingMode: "Immediate"
+      allowVolumeExpansion: true
+      parameters:
+        numberOfReplicas: "3"
+      accessModes:
+        - "ReadWriteMany"
+      
+      # CRITICAL CONFLICT: Cloud platforms require different services for RWX
+      cloudOverride:
+        eks:
+          name: "efs-sc"
+          displayName: "Elastic File System (EFS)"
+          provisioner: "efs.csi.aws.com"
+          # MIGRATION REQUIRED: Must create EFS filesystem first
+          parameters:
+            provisioningMode: "efs-ap"  # EFS Access Point
+            fileSystemId: ""            # Must be provided
+            directoryPerms: "700"
+            # CONFLICT: Completely different storage system
+          accessModes:
+            - "ReadWriteMany"
+            - "ReadOnlyMany"
+            
+        aks:
+          name: "azurefile-csi"
+          displayName: "Azure Files"
+          provisioner: "file.csi.azure.com"
+          # MIGRATION REQUIRED: Different performance characteristics
+          parameters:
+            skuName: "Standard_LRS"     # Standard_LRS, Premium_LRS
+            # CONFLICT: SMB-based, different performance profile
+          accessModes:
+            - "ReadWriteMany"
+            
+        gke:
+          name: "filestore-csi"
+          displayName: "Cloud Filestore"
+          provisioner: "filestore.csi.storage.gke.io"
+          # MIGRATION REQUIRED: Must create Filestore instance
+          parameters:
+            tier: "BASIC_HDD"           # BASIC_HDD, BASIC_SSD, HIGH_SCALE_SSD
+            network: "default"
+            # CONFLICT: NFS-based, minimum 1TB capacity
+          accessModes:
+            - "ReadWriteMany"
+  
+  # Longhorn-specific configuration (ClusterBloom only)
+  # Manual Steps 5-7: Multipath, disk preparation, mounting
+  # Manual Step 18: Longhorn deployment
+  longhorn:
+    enabled: true
+    version: "v1.8.0"
+    namespace: "longhorn-system"
+    
+    # Controller and instance manager configuration
+    controller:
+      replicas: 3
+      resources:
+        requests:
+          cpu: "100m"
+          memory: "128Mi"
+        limits:
+          cpu: "500m"
+          memory: "512Mi"
+          
+    instanceManager:
+      cpu: "250m"
+      memory: "256Mi"
+    
+    # Default settings (from longhorn-default-setting ConfigMap)
+    # Manual: Set via Longhorn ConfigMap
+    settings:
+      createDefaultDiskLabeledNodes: true  # Auto-create disks on labeled nodes
+      priorityClass: "longhorn-critical"   # Ensure Longhorn pods are prioritized
+      disableRevisionCounter: true         # Disable for performance
+      allowCollectingLonghornUsageMetrics: false
+      # Additional settings
+      defaultReplicaCount: 3
+      guaranteedInstanceManagerCpu: 12     # Percent of node CPU reserved
+      defaultDataPath: "/var/lib/longhorn" # Data path on nodes
+      # CONFLICT: These settings don't exist in cloud storage systems
+    
+    # Backup configuration
+    # Manual: Optional S3 or NFS backup target
+    backup:
+      enabled: false
+      # S3 backup target (recommended)
+      target: ""  # s3://bucket@region/path?key1=value1&key2=value2
+      # NFS backup target (alternative)
+      # target: "nfs://nfs-server:/path"
+      targetCredentialSecret: ""  # Secret with AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+      # Backup schedule (optional)
+      schedule:
+        volumeBackup: "0 2 * * *"  # Daily at 2 AM
+        snapshot: "0 */6 * * *"    # Every 6 hours
+      # MIGRATION: Must migrate to cloud backup services (AWS Backup, Azure Backup, etc.)
+      
+    # Snapshot configuration
+    snapshot:
+      # Recurring snapshots for volumes
+      enabled: true
+      retentionCount: 7  # Keep last 7 snapshots
+      # MIGRATION: Cloud uses CSI snapshots with different retention policies
+    
+    # Disk configuration
+    # Manual Step 7: Disk preparation and mounting
+    disks:
+      # Auto-detected disks at /mnt/diskX
+      # Corresponds to: CLUSTER_PREMOUNTED_DISKS or auto-discovery
+      autoDiscovery: true
+      # Disk selection tags (from cluster labels)
+      diskSelector: "node.longhorn.io/create-default-disk=config"
+      # Or manually specify paths
+      paths: []
+      # - "/mnt/disk0"
+      # - "/mnt/disk1"
+      # CONFLICT: Cloud platforms don't expose disk paths; completely abstracted
+      
+      # Disk preparation (manual steps)
+      # Manual Step 7: wipefs, mkfs.ext4, mount, fstab
+      preparation:
+        filesystem: "ext4"  # ext4 or xfs
+        mountOptions: "defaults,nofail"
+        # MIGRATION: Not applicable to cloud; managed by CSI driver
+    
+    # Storage network (for replica sync)
+    storageNetwork:
+      enabled: false
+      interface: ""  # Network interface for storage traffic
+      # Useful for dedicated storage network in bare-metal
+      # CONFLICT: Cloud platforms handle network topology internally
+    
+    # Node selector for Longhorn components
+    nodeSelector:
+      kubernetes.io/os: "linux"
+      # Can add specific node labels for Longhorn deployment
+    
+    # Tolerations for Longhorn pods
+    tolerations: []
+    # - key: "node-role.kubernetes.io/control-plane"
+    #   operator: "Exists"
+    #   effect: "NoSchedule"
+      
+  # Volume snapshot class (CSI snapshots)
+  # MIGRATION: Cloud platforms use CSI snapshot classes
+  volumeSnapshotClass:
+    - name: "longhorn-snapshot"
+      driver: "driver.longhorn.io"
+      deletionPolicy: "Delete"
+      # Longhorn-specific parameters
+      parameters: {}
+      
+      # Cloud overrides
+      cloudOverride:
+        eks:
+          name: "ebs-snapshot-class"
+          driver: "ebs.csi.aws.com"
+          deletionPolicy: "Delete"
+        aks:
+          name: "azure-disk-snapshot-class"
+          driver: "disk.csi.azure.com"
+          deletionPolicy: "Delete"
+        gke:
+          name: "pd-snapshot-class"
+          driver: "pd.csi.storage.gke.io"
+          deletionPolicy: "Delete"
+
+# ============================================================================
+# LOAD BALANCER CONFIGURATION
+# ============================================================================
+# Corresponds to: Manual Installation Guide - Phase 5: Storage and Networking Setup (Step 19)
+# PRD Section: Network Configuration - MetalLB Load Balancer
+# KEY MIGRATION CHECKLIST ITEMS:
+# ✓ Update Service LoadBalancer annotations
+# ✓ Update DNS integration
+# ✓ Test SSL/TLS termination
+# ✓ Verify health check configuration
+#
+# CRITICAL CONFLICTS:
+# 1. IP Addresses: MetalLB uses node IPs (private); cloud LBs get public IPs
+# 2. Annotations: service.beta.kubernetes.io/* differ completely
+# 3. DNS: MetalLB requires manual DNS; cloud auto-integrates
+# 4. SSL Termination: MetalLB=at ingress; cloud LB=at load balancer
+# 5. Health Checks: Different protocols and configuration methods
+# 6. Cross-Zone: MetalLB L2=single node; cloud=multi-AZ by default
+# 7. Session Affinity: Different implementation methods
+loadBalancer:
+  # Load balancer type
+  type: "metallb"  # metallb, aws-nlb, aws-clb, azure-lb, gce-lb
+  
+  # MetalLB configuration (ClusterBloom)
+  metallb:
+    enabled: true
+    version: "v0.14.9"
+    namespace: "metallb-system"
+    
+    # IP address pools
+    ipAddressPools:
+      - name: "cluster-bloom-ip-pool"
+        addresses:
+          - "192.168.1.100/32"  # Replace with actual node IP
+        autoAssign: true
+        avoidBuggyIPs: false
+    
+    # L2 Advertisement configuration
+    l2Advertisements:
+      - name: "cluster-bloom-l2-adv"
+        ipAddressPools:
+          - "cluster-bloom-ip-pool"
+    
+    # BGP configuration (optional)
+    bgp:
+      enabled: false
+      peers: []
+      advertisements: []
+  
+  # AWS Load Balancer configuration (EKS)
+  aws:
+    enabled: false
+    controller:
+      version: "v2.6.0"
+    
+    # Service annotations for AWS
+    serviceAnnotations:
+      loadBalancerType: "nlb"  # nlb or clb
+      scheme: "internet-facing"  # internet-facing or internal
+      crossZoneLoadBalancing: "true"
+      backendProtocol: "tcp"
+      healthCheckPath: "/health"
+      healthCheckPort: "traffic-port"
+      healthCheckProtocol: "HTTP"
+      sslCertificate: ""  # ARN of ACM certificate
+  
+  # Azure Load Balancer configuration (AKS)
+  azure:
+    enabled: false
+    
+    # Service annotations for Azure
+    serviceAnnotations:
+      internal: "false"  # "true" for internal LB
+      resourceGroup: ""
+      loadBalancerIP: ""  # Specific IP address
+      healthProbeProtocol: "tcp"
+      healthProbePort: "80"
+  
+  # GCP Load Balancer configuration (GKE)
+  gcp:
+    enabled: false
+    
+    # Service annotations for GCP
+    serviceAnnotations:
+      loadBalancerType: "External"  # External or Internal
+      networkTier: "PREMIUM"  # PREMIUM or STANDARD
+
+# ============================================================================
+# INGRESS CONFIGURATION
+# ============================================================================
+ingress:
+  # Ingress controller type
+  controller: "nginx"  # nginx, traefik, aws-alb, azure-appgw, gce
+  
+  # Ingress class name
+  className: "nginx"
+  # className: "alb"  # EKS with AWS Load Balancer Controller
+  # className: "azure-application-gateway"  # AKS
+  # className: "gce"  # GKE
+  
+  # NGINX Ingress Controller (common for ClusterBloom)
+  nginx:
+    enabled: true
+    version: "v1.9.4"
+    namespace: "ingress-nginx"
+    
+    # Controller configuration
+    controller:
+      replicaCount: 2
+      service:
+        type: "LoadBalancer"
+        # MetalLB annotation for ClusterBloom
+        annotations:
+          metallb.universe.tf/address-pool: "cluster-bloom-ip-pool"
+      
+      resources:
+        requests:
+          cpu: "100m"
+          memory: "128Mi"
+        limits:
+          cpu: "500m"
+          memory: "512Mi"
+  
+  # AWS ALB Ingress Controller (EKS)
+  awsAlb:
+    enabled: false
+    
+    # Common ALB annotations
+    annotations:
+      scheme: "internet-facing"  # internet-facing or internal
+      targetType: "ip"  # ip or instance
+      certificateArn: ""  # ACM certificate ARN
+      sslPolicy: "ELBSecurityPolicy-TLS-1-2-2017-01"
+      healthCheckPath: "/health"
+      healthCheckIntervalSeconds: "15"
+      healthCheckTimeoutSeconds: "5"
+      successCodes: "200"
+  
+  # Azure Application Gateway (AKS)
+  azureAppGw:
+    enabled: false
+    
+    # Application Gateway annotations
+    annotations:
+      applicationGatewayName: ""
+      resourceGroup: ""
+      subnetName: ""
+      usePrivateIp: "false"
+  
+  # GCE Ingress (GKE)
+  gce:
+    enabled: false
+    
+    # GCE ingress annotations
+    annotations:
+      staticIpName: ""
+      preSharedCertificate: ""
+
+# ============================================================================
+# CERTIFICATE MANAGEMENT
+# ============================================================================
+certificates:
+  # Certificate provider
+  provider: "cert-manager"  # cert-manager, aws-acm, azure-keyvault, gcp-managed, manual
+  
+  # cert-manager configuration (ClusterBloom default)
+  certManager:
+    enabled: true
+    version: "v1.13.0"
+    namespace: "cert-manager"
+    
+    # Email for Let's Encrypt notifications
+    email: "admin@example.com"
+    
+    # Issuers
+    issuers:
+      - name: "letsencrypt-prod"
+        type: "ClusterIssuer"
+        acme:
+          server: "https://acme-v02.api.letsencrypt.org/directory"
+          email: "admin@example.com"
+          privateKeySecretRef: "letsencrypt-prod"
+          solvers:
+            - http01:
+                ingress:
+                  class: "nginx"
+      
+      - name: "letsencrypt-staging"
+        type: "ClusterIssuer"
+        acme:
+          server: "https://acme-staging-v02.api.letsencrypt.org/directory"
+          email: "admin@example.com"
+          privateKeySecretRef: "letsencrypt-staging"
+          solvers:
+            - http01:
+                ingress:
+                  class: "nginx"
+    
+    # Default certificate configuration
+    defaultIssuer: "letsencrypt-prod"
+    
+  # AWS Certificate Manager (EKS)
+  awsAcm:
+    enabled: false
+    certificateArn: ""  # ARN of ACM certificate
+    
+  # Azure Key Vault (AKS)
+  azureKeyVault:
+    enabled: false
+    name: ""
+    tenantId: ""
+    certificateName: ""
+    
+  # Google Managed Certificates (GKE)
+  gcpManaged:
+    enabled: false
+    certificateName: ""
+    domains: []
+  
+  # Manual certificate configuration
+  manual:
+    enabled: false
+    tlsSecret: "cluster-tls"
+    # Certificates should be created manually:
+    # kubectl create secret tls cluster-tls --cert=tls.crt --key=tls.key
+
+# ============================================================================
+# DOMAIN CONFIGURATION
+# ============================================================================
+domain:
+  # Primary domain for the cluster
+  name: "cluster.example.com"
+  
+  # Use cert-manager for TLS
+  useCertManager: true
+  
+  # TLS secret name (if not using cert-manager)
+  tlsSecretName: "cluster-tls"
+  
+  # Certificate issuer (for cert-manager)
+  certIssuer: "letsencrypt-prod"
+
+# ============================================================================
+# GPU CONFIGURATION
+# ============================================================================
+gpu:
+  # Enable GPU support
+  enabled: false
+  
+  # GPU vendor
+  vendor: "amd"  # amd or nvidia
+  
+  # GPU resource name
+  resourceName: "amd.com/gpu"  # or "nvidia.com/gpu"
+  
+  # ROCm configuration (AMD GPUs - ClusterBloom)
+  rocm:
+    enabled: false
+    version: "6.3.2"
+    baseUrl: "https://repo.radeon.com/amdgpu-install/6.3.2/ubuntu/"
+    debPackage: "amdgpu-install_6.3.60302-1_all.deb"
+  
+  # Node selection for GPU workloads
+  nodeSelector:
+    gpu: "true"
+    # Cloud-specific labels:
+    # node.kubernetes.io/instance-type: "g4ad.xlarge"  # EKS
+    # accelerator: "amd-gpu"  # AKS
+    # cloud.google.com/gke-accelerator: "amd-gpu"  # GKE
+  
+  # Node taints (if GPU nodes are tainted)
+  tolerations: []
+  # - key: "nvidia.com/gpu"
+  #   operator: "Exists"
+  #   effect: "NoSchedule"
+  
+  # GPU device plugin
+  devicePlugin:
+    enabled: false
+    image: "rocm/k8s-device-plugin:latest"  # AMD
+    # image: "nvidia/k8s-device-plugin:latest"  # NVIDIA
+
+# ============================================================================
+# AUTHENTICATION CONFIGURATION
+# ============================================================================
+authentication:
+  # OIDC configuration
+  oidc:
+    enabled: false
+    issuerUrl: ""  # https://auth.example.com
+    clientId: "k8s"
+    usernameClaim: "preferred_username"
+    groupsClaim: "groups"
+    usernamePrefix: "oidc:"
+    groupsPrefix: "oidc:"
+    caFile: "/etc/rancher/rke2/oidc-ca.crt"
+
+# ============================================================================
+# MONITORING AND OBSERVABILITY
+# ============================================================================
+monitoring:
+  # Prometheus
+  prometheus:
+    enabled: false
+    namespace: "monitoring"
+    
+  # Grafana
+  grafana:
+    enabled: false
+    namespace: "monitoring"
+  
+  # Cilium Hubble (ClusterBloom with Cilium)
+  hubble:
+    enabled: false
+    ui:
+      enabled: false
+
+# ============================================================================
+# CLUSTER SERVICES
+# ============================================================================
+services:
+  # Chrony time synchronization
+  chrony:
+    enabled: true
+    servers:
+      - "0.ubuntu.pool.ntp.org"
+      - "1.ubuntu.pool.ntp.org"
+      - "2.ubuntu.pool.ntp.org"
+      - "3.ubuntu.pool.ntp.org"
+    # For additional nodes, set to first node IP
+    primaryNodeIp: ""
+  
+  # rsyslog configuration
+  rsyslog:
+    enabled: true
+    rateLimit: true
+    # Prevent iSCSI log flooding for Longhorn
+    
+  # logrotate configuration
+  logrotate:
+    enabled: true
+    retention: 7  # days
+    compress: true
+
+# ============================================================================
+# APPLICATION-SPECIFIC OVERRIDES
+# ============================================================================
+# Applications should use these values to adapt to the platform
+applicationOverrides:
+  # Storage class to use in PVCs
+  storageClass: "mlstorage"
+  
+  # Service type for exposed services
+  serviceType: "LoadBalancer"  # LoadBalancer, NodePort, ClusterIP
+  
+  # Ingress enabled
+  ingressEnabled: true
+  
+  # TLS enabled
+  tlsEnabled: true
+  
+  # Certificate issuer
+  certIssuer: "letsencrypt-prod"
+
+# ============================================================================
+# PLATFORM-SPECIFIC FEATURE FLAGS
+# ============================================================================
+features:
+  # ClusterBloom-specific features
+  clusterbloom:
+    # Use Longhorn for storage
+    longhornStorage: true
+    # Use MetalLB for load balancing
+    metallbLoadBalancer: true
+    # Use Cilium CNI
+    ciliumCni: true
+    # ROCm GPU support
+    rocmGpu: false
+    # ClusterForge integration
+    clusterForge:
+      enabled: false
+      release: "https://github.com/silogen/cluster-forge/releases/download/deploy/deploy-release.tar.gz"
+      valuesFile: ""
+    # 1Password Connect integration
+    onePasswordConnect:
+      enabled: false
+      token: ""
+      host: ""
+  
+  # Cloud-specific features
+  cloud:
+    # Use cloud-native storage
+    nativeStorage: false
+    # Use cloud load balancers
+    nativeLoadBalancer: false
+    # Use cloud ingress controllers
+    nativeIngress: false
+    # Use cloud certificate management
+    nativeCertificates: false
+    # Use cloud GPU instances
+    nativeGpu: false
+
+# ============================================================================
+# PLATFORM MIGRATION SETTINGS
+# ============================================================================
+migration:
+  # Enable compatibility mode for easier migration
+  compatibilityMode: false
+  
+  # Backup configuration before migration
+  backup:
+    enabled: false
+    destination: ""  # S3, Azure Blob, GCS, etc.
+  
+  # Volume migration
+  volumes:
+    # Create snapshots before migration
+    createSnapshots: false
+    # Migrate data between storage systems
+    migrateData: false
+
+# ============================================================================
+# VALIDATION AND TESTING
+# ============================================================================
+validation:
+  # Skip certain validations for cloud environments
+  skipChecks:
+    ubuntuVersion: false
+    diskSpace: false
+    gpuAvailability: false
+    partitionSize: false
+  
+  # System resource requirements
+  resources:
+    # Minimum memory (GB)
+    minMemory: 4
+    # Recommended memory (GB)
+    recommendedMemory: 8
+    # Minimum CPU cores
+    minCpu: 2
+    # Recommended CPU cores
+    recommendedCpu: 4
+    # Minimum root partition (GB)
+    minRootPartition: 20
+    # Minimum available space (GB)
+    minAvailableSpace: 10
