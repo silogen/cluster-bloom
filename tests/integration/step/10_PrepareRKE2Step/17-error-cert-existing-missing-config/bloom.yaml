@@ -1,0 +1,26 @@
+# tests/integration/step/10_PrepareRKE2Step/17-error-cert-existing-missing-config/bloom.yaml
+# Test case: Error when existing cert config is incomplete
+ENABLED_STEPS: PrepareRKE2Step
+DOMAIN: test.local
+FIRST_NODE: true
+GPU_NODE: false
+USE_CERT_MANAGER: false
+CERT_OPTION: existing
+# Missing TLS_CERT and TLS_KEY configuration
+
+# Expected: Should fail with TLS_CERT and TLS_KEY must be provided error
+expected_error: "TLS_CERT and TLS_KEY must be provided"
+
+mocks:
+  PrepareRKE2.RunCommand.modprobe:
+    output: ""
+    args: ["iscsi_tcp"]
+  PrepareRKE2.RunCommand.modprobe:
+    output: ""
+    args: ["dm_mod"]
+  PrepareRKE2.RunCommand.mkdir:
+    output: ""
+    args: ["-p", "/etc/rancher/rke2"]
+  PrepareRKE2.RunCommand.chmod:
+    output: ""
+    args: ["0755", "/etc/rancher/rke2"]

@@ -1,0 +1,15 @@
+# tests/e2e/tls_san_test/tls_san_error_invalid_additional.yaml
+# E2E Test case: Invalid domains in additional TLS-SANs
+ENABLED_STEPS: PrepareRKE2Step
+DOMAIN: test.local
+FIRST_NODE: true
+GPU_NODE: false
+USE_CERT_MANAGER: false
+CERT_OPTION: generate
+
+ADDITIONAL_TLS_SAN_URLS:
+  - "invalid..domain"     # Invalid: double dots
+  - "api.test.local"      # Valid: mixed with invalid
+
+# Expected: Should fail with validation error for invalid domain format
+# Current implementation may not validate domain format - this tests behavior

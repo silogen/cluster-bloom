@@ -1,0 +1,15 @@
+# tests/e2e/oidc_test/oidc_conflicting_default_domain.yaml
+# E2E Test case: OIDC provider conflicting with default airm realm
+ENABLED_STEPS: PrepareRKE2Step
+DOMAIN: test.local
+FIRST_NODE: true
+GPU_NODE: false
+USE_CERT_MANAGER: false
+CERT_OPTION: generate
+
+ADDITIONAL_OIDC_PROVIDERS:
+  - url: "https://kc.test.local/realms/airm"  # Conflicts with default
+    audiences: ["k8s"]
+
+# Expected: This should fail with conflict error
+# Default provider uses: https://kc.test.local/realms/airm

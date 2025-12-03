@@ -1,0 +1,14 @@
+# tests/e2e/oidc_test/oidc_multiple_providers.yaml
+# E2E Test case: Multiple OIDC providers configuration
+ENABLED_STEPS: PrepareRKE2Step
+DOMAIN: test.local
+FIRST_NODE: true
+GPU_NODE: false
+USE_CERT_MANAGER: false
+CERT_OPTION: generate
+
+ADDITIONAL_OIDC_PROVIDERS:
+  - url: "https://kc1.test.local/realms/k8s"
+    audiences: ["k8s"]
+  - url: "https://kc2.test.local/realms/api"
+    audiences: ["api", "kubernetes"]

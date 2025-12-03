@@ -10,6 +10,10 @@ bloom_configs:
   - oidc_no_providers.yaml
   - oidc_external_domain.yaml
   - oidc_error_missing_audiences.yaml
+  - oidc_multiple_providers.yaml
+  - oidc_error_conflicting_default_domain.yaml
+  - oidc_error_empty_audiences.yaml
+  - oidc_error_malformed_config.yaml
 
 # No storage disks needed for OIDC testing
 disks: []

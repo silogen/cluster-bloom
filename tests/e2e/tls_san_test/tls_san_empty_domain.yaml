@@ -1,0 +1,12 @@
+# tests/e2e/tls_san_test/tls_san_empty_domain.yaml
+# E2E Test case: Empty domain behavior (should skip TLS-SAN generation)
+ENABLED_STEPS: PrepareRKE2Step
+# DOMAIN: ""  # Empty domain - not specified
+FIRST_NODE: true
+GPU_NODE: false
+
+ADDITIONAL_TLS_SAN_URLS:
+  - "api.example.com"
+
+# Expected: Should skip TLS-SAN generation when DOMAIN is empty
+# No TLS-SAN configuration should be added to RKE2 config

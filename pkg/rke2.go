@@ -623,14 +623,18 @@ kube-apiserver-arg:
 }
 
 func addTLSSANToRKE2(domain string) error {
+	// Skip TLS-SAN configuration entirely if no domain specified
+	if domain == "" {
+		LogMessage(Info, "No domain specified, skipping TLS-SAN configuration")
+		return nil
+	}
+	
 	var tlsSANs []string
 	
 	// Default: k8s.<domain>
-	if domain != "" {
-		defaultTLSSAN := fmt.Sprintf("k8s.%s", domain)
-		tlsSANs = append(tlsSANs, defaultTLSSAN)
-		LogMessage(Info, fmt.Sprintf("Added default TLS-SAN: %s", defaultTLSSAN))
-	}
+	defaultTLSSAN := fmt.Sprintf("k8s.%s", domain)
+	tlsSANs = append(tlsSANs, defaultTLSSAN)
+	LogMessage(Info, fmt.Sprintf("Added default TLS-SAN: %s", defaultTLSSAN))
 	
 	// Additional TLS SANs from configuration
 	additionalSANs := viper.GetStringSlice("ADDITIONAL_TLS_SAN_URLS")
@@ -785,11 +789,20 @@ func validateOIDCURLs(oidcConfigs []OIDCConfig, domain string) (bool, error) {
 	
 	LogMessage(Info, fmt.Sprintf("Validating %d OIDC provider URLs", len(oidcConfigs)))
 	
+	// Build expected default provider URL
+	defaultOIDCURL := fmt.Sprintf("https://kc.%s/realms/airm", domain)
+	
 	// Build expected same-domain hostname pattern
 	expectedHostname := fmt.Sprintf("kc.%s", domain)
 	
 	for i, config := range oidcConfigs {
 		LogMessage(Info, fmt.Sprintf("Validating OIDC URL [%d]: %s", i, config.URL))
+		
+		// Check for conflict with default provider URL first
+		if config.URL == defaultOIDCURL {
+			LogMessage(Error, fmt.Sprintf("OIDC provider URL '%s' conflicts with default OIDC provider. The default provider already uses this URL for the 'airm' realm", config.URL))
+			return false, fmt.Errorf("OIDC provider URL '%s' conflicts with default OIDC provider. The default provider already uses this URL for the 'airm' realm. Please use a different realm or domain", config.URL)
+		}
 		
 		// Check if this provider uses the same domain as the default
 		if isSameDomainProvider(config.URL, expectedHostname) {

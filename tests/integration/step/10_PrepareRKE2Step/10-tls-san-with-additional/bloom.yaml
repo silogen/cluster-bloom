@@ -1,0 +1,28 @@
+# tests/integration/step/10_PrepareRKE2Step/10-tls-san-with-additional/bloom.yaml
+# Test case: Auto-generation + additional TLS-SANs
+ENABLED_STEPS: PrepareRKE2Step
+DOMAIN: test.local
+FIRST_NODE: true
+GPU_NODE: false
+USE_CERT_MANAGER: false
+CERT_OPTION: generate
+
+ADDITIONAL_TLS_SAN_URLS:
+  - "api.test.local"
+  - "kubernetes.test.local"
+
+# Expected: k8s.test.local (auto) + api.test.local + kubernetes.test.local
+
+mocks:
+  PrepareRKE2.RunCommand.modprobe:
+    output: ""
+    args: ["iscsi_tcp"]
+  PrepareRKE2.RunCommand.modprobe:
+    output: ""
+    args: ["dm_mod"]
+  PrepareRKE2.RunCommand.mkdir:
+    output: ""
+    args: ["-p", "/etc/rancher/rke2"]
+  PrepareRKE2.RunCommand.chmod:
+    output: ""
+    args: ["0755", "/etc/rancher/rke2"]
