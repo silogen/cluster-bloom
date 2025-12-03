@@ -23,6 +23,42 @@ Initializes the primary cluster node with all necessary configurations:
 - Disable default ingress controller (applications provide their own)
 - Configure TLS SANs for secure API access
 - Set up node labels for Longhorn storage integration
+- OIDC authentication provider integration
+
+### OIDC Authentication Integration
+Automated OIDC provider configuration for Kubernetes API server authentication:
+- **Default Provider**: Auto-configured `https://kc.{DOMAIN}/realms/airm` with audience `k8s`
+- **Multiple Providers**: Support for additional OIDC providers via `ADDITIONAL_OIDC_PROVIDERS`
+- **Audience Configuration**: Configurable client IDs per provider
+- **RKE2 Integration**: Automatic kube-apiserver configuration
+
+**Default OIDC Configuration**:
+```yaml
+# Generated automatically when DOMAIN is set
+kube-apiserver-arg:
+  - "oidc-issuer-url=https://kc.example.com/realms/airm"
+  - "oidc-client-id=k8s"
+  - "oidc-username-claim=preferred_username"
+  - "oidc-groups-claim=groups"
+```
+
+**Multiple OIDC Providers**:
+```yaml
+# When ADDITIONAL_OIDC_PROVIDERS is configured
+kube-apiserver-arg:
+  - "oidc-issuer-url=https://kc.example.com/realms/airm"
+  - "oidc-client-id=k8s"
+  - "oidc-issuer-url=https://auth.company.com/realms/main"
+  - "oidc-client-id=kubernetes"
+  - "oidc-username-claim=preferred_username"
+  - "oidc-groups-claim=groups"
+```
+
+**Authentication Flow**:
+1. User obtains JWT token from configured OIDC provider
+2. kubectl sends token with API requests via `Authorization: Bearer <token>`
+3. kube-apiserver validates token against configured OIDC providers
+4. User permissions determined by Kubernetes RBAC rules
 
 ### Additional Node Joining
 Automated process for adding worker nodes or additional control plane nodes:

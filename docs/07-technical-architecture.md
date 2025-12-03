@@ -276,10 +276,49 @@ type WebHandlerService struct {
 - Helm chart installation
 - Application platform integration
 
-#### OIDC Providers
-- Authentication configuration
-- RKE2 OIDC integration
-- API server configuration
+#### OIDC Authentication Architecture
+
+**Multi-Provider Support**:
+ClusterBloom supports both default and additional OIDC providers for flexible authentication:
+
+```yaml
+# Default provider (auto-configured)
+# Generated from DOMAIN: "example.com"
+# Results in: https://kc.example.com/realms/airm
+
+# Additional providers (optional)
+ADDITIONAL_OIDC_PROVIDERS:
+  - url: "https://auth.company.com/realms/main"
+    audiences: ["kubernetes", "api"]
+  - url: "https://external-provider.com/auth"
+    audiences: ["k8s"]
+```
+
+**Configuration Generation Pipeline**:
+1. **Default Provider Generation**: Auto-create `https://kc.{DOMAIN}/realms/airm` with audience `k8s`
+2. **Provider Validation**: Validate HTTPS URLs and audience format for additional providers
+3. **Configuration Merging**: Combine default + additional providers into RKE2 config
+4. **RKE2 Integration**: Generate `kube-apiserver-arg` configurations
+5. **Service Restart**: Trigger RKE2 server restart with new authentication configuration
+
+**RKE2 Integration**:
+Generated configuration for `/etc/rancher/rke2/config.yaml`:
+```yaml
+kube-apiserver-arg:
+  - "oidc-issuer-url=https://kc.example.com/realms/airm"
+  - "oidc-client-id=k8s"
+  - "oidc-issuer-url=https://auth.company.com/realms/main"  
+  - "oidc-client-id=kubernetes"
+  - "oidc-username-claim=preferred_username"
+  - "oidc-groups-claim=groups"
+```
+
+**Authentication Flow**:
+1. User authenticates with configured OIDC provider (Keycloak, Auth0, etc.)
+2. Provider issues JWT token with user claims and group memberships
+3. kubectl sends token via `Authorization: Bearer <jwt-token>` header
+4. kube-apiserver validates token against configured OIDC providers
+5. Kubernetes RBAC rules determine user permissions based on token claims
 
 ### Kubernetes Ecosystem Integration
 

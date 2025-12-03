@@ -159,6 +159,52 @@ User-friendly error display and recovery:
 └───────────────────────────────────────────────┘
 ```
 
+### Web UI Configuration Features
+Interactive web-based configuration wizard with enhanced OIDC support:
+- **Configuration Wizard**: Browser-based form for cluster setup
+- **Real-time Validation**: Live input validation and formatting
+- **OIDC Provider Configuration**: Advanced multi-provider setup interface
+- **TLS-SAN Management**: Visual domain configuration with auto-preview
+
+#### OIDC Provider Configuration Interface
+
+**Default Provider Display**:
+- **Auto-generated Preview**: Shows default `https://kc.{domain}/realms/airm` provider
+- **Real-time Updates**: Domain field changes update OIDC placeholder automatically  
+- **Visual Design**: Green success styling indicates auto-configured default provider
+- **Clear Labeling**: Distinguishes between default and additional providers
+
+**Additional Providers Interface**:
+- **Dynamic Provider Management**: Add/remove multiple OIDC providers
+- **Per-provider Configuration**: Separate URL and audience fields for each provider
+- **Form Validation**: Real-time HTTPS URL validation and audience checking
+- **Visual Feedback**: Color-coded validation status for each provider entry
+
+**OIDC UI Features**:
+```
+┌─ OIDC Providers ─────────────────────────────────┐
+│                                                   │
+│ ✓ Default OIDC Provider (Auto-configured):      │
+│   https://kc.example.com/realms/airm             │
+│   Audiences: k8s                                 │
+│                                                   │
+│ Additional OIDC Providers (Optional):            │
+│ ┌───────────────────────────────────────────────┐ │
+│ │ URL: https://auth.company.com/realms/main    │ │
+│ │ Audiences: kubernetes,api                     │ │
+│ └───────────────────────────────────────────────┘ │
+│ [+ Add Provider] [- Remove]                      │
+└───────────────────────────────────────────────────┘
+```
+
+#### TLS-SAN Configuration Interface
+
+**Auto-generated TLS-SAN Preview**:
+- **Live Preview**: Shows final certificate SAN list as user types
+- **Duplicate Detection**: Warns about duplicate entries with auto-deduplication
+- **Format Validation**: Real-time domain name format checking
+- **Smart Suggestions**: Contextual help for common configurations
+
 ### Styling and Themes
 Consistent visual design with Lip Gloss:
 - **Color Schemes**: Light/dark themes
