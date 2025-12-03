@@ -189,10 +189,10 @@ flowchart TD
     GetUUID --> UpdateFstab[Add to /etc/fstab:<br/>UUID=xxx /mnt/diskX ext4 defaults,nofail 0 2]
     UpdateFstab --> RemountAll[mount -a]
     
-    RemountAll --> GenerateLonghorn[GenerateLonghornDiskString]
-    SkipMount --> GenerateLonghorn
+    RemountAll --> GenerateNodeLabels[GenerateNodeLabels]
+    SkipMount --> GenerateNodeLabels
     
-    GenerateLonghorn --> CheckLonghornConfig{CLUSTER_PREMOUNTED_DISKS<br/>configured?}
+    GenerateNodeLabels --> CheckLonghornConfig{CLUSTER_PREMOUNTED_DISKS<br/>configured?}
     CheckLonghornConfig -->|Yes - has value| ParseConfig[Parse CLUSTER_PREMOUNTED_DISKS<br/>comma-separated list]
     CheckLonghornConfig -->|No - empty| FindMounted[Find mounted disks<br/>at /mnt/diskX]
     
