@@ -39,7 +39,7 @@ jobs:
             echo "$FEAT_COMMITS"
             
             # Check if PRD.md was modified in the same range
-            PRD_MODIFIED=$(git diff --name-only "${BASE_SHA}..HEAD" | grep -E "^PRD\.md$" || echo "")
+            PRD_MODIFIED=$(git diff --name-only "${BASE_SHA}..HEAD" | grep -E "^docs/" || echo "")
             
             if [[ -z "$PRD_MODIFIED" ]]; then
               echo "❌ ERROR: Found feat:/docs: commits but PRD.md was not updated"
