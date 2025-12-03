@@ -403,7 +403,25 @@
                     </div>
 
                     <div class="form-group">
-                        <label for="ADDITIONAL_OIDC_PROVIDERS">Additional OIDC Providers</label>
+                        <label for="ADDITIONAL_OIDC_PROVIDERS">OIDC Providers</label>
+                        <div class="description">Configure OIDC providers for authentication. The default provider is automatically configured, and you can add additional providers if needed.</div>
+                        
+                        <!-- Auto-generated default OIDC provider display -->
+                        <div id="default-oidc-display" style="background: #e8f5e8; border: 2px solid #2e7d32; border-radius: 4px; padding: 12px; margin-bottom: 15px;">
+                            <div style="font-weight: bold; color: #2e7d32; margin-bottom: 8px;">✓ Default OIDC Provider (Auto-configured):</div>
+                            <div style="background: white; padding: 12px; border-radius: 4px; border: 1px solid #ddd; margin-bottom: 8px;">
+                                <div style="font-family: monospace; font-size: 13px; margin-bottom: 6px;">
+                                    <strong>URL:</strong> https://kc.<span id="oidc-domain-placeholder">your-domain.com</span>/realms/airm
+                                </div>
+                                <div style="font-family: monospace; font-size: 13px;">
+                                    <strong>Audiences:</strong> k8s
+                                </div>
+                            </div>
+                            <small style="color: #666; font-size: 11px;">This default provider is automatically configured using your Domain field above</small>
+                        </div>
+
+                        <!-- Additional OIDC providers section header -->
+                        <label for="additional-oidc-providers" style="margin-top: 15px; margin-bottom: 8px;">Additional OIDC Providers (Optional)</label>
                         <div class="description">Configure additional OIDC providers for authentication. Each provider needs a URL and at least one audience (client ID).</div>
                         <div id="oidc-providers-container">
                             <!-- Dynamic OIDC providers will be added here -->
@@ -1575,10 +1593,20 @@
         function updateDomainPlaceholder() {
             const domainInput = document.getElementById('DOMAIN');
             const placeholder = document.getElementById('domain-placeholder');
+            const oidcPlaceholder = document.getElementById('oidc-domain-placeholder');
             
-            if (domainInput && placeholder) {
+            if (domainInput) {
                 const domain = domainInput.value.trim() || 'your-domain.com';
-                placeholder.textContent = domain;
+                
+                // Update TLS-SAN placeholder
+                if (placeholder) {
+                    placeholder.textContent = domain;
+                }
+                
+                // Update OIDC placeholder
+                if (oidcPlaceholder) {
+                    oidcPlaceholder.textContent = domain;
+                }
             }
         }
 
