@@ -11,7 +11,7 @@ on:
         description: 'Is this a prerelease?'
         required: false
         type: boolean
-        default: 'true'
+        default: true
 
 jobs:
   prd-sync-check:
