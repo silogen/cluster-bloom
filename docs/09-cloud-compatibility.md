@@ -159,4 +159,4 @@ Establish CI/CD pipelines for:
 - Global availability zones
 - Enterprise support options
 
-See [PRD.md](../../PRD.md) for product overview and [06-technical-architecture.md](06-technical-architecture.md) for technical details.
+See [PRD.md](../../PRD.md) for product overview and [06-technical-architecture.md](07-technical-architecture.md) for technical details.

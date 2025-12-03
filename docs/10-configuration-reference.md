@@ -343,5 +343,5 @@ export CERT_MANAGER_EMAIL="admin@example.com"
 ## See Also
 
 - [PRD.md](../../PRD.md) - Product overview
-- [06-technical-architecture.md](06-technical-architecture.md) - Technical architecture
-- [07-installation-guide.md](07-installation-guide.md) - Installation procedures
+- [06-technical-architecture.md](07-technical-architecture.md) - Technical architecture
+- [07-installation-guide.md](08-installation-guide.md) - Installation procedures

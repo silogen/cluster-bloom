@@ -32,7 +32,7 @@ graph LR
     style B fill:#2196F3
 ```
 
-**[📄 Detailed Documentation](docs/prd/01-rke2-deployment.md)**
+**[📄 Detailed Documentation](./01-rke2-deployment.md)**
 
 ### 2. AMD GPU Support with ROCm
 Automated AMD GPU driver installation, device detection, permission configuration, and Kubernetes GPU resource integration for AI/ML workloads.
@@ -48,7 +48,7 @@ graph LR
     style D fill:#9C27B0
 ```
 
-**[📄 Detailed Documentation](docs/prd/02-rocm-support.md)**
+**[📄 Detailed Documentation](./02-rocm-support.md)**
 
 ### 3. Storage Management with Longhorn
 Distributed block storage with automatic disk detection, interactive selection, persistent mounting, and Longhorn CSI integration for reliable persistent volumes.
@@ -64,7 +64,7 @@ graph LR
     style E fill:#9C27B0
 ```
 
-**[📄 Detailed Documentation](docs/prd/03-storage-management.md)**
+**[📄 Detailed Documentation](./03-storage-management.md)**
 
 ### 4. Network Configuration
 Comprehensive networking with MetalLB load balancing, firewall configuration, multipath storage networking, and time synchronization across cluster nodes.
@@ -81,7 +81,7 @@ graph LR
     style D fill:#FF9800
 ```
 
-**[📄 Detailed Documentation](docs/prd/04-network-configuration.md)**
+**[📄 Detailed Documentation](./04-network-configuration.md)**
 
 ### 5. Interactive Terminal UI
 Rich terminal interface with real-time progress tracking, live log streaming, interactive configuration wizards, and comprehensive error handling and recovery options.
@@ -103,38 +103,58 @@ graph TB
     style E fill:#F44336
 ```
 
-**[📄 Detailed Documentation](docs/prd/05-terminal-ui.md)**
+**[📄 Detailed Documentation](./06-terminal-ui.md)**
 
 ### 6. Configuration Management
 Flexible configuration system supporting YAML files, environment variables, and CLI flags with comprehensive validation and an interactive wizard for guided setup.
 
-**[📄 Configuration Reference](docs/prd/09-configuration-reference.md)**
+**[📄 Configuration Reference](./10-configuration-reference.md)**
 
 ### 7. Node Validation and Testing
 Comprehensive pre-deployment validation ensures node readiness, connectivity, GPU availability, and proper firewall configuration before any system modifications.
 
-**[📄 Installation Guide](docs/prd/07-installation-guide.md)**
+**[📄 Installation Guide](./08-installation-guide.md)**
 
 ### 8. TLS Certificate Management
-Flexible certificate management with automatic Let's Encrypt integration via cert-manager, support for existing certificates, or self-signed certificate generation for custom domains.
+
+Flexible certificate management with three deployment options:
+
+**Automatic Certificate Management (Recommended)**
+- Uses cert-manager with Let's Encrypt for automatic certificate provisioning and renewal
+- Free SSL certificates with no manual intervention required
+- Requires public domain accessible from the internet
+
+**Existing Certificates**
+- Bring your own TLS certificates from organizational CA
+- Provide certificate and key file paths during setup
+- Ideal for enterprise environments with existing PKI
+
+**Self-Signed Certificates**
+- Automatically generated for development and testing
+- Valid for 365 days with 2048-bit RSA encryption
+- Includes wildcard subdomain support
+
+All certificates are stored as Kubernetes secrets in the `kgateway-system` namespace and integrated with the cluster's ingress controller for HTTPS traffic.
+
+**[📄 Certificate Management Details](./05-certificate-management.md)**
 
 ### 9. Web UI and Monitoring Interface
 Browser-based configuration wizard with real-time monitoring dashboard, error recovery interface, and responsive design for remote cluster management from any device.
 
-**[📄 Technical Architecture](docs/prd/06-technical-architecture.md)**
+**[📄 Technical Architecture](./07-technical-architecture.md)**
 
 ### 10. Comprehensive Configuration Validation
 Pre-flight validation system checks all configuration, resources, and system requirements before making any changes, providing clear error messages with actionable fixes.
 
-**[📄 Configuration Reference](docs/prd/09-configuration-reference.md)**
+**[📄 Configuration Reference](./10-configuration-reference.md)**
 
 ## Technical Architecture
 
 ClusterBloom uses a modular architecture with command-based interfaces, sequential installation pipelines, and multiple interaction modes (CLI, TUI, Web UI). The system executes in three phases: pre-Kubernetes system preparation, Kubernetes cluster setup, and post-Kubernetes add-on deployment.
 
-**[📄 Technical Architecture Documentation](docs/prd/06-technical-architecture.md)**
+**[📄 Technical Architecture Documentation](./07-technical-architecture.md)**
 
-**[📄 Configuration Reference](docs/prd/09-configuration-reference.md)**
+**[📄 Configuration Reference](./10-configuration-reference.md)**
 
 ## User Experience
 
@@ -229,7 +249,7 @@ Browser-based testing with chromedp and comprehensive mock system:
 - End-to-end integration tests
 - Form validation and dynamic behavior tests
 
-**[📄 Technical Architecture](docs/prd/06-technical-architecture.md)**
+**[📄 Technical Architecture](./07-technical-architecture.md)**
 
 ## Current Limitations and Known Issues
 
@@ -292,16 +312,16 @@ Browser-based testing with chromedp and comprehensive mock system:
 
 ### For Developers and Operators
 
-**[📄 Manual Installation Guide](docs/prd/07-installation-guide.md)**  
+**[📄 Manual Installation Guide](./08-installation-guide.md)**  
 Complete manual installation procedures for understanding automation or performing custom installations.
 
-**[📄 Cloud Platform Compatibility](docs/prd/08-cloud-compatibility.md)**  
+**[📄 Cloud Platform Compatibility](./09-cloud-compatibility.md)**  
 Infrastructure dependencies, migration strategies, and configuration for multi-platform deployments (EKS, AKS, GKE).
 
-**[📄 Configuration Reference](docs/prd/09-configuration-reference.md)**  
+**[📄 Configuration Reference](./10-configuration-reference.md)**  
 Comprehensive configuration variable reference with examples and validation rules.
 
-**[📄 Technical Architecture](docs/prd/06-technical-architecture.md)**  
+**[📄 Technical Architecture](./07-technical-architecture.md)**  
 Detailed technical architecture, component organization, and implementation patterns.
 
 ## Conclusion
