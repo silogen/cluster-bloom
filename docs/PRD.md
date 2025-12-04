@@ -15,6 +15,28 @@ ClusterBloom automates the deployment of Kubernetes clusters with AMD GPU suppor
 - Organizations requiring automated cluster provisioning with AMD GPU support
 - Teams needing reliable storage configuration with Longhorn
 
+## Sizing your cluster
+
+Cluster-bloom can create a cluster from a single node PoC to a large, high-availability, enterprise-grade scalable cluster of 100s or 1000s of nodes. Below are sizing guidelines for three tiers of cluster capabilities.
+
+### Small (Workstation)
+
+A single-node rke2 cluster for individual developers.
+1–2 GPUs, 64–128 GB RAM, 1–4 TB SSD.
+Best for demos, experimentation, and local development.
+
+### Medium (Team)
+
+A 1–3 node cluster for a small team.
+Up to 8 GPUs, 128–256 GB RAM per GPU node, internal S3 up to 10 TB.
+Optional light HA of the control plane.
+
+### Large (Production Path)
+
+A scalable, HA rke2 cluster with dedicated control plane nodes.
+8+ GPUs, large NVMe pools, external HA object storage.
+Designed for growth to 100+ nodes.
+
 ## Core Features
 
 ### 1. Automated RKE2 Kubernetes Deployment
