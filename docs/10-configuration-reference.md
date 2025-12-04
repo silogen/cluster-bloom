@@ -154,11 +154,11 @@ Configuration sources in priority order (highest to lowest):
 - **Example**: `CF_VALUES: "/path/to/values.yaml"`
 
 #### OIDC_URL
-- **Type**: String (URL)
+- **Type**: String (URL)  
 - **Default**: None
-- **Description**: OIDC provider URL for authentication (legacy single provider)
-- **Example**: `OIDC_URL: "https://auth.example.com"`
-- **Note**: Use `ADDITIONAL_OIDC_PROVIDERS` for multiple provider support
+- **Description**: **DEPRECATED** - Legacy OIDC provider configuration (removed in this branch)
+- **Replacement**: Use `ADDITIONAL_OIDC_PROVIDERS` for multiple provider support
+- **Breaking Change**: This variable no longer works - migrate to `ADDITIONAL_OIDC_PROVIDERS`
 
 #### ADDITIONAL_OIDC_PROVIDERS
 - **Type**: Array of OIDC Provider objects

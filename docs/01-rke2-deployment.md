@@ -32,26 +32,11 @@ Automated OIDC provider configuration for Kubernetes API server authentication:
 - **Audience Configuration**: Configurable client IDs per provider
 - **RKE2 Integration**: Automatic kube-apiserver configuration
 
-**Default OIDC Configuration**:
+**OIDC Configuration**:
 ```yaml
 # Generated automatically when DOMAIN is set
 kube-apiserver-arg:
-  - "oidc-issuer-url=https://kc.example.com/realms/airm"
-  - "oidc-client-id=k8s"
-  - "oidc-username-claim=preferred_username"
-  - "oidc-groups-claim=groups"
-```
-
-**Multiple OIDC Providers**:
-```yaml
-# When ADDITIONAL_OIDC_PROVIDERS is configured
-kube-apiserver-arg:
-  - "oidc-issuer-url=https://kc.example.com/realms/airm"
-  - "oidc-client-id=k8s"
-  - "oidc-issuer-url=https://auth.company.com/realms/main"
-  - "oidc-client-id=kubernetes"
-  - "oidc-username-claim=preferred_username"
-  - "oidc-groups-claim=groups"
+  - "--authentication-config=/etc/rancher/rke2/auth/auth-config.yaml"
 ```
 
 **Authentication Flow**:

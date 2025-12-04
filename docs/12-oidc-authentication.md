@@ -25,10 +25,7 @@ DOMAIN: "cluster.example.com"
 **Generated RKE2 Configuration**:
 ```yaml
 kube-apiserver-arg:
-  - "oidc-issuer-url=https://kc.cluster.example.com/realms/airm"
-  - "oidc-client-id=k8s"
-  - "oidc-username-claim=preferred_username"
-  - "oidc-groups-claim=groups"
+  - "--authentication-config=/etc/rancher/rke2/auth/auth-config.yaml"
 ```
 
 ## Multiple Provider Configuration
@@ -75,41 +72,6 @@ ADDITIONAL_OIDC_PROVIDERS:
 - Set valid redirect URIs for kubectl
 - Configure user attributes mapping (username, groups)
 
-### Auth0 Integration
-```yaml
-DOMAIN: "cluster.example.com"  
-ADDITIONAL_OIDC_PROVIDERS:
-  - url: "https://your-tenant.auth0.com/"
-    audiences: ["your-k8s-client-id"]
-```
-
-**Auth0 Configuration**:
-- Create Machine to Machine application
-- Configure audience and scopes
-- Set up custom claims for username and groups
-- Configure logout URLs
-
-### Azure AD Integration
-```yaml
-DOMAIN: "cluster.example.com"
-ADDITIONAL_OIDC_PROVIDERS:
-  - url: "https://login.microsoftonline.com/{tenant-id}/v2.0"
-    audiences: ["api://k8s-cluster"]
-```
-
-**Azure AD Configuration**:
-- Register application in Azure AD
-- Configure API permissions for Microsoft Graph
-- Set up group claims in token configuration
-- Configure redirect URIs for kubectl
-
-### Google Workspace Integration
-```yaml
-DOMAIN: "cluster.example.com"
-ADDITIONAL_OIDC_PROVIDERS:
-  - url: "https://accounts.google.com"
-    audiences: ["your-google-client-id.googleusercontent.com"]
-```
 
 ## Authentication Flow
 
@@ -236,10 +198,13 @@ kubectl auth can-i --list
 **Verify OIDC Configuration**:
 ```bash
 # Check RKE2 configuration
-sudo cat /etc/rancher/rke2/config.yaml | grep oidc
+sudo cat /etc/rancher/rke2/config.yaml | grep authentication-config
+
+# Check authentication configuration
+sudo cat /etc/rancher/rke2/auth/auth-config.yaml
 
 # Check kube-apiserver logs
-sudo journalctl -u rke2-server | grep oidc
+sudo journalctl -u rke2-server | grep authentication
 ```
 
 **Test Token Locally**:
@@ -265,18 +230,6 @@ echo "your-jwt-token" | cut -d. -f2 | base64 -d | jq .
 
 ## Advanced Configuration
 
-### Custom Claims Mapping
-Override default claim names if provider uses different fields:
-
-```yaml
-# In RKE2_EXTRA_CONFIG
-kube-apiserver-arg:
-  - "oidc-username-claim=email"
-  - "oidc-groups-claim=roles"
-  - "oidc-username-prefix=oidc:"
-  - "oidc-groups-prefix=oidc:"
-```
-
 ### Multiple Audience Support
 Configure multiple client IDs for single provider:
 
@@ -288,17 +241,6 @@ ADDITIONAL_OIDC_PROVIDERS:
       - "k8s-staging"  
       - "kubectl-cli"
       - "dashboard"
-```
-
-### Provider-specific Configuration
-Some providers require additional parameters:
-
-```yaml
-# For providers requiring additional scopes or parameters
-RKE2_EXTRA_CONFIG: |
-  kube-apiserver-arg:
-    - "oidc-required-claim=hd=example.com"  # Google Workspace domain
-    - "oidc-ca-file=/etc/ssl/certs/provider-ca.pem"  # Custom CA
 ```
 
 ## See Also

@@ -222,18 +222,16 @@ EOF
 
 **Create Audit Policy**
 ```bash
-sudo mkdir -p /etc/rancher/rke2/audit
-cat <<EOF | sudo tee /etc/rancher/rke2/audit/policy.yaml
+sudo mkdir -p /etc/rancher/rke2
+cat <<EOF | sudo tee /etc/rancher/rke2/audit-policy.yaml
 apiVersion: audit.k8s.io/v1
 kind: Policy
 rules:
   - level: Metadata
 EOF
 
-# Update RKE2 config to enable audit logging
-cat <<EOF | sudo tee -a /etc/rancher/rke2/config.yaml
-audit-policy-file: /etc/rancher/rke2/audit/policy.yaml
-EOF
+# Audit policy and logs are configured automatically in RKE2 config
+# No manual config update needed
 ```
 
 **Start RKE2 Service**

@@ -297,27 +297,62 @@ ADDITIONAL_OIDC_PROVIDERS:
 **Configuration Generation Pipeline**:
 1. **Default Provider Generation**: Auto-create `https://kc.{DOMAIN}/realms/airm` with audience `k8s`
 2. **Provider Validation**: Validate HTTPS URLs and audience format for additional providers
-3. **Configuration Merging**: Combine default + additional providers into RKE2 config
-4. **RKE2 Integration**: Generate `kube-apiserver-arg` configurations
-5. **Service Restart**: Trigger RKE2 server restart with new authentication configuration
+3. **Certificate Fetching**: Retrieve SSL certificates for each OIDC provider
+4. **Authentication Configuration**: Generate `/etc/rancher/rke2/auth/auth-config.yaml` with all providers
+5. **RKE2 Integration**: Configure kube-apiserver to use authentication configuration file
+6. **Service Restart**: Trigger RKE2 server restart with new authentication configuration
 
 **RKE2 Integration**:
 Generated configuration for `/etc/rancher/rke2/config.yaml`:
 ```yaml
 kube-apiserver-arg:
-  - "oidc-issuer-url=https://kc.example.com/realms/airm"
-  - "oidc-client-id=k8s"
-  - "oidc-issuer-url=https://auth.company.com/realms/main"  
-  - "oidc-client-id=kubernetes"
-  - "oidc-username-claim=preferred_username"
-  - "oidc-groups-claim=groups"
+  - "--authentication-config=/etc/rancher/rke2/auth/auth-config.yaml"
+```
+
+**Authentication Configuration File**:
+Generated `/etc/rancher/rke2/auth/auth-config.yaml`:
+```yaml
+apiVersion: apiserver.config.k8s.io/v1
+kind: AuthenticationConfiguration
+jwt:
+- issuer:
+    url: https://kc.example.com/realms/airm
+    certificateAuthority: |
+      -----BEGIN CERTIFICATE-----
+      ...
+      -----END CERTIFICATE-----
+    audiences:
+    - k8s
+  claimMappings:
+    username:
+      claim: preferred_username
+      prefix: "oidc:"
+    groups:
+      claim: groups
+      prefix: "oidc:"
+- issuer:
+    url: https://auth.company.com/realms/main
+    certificateAuthority: |
+      -----BEGIN CERTIFICATE-----
+      ...
+      -----END CERTIFICATE-----
+    audiences:
+    - kubernetes
+    - api
+  claimMappings:
+    username:
+      claim: preferred_username
+      prefix: "oidc:"
+    groups:
+      claim: groups
+      prefix: "oidc:"
 ```
 
 **Authentication Flow**:
 1. User authenticates with configured OIDC provider (Keycloak, Auth0, etc.)
 2. Provider issues JWT token with user claims and group memberships
 3. kubectl sends token via `Authorization: Bearer <jwt-token>` header
-4. kube-apiserver validates token against configured OIDC providers
+4. kube-apiserver validates token against configured OIDC providers using authentication configuration
 5. Kubernetes RBAC rules determine user permissions based on token claims
 
 ### Kubernetes Ecosystem Integration
