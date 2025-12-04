@@ -84,24 +84,10 @@ ADDITIONAL_OIDC_PROVIDERS:
 6. **Authorization**: Kubernetes RBAC determines user permissions
 
 ### kubectl Configuration
-After obtaining token from OIDC provider:
 
-```bash
-# Configure kubectl with OIDC token
-kubectl config set-credentials oidc-user \
-  --auth-provider=oidc \
-  --auth-provider-arg=idp-issuer-url=https://your-provider.com \
-  --auth-provider-arg=client-id=your-client-id \
-  --auth-provider-arg=refresh-token=your-refresh-token \
-  --auth-provider-arg=id-token=your-id-token
+ClusterBloom automatically generates `kubeconfig-oidc-template.yaml` after installation. Administrators can distribute this template to developers for easy OIDC authentication setup with `kubectl oidc-login` plugin.
 
-# Use the OIDC user
-kubectl config set-context oidc-context \
-  --cluster=your-cluster \
-  --user=oidc-user
-
-kubectl config use-context oidc-context
-```
+**For Developers**: Use the provided kubeconfig template file - no manual configuration needed.
 
 ## RBAC Integration
 
@@ -136,21 +122,23 @@ roleRef:
 ```
 
 ### Group-based Access Control
-Map OIDC groups to Kubernetes RBAC:
+ClusterBloom automatically configures these standard OIDC groups:
 
 ```yaml
-# Different access levels for different groups
+# ClusterBloom standard OIDC groups
 subjects:
 - kind: Group
-  name: "k8s-admins"     # Full cluster admin
+  name: "oidc:admin"      # Full cluster admin
   apiGroup: rbac.authorization.k8s.io
 - kind: Group  
-  name: "k8s-developers" # Namespace-specific access
+  name: "oidc:developer"  # Edit access
   apiGroup: rbac.authorization.k8s.io
 - kind: Group
-  name: "k8s-viewers"    # Read-only access
+  name: "oidc:viewer"     # Read-only access
   apiGroup: rbac.authorization.k8s.io
 ```
+
+**Note**: Configure these group mappings in your OIDC provider to match your users' roles.
 
 ## Troubleshooting
 
