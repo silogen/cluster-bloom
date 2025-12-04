@@ -1,0 +1,15 @@
+# tests/integration/step/10_PrepareRKE2Step/02-no-oidc-providers/bloom.yaml
+# Test case: No OIDC providers configured - should use default configuration only
+ENABLED_STEPS: PrepareRKE2Step
+DOMAIN: test.local
+FIRST_NODE: true
+GPU_NODE: false
+USE_CERT_MANAGER: false
+CERT_OPTION: generate
+
+# Note: NO ADDITIONAL_OIDC_PROVIDERS section - testing default behavior
+
+mocks:
+  PrepareRKE2.RunCommand.chmod:
+    output: ""
+    args: ["chmod", "0755", "/etc/rancher/rke2"]

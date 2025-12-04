@@ -90,10 +90,16 @@ func SetArguments() {
 
 		// Authentication
 		{
-			Key:         "OIDC_URL",
-			Default:     "",
-			Description: "The URL of the OIDC provider.",
-			Type:        "url",
+			Key:         "ADDITIONAL_OIDC_PROVIDERS",
+			Default:     []interface{}{},
+			Description: "Additional OIDC providers for authentication. Each provider needs a URL and audiences. Example: [{\"url\": \"https://provider.com/realms/k8s\", \"audiences\": [\"k8s\"]}]",
+			Type:        "array",
+		},
+		{
+			Key:         "ADDITIONAL_TLS_SAN_URLS",
+			Default:     []string{},
+			Description: "Additional TLS Subject Alternative Name URLs for Kubernetes API server certificate. Example: [\"api.example.com\", \"kubernetes.example.com\"]",
+			Type:        "string-array",
 		},
 
 		// ROCm configuration (depends on GPU_NODE)
@@ -148,6 +154,12 @@ func SetArguments() {
 			Default:     "https://get.rke2.io",
 			Description: "RKE2 installation script URL.",
 			Type:        "non-empty-url",
+		},
+		{
+			Key:         "RKE2_VERSION",
+			Default:     "v1.34.1+rke2r1",
+			Description: "Specific RKE2 version to install (e.g., \"v1.34.1+rke2r1\").",
+			Type:        "string",
 		},
 		{
 			Key:         "RKE2_EXTRA_CONFIG",

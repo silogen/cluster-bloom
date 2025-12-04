@@ -154,10 +154,44 @@ Configuration sources in priority order (highest to lowest):
 - **Example**: `CF_VALUES: "/path/to/values.yaml"`
 
 #### OIDC_URL
-- **Type**: String (URL)
+- **Type**: String (URL)  
 - **Default**: None
-- **Description**: OIDC provider URL for authentication
-- **Example**: `OIDC_URL: "https://auth.example.com"`
+- **Description**: **DEPRECATED** - Legacy OIDC provider configuration (removed in this branch)
+- **Replacement**: Use `ADDITIONAL_OIDC_PROVIDERS` for multiple provider support
+- **Breaking Change**: This variable no longer works - migrate to `ADDITIONAL_OIDC_PROVIDERS`
+
+#### ADDITIONAL_OIDC_PROVIDERS
+- **Type**: Array of OIDC Provider objects
+- **Default**: `[]` (empty, uses default provider)
+- **Description**: List of additional OIDC providers for multi-provider authentication
+- **Required When**: Multiple authentication providers needed
+- **Example**: 
+  ```yaml
+  ADDITIONAL_OIDC_PROVIDERS:
+    - url: "https://kc.plat-dev-3.silogen.ai/realms/airm"
+      audiences: ["k8s"]
+    - url: "https://kc.plat-dev-4.silogen.ai/realms/k8s"
+      audiences: ["kubernetes", "api"]
+  ```
+- **Default Behavior**: If empty, auto-configures `https://kc.{DOMAIN}/realms/airm` with audience `k8s`
+- **Provider Object Fields**:
+  - `url`: HTTPS URL of the OIDC provider (required)
+  - `audiences`: Array of client IDs/audiences (required)
+
+#### RKE2_VERSION
+- **Type**: String (version)
+- **Default**: `""` (latest stable)
+- **Description**: Specific RKE2 version to install
+- **Example**: `RKE2_VERSION: "v1.34.1+rke2r1"`
+- **Format**: Must include RKE2 suffix (e.g., "+rke2r1")
+
+#### ADDITIONAL_TLS_SAN_URLS
+- **Type**: Array of strings (domain names)
+- **Default**: `[]`
+- **Description**: Additional TLS Subject Alternative Name URLs for Kubernetes API server certificate
+- **Example**: `ADDITIONAL_TLS_SAN_URLS: ["api.example.com", "kubernetes.example.com"]`
+- **Auto-generated**: Always includes `k8s.{DOMAIN}` - do not duplicate
+- **Validation**: Each entry must be a valid domain name format
 
 #### ONEPASSWORD_CONNECT_TOKEN
 - **Type**: String
@@ -220,7 +254,11 @@ CERT_MANAGER_EMAIL: "admin@example.com"
 
 # Integration
 CLUSTERFORGE_RELEASE: "v1.2.3"
-OIDC_URL: "https://auth.example.com"
+ADDITIONAL_OIDC_PROVIDERS:
+  - url: "https://kc.example.com/realms/airm"
+    audiences: ["k8s"]
+  - url: "https://auth.example.com/realms/main"
+    audiences: ["kubernetes", "api"]
 
 # Advanced options
 RKE2_EXTRA_CONFIG: |
@@ -292,6 +330,12 @@ DOMAIN: "ml-cluster.example.com"
 USE_CERT_MANAGER: true
 CERT_MANAGER_EMAIL: "admin@example.com"
 CLUSTERFORGE_RELEASE: "v1.2.3"
+RKE2_VERSION: "v1.34.1+rke2r1"
+ADDITIONAL_OIDC_PROVIDERS:
+  - url: "https://kc.ml-cluster.example.com/realms/airm"
+    audiences: ["k8s"]
+ADDITIONAL_TLS_SAN_URLS:
+  - "api.ml-cluster.example.com"
 ```
 
 ### Additional Worker Node (GPU-enabled)

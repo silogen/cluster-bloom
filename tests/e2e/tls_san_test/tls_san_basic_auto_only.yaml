@@ -1,0 +1,11 @@
+# tests/e2e/tls_san_test/tls_san_basic_auto_only.yaml
+# E2E Test case: Basic TLS-SAN auto-generation (k8s.<domain> only)
+ENABLED_STEPS: PrepareRKE2Step
+DOMAIN: test.local
+FIRST_NODE: true
+GPU_NODE: false
+USE_CERT_MANAGER: false
+CERT_OPTION: generate
+
+# No ADDITIONAL_TLS_SAN_URLS - testing auto-generation only
+# Expected: Only k8s.test.local should be generated

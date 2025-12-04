@@ -37,7 +37,7 @@ func init() {
 		{Key: "CERT_OPTION", Default: "", Description: "Certificate option when USE_CERT_MANAGER is false. Choose 'existing' or 'generate'.", Type: "enum", Options: []string{"existing", "generate"}, Dependencies: "USE_CERT_MANAGER=false,FIRST_NODE=true"},
 		{Key: "TLS_CERT", Default: "", Description: "Path to TLS certificate file for ingress. Required if CERT_OPTION is 'existing'.", Type: "file", Dependencies: "CERT_OPTION=existing"},
 		{Key: "TLS_KEY", Default: "", Description: "Path to TLS private key file for ingress. Required if CERT_OPTION is 'existing'.", Type: "file", Dependencies: "CERT_OPTION=existing"},
-		{Key: "OIDC_URL", Default: "", Description: "The URL of the OIDC provider.", Type: "url"},
+		{Key: "ADDITIONAL_OIDC_PROVIDERS", Default: []interface{}{}, Description: "Additional OIDC providers for authentication. Each provider needs a URL and audiences.", Type: "array"},
 		{Key: "ROCM_BASE_URL", Default: "https://repo.radeon.com/amdgpu-install/6.3.2/ubuntu/", Description: "ROCm base repository URL.", Type: "non-empty-url", Dependencies: "GPU_NODE=true"},
 		{Key: "RKE2_INSTALLATION_URL", Default: "https://get.rke2.io", Description: "RKE2 installation script URL.", Type: "non-empty-url"},
 		{Key: "CLUSTERFORGE_RELEASE", Default: "https://github.com/silogen/cluster-forge/releases/download/v1.0.0/release-enterprise-ai-v1.0.0.tar.gz", Description: "The version of Cluster-Forge to install. Pass the URL for a specific release, or 'none' to not install ClusterForge.", Type: "url"},
@@ -355,7 +355,9 @@ func TestValidateArgs(t *testing.T) {
 				"GPU_NODE":              true,
 				"DOMAIN":                "cluster.example.com",
 				"USE_CERT_MANAGER":      true,
-				"OIDC_URL":              "https://auth.example.com",
+				"ADDITIONAL_OIDC_PROVIDERS": []map[string]interface{}{
+					{"url": "https://auth.example.com/realms/k8s", "audiences": []string{"k8s"}},
+				},
 				"ROCM_BASE_URL":         "https://repo.radeon.com/amdgpu-install/6.3.2/ubuntu/",
 				"RKE2_INSTALLATION_URL": "https://get.rke2.io",
 				"CLUSTERFORGE_RELEASE":  "https://github.com/example/repo/releases/v1.0/release.tar.gz",
@@ -390,11 +392,11 @@ func TestValidateArgs(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "Invalid URL",
+			name: "Invalid OIDC providers format",
 			config: map[string]interface{}{
 				"FIRST_NODE": true,
 				"DOMAIN":     "cluster.example.com",
-				"OIDC_URL":   "ftp://invalid.com",
+				"ADDITIONAL_OIDC_PROVIDERS": "invalid-format",
 			},
 			wantErr: true,
 		},

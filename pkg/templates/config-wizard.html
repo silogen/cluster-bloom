@@ -118,6 +118,42 @@
         }
         .error { color: #d32f2f; margin-top: 5px; font-size: 14px; }
         .success { color: #2e7d32; margin-top: 5px; font-size: 14px; }
+        .oidc-provider {
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 15px;
+            background-color: #fafafa;
+            position: relative;
+        }
+        .oidc-provider-header {
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #333;
+        }
+        .oidc-provider-remove {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: #d32f2f;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 25px;
+            height: 25px;
+            cursor: pointer;
+            font-size: 14px;
+            line-height: 1;
+        }
+        .oidc-provider-remove:hover {
+            background: #b71c1c;
+        }
+        .oidc-provider .form-group {
+            margin-bottom: 15px;
+        }
+        .oidc-provider .form-group:last-child {
+            margin-bottom: 0;
+        }
     </style>
 </head>
 <body>
@@ -310,6 +346,42 @@
                             ✓ Must be readable and should be protected (600 permissions)
                         </small>
                     </div>
+
+                    <div class="form-group">
+                        <label for="TLS_SAN_CONFIG">TLS Subject Alternative Names (SANs)</label>
+                        <div class="description">Configure additional domain names for your Kubernetes API server certificate.</div>
+                        
+                        <!-- Auto-generated default TLS-SAN display -->
+                        <div id="default-tls-san-display" style="background: #e8f5e8; border: 2px solid #2e7d32; border-radius: 4px; padding: 12px; margin-bottom: 10px;">
+                            <div style="font-weight: bold; color: #2e7d32; margin-bottom: 5px;">✓ Default TLS-SAN (Auto-generated):</div>
+                            <div id="default-tls-san-value" style="font-family: monospace; background: white; padding: 8px; border-radius: 2px; border: 1px solid #ddd;">
+                                k8s.<span id="domain-placeholder">your-domain.com</span>
+                            </div>
+                            <small style="color: #666; font-size: 11px;">This is automatically generated from your Domain field above</small>
+                        </div>
+
+                        <!-- Additional TLS-SANs input -->
+                        <label for="ADDITIONAL_TLS_SAN_URLS" style="margin-top: 15px; margin-bottom: 8px;">Additional TLS-SANs (Optional)</label>
+                        <input type="text" id="ADDITIONAL_TLS_SAN_URLS" name="ADDITIONAL_TLS_SAN_URLS" 
+                               placeholder="api.example.com, kubernetes.example.com"
+                               pattern="^([a-z0-9]([a-z0-9\\-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9\\-]*[a-z0-9])?)*)(\\s*,\\s*[a-z0-9]([a-z0-9\\-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9\\-]*[a-z0-9])?)*)*$|^$"
+                               title="Comma-separated list of valid domain names (e.g., api.example.com, kubernetes.example.com)"
+                               oninput="validateTLSSANs()">
+                        <small class="help-text" style="color: #666; font-size: 12px; margin-top: 4px; display: block;">
+                            ✓ Format: Comma-separated domain names (e.g., api.example.com, kubernetes.example.com)<br>
+                            ✓ Each domain must be valid (letters, numbers, hyphens, dots)<br>
+                            ⚠️ Do not include the auto-generated k8s.&lt;domain&gt; - it's added automatically
+                        </small>
+
+                        <!-- Validation warnings -->
+                        <div id="tls-san-warnings" style="display: none; margin-top: 10px;"></div>
+
+                        <!-- Preview of final TLS-SAN list -->
+                        <div id="tls-san-preview" style="display: none; margin-top: 10px; padding: 10px; background: #f5f5f5; border-radius: 4px; border: 1px solid #ddd;">
+                            <div style="font-weight: bold; margin-bottom: 5px;">📋 Final TLS-SAN List Preview:</div>
+                            <ul id="tls-san-preview-list" style="margin: 0; padding-left: 20px; font-family: monospace; font-size: 13px;"></ul>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -318,15 +390,47 @@
                 <div class="section-header">⚙️ Advanced Configuration</div>
                 <div class="section-content">
                     <div class="form-group">
-                        <label for="OIDC_URL">OIDC Provider URL</label>
-                        <div class="description">URL of the OIDC provider for authentication. Leave empty to skip OIDC configuration.</div>
-                        <input type="url" id="OIDC_URL" name="OIDC_URL" placeholder="https://your-oidc-provider.com"
-                               pattern="^https?://.*$|^$"
-                               title="Must be a valid HTTP or HTTPS URL">
+                        <label for="RKE2_VERSION">RKE2 Version</label>
+                        <div class="description">Specific RKE2 version to install. Leave empty for latest version.</div>
+                        <input type="text" id="RKE2_VERSION" name="RKE2_VERSION" placeholder="v1.34.1+rke2r1" value="v1.34.1+rke2r1"
+                               pattern="^v[0-9]+\.[0-9]+\.[0-9]+(\+rke2r[0-9]+)?$|^$"
+                               title="Must be a valid RKE2 version format (e.g., v1.34.1+rke2r1)">
                         <small class="help-text" style="color: #666; font-size: 12px; margin-top: 4px; display: block;">
-                            ✓ Format: https://provider.com or http://provider.local<br>
-                            ✓ Must be accessible from the cluster<br>
-                            ✓ Leave empty to skip OIDC setup
+                            ✓ Format: v1.34.1+rke2r1 or similar<br>
+                            ✓ Leave empty for latest version<br>
+                            ✓ Must be a valid RKE2 release
+                        </small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="ADDITIONAL_OIDC_PROVIDERS">OIDC Providers</label>
+                        <div class="description">Configure OIDC providers for authentication. The default provider is automatically configured, and you can add additional providers if needed.</div>
+                        
+                        <!-- Auto-generated default OIDC provider display -->
+                        <div id="default-oidc-display" style="background: #e8f5e8; border: 2px solid #2e7d32; border-radius: 4px; padding: 12px; margin-bottom: 15px;">
+                            <div style="font-weight: bold; color: #2e7d32; margin-bottom: 8px;">✓ Default OIDC Provider (Auto-configured):</div>
+                            <div style="background: white; padding: 12px; border-radius: 4px; border: 1px solid #ddd; margin-bottom: 8px;">
+                                <div style="font-family: monospace; font-size: 13px; margin-bottom: 6px;">
+                                    <strong>URL:</strong> https://kc.<span id="oidc-domain-placeholder">your-domain.com</span>/realms/airm
+                                </div>
+                                <div style="font-family: monospace; font-size: 13px;">
+                                    <strong>Audiences:</strong> k8s
+                                </div>
+                            </div>
+                            <small style="color: #666; font-size: 11px;">This default provider is automatically configured using your Domain field above</small>
+                        </div>
+
+                        <!-- Additional OIDC providers section header -->
+                        <label for="additional-oidc-providers" style="margin-top: 15px; margin-bottom: 8px;">Additional OIDC Providers (Optional)</label>
+                        <div class="description">Configure additional OIDC providers for authentication. Each provider needs a URL and at least one audience (client ID).</div>
+                        <div id="oidc-providers-container">
+                            <!-- Dynamic OIDC providers will be added here -->
+                        </div>
+                        <button type="button" class="btn btn-secondary" onclick="addOIDCProvider()" style="margin-top: 10px;">+ Add OIDC Provider</button>
+                        <small class="help-text" style="color: #666; font-size: 12px; margin-top: 8px; display: block;">
+                            ✓ URL: Must be HTTPS (e.g., https://keycloak.example.com/realms/main)<br>
+                            ✓ Audiences: Exact client ID names from your OIDC provider configuration<br>
+                            ✓ Leave empty to skip additional OIDC setup
                         </small>
                     </div>
 
@@ -571,8 +675,32 @@
             for (let [key, value] of formData.entries()) {
                 const input = document.querySelector(`[name="${key}"]`);
                 if (!input) continue;
+                
+                // Skip individual OIDC provider fields - we'll handle them separately
+                if (key.startsWith('oidc-url-') || key.startsWith('oidc-audiences-')) {
+                    continue;
+                }
+                
                 if (input.type !== 'checkbox' && value.trim()) {
                     config[key] = value.trim();
+                }
+            }
+
+            // Handle OIDC providers separately using our helper function
+            const oidcProviders = getAllOIDCProviders();
+            if (oidcProviders.length > 0) {
+                config.ADDITIONAL_OIDC_PROVIDERS = oidcProviders;
+            }
+
+            // Handle ADDITIONAL_TLS_SAN_URLS - convert comma-separated string to array
+            const additionalSANsInput = document.getElementById('ADDITIONAL_TLS_SAN_URLS');
+            if (additionalSANsInput && additionalSANsInput.value.trim()) {
+                const additionalSANs = additionalSANsInput.value.trim()
+                    .split(',')
+                    .map(san => san.trim())
+                    .filter(san => san.length > 0);
+                if (additionalSANs.length > 0) {
+                    config.ADDITIONAL_TLS_SAN_URLS = additionalSANs;
                 }
             }
 
@@ -716,12 +844,54 @@
             // Collect form data using shared helper
             const config = collectFormData();
 
+            // Get OIDC providers for validation
+            const oidcProviders = getAllOIDCProviders();
+
             // Validate required fields
             const firstNode = config.FIRST_NODE !== false;
             const useCertManager = config.USE_CERT_MANAGER === true;
             const certOption = config.CERT_OPTION;
 
             let errors = [];
+
+            // Validate OIDC providers for duplicates and conflicts
+            if (oidcProviders.length > 0) {
+                // Validate for duplicate URLs and conflicts with default provider
+                const domain = config.DOMAIN || '';
+                const defaultOidcUrl = `https://kc.${domain}/realms/airm`;
+                console.log('OIDC Validation - Domain:', domain);
+                console.log('OIDC Validation - Default URL:', defaultOidcUrl);
+                console.log('OIDC Validation - Providers:', oidcProviders);
+                
+                const providedUrls = new Set();
+                let duplicateError = null;
+                
+                for (let i = 0; i < oidcProviders.length; i++) {
+                    const provider = oidcProviders[i];
+                    
+                    // Check for conflict with default provider
+                    if (provider.url === defaultOidcUrl) {
+                        duplicateError = `❌ OIDC Provider ${i + 1}: URL "${provider.url}" conflicts with the default OIDC provider. The default provider already uses this URL for the "airm" realm. Please use a different realm or domain.`;
+                        break;
+                    }
+                    
+                    // Check for duplicates among additional providers
+                    if (providedUrls.has(provider.url)) {
+                        duplicateError = `❌ OIDC Provider ${i + 1}: Duplicate URL "${provider.url}". Each OIDC provider must have a unique URL.`;
+                        break;
+                    }
+                    
+                    providedUrls.add(provider.url);
+                }
+                
+                if (duplicateError) {
+                    console.log('OIDC Duplicate Error Found:', duplicateError);
+                    errors.push(duplicateError);
+                } else {
+                    // Only add OIDC providers if no duplicates found
+                    config.ADDITIONAL_OIDC_PROVIDERS = oidcProviders;
+                }
+            }
 
             // Log all form fields for debugging
             console.log('=== Form Validation Debug ===');
@@ -817,11 +987,11 @@
                 }
             }
 
-            // Validate OIDC URL if provided
-            if (config.OIDC_URL) {
-                validateField('OIDC_URL', 'OIDC_URL');
-                if (!document.getElementById('OIDC_URL').validity.valid) {
-                    errors.push('❌ Invalid OIDC URL - Must be a valid HTTP or HTTPS URL');
+            // Validate RKE2_VERSION if provided
+            if (config.RKE2_VERSION) {
+                validateField('RKE2_VERSION', 'RKE2_VERSION');
+                if (!document.getElementById('RKE2_VERSION').validity.valid) {
+                    errors.push('❌ Invalid RKE2 version format - Must be like v1.34.1+rke2r1');
                 }
             }
 
@@ -1141,13 +1311,14 @@
                             'JOIN_TOKEN': 'join_token',
                             'CLUSTER_DISKS': 'cluster_disks',
                             'CLUSTER_PREMOUNTED_DISKS': 'cluster_premounted_disks',
-                            'OIDC_URL': 'oidc_url',
+                            'RKE2_VERSION': 'rke2_version',
                             'CLUSTERFORGE_RELEASE': 'clusterforge_release',
                             'DISABLED_STEPS': 'disabled_steps',
                             'ENABLED_STEPS': 'enabled_steps',
                             'CERT_OPTION': 'cert_option',
                             'TLS_CERT': 'tls_cert',
-                            'TLS_KEY': 'tls_key'
+                            'TLS_KEY': 'tls_key',
+                            'ADDITIONAL_TLS_SAN_URLS': 'additional_tls_san_urls'
                         };
 
                         Object.entries(stringFieldMap).forEach(([fieldId, configKey]) => {
@@ -1155,16 +1326,27 @@
                             if (element) {
                                 const value = config[configKey];
                                 if (value !== undefined && value !== null && value !== '') {
-                                    element.value = String(value);
+                                    // Special handling for ADDITIONAL_TLS_SAN_URLS - convert array to comma-separated string
+                                    if (fieldId === 'ADDITIONAL_TLS_SAN_URLS' && Array.isArray(value)) {
+                                        element.value = value.join(', ');
+                                    } else {
+                                        element.value = String(value);
+                                    }
                                     // Trigger change event to update any dependent fields
                                     element.dispatchEvent(new Event('change', { bubbles: true }));
-                                    console.log('Set text field', fieldId, 'to', value);
+                                    console.log('Set text field', fieldId, 'to', element.value);
                                     fieldsSet++;
                                 }
                             } else {
                                 fieldsNotFound.push(fieldId);
                             }
                         });
+
+                        // Load OIDC providers from additional_oidc_providers
+                        if (config.additional_oidc_providers && Array.isArray(config.additional_oidc_providers)) {
+                            console.log('Loading', config.additional_oidc_providers.length, 'OIDC providers from config');
+                            loadOIDCProvidersFromConfig(config.additional_oidc_providers);
+                        }
 
                         console.log('Fields successfully set:', fieldsSet);
                         if (fieldsNotFound.length > 0) {
@@ -1251,6 +1433,7 @@
                 loadPrefilledConfig();
                 checkForErrors();
                 styleLonghornDiskInfo();
+                initializeTLSSANValidation();
                 // updateProgress is called inside loadPrefilledConfig
             });
         } else {
@@ -1259,8 +1442,315 @@
             // Don't call updateConditionals here - it's called inside loadPrefilledConfig
             loadPrefilledConfig();
             checkForErrors();
-                styleLonghornDiskInfo();
+            styleLonghornDiskInfo();
+            initializeTLSSANValidation();
             // updateProgress is called inside loadPrefilledConfig
+        }
+
+        // OIDC Provider management functions
+        let oidcProviderCounter = 0;
+
+        function addOIDCProvider() {
+            const container = document.getElementById('oidc-providers-container');
+            const providerId = oidcProviderCounter++;
+            
+            const providerDiv = document.createElement('div');
+            providerDiv.className = 'oidc-provider';
+            providerDiv.id = `oidc-provider-${providerId}`;
+            
+            providerDiv.innerHTML = `
+                <div class="oidc-provider-header">OIDC Provider ${providerId + 1}</div>
+                <button type="button" class="oidc-provider-remove" onclick="removeOIDCProvider(${providerId})" title="Remove this provider">×</button>
+                
+                <div class="form-group">
+                    <label for="oidc-url-${providerId}">Provider URL *</label>
+                    <input type="url" id="oidc-url-${providerId}" name="oidc-url-${providerId}" 
+                           placeholder="https://keycloak.example.com/realms/main"
+                           pattern="^https://.*$"
+                           title="HTTPS is required for security - URL must start with https://"
+                           required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="oidc-audiences-${providerId}">Audiences (Client IDs) *</label>
+                    <input type="text" id="oidc-audiences-${providerId}" name="oidc-audiences-${providerId}"
+                           placeholder="k8s,api,kubernetes"
+                           pattern="^[a-zA-Z0-9_-]+(\\s*,\\s*[a-zA-Z0-9_-]+)*$"
+                           title="Comma-separated client IDs (e.g., k8s,api)"
+                           required>
+                    <small class="help-text" style="color: #666; font-size: 12px; margin-top: 4px; display: block;">
+                        <strong>Important:</strong> Enter the exact client ID names configured in your OIDC provider.<br>
+                        For Keycloak: Go to Clients → [Your Realm] → Check "Client ID" field<br>
+                        Comma-separated list (e.g., k8s, api, kubernetes)
+                    </small>
+                </div>
+            `;
+            
+            container.appendChild(providerDiv);
+            
+            // Add event listeners to the new inputs
+            const newInputs = providerDiv.querySelectorAll('input');
+            newInputs.forEach(input => {
+                input.addEventListener('input', function() {
+                    updateProgress();
+                    this.setCustomValidity('');
+                });
+                input.addEventListener('change', function() {
+                    updateProgress();
+                    this.setCustomValidity('');
+                });
+            });
+            
+            updateProgress();
+            console.log(`Added OIDC provider ${providerId + 1}`);
+        }
+
+        function removeOIDCProvider(providerId) {
+            const providerDiv = document.getElementById(`oidc-provider-${providerId}`);
+            if (providerDiv) {
+                providerDiv.remove();
+                renumberOIDCProviders();
+                updateProgress();
+                console.log(`Removed OIDC provider ${providerId + 1}`);
+            }
+        }
+
+        function renumberOIDCProviders() {
+            const providers = document.querySelectorAll('.oidc-provider');
+            providers.forEach((provider, index) => {
+                const header = provider.querySelector('.oidc-provider-header');
+                if (header) {
+                    header.textContent = `OIDC Provider ${index + 1}`;
+                }
+            });
+        }
+
+        function getAllOIDCProviders() {
+            const providers = [];
+            const providerDivs = document.querySelectorAll('.oidc-provider');
+            
+            providerDivs.forEach((providerDiv) => {
+                const urlInput = providerDiv.querySelector('input[type="url"]');
+                const audiencesInput = providerDiv.querySelector('input[name*="audiences"]');
+                
+                if (urlInput && audiencesInput && urlInput.value.trim() && audiencesInput.value.trim()) {
+                    const url = urlInput.value.trim();
+                    const audiencesStr = audiencesInput.value.trim();
+                    const audiences = audiencesStr.split(',').map(a => a.trim()).filter(a => a.length > 0);
+                    
+                    if (audiences.length > 0) {
+                        providers.push({
+                            url: url,
+                            audiences: audiences
+                        });
+                    }
+                }
+            });
+            
+            return providers;
+        }
+
+        function loadOIDCProvidersFromConfig(oidcProviders) {
+            console.log('loadOIDCProvidersFromConfig called with:', oidcProviders);
+            
+            // Clear any existing providers
+            const container = document.getElementById('oidc-providers-container');
+            if (container) {
+                container.innerHTML = '';
+                oidcProviderCounter = 0;
+            }
+            
+            // Add each provider from the config
+            oidcProviders.forEach((provider, index) => {
+                if (provider.url && provider.audiences && Array.isArray(provider.audiences)) {
+                    console.log(`Loading OIDC provider ${index + 1}: ${provider.url} with audiences:`, provider.audiences);
+                    
+                    // Add the provider form
+                    addOIDCProvider();
+                    
+                    // Fill in the values
+                    const providerId = oidcProviderCounter - 1; // addOIDCProvider incremented counter
+                    const urlInput = document.getElementById(`oidc-url-${providerId}`);
+                    const audiencesInput = document.getElementById(`oidc-audiences-${providerId}`);
+                    
+                    if (urlInput) {
+                        urlInput.value = provider.url;
+                    }
+                    
+                    if (audiencesInput) {
+                        // Convert audiences array to comma-separated string
+                        audiencesInput.value = provider.audiences.join(', ');
+                    }
+                    
+                    console.log(`Populated OIDC provider ${index + 1}: URL=${provider.url}, Audiences=${provider.audiences.join(', ')}`);
+                }
+            });
+            
+            console.log(`Successfully loaded ${oidcProviders.length} OIDC providers from config`);
+        }
+
+        // TLS-SAN validation and preview functions
+        function updateDomainPlaceholder() {
+            const domainInput = document.getElementById('DOMAIN');
+            const placeholder = document.getElementById('domain-placeholder');
+            const oidcPlaceholder = document.getElementById('oidc-domain-placeholder');
+            
+            if (domainInput) {
+                const domain = domainInput.value.trim() || 'your-domain.com';
+                
+                // Update TLS-SAN placeholder
+                if (placeholder) {
+                    placeholder.textContent = domain;
+                }
+                
+                // Update OIDC placeholder
+                if (oidcPlaceholder) {
+                    oidcPlaceholder.textContent = domain;
+                }
+            }
+        }
+
+        function validateTLSSANs() {
+            const domainInput = document.getElementById('DOMAIN');
+            const additionalSANsInput = document.getElementById('ADDITIONAL_TLS_SAN_URLS');
+            const warningsDiv = document.getElementById('tls-san-warnings');
+            const previewDiv = document.getElementById('tls-san-preview');
+            const previewList = document.getElementById('tls-san-preview-list');
+            
+            if (!domainInput || !additionalSANsInput || !warningsDiv || !previewDiv || !previewList) {
+                return;
+            }
+
+            const domain = domainInput.value.trim();
+            const additionalSANsValue = additionalSANsInput.value.trim();
+            
+            // Update domain placeholder
+            updateDomainPlaceholder();
+            
+            // Clear previous warnings and preview
+            warningsDiv.innerHTML = '';
+            warningsDiv.style.display = 'none';
+            previewList.innerHTML = '';
+            
+            // Generate auto-generated TLS-SAN
+            const autoGeneratedSAN = domain ? `k8s.${domain}` : '';
+            const finalSANs = [];
+            const warnings = [];
+            
+            // Add auto-generated SAN first
+            if (autoGeneratedSAN) {
+                finalSANs.push(autoGeneratedSAN);
+            }
+            
+            // Parse additional SANs
+            if (additionalSANsValue) {
+                const additionalSANs = additionalSANsValue.split(',')
+                    .map(san => san.trim())
+                    .filter(san => san.length > 0);
+                
+                // Check for duplicates with auto-generated SAN
+                const duplicatesWithAuto = additionalSANs.filter(san => san === autoGeneratedSAN);
+                if (duplicatesWithAuto.length > 0) {
+                    warnings.push({
+                        type: 'warning',
+                        message: `⚠️ "${autoGeneratedSAN}" is already included by default. You can remove it from the additional list to avoid duplication.`,
+                        duplicates: duplicatesWithAuto
+                    });
+                }
+                
+                // Check for duplicates within additional SANs
+                const seenSANs = new Set();
+                const duplicatesWithinAdditional = [];
+                additionalSANs.forEach(san => {
+                    if (seenSANs.has(san)) {
+                        duplicatesWithinAdditional.push(san);
+                    } else {
+                        seenSANs.add(san);
+                    }
+                });
+                
+                if (duplicatesWithinAdditional.length > 0) {
+                    warnings.push({
+                        type: 'error',
+                        message: `❌ Duplicate entries found in additional TLS-SANs: ${duplicatesWithinAdditional.join(', ')}`,
+                        duplicates: duplicatesWithinAdditional
+                    });
+                }
+                
+                // Add all additional SANs to final list (including duplicates for preview)
+                finalSANs.push(...additionalSANs);
+            }
+            
+            // Show warnings if any
+            if (warnings.length > 0) {
+                warnings.forEach(warning => {
+                    const warningDiv = document.createElement('div');
+                    warningDiv.style.cssText = `
+                        padding: 10px; 
+                        margin-bottom: 5px; 
+                        border-radius: 4px; 
+                        ${warning.type === 'error' ? 
+                            'background: #ffebee; border: 2px solid #d32f2f; color: #d32f2f;' : 
+                            'background: #fff3e0; border: 2px solid #f57c00; color: #f57c00;'
+                        }
+                    `;
+                    warningDiv.innerHTML = `
+                        <div style="font-weight: bold; margin-bottom: 5px;">${warning.message}</div>
+                        ${warning.type === 'warning' ? 
+                            '<small>💡 Tip: The system will handle duplicates automatically, but clean configuration is recommended.</small>' : 
+                            '<small>❌ Please fix the duplicates before submitting.</small>'
+                        }
+                    `;
+                    warningsDiv.appendChild(warningDiv);
+                });
+                warningsDiv.style.display = 'block';
+            }
+            
+            // Show preview if there are SANs to show
+            if (finalSANs.length > 0) {
+                finalSANs.forEach((san, index) => {
+                    const li = document.createElement('li');
+                    const isDuplicate = finalSANs.indexOf(san) !== index;
+                    const isAutoGenerated = index === 0 && san === autoGeneratedSAN;
+                    
+                    li.style.cssText = `
+                        margin-bottom: 3px; 
+                        ${isDuplicate ? 'color: #d32f2f; text-decoration: line-through;' : ''} 
+                        ${isAutoGenerated ? 'font-weight: bold; color: #2e7d32;' : ''}
+                    `;
+                    
+                    li.textContent = san;
+                    if (isAutoGenerated) {
+                        li.title = 'Auto-generated from Domain field';
+                    } else if (isDuplicate) {
+                        li.title = 'Duplicate - will be ignored';
+                    }
+                    
+                    previewList.appendChild(li);
+                });
+                previewDiv.style.display = 'block';
+            } else {
+                previewDiv.style.display = 'none';
+            }
+        }
+
+        // Add event listener to DOMAIN field to update TLS-SAN preview
+        function initializeTLSSANValidation() {
+            const domainInput = document.getElementById('DOMAIN');
+            const additionalSANsInput = document.getElementById('ADDITIONAL_TLS_SAN_URLS');
+            
+            if (domainInput) {
+                domainInput.addEventListener('input', validateTLSSANs);
+                domainInput.addEventListener('change', validateTLSSANs);
+            }
+            
+            if (additionalSANsInput) {
+                additionalSANsInput.addEventListener('input', validateTLSSANs);
+                additionalSANsInput.addEventListener('change', validateTLSSANs);
+            }
+            
+            // Initial validation
+            validateTLSSANs();
         }
     </script>
 </body>

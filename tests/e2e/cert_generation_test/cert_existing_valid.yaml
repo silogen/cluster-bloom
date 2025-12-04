@@ -1,0 +1,14 @@
+# tests/e2e/cert_generation_test/cert_existing_valid.yaml
+# E2E Test case: Using existing valid certificate files
+ENABLED_STEPS: PrepareRKE2Step
+DOMAIN: test.local
+FIRST_NODE: true
+GPU_NODE: false
+USE_CERT_MANAGER: false
+CERT_OPTION: existing
+TLS_CERT: "/tmp/test.crt"
+TLS_KEY: "/tmp/test.key"
+
+# Expected: Should copy existing certificates successfully
+# Note: For e2e testing, you'll need to create test cert files first:
+# openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /tmp/test.key -out /tmp/test.crt -subj "/CN=test.local"
