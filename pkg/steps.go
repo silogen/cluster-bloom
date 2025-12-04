@@ -836,16 +836,18 @@ data:
 
 		LogMessage(Info, "Successfully created domain ConfigMap")
 
+		certOption := viper.GetString("CERT_OPTION")
+		tlsECKeyPath := ""
 		// Handle TLS certificates
 		if !useCertManager {
-			certOption := viper.GetString("CERT_OPTION")
 			tlsCertPath := viper.GetString("TLS_CERT")
 			tlsKeyPath := viper.GetString("TLS_KEY")
 
 			// Handle certificate generation or use existing
 			if certOption == "generate" {
 				LogMessage(Info, "Generating self-signed certificate for domain: "+domain)
-
+				
+				
 				// Create temporary directory for certificate files
 				tempDir, err := os.MkdirTemp("", "bloom-tls-*")
 				if err != nil {
@@ -856,18 +858,29 @@ data:
 
 				tlsCertPath = filepath.Join(tempDir, "tls.crt")
 				tlsKeyPath = filepath.Join(tempDir, "tls.key")
-
+				tlsECKeyPath = filepath.Join(tempDir, "tls.ec.key")
+				tlsAltNames := []string{
+					fmt.Sprintf("DNS:%s", domain),
+					fmt.Sprintf("DNS:*.%s", domain),
+				}
 				// Generate self-signed certificate using openssl
 				cmd := exec.Command("openssl", "req", "-x509", "-nodes", "-days", "365", "-newkey", "rsa:2048",
 					"-keyout", tlsKeyPath,
 					"-out", tlsCertPath,
 					"-subj", fmt.Sprintf("/CN=%s", domain),
-					"-addext", fmt.Sprintf("subjectAltName=DNS:%s,DNS:*.%s", domain, domain))
+					"-addext", fmt.Sprintf("subjectAltName=%s", strings.Join(tlsAltNames, ",")))
 
 				output, err := cmd.CombinedOutput()
 				if err != nil {
 					LogMessage(Error, fmt.Sprintf("Failed to generate self-signed certificate: %v, output: %s", err, string(output)))
 					return StepResult{Error: fmt.Errorf("failed to generate self-signed certificate: %w", err)}
+				}
+				// Convert RSA key to EC key (required by minio)
+				cmd = exec.Command("openssl", "ec", "-in", tlsKeyPath, "-out", tlsECKeyPath)
+				output, err = cmd.CombinedOutput()
+				if err != nil {
+					LogMessage(Error, fmt.Sprintf("Failed to generate EC key from RSA key: %v, output: %s", err, string(output)))
+					return StepResult{Error: fmt.Errorf("failed to generate EC key from RSA key: %w", err)}
 				}
 				LogMessage(Info, "Successfully generated self-signed certificate")
 			} else if certOption == "existing" {
@@ -890,70 +903,28 @@ data:
 			}
 
 			// Create kgateway-system namespace
-			namespaceYAML := `apiVersion: v1
-kind: Namespace
-metadata:
-  name: kgateway-system
-`
-			tmpNsFile, err := os.CreateTemp("", "kgateway-namespace-*.yaml")
-			if err != nil {
-				LogMessage(Error, fmt.Sprintf("Failed to create temporary namespace file: %v", err))
-				return StepResult{Error: fmt.Errorf("failed to create temporary namespace file: %w", err)}
+			namespaceCreatedError := createK8sNamespace("kgateway-system")
+			if namespaceCreatedError != nil {
+				return StepResult{Error: namespaceCreatedError}
 			}
-			defer os.Remove(tmpNsFile.Name())
-
-			if _, err := tmpNsFile.WriteString(namespaceYAML); err != nil {
-				LogMessage(Error, fmt.Sprintf("Failed to write namespace YAML: %v", err))
-				return StepResult{Error: fmt.Errorf("failed to write namespace YAML: %w", err)}
-			}
-			tmpNsFile.Close()
-
-			// Apply the namespace
-			cmd := exec.Command("/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "apply", "-f", tmpNsFile.Name())
-			output, err := cmd.CombinedOutput()
-			if err != nil {
-				LogMessage(Error, fmt.Sprintf("Failed to create kgateway-system namespace: %v, output: %s", err, string(output)))
-				return StepResult{Error: fmt.Errorf("failed to create kgateway-system namespace: %w", err)}
-			}
-			LogMessage(Info, "Successfully created kgateway-system namespace")
-
-			// Create TLS secret using kubectl
-			cmd = exec.Command("/var/lib/rancher/rke2/bin/kubectl",
-				"--kubeconfig", "/etc/rancher/rke2/rke2.yaml",
-				"create", "secret", "tls", "cluster-tls",
-				"--cert", tlsCertPath,
-				"--key", tlsKeyPath,
-				"-n", "kgateway-system",
-				"--dry-run=client", "-o", "yaml")
-
-			secretYAML, err := cmd.Output()
-			if err != nil {
-				LogMessage(Error, fmt.Sprintf("Failed to generate TLS secret: %v", err))
-				return StepResult{Error: fmt.Errorf("failed to generate TLS secret: %w", err)}
+			
+			tlsSecretCreatedError := createK8sTLSSecret("kgateway-system", "cluster-tls", tlsCertPath, tlsKeyPath, false)
+			if tlsSecretCreatedError != nil {
+				return StepResult{Error: tlsSecretCreatedError}
 			}
 
-			// Apply the secret
-			tmpSecretFile, err := os.CreateTemp("", "tls-secret-*.yaml")
-			if err != nil {
-				LogMessage(Error, fmt.Sprintf("Failed to create temporary secret file: %v", err))
-				return StepResult{Error: fmt.Errorf("failed to create temporary secret file: %w", err)}
+			// Create minio-tenant-default namespace if using self-signed certs
+			if (!useCertManager) && (certOption == "generate" ) {
+				minioNamespaceCreatedError := createK8sNamespace("minio-tenant-default")
+				if minioNamespaceCreatedError != nil {
+					return StepResult{Error: minioNamespaceCreatedError}
+				}
+				minioTLSSecretCreatedError := createK8sTLSSecret("minio-tenant-default", "cluster-tls", tlsCertPath, tlsECKeyPath, true)
+				if minioTLSSecretCreatedError != nil {
+					return StepResult{Error: minioTLSSecretCreatedError}
+				}
 			}
-			defer os.Remove(tmpSecretFile.Name())
-
-			if _, err := tmpSecretFile.Write(secretYAML); err != nil {
-				LogMessage(Error, fmt.Sprintf("Failed to write TLS secret: %v", err))
-				return StepResult{Error: fmt.Errorf("failed to write TLS secret: %w", err)}
-			}
-			tmpSecretFile.Close()
-
-			cmd = exec.Command("/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "apply", "-f", tmpSecretFile.Name())
-			output, err = cmd.CombinedOutput()
-			if err != nil {
-				LogMessage(Error, fmt.Sprintf("Failed to create TLS secret: %v, output: %s", err, string(output)))
-				return StepResult{Error: fmt.Errorf("failed to create TLS secret: %w", err)}
-			}
-
-			LogMessage(Info, "Successfully created TLS secret")
+			
 			return StepResult{Message: "Domain ConfigMap and TLS secret created successfully"}
 		} else {
 			LogMessage(Info, "Cert-manager will be used for TLS certificates")

@@ -325,3 +325,86 @@ func PreloadImages() error {
 
 	return nil
 }
+
+func createK8sTLSSecret(namespace string, secretName string, tlsCertPath string, tlsKeyPath string, minioNaming bool) error {
+	var cmd *exec.Cmd
+	if !minioNaming {	
+	// Create TLS secret using kubectl
+		cmd = exec.Command("/var/lib/rancher/rke2/bin/kubectl",
+			"--kubeconfig", "/etc/rancher/rke2/rke2.yaml",
+			"create", "secret", "tls", secretName,
+			"--cert", tlsCertPath,
+			"--key", tlsKeyPath,
+			"-n", namespace,
+			"--dry-run=client", "-o", "yaml")
+	} else {
+		cmd = exec.Command("/var/lib/rancher/rke2/bin/kubectl",
+			"--kubeconfig", "/etc/rancher/rke2/rke2.yaml",
+			"create", "secret", "generic", secretName,
+			fmt.Sprintf("--from-file=public.crt=%s", tlsCertPath),
+			fmt.Sprintf("--from-file=private.key=%s", tlsKeyPath),
+			"-n", namespace,
+			"--dry-run=client", "-o", "yaml")
+	}
+	secretYAML, err := cmd.Output()
+	if err != nil {
+		LogMessage(Error, fmt.Sprintf("Failed to generate TLS secret: %v", err))
+		return fmt.Errorf("failed to generate TLS secret: %w", err)
+	}
+
+	// Apply the secret
+	tmpSecretFile, err := os.CreateTemp("", "tls-secret-*.yaml")
+	if err != nil {
+		LogMessage(Error, fmt.Sprintf("Failed to create temporary secret file: %v", err))
+		return fmt.Errorf("failed to create temporary secret file: %w", err)
+	}
+	defer os.Remove(tmpSecretFile.Name())
+
+	if _, err := tmpSecretFile.Write(secretYAML); err != nil {
+		LogMessage(Error, fmt.Sprintf("Failed to write TLS secret: %v", err))
+		return fmt.Errorf("failed to write TLS secret: %w", err)
+	}
+	tmpSecretFile.Close()
+
+	cmd = exec.Command("/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "apply", "-f", tmpSecretFile.Name())
+	output, cmderr := cmd.CombinedOutput()
+	if cmderr != nil {
+		LogMessage(Error, fmt.Sprintf("Failed to create TLS secret: %v, output: %s", cmderr, string(output)))
+		return fmt.Errorf("failed to create TLS secret: %w", cmderr)
+	}
+
+	LogMessage(Info, fmt.Sprintf("Successfully created TLS secret %s in namespace %s", secretName, namespace))
+	return nil
+}
+
+func createK8sNamespace(namespace string) error {
+	// Create kgateway-system namespace
+	namespaceYAML := fmt.Sprintf(
+`apiVersion: v1
+kind: Namespace
+metadata:
+  name: %s`, namespace)
+
+	tmpNsFile, err := os.CreateTemp("", "namespace-*.yaml")
+	if err != nil {
+		LogMessage(Error, fmt.Sprintf("Failed to create temporary namespace file: %v", err))
+		return fmt.Errorf("failed to create temporary namespace file: %w", err)
+	}
+	defer os.Remove(tmpNsFile.Name())
+
+	if _, err := tmpNsFile.WriteString(namespaceYAML); err != nil {
+		LogMessage(Error, fmt.Sprintf("Failed to write namespace YAML: %v", err))
+		return fmt.Errorf("failed to write namespace YAML: %w", err)
+	}
+	tmpNsFile.Close()
+
+	// Apply the namespace
+	cmd := exec.Command("/var/lib/rancher/rke2/bin/kubectl", "--kubeconfig", "/etc/rancher/rke2/rke2.yaml", "apply", "-f", tmpNsFile.Name())
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		LogMessage(Error, fmt.Sprintf("Failed to create %s namespace: %v, output: %s", namespace, err, string(output)))
+		return fmt.Errorf("failed to create %s namespace: %w", namespace, err)
+	}
+	LogMessage(Info, fmt.Sprintf("Successfully created %s namespace", namespace))
+	return nil
+}
