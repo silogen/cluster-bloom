@@ -1,0 +1,9 @@
+CLUSTERFORGE_RELEASE: none
+DOMAIN: longhorn-test.local
+FIRST_NODE: true
+GPU_NODE: false
+CLUSTER_DISKS: /dev/nvme0n1,/dev/nvme1n1
+NO_DISKS_FOR_CLUSTER: false
+USE_CERT_MANAGER: false
+CERT_OPTION: generate
+PRELOAD_IMAGES: ""

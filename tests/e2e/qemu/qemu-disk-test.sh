@@ -383,18 +383,18 @@ ssh -i "$VM_NAME/qemu-login" -o UserKnownHostsFile=/dev/null -o StrictHostKeyChe
 echo "Running: sudo ./$BLOOM_BINARY_NAME test$CONFIG_NAMES"
 ssh -i "$VM_NAME/qemu-login" -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -p 2222 ubuntu@localhost sudo ./$BLOOM_BINARY_NAME test$CONFIG_NAMES | tee "$VM_NAME-test-results.yaml"
 
-echo ""
-echo "Test execution completed"
-echo "Results saved to: test-results.yaml"
+# echo ""
+# echo "Test execution completed"
+# echo "Results saved to: test-results.yaml"
 
-# Clean up VM
-echo ""
-echo "Cleaning up VM..."
-bash "$VM_NAME/stop-vm.sh" || killall qemu-system-x86_64 2>/dev/null || true
-sleep 2
+# # Clean up VM
+# echo ""
+# echo "Cleaning up VM..."
+# bash "$VM_NAME/stop-vm.sh" || killall qemu-system-x86_64 2>/dev/null || true
+# sleep 2
 
-echo "Removing $VM_NAME directory..."
-rm -rf "$VM_NAME"
+# echo "Removing $VM_NAME directory..."
+# rm -rf "$VM_NAME"
 
-echo ""
-echo "✓ VM deleted and cleaned up"
+# echo ""
+# echo "✓ VM deleted and cleaned up"
