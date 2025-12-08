@@ -1,4 +1,4 @@
-.PHONY: build clean test test-api test-webui help
+.PHONY: build clean test test-api test-webui test-docker help
 
 BINARY_NAME=bloom-v2
 BUILD_DIR=dist
@@ -8,12 +8,13 @@ help:
 	@echo "Bloom V2 Build & Test"
 	@echo ""
 	@echo "Targets:"
-	@echo "  build       Build the bloom-v2 binary"
-	@echo "  clean       Remove build artifacts"
-	@echo "  test        Run all Robot Framework tests"
-	@echo "  test-api    Run API tests only"
-	@echo "  test-webui  Run Web UI tests only"
-	@echo "  help        Show this help message"
+	@echo "  build        Build the bloom-v2 binary"
+	@echo "  clean        Remove build artifacts"
+	@echo "  test         Run all Robot Framework tests (requires pip)"
+	@echo "  test-api     Run API tests only (requires pip)"
+	@echo "  test-webui   Run Web UI tests only (requires pip)"
+	@echo "  test-docker  Run all tests in Docker (no pip needed)"
+	@echo "  help         Show this help message"
 
 build:
 	@echo "Building $(BINARY_NAME)..."
@@ -38,3 +39,7 @@ test-api: build
 test-webui: build
 	@echo "Running Web UI tests..."
 	@cd tests/robot && ./run_tests.sh webui/
+
+test-docker: build
+	@echo "Running all tests in Docker..."
+	@cd tests/robot && ./run_tests_docker.sh

@@ -25,29 +25,39 @@ tests/robot/
 
 ## Running Tests
 
-### All Tests
+### Option 1: Using Docker (Recommended)
+
+No local Python/pip installation needed:
 
 ```bash
+# From project root
+make test-docker
+
+# Or directly
+cd tests/robot
+./run_tests_docker.sh
+./run_tests_docker.sh api/      # API tests only
+./run_tests_docker.sh webui/    # Web UI tests only
+```
+
+### Option 2: Local Python Environment
+
+Requires Robot Framework installed locally:
+
+```bash
+# All tests
+make test
+
+# API tests only
+make test-api
+
+# Web UI tests only
+make test-webui
+
+# Or directly
 cd tests/robot
 ./run_tests.sh
-```
-
-### Specific Test Suite
-
-```bash
-./run_tests.sh api/schema.robot
-./run_tests.sh webui/form.robot
-```
-
-### API Tests Only
-
-```bash
 ./run_tests.sh api/
-```
-
-### Web UI Tests Only
-
-```bash
 ./run_tests.sh webui/
 ```
 
