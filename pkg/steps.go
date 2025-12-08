@@ -897,6 +897,16 @@ data:
 					LogMessage(Error, fmt.Sprintf("TLS key file not found: %s", tlsKeyPath))
 					return StepResult{Error: fmt.Errorf("TLS key file not found: %s", tlsKeyPath)}
 				}
+				// Convert RSA key to EC key (required by minio)
+				tlsCertDir := filepath.Dir(filepath.Clean(tlsKeyPath))
+				tlsECKeyPath = filepath.Join(tlsCertDir, "tls.ec.key")
+
+				cmd := exec.Command("openssl", "ec", "-in", tlsKeyPath, "-out", tlsECKeyPath)
+				output, err := cmd.CombinedOutput()
+				if err != nil {
+					LogMessage(Error, fmt.Sprintf("Failed to generate EC key from RSA key: %v, output: %s", err, string(output)))
+					return StepResult{Error: fmt.Errorf("failed to generate EC key from RSA key: %w", err)}
+				}
 			} else {
 				LogMessage(Info, "Domain configured but no certificate option specified")
 				return StepResult{Message: "Domain ConfigMap created but no TLS configuration applied"}
@@ -913,16 +923,14 @@ data:
 				return StepResult{Error: tlsSecretCreatedError}
 			}
 
-			// Create minio-tenant-default namespace if using self-signed certs
-			if (!useCertManager) && (certOption == "generate" ) {
-				minioNamespaceCreatedError := createK8sNamespace("minio-tenant-default")
-				if minioNamespaceCreatedError != nil {
-					return StepResult{Error: minioNamespaceCreatedError}
-				}
-				minioTLSSecretCreatedError := createK8sTLSSecret("minio-tenant-default", "cluster-tls", tlsCertPath, tlsECKeyPath, true)
-				if minioTLSSecretCreatedError != nil {
-					return StepResult{Error: minioTLSSecretCreatedError}
-				}
+			// Create minio-tenant-default namespace and add TLS secret
+			minioNamespaceCreatedError := createK8sNamespace("minio-tenant-default")
+			if minioNamespaceCreatedError != nil {
+				return StepResult{Error: minioNamespaceCreatedError}
+			}
+			minioTLSSecretCreatedError := createK8sTLSSecret("minio-tenant-default", "cluster-tls", tlsCertPath, tlsECKeyPath, true)
+			if minioTLSSecretCreatedError != nil {
+				return StepResult{Error: minioTLSSecretCreatedError}
 			}
 			
 			return StepResult{Message: "Domain ConfigMap and TLS secret created successfully"}
