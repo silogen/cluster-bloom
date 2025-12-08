@@ -49,4 +49,10 @@ node_modules/
 
 # Task files
 # tasks.json
-# tasks/ 
+# tasks/
+
+# Python virtual environment
+venv/
+
+# Robot Framework test results
+tests/robot/results/ 
