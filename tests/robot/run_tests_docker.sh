@@ -20,6 +20,7 @@ docker run --rm \
     -v "$PROJECT_ROOT:/workspace" \
     -w /workspace/tests/robot \
     --network host \
+    --user "$(id -u):$(id -g)" \
     marketsquare/robotframework-browser:latest \
     robot \
     --outputdir results \
