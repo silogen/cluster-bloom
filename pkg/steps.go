@@ -839,12 +839,12 @@ data:
 			// Get certificate paths from PrepareRKE2Step
 			tlsCertPath := viper.GetString("RUNTIME_TLS_CERT")
 			tlsKeyPath := viper.GetString("RUNTIME_TLS_KEY")
-			
+
 			if tlsCertPath == "" || tlsKeyPath == "" {
 				LogMessage(Error, "Certificate paths not found - PrepareRKE2 may have failed")
 				return StepResult{Error: fmt.Errorf("certificate paths not found - PrepareRKE2 may have failed")}
 			}
-			
+
 			// Verify files still exist
 			if _, err := os.Stat(tlsCertPath); os.IsNotExist(err) {
 				LogMessage(Error, fmt.Sprintf("Certificate file missing: %s", tlsCertPath))
@@ -857,7 +857,7 @@ data:
 
 			// Create ClusterRoleBindings for OIDC authorization
 			LogMessage(Info, "Creating OIDC ClusterRoleBindings")
-			
+
 			clusterRoleBindingFile, err := os.CreateTemp("", "cluster-role-binding-*.yaml")
 			if err != nil {
 				LogMessage(Error, fmt.Sprintf("Failed to create temporary ClusterRoleBinding file: %v", err))
@@ -948,7 +948,7 @@ metadata:
 			LogMessage(Info, "Successfully created TLS secret")
 			return StepResult{Message: "Domain ConfigMap and TLS secret created successfully"}
 		}
-		
+
 		return StepResult{Message: "Domain ConfigMap created successfully"}
 	},
 }
@@ -1096,6 +1096,14 @@ users:
 			if domain != "" {
 				LogMessage(Info, "For OIDC authentication, configure kubectl using kubeconfig-oidc-template.yaml")
 			}
+			//if viper.GetString("CLUSTERFORGE_RELEASE") != "none" {
+			LogMessage(Info, fmt.Sprintf("The username for devuser at https://airmui.%s is 'devuser@%s'\n", domain, domain))
+			LogMessage(Info, "The devuser password can be retrieved with the following command once the airm resources are up and running:\n")
+			LogMessage(Info, "kubectl -n keycloak get secret airm-devuser-credentials -o jsonpath='{.data.KEYCLOAK_INITIAL_DEVUSER_PASSWORD}' | base64 --decode\n")
+			LogMessage(Info, fmt.Sprintf("The Keycloak admin username for https://kc.%s is 'silogen-admin'\n", domain))
+			LogMessage(Info, "The keycloak admin password can be retrieved with the following command once the keycloak resources are up and running:\n")
+			LogMessage(Info, "kubectl -n keycloak get secret keycloak-credentials -o jsonpath='{.data.KEYCLOAK_INITIAL_ADMIN_PASSWORD}' | base64 --decode\n")
+			//}
 			return StepResult{Message: "To setup additional nodes to join the cluster, copy and run the command from additional_node_command.txt"}
 		} else {
 			return StepResult{Error: nil}
