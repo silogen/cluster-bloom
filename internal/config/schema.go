@@ -89,7 +89,7 @@ func Schema() []Argument {
 			Type:         "string",
 			Default:      "",
 			Description:  "Path to TLS certificate file for ingress. Required if CERT_OPTION is 'existing'.",
-			Dependencies: "CERT_OPTION=existing",
+			Dependencies: "CERT_OPTION=existing,FIRST_NODE=true",
 			Required:     true,
 		},
 		{
@@ -97,7 +97,7 @@ func Schema() []Argument {
 			Type:         "string",
 			Default:      "",
 			Description:  "Path to TLS private key file for ingress. Required if CERT_OPTION is 'existing'.",
-			Dependencies: "CERT_OPTION=existing",
+			Dependencies: "CERT_OPTION=existing,FIRST_NODE=true",
 			Required:     true,
 		},
 
