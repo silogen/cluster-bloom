@@ -3,7 +3,7 @@ Documentation     Test conditional field visibility in Bloom V2 Web UI
 Library           Browser
 
 *** Variables ***
-${BASE_URL}       http://localhost:8080
+${BASE_URL}       http://localhost:62080
 
 *** Test Cases ***
 Test First Node Checkbox Controls Additional Node Fields

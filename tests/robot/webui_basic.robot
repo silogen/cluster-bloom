@@ -4,7 +4,7 @@ Library           RequestsLibrary
 Library           Collections
 
 *** Variables ***
-${BASE_URL}       http://localhost:8080
+${BASE_URL}       http://localhost:62080
 
 *** Test Cases ***
 Test Schema Endpoint Returns Valid JSON

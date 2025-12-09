@@ -3,7 +3,7 @@ Documentation     Browser-based Web UI Tests for Bloom V2
 Library           Browser
 
 *** Variables ***
-${BASE_URL}       http://localhost:8080
+${BASE_URL}       http://localhost:62080
 
 *** Test Cases ***
 Test Web UI Loads Successfully

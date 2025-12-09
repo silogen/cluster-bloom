@@ -4,7 +4,7 @@ Library           Browser
 Library           RequestsLibrary
 
 *** Variables ***
-${BASE_URL}       http://localhost:8080
+${BASE_URL}       http://localhost:62080
 
 *** Test Cases ***
 Test ADDITIONAL_TLS_SAN_URLS Field Exists

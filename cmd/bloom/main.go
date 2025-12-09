@@ -35,18 +35,20 @@ func main() {
 }
 
 func runWebUI() {
-	port := 8080
+	port := 62078
+	portSpecified := false
 
 	// Parse port flag if provided
 	for i, arg := range os.Args {
 		if arg == "--port" || arg == "-p" {
 			if i+1 < len(os.Args) {
 				fmt.Sscanf(os.Args[i+1], "%d", &port)
+				portSpecified = true
 			}
 		}
 	}
 
-	server := &webui.Server{Port: port}
+	server := &webui.Server{Port: port, PortSpecified: portSpecified}
 	if err := server.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to start web UI: %v\n", err)
 		os.Exit(1)
@@ -65,9 +67,9 @@ func printUsage() {
 	fmt.Println("  help        Show this help message")
 	fmt.Println()
 	fmt.Println("Web UI Options:")
-	fmt.Println("  --port, -p  Port to run web UI on (default: 8080)")
+	fmt.Println("  --port, -p  Specify port (fails if in use). Default: auto-find from 62078")
 	fmt.Println()
 	fmt.Println("Examples:")
-	fmt.Println("  bloom webui")
-	fmt.Println("  bloom webui --port 9090")
+	fmt.Println("  bloom webui              # Auto-find available port from 62078")
+	fmt.Println("  bloom webui --port 9090  # Use port 9090 (fails if in use)")
 }
