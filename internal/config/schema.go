@@ -10,6 +10,8 @@ type Argument struct {
 	Dependencies string   `json:"dependencies,omitempty"`
 	Required     bool     `json:"required"`
 	Section      string   `json:"section,omitempty"`
+	Pattern      string   `json:"pattern,omitempty"`      // HTML5 validation pattern
+	PatternTitle string   `json:"patternTitle,omitempty"` // Custom validation error message
 }
 
 // Schema returns all bloom.yaml argument definitions
@@ -42,6 +44,8 @@ func Schema() []Argument {
 			Dependencies: "FIRST_NODE=true",
 			Required:     true,
 			Section:      "📋 Basic Configuration",
+			Pattern:      `^([a-z0-9]([a-z0-9\-]*[a-z0-9])?\.)*[a-z0-9]([a-z0-9\-]*[a-z0-9])?$`,
+			PatternTitle: "Domain must be lowercase alphanumeric with dots/hyphens (e.g., example.com or sub.example.com). Cannot start/end with hyphen or dot, no special characters.",
 		},
 
 		// ========================================
@@ -55,6 +59,8 @@ func Schema() []Argument {
 			Dependencies: "FIRST_NODE=false",
 			Required:     true,
 			Section:      "🔗 Additional Node Configuration",
+			Pattern:      `^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$|^$`,
+			PatternTitle: "Valid IPv4 address format: xxx.xxx.xxx.xxx (0-255 for each octet)",
 		},
 		{
 			Key:          "JOIN_TOKEN",
@@ -87,20 +93,24 @@ func Schema() []Argument {
 			Section:     "💾 Storage Configuration",
 		},
 		{
-			Key:         "CLUSTER_DISKS",
-			Type:        "string",
-			Default:     "",
-			Description: "Comma-separated list of disk device paths (e.g., \"/dev/nvme0n1,/dev/nvme1n1\").",
-			Required:    false,
-			Section:     "💾 Storage Configuration",
+			Key:          "CLUSTER_DISKS",
+			Type:         "string",
+			Default:      "",
+			Description:  "Comma-separated list of disk device paths (e.g., \"/dev/nvme0n1,/dev/nvme1n1\").",
+			Required:     false,
+			Section:      "💾 Storage Configuration",
+			Pattern:      `^(/dev/[a-zA-Z0-9]+)(,/dev/[a-zA-Z0-9]+)*$|^$`,
+			PatternTitle: "Enter comma-separated device paths like /dev/nvme0n1,/dev/nvme1n1",
 		},
 		{
-			Key:         "CLUSTER_PREMOUNTED_DISKS",
-			Type:        "string",
-			Default:     "",
-			Description: "Comma-separated list of premounted disk paths for Longhorn.",
-			Required:    false,
-			Section:     "💾 Storage Configuration",
+			Key:          "CLUSTER_PREMOUNTED_DISKS",
+			Type:         "string",
+			Default:      "",
+			Description:  "Comma-separated list of premounted disk paths for Longhorn.",
+			Required:     false,
+			Section:      "💾 Storage Configuration",
+			Pattern:      `^(disk[0-9]+)(,disk[0-9]+)*$|^$`,
+			PatternTitle: "Enter comma-separated disk names like disk1,disk2,disk3",
 		},
 		{
 			Key:         "SKIP_RANCHER_PARTITION_CHECK",
@@ -116,12 +126,14 @@ func Schema() []Argument {
 		// ========================================
 		{
 			Key:          "ADDITIONAL_TLS_SAN_URLS",
-			Type:         "array",
-			Default:      []any{},
-			Description:  "Additional TLS Subject Alternative Name URLs for Kubernetes API server certificate. Example: [\"api.example.com\", \"kubernetes.example.com\"]",
+			Type:         "string",
+			Default:      "",
+			Description:  "Additional TLS Subject Alternative Name URLs for Kubernetes API server certificate. Comma-separated (e.g., \"api.example.com, kubernetes.example.com\").",
 			Dependencies: "FIRST_NODE=true",
 			Required:     false,
 			Section:      "🔒 SSL/TLS Configuration",
+			Pattern:      `^([a-z0-9]([a-z0-9\-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)*)(\\s*,\\s*[a-z0-9]([a-z0-9\-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)*)*$|^$`,
+			PatternTitle: "Enter comma-separated domain names (lowercase alphanumeric with dots/hyphens)",
 		},
 		{
 			Key:          "USE_CERT_MANAGER",
@@ -150,6 +162,8 @@ func Schema() []Argument {
 			Dependencies: "CERT_OPTION=existing,FIRST_NODE=true",
 			Required:     true,
 			Section:      "🔒 SSL/TLS Configuration",
+			Pattern:      `^(/[a-zA-Z0-9._\\-]+)+\\.(pem|crt|cert)$|^$`,
+			PatternTitle: "Certificate file must be an absolute path ending with .pem, .crt, or .cert",
 		},
 		{
 			Key:          "TLS_KEY",
@@ -159,6 +173,8 @@ func Schema() []Argument {
 			Dependencies: "CERT_OPTION=existing,FIRST_NODE=true",
 			Required:     true,
 			Section:      "🔒 SSL/TLS Configuration",
+			Pattern:      `^(/[a-zA-Z0-9._\\-]+)+\\.(pem|key)$|^$`,
+			PatternTitle: "Key file must be an absolute path ending with .pem or .key",
 		},
 
 		// ========================================
@@ -171,6 +187,8 @@ func Schema() []Argument {
 			Description:  "ROCm base repository URL.",
 			Dependencies: "GPU_NODE=true",
 			Required:     false,
+			Pattern:      `https?://.+`,
+			PatternTitle: "Enter a valid URL starting with http:// or https://",
 			Section:      "⚙️ Advanced Configuration",
 		},
 		{
@@ -223,12 +241,14 @@ func Schema() []Argument {
 			Section:     "⚙️ Advanced Configuration",
 		},
 		{
-			Key:         "RKE2_VERSION",
-			Type:        "string",
-			Default:     "v1.34.1+rke2r1",
-			Description: "Specific RKE2 version to install (e.g., \"v1.34.1+rke2r1\").",
-			Required:    false,
-			Section:     "⚙️ Advanced Configuration",
+			Key:          "RKE2_VERSION",
+			Type:         "string",
+			Default:      "v1.34.1+rke2r1",
+			Description:  "Specific RKE2 version to install (e.g., \"v1.34.1+rke2r1\").",
+			Required:     false,
+			Section:      "⚙️ Advanced Configuration",
+			Pattern:      `^v[0-9]+\.[0-9]+\.[0-9]+(\+rke2r[0-9]+)?$|^$`,
+			PatternTitle: "Version must be in format v1.2.3 or v1.2.3+rke2r1",
 		},
 		{
 			Key:         "RKE2_EXTRA_CONFIG",

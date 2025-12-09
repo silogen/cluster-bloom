@@ -46,18 +46,6 @@ function setupEventListeners() {
         }
     });
 
-    // Validate button
-    document.getElementById('validate-btn').addEventListener('click', async () => {
-        // Check HTML5 validation first
-        const form = document.getElementById('config-form');
-        if (!form.checkValidity()) {
-            form.reportValidity();
-            return;
-        }
-
-        await handleValidate();
-    });
-
     // Form submit - generate YAML
     document.getElementById('config-form').addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -82,25 +70,6 @@ function setupEventListeners() {
         document.getElementById('preview').classList.add('hidden');
         document.getElementById('config-form').classList.remove('hidden');
     });
-}
-
-async function handleValidate() {
-    currentConfig = getFormData(schema);
-
-    // Client-side validation
-    const clientErrors = validateForm(schema, currentConfig);
-    if (clientErrors.length > 0) {
-        showError('Validation errors:\n' + clientErrors.join('\n'));
-        return;
-    }
-
-    // Server-side validation
-    const result = await validateWithServer(currentConfig);
-    if (result.valid) {
-        showSuccess('Configuration is valid!');
-    } else {
-        showError('Validation errors:\n' + result.errors.join('\n'));
-    }
 }
 
 async function handleGenerate() {

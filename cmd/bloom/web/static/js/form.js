@@ -93,26 +93,19 @@ function createFormField(argument, config) {
         input.value = getDefaultValue(argument);
         input.placeholder = argument.default || '';
 
-        // Apply HTML5 validation attributes based on field
-        if (argument.key === 'DOMAIN') {
-            input.type = 'text';
-            input.setAttribute('pattern', '[a-z0-9]([a-z0-9\\-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9\\-]*[a-z0-9])?)*');
-            input.title = 'Domain must be lowercase alphanumeric with dots/hyphens (e.g., example.com or sub.example.com). Cannot start/end with hyphen or dot, no special characters.';
-        } else if (argument.key === 'SERVER_IP' || argument.key.endsWith('_IP')) {
-            input.type = 'text';
-            input.setAttribute('pattern', '^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$|^(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$');
-            input.title = 'Enter a valid IPv4 or IPv6 address (not loopback or unspecified)';
-        } else if (argument.key.includes('URL') || argument.key.includes('ISSUER')) {
+        // Apply HTML5 validation attributes from schema
+        if (argument.pattern) {
+            input.setAttribute('pattern', argument.pattern);
+            if (argument.patternTitle) {
+                input.title = argument.patternTitle;
+            }
+        }
+
+        // Set input type based on field characteristics
+        if (argument.key.includes('URL') || argument.key.includes('ISSUER')) {
             input.type = 'url';
-            input.setAttribute('pattern', 'https?://.+');
-            input.title = 'Enter a valid URL starting with http:// or https://';
         } else if (argument.key.includes('EMAIL')) {
             input.type = 'email';
-            input.title = 'Enter a valid email address';
-        } else if (argument.key.includes('CERT') || argument.key.includes('KEY') || argument.key.includes('_FILE')) {
-            input.type = 'text';
-            input.setAttribute('pattern', '\\S+');
-            input.title = 'File path cannot be empty or contain only whitespace';
         } else {
             input.type = 'text';
         }
