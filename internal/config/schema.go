@@ -173,19 +173,37 @@ func Schema() []Argument {
 			Required:    false,
 		},
 
-		// Misc
+		// OIDC Authentication
 		{
-			Key:         "PRELOAD_IMAGES",
-			Type:        "string",
-			Default:     "",
-			Description: "Container images to preload.",
-			Required:    false,
+			Key:          "OIDC_ISSUER_URL",
+			Type:         "string",
+			Default:      "",
+			Description:  "OIDC issuer URL for authentication (e.g., \"https://accounts.google.com\").",
+			Dependencies: "FIRST_NODE=true",
+			Required:     false,
+		},
+		{
+			Key:          "OIDC_ADMIN_EMAIL",
+			Type:         "string",
+			Default:      "",
+			Description:  "Email address of the admin user for OIDC authentication.",
+			Dependencies: "FIRST_NODE=true",
+			Required:     false,
 		},
 		{
 			Key:         "ADDITIONAL_OIDC_PROVIDERS",
 			Type:        "array",
 			Default:     []any{},
 			Description: "Additional OIDC providers for authentication. Each provider needs a URL and audiences.",
+			Required:    false,
+		},
+
+		// Misc
+		{
+			Key:         "PRELOAD_IMAGES",
+			Type:        "string",
+			Default:     "",
+			Description: "Container images to preload.",
 			Required:    false,
 		},
 	}
