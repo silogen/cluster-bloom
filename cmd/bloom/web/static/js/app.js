@@ -27,20 +27,48 @@ async function init() {
 }
 
 function setupEventListeners() {
-    // Form change listener - update visibility and config
+    // Form change listener - update visibility, config, and validate
     document.getElementById('config-form').addEventListener('change', (e) => {
         currentConfig = getFormData(schema);
         updateFieldVisibility(schema, currentConfig);
+
+        // Real-time validation for changed field
+        if (e.target.name) {
+            const argument = schema.find(arg => arg.key === e.target.name);
+            if (argument) {
+                const value = currentConfig[argument.key];
+                const error = validateField(argument, value, currentConfig);
+                clearValidationError(argument.key);
+                if (error) {
+                    showValidationError(argument.key, error);
+                }
+            }
+        }
     });
 
     // Validate button
     document.getElementById('validate-btn').addEventListener('click', async () => {
+        // Check HTML5 validation first
+        const form = document.getElementById('config-form');
+        if (!form.checkValidity()) {
+            form.reportValidity();
+            return;
+        }
+
         await handleValidate();
     });
 
     // Form submit - generate YAML
     document.getElementById('config-form').addEventListener('submit', async (e) => {
         e.preventDefault();
+
+        // Check HTML5 validation first
+        const form = e.target;
+        if (!form.checkValidity()) {
+            form.reportValidity();
+            return;
+        }
+
         await handleGenerate();
     });
 

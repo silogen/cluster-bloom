@@ -50,6 +50,11 @@ function createFormField(argument, config) {
         input.id = argument.key;
         input.name = argument.key;
 
+        // Add required attribute
+        if (argument.required) {
+            input.required = true;
+        }
+
         // Add empty option
         const emptyOption = document.createElement('option');
         emptyOption.value = '';
@@ -67,14 +72,84 @@ function createFormField(argument, config) {
             input.appendChild(option);
         });
 
+        // Validate on change and blur for select
+        const validateSelect = () => {
+            const errorDiv = document.getElementById(`error-${argument.key}`);
+            if (!input.validity.valid) {
+                errorDiv.textContent = input.validationMessage;
+            } else {
+                errorDiv.textContent = '';
+            }
+        };
+
+        input.addEventListener('blur', validateSelect);
+        input.addEventListener('change', validateSelect);
+
         group.appendChild(input);
     } else {
         input = document.createElement('input');
-        input.type = 'text';
         input.id = argument.key;
         input.name = argument.key;
         input.value = getDefaultValue(argument);
         input.placeholder = argument.default || '';
+
+        // Apply HTML5 validation attributes based on field
+        if (argument.key === 'DOMAIN') {
+            input.type = 'text';
+            input.setAttribute('pattern', '[a-z0-9]([a-z0-9\\-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9\\-]*[a-z0-9])?)*');
+            input.title = 'Domain must be lowercase alphanumeric with dots/hyphens (e.g., example.com or sub.example.com). Cannot start/end with hyphen or dot, no special characters.';
+        } else if (argument.key === 'SERVER_IP' || argument.key.endsWith('_IP')) {
+            input.type = 'text';
+            input.setAttribute('pattern', '^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$|^(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$');
+            input.title = 'Enter a valid IPv4 or IPv6 address (not loopback or unspecified)';
+        } else if (argument.key.includes('URL') || argument.key.includes('ISSUER')) {
+            input.type = 'url';
+            input.setAttribute('pattern', 'https?://.+');
+            input.title = 'Enter a valid URL starting with http:// or https://';
+        } else if (argument.key.includes('EMAIL')) {
+            input.type = 'email';
+            input.title = 'Enter a valid email address';
+        } else if (argument.key.includes('CERT') || argument.key.includes('KEY') || argument.key.includes('_FILE')) {
+            input.type = 'text';
+            input.setAttribute('pattern', '\\S+');
+            input.title = 'File path cannot be empty or contain only whitespace';
+        } else {
+            input.type = 'text';
+        }
+
+        // Add required attribute
+        if (argument.required) {
+            input.required = true;
+        }
+
+        // Validate on blur (when focus leaves)
+        input.addEventListener('blur', () => {
+            const errorDiv = document.getElementById(`error-${argument.key}`);
+            if (!input.validity.valid) {
+                // Use custom message from title if pattern mismatch
+                if (input.validity.patternMismatch && input.title) {
+                    input.setCustomValidity(input.title);
+                    errorDiv.textContent = input.title;
+                } else {
+                    input.setCustomValidity('');
+                    errorDiv.textContent = input.validationMessage;
+                }
+            } else {
+                input.setCustomValidity('');
+                errorDiv.textContent = '';
+            }
+        });
+
+        // Clear error and custom validity when user starts typing again
+        input.addEventListener('input', () => {
+            input.setCustomValidity('');
+        });
+
+        input.addEventListener('focus', () => {
+            const errorDiv = document.getElementById(`error-${argument.key}`);
+            errorDiv.textContent = '';
+        });
+
         group.appendChild(input);
     }
 
@@ -134,8 +209,14 @@ function renderForm(schema, config) {
             const field = createFormField(argument, config);
 
             // Set initial visibility based on dependencies
-            if (!isFieldVisible(argument, config)) {
+            const shouldBeVisible = isFieldVisible(argument, config);
+            if (!shouldBeVisible) {
                 field.classList.add('hidden');
+                // Remove required attribute for initially hidden fields
+                const inputElement = document.getElementById(argument.key);
+                if (inputElement) {
+                    inputElement.required = false;
+                }
             }
 
             contentDiv.appendChild(field);
@@ -168,10 +249,20 @@ function updateFieldVisibility(schema, config) {
         if (!field) return;
 
         const shouldBeVisible = isFieldVisible(argument, config);
+        const inputElement = document.getElementById(argument.key);
+
         if (shouldBeVisible) {
             field.classList.remove('hidden');
+            // Restore required attribute if field should be required
+            if (inputElement && argument.required) {
+                inputElement.required = true;
+            }
         } else {
             field.classList.add('hidden');
+            // Remove required attribute for hidden fields to prevent validation errors
+            if (inputElement) {
+                inputElement.required = false;
+            }
         }
     });
 

@@ -6,6 +6,13 @@ function clearValidationErrors() {
     });
 }
 
+function clearValidationError(key) {
+    const errorDiv = document.getElementById(`error-${key}`);
+    if (errorDiv) {
+        errorDiv.textContent = '';
+    }
+}
+
 function showValidationError(key, message) {
     const errorDiv = document.getElementById(`error-${key}`);
     if (errorDiv) {

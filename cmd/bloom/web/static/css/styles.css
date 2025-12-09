@@ -99,12 +99,37 @@ main {
 }
 
 .form-group input[type="text"],
+.form-group input[type="url"],
+.form-group input[type="email"],
 .form-group select {
     width: 100%;
     padding: 10px;
     border: 1px solid #ddd;
     border-radius: 4px;
     font-size: 14px;
+}
+
+/* Only show validation colors when user has interacted with field */
+.form-group input:not(:placeholder-shown):invalid,
+.form-group select:invalid {
+    border-color: #c33;
+}
+
+.form-group input:not(:placeholder-shown):valid:not([value=""]),
+.form-group select:valid:not([value=""]) {
+    border-color: #4CAF50;
+}
+
+.form-group input:focus:invalid {
+    border-color: #c33;
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(204, 51, 51, 0.2);
+}
+
+.form-group input:focus:valid:not([value=""]) {
+    border-color: #4CAF50;
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.2);
 }
 
 .form-group input[type="checkbox"] {
