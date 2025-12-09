@@ -91,15 +91,74 @@ function renderForm(schema, config) {
     const container = document.getElementById('form-fields');
     container.innerHTML = '';
 
+    // Group fields by section
+    const sections = {};
     schema.forEach(argument => {
-        const field = createFormField(argument, config);
-
-        // Set initial visibility based on dependencies
-        if (!isFieldVisible(argument, config)) {
-            field.classList.add('hidden');
+        const section = argument.section || 'Other';
+        if (!sections[section]) {
+            sections[section] = [];
         }
+        sections[section].push(argument);
+    });
 
-        container.appendChild(field);
+    // Render sections in order
+    const sectionOrder = [
+        '📋 Basic Configuration',
+        '🔗 Additional Node Configuration',
+        '💾 Storage Configuration',
+        '🔒 SSL/TLS Configuration',
+        '⚙️ Advanced Configuration',
+        '💻 Command Line Options',
+        'Other'
+    ];
+
+    sectionOrder.forEach(sectionName => {
+        const fields = sections[sectionName];
+        if (!fields || fields.length === 0) return;
+
+        // Create section container
+        const sectionDiv = document.createElement('div');
+        sectionDiv.className = 'config-section';
+
+        // Create section header
+        const headerDiv = document.createElement('div');
+        headerDiv.className = 'section-header';
+        headerDiv.textContent = sectionName;
+        sectionDiv.appendChild(headerDiv);
+
+        // Create section content
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'section-content';
+
+        fields.forEach(argument => {
+            const field = createFormField(argument, config);
+
+            // Set initial visibility based on dependencies
+            if (!isFieldVisible(argument, config)) {
+                field.classList.add('hidden');
+            }
+
+            contentDiv.appendChild(field);
+        });
+
+        sectionDiv.appendChild(contentDiv);
+        container.appendChild(sectionDiv);
+    });
+
+    // Hide sections where all fields are initially hidden
+    hideSectionsWithAllHiddenFields();
+}
+
+function hideSectionsWithAllHiddenFields() {
+    document.querySelectorAll('.config-section').forEach(section => {
+        const allFields = section.querySelectorAll('.form-group');
+        const visibleFields = section.querySelectorAll('.form-group:not(.hidden)');
+
+        if (allFields.length > 0 && visibleFields.length === 0) {
+            section.classList.add('hidden');
+        } else {
+            section.classList.remove('hidden');
+        }
     });
 }
 
@@ -115,6 +174,9 @@ function updateFieldVisibility(schema, config) {
             field.classList.add('hidden');
         }
     });
+
+    // Hide sections where all fields are hidden
+    hideSectionsWithAllHiddenFields();
 }
 
 function getFormData(schema) {

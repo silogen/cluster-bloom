@@ -9,18 +9,22 @@ type Argument struct {
 	Options      []string `json:"options,omitempty"`
 	Dependencies string   `json:"dependencies,omitempty"`
 	Required     bool     `json:"required"`
+	Section      string   `json:"section,omitempty"`
 }
 
 // Schema returns all bloom.yaml argument definitions
 func Schema() []Argument {
 	return []Argument{
-		// Node Configuration
+		// ========================================
+		// 📋 Basic Configuration
+		// ========================================
 		{
 			Key:         "FIRST_NODE",
 			Type:        "bool",
 			Default:     true,
 			Description: "Set to true if this is the first node in the cluster.",
 			Required:    false,
+			Section:     "📋 Basic Configuration",
 		},
 		{
 			Key:         "GPU_NODE",
@@ -28,17 +32,21 @@ func Schema() []Argument {
 			Default:     true,
 			Description: "Set to true if this node has GPUs.",
 			Required:    false,
+			Section:     "📋 Basic Configuration",
 		},
 		{
-			Key:          "CONTROL_PLANE",
-			Type:         "bool",
-			Default:      false,
-			Description:  "Set to true if this node should be a control plane node (only applies when FIRST_NODE is false).",
-			Dependencies: "FIRST_NODE=false",
-			Required:     false,
+			Key:          "DOMAIN",
+			Type:         "string",
+			Default:      "",
+			Description:  "The domain name for the cluster (e.g., \"cluster.example.com\"). Required for first node.",
+			Dependencies: "FIRST_NODE=true",
+			Required:     true,
+			Section:      "📋 Basic Configuration",
 		},
 
-		// Cluster Join (for additional nodes)
+		// ========================================
+		// 🔗 Additional Node Configuration
+		// ========================================
 		{
 			Key:          "SERVER_IP",
 			Type:         "string",
@@ -46,6 +54,7 @@ func Schema() []Argument {
 			Description:  "IP address of the RKE2 server. Required for non-first nodes.",
 			Dependencies: "FIRST_NODE=false",
 			Required:     true,
+			Section:      "🔗 Additional Node Configuration",
 		},
 		{
 			Key:          "JOIN_TOKEN",
@@ -54,19 +63,66 @@ func Schema() []Argument {
 			Description:  "Token for joining additional nodes to the cluster. Required for non-first nodes.",
 			Dependencies: "FIRST_NODE=false",
 			Required:     true,
+			Section:      "🔗 Additional Node Configuration",
 		},
-
-		// Domain & Networking
 		{
-			Key:          "DOMAIN",
-			Type:         "string",
-			Default:      "",
-			Description:  "The domain name for the cluster (e.g., \"cluster.example.com\"). Required for first node.",
-			Dependencies: "FIRST_NODE=true",
-			Required:     true,
+			Key:          "CONTROL_PLANE",
+			Type:         "bool",
+			Default:      false,
+			Description:  "Set to true if this node should be a control plane node (only applies when FIRST_NODE is false).",
+			Dependencies: "FIRST_NODE=false",
+			Required:     false,
+			Section:      "🔗 Additional Node Configuration",
 		},
 
-		// Certificates
+		// ========================================
+		// 💾 Storage Configuration
+		// ========================================
+		{
+			Key:         "NO_DISKS_FOR_CLUSTER",
+			Type:        "bool",
+			Default:     false,
+			Description: "Set to true to skip all disk-related operations.",
+			Required:    false,
+			Section:     "💾 Storage Configuration",
+		},
+		{
+			Key:         "CLUSTER_DISKS",
+			Type:        "string",
+			Default:     "",
+			Description: "Comma-separated list of disk device paths (e.g., \"/dev/nvme0n1,/dev/nvme1n1\").",
+			Required:    false,
+			Section:     "💾 Storage Configuration",
+		},
+		{
+			Key:         "CLUSTER_PREMOUNTED_DISKS",
+			Type:        "string",
+			Default:     "",
+			Description: "Comma-separated list of premounted disk paths for Longhorn.",
+			Required:    false,
+			Section:     "💾 Storage Configuration",
+		},
+		{
+			Key:         "SKIP_RANCHER_PARTITION_CHECK",
+			Type:        "bool",
+			Default:     false,
+			Description: "Set to true to skip /var/lib/rancher partition size check.",
+			Required:    false,
+			Section:     "💾 Storage Configuration",
+		},
+
+		// ========================================
+		// 🔒 SSL/TLS Configuration
+		// ========================================
+		{
+			Key:          "ADDITIONAL_TLS_SAN_URLS",
+			Type:         "array",
+			Default:      []any{},
+			Description:  "Additional TLS Subject Alternative Name URLs for Kubernetes API server certificate. Example: [\"api.example.com\", \"kubernetes.example.com\"]",
+			Dependencies: "FIRST_NODE=true",
+			Required:     false,
+			Section:      "🔒 SSL/TLS Configuration",
+		},
 		{
 			Key:          "USE_CERT_MANAGER",
 			Type:         "bool",
@@ -74,6 +130,7 @@ func Schema() []Argument {
 			Description:  "Use cert-manager with Let's Encrypt for automatic TLS certificates.",
 			Dependencies: "FIRST_NODE=true",
 			Required:     false,
+			Section:      "🔒 SSL/TLS Configuration",
 		},
 		{
 			Key:          "CERT_OPTION",
@@ -83,6 +140,7 @@ func Schema() []Argument {
 			Options:      []string{"existing", "generate"},
 			Dependencies: "USE_CERT_MANAGER=false,FIRST_NODE=true",
 			Required:     true,
+			Section:      "🔒 SSL/TLS Configuration",
 		},
 		{
 			Key:          "TLS_CERT",
@@ -91,6 +149,7 @@ func Schema() []Argument {
 			Description:  "Path to TLS certificate file for ingress. Required if CERT_OPTION is 'existing'.",
 			Dependencies: "CERT_OPTION=existing,FIRST_NODE=true",
 			Required:     true,
+			Section:      "🔒 SSL/TLS Configuration",
 		},
 		{
 			Key:          "TLS_KEY",
@@ -99,55 +158,37 @@ func Schema() []Argument {
 			Description:  "Path to TLS private key file for ingress. Required if CERT_OPTION is 'existing'.",
 			Dependencies: "CERT_OPTION=existing,FIRST_NODE=true",
 			Required:     true,
+			Section:      "🔒 SSL/TLS Configuration",
 		},
 
-		// GPU/ROCm
+		// ========================================
+		// ⚙️ Advanced Configuration
+		// ========================================
 		{
 			Key:          "ROCM_BASE_URL",
 			Type:         "string",
-			Default:      "https://repo.radeon.com/amdgpu-install/6.3.2/ubuntu/",
+			Default:      "https://repo.radeon.com/amdgpu-install/7.0.2/ubuntu/",
 			Description:  "ROCm base repository URL.",
 			Dependencies: "GPU_NODE=true",
 			Required:     false,
-		},
-
-		// Storage
-		{
-			Key:         "CLUSTER_DISKS",
-			Type:        "string",
-			Default:     "",
-			Description: "Comma-separated list of disk device paths (e.g., \"/dev/nvme0n1,/dev/nvme1n1\").",
-			Required:    false,
+			Section:      "⚙️ Advanced Configuration",
 		},
 		{
-			Key:         "CLUSTER_PREMOUNTED_DISKS",
-			Type:        "string",
-			Default:     "",
-			Description: "Comma-separated list of premounted disk paths for Longhorn.",
-			Required:    false,
+			Key:          "ROCM_DEB_PACKAGE",
+			Type:         "string",
+			Default:      "amdgpu-install_7.0.2.70002-1_all.deb",
+			Description:  "ROCm DEB package name.",
+			Dependencies: "GPU_NODE=true",
+			Required:     false,
+			Section:      "⚙️ Advanced Configuration",
 		},
-		{
-			Key:         "NO_DISKS_FOR_CLUSTER",
-			Type:        "bool",
-			Default:     false,
-			Description: "Set to true to skip all disk-related operations.",
-			Required:    false,
-		},
-		{
-			Key:         "SKIP_RANCHER_PARTITION_CHECK",
-			Type:        "bool",
-			Default:     false,
-			Description: "Set to true to skip /var/lib/rancher partition size check.",
-			Required:    false,
-		},
-
-		// ClusterForge
 		{
 			Key:         "CLUSTERFORGE_RELEASE",
 			Type:        "string",
-			Default:     "https://github.com/silogen/cluster-forge/releases/download/deploy/deploy-release.tar.gz",
+			Default:     "https://github.com/silogen/cluster-forge/releases/download/v1.5.2/release-enterprise-ai-v1.5.2.tar.gz",
 			Description: "The version of Cluster-Forge to install. Pass the URL for a specific release, or 'none' to not install ClusterForge.",
 			Required:    false,
+			Section:     "⚙️ Advanced Configuration",
 		},
 		{
 			Key:         "CF_VALUES",
@@ -155,40 +196,7 @@ func Schema() []Argument {
 			Default:     "",
 			Description: "Path to ClusterForge values file (e.g., \"values_cf.yaml\"). Optional.",
 			Required:    false,
-		},
-
-		// Step Control
-		{
-			Key:         "DISABLED_STEPS",
-			Type:        "string",
-			Default:     "",
-			Description: "Comma-separated list of step names to skip (e.g., \"SetupLonghornStep,SetupMetallbStep\").",
-			Required:    false,
-		},
-		{
-			Key:         "ENABLED_STEPS",
-			Type:        "string",
-			Default:     "",
-			Description: "Comma-separated list of steps to run. If empty, run all steps.",
-			Required:    false,
-		},
-
-		// OIDC Authentication
-		{
-			Key:          "OIDC_ISSUER_URL",
-			Type:         "string",
-			Default:      "",
-			Description:  "OIDC issuer URL for authentication (e.g., \"https://accounts.google.com\").",
-			Dependencies: "FIRST_NODE=true",
-			Required:     false,
-		},
-		{
-			Key:          "OIDC_ADMIN_EMAIL",
-			Type:         "string",
-			Default:      "",
-			Description:  "Email address of the admin user for OIDC authentication.",
-			Dependencies: "FIRST_NODE=true",
-			Required:     false,
+			Section:     "⚙️ Advanced Configuration",
 		},
 		{
 			Key:         "ADDITIONAL_OIDC_PROVIDERS",
@@ -196,15 +204,59 @@ func Schema() []Argument {
 			Default:     []any{},
 			Description: "Additional OIDC providers for authentication. Each provider needs a URL and audiences.",
 			Required:    false,
+			Section:     "⚙️ Advanced Configuration",
 		},
-
-		// Misc
 		{
 			Key:         "PRELOAD_IMAGES",
 			Type:        "string",
-			Default:     "",
-			Description: "Container images to preload.",
+			Default:     "docker.io/rocm/pytorch:rocm6.4_ubuntu24.04_py3.12_pytorch_release_2.6.0,docker.io/rocm/vllm:rocm6.4.1_vllm_0.9.0.1_20250605",
+			Description: "Comma-separated list of the container images to preload.",
 			Required:    false,
+			Section:     "⚙️ Advanced Configuration",
+		},
+		{
+			Key:         "RKE2_INSTALLATION_URL",
+			Type:        "string",
+			Default:     "https://get.rke2.io",
+			Description: "RKE2 installation script URL.",
+			Required:    false,
+			Section:     "⚙️ Advanced Configuration",
+		},
+		{
+			Key:         "RKE2_VERSION",
+			Type:        "string",
+			Default:     "v1.34.1+rke2r1",
+			Description: "Specific RKE2 version to install (e.g., \"v1.34.1+rke2r1\").",
+			Required:    false,
+			Section:     "⚙️ Advanced Configuration",
+		},
+		{
+			Key:         "RKE2_EXTRA_CONFIG",
+			Type:        "string",
+			Default:     "",
+			Description: "Additional RKE2 configuration in YAML format to append to /etc/rancher/rke2/config.yaml. Example: \"node-name: my-node\\ntls-san:\\n  - example.com\".",
+			Required:    false,
+			Section:     "⚙️ Advanced Configuration",
+		},
+
+		// ========================================
+		// 💻 Command Line Options
+		// ========================================
+		{
+			Key:         "DISABLED_STEPS",
+			Type:        "string",
+			Default:     "",
+			Description: "Comma-separated list of step names to skip (e.g., \"SetupLonghornStep,SetupMetallbStep\").",
+			Required:    false,
+			Section:     "💻 Command Line Options",
+		},
+		{
+			Key:         "ENABLED_STEPS",
+			Type:        "string",
+			Default:     "",
+			Description: "Comma-separated list of steps to run. If empty, run all steps.",
+			Required:    false,
+			Section:     "💻 Command Line Options",
 		},
 	}
 }

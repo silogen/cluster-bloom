@@ -104,56 +104,6 @@ Test IP Address Field Format Validation
         Should Not Be True    ${json}[valid]    msg=Invalid IP "${ip}" was accepted
     END
 
-Test URL Field Format Validation
-    [Documentation]    Verify OIDC_ISSUER_URL accepts valid URLs and rejects invalid formats
-    [Tags]    validation    format    url
-    Create Session    bloom    ${BASE_URL}
-
-    # Valid URLs
-    ${valid_urls}=    Create List
-    ...    https://auth.example.com
-    ...    http://localhost:8080
-    ...    https://keycloak.example.com/realms/myrealm
-    ...    https://accounts.google.com
-
-    FOR    ${url}    IN    @{valid_urls}
-        ${config}=    Create Dictionary
-        ...    FIRST_NODE=${True}
-        ...    GPU_NODE=${False}
-        ...    DOMAIN=test.example.com
-        ...    USE_CERT_MANAGER=${False}
-        ...    CERT_OPTION=generate
-        ...    NO_DISKS_FOR_CLUSTER=${True}
-        ...    OIDC_ISSUER_URL=${url}
-        ${payload}=    Create Dictionary    config=${config}
-        ${response}=    POST On Session    bloom    /api/validate    json=${payload}    expected_status=any
-        ${json}=    Set Variable    ${response.json()}
-        Should Be True    ${json}[valid]    msg=Valid URL "${url}" was rejected
-    END
-
-    # Invalid URLs
-    ${invalid_urls}=    Create List
-    ...    not-a-url
-    ...    ftp://invalid-protocol.com
-    ...    https://
-    ...    ://missing-scheme.com
-    ...    https://has spaces.com
-
-    FOR    ${url}    IN    @{invalid_urls}
-        ${config}=    Create Dictionary
-        ...    FIRST_NODE=${True}
-        ...    GPU_NODE=${False}
-        ...    DOMAIN=test.example.com
-        ...    USE_CERT_MANAGER=${False}
-        ...    CERT_OPTION=generate
-        ...    NO_DISKS_FOR_CLUSTER=${True}
-        ...    OIDC_ISSUER_URL=${url}
-        ${payload}=    Create Dictionary    config=${config}
-        ${response}=    POST On Session    bloom    /api/validate    json=${payload}    expected_status=any
-        ${json}=    Set Variable    ${response.json()}
-        Should Not Be True    ${json}[valid]    msg=Invalid URL "${url}" was accepted
-    END
-
 Test File Path Field Format Validation
     [Documentation]    Verify TLS_CERT and TLS_KEY accept valid file paths
     [Tags]    validation    format    file-path
@@ -232,57 +182,6 @@ Test Browser Field Format Validation With Real-Time Feedback
     END
 
     Close Browser
-
-Test Email Field Format Validation
-    [Documentation]    Verify OIDC_ADMIN_EMAIL accepts valid emails and rejects invalid formats
-    [Tags]    validation    format    email
-    Create Session    bloom    ${BASE_URL}
-
-    # Valid emails
-    ${valid_emails}=    Create List
-    ...    admin@example.com
-    ...    user.name@domain.co.uk
-    ...    test+tag@gmail.com
-    ...    admin@subdomain.example.org
-
-    FOR    ${email}    IN    @{valid_emails}
-        ${config}=    Create Dictionary
-        ...    FIRST_NODE=${True}
-        ...    GPU_NODE=${False}
-        ...    DOMAIN=test.example.com
-        ...    USE_CERT_MANAGER=${False}
-        ...    CERT_OPTION=generate
-        ...    NO_DISKS_FOR_CLUSTER=${True}
-        ...    OIDC_ADMIN_EMAIL=${email}
-        ${payload}=    Create Dictionary    config=${config}
-        ${response}=    POST On Session    bloom    /api/validate    json=${payload}    expected_status=any
-        ${json}=    Set Variable    ${response.json()}
-        Should Be True    ${json}[valid]    msg=Valid email "${email}" was rejected
-    END
-
-    # Invalid emails
-    ${invalid_emails}=    Create List
-    ...    invalid-email
-    ...    @example.com
-    ...    user@
-    ...    user name@example.com
-    ...    user@domain
-    ...    user@@example.com
-
-    FOR    ${email}    IN    @{invalid_emails}
-        ${config}=    Create Dictionary
-        ...    FIRST_NODE=${True}
-        ...    GPU_NODE=${False}
-        ...    DOMAIN=test.example.com
-        ...    USE_CERT_MANAGER=${False}
-        ...    CERT_OPTION=generate
-        ...    NO_DISKS_FOR_CLUSTER=${True}
-        ...    OIDC_ADMIN_EMAIL=${email}
-        ${payload}=    Create Dictionary    config=${config}
-        ${response}=    POST On Session    bloom    /api/validate    json=${payload}    expected_status=any
-        ${json}=    Set Variable    ${response.json()}
-        Should Not Be True    ${json}[valid]    msg=Invalid email "${email}" was accepted
-    END
 
 Test Required Field Validation
     [Documentation]    Verify required fields are enforced
