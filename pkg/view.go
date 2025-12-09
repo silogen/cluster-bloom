@@ -587,7 +587,6 @@ func RunStepsWithCLI(steps []Step) error {
 		fmt.Printf("The keycloak admin password can be retrieved with the following command once the keycloak resources are up and running:\n")
 		fmt.Println("kubectl -n keycloak get secret keycloak-credentials -o jsonpath='{.data.KEYCLOAK_INITIAL_ADMIN_PASSWORD}' | base64 --decode\n")
 
-		// output keycloak admin username and how to get its password
 	}
 	fmt.Println()
 	if finalErr != nil {
