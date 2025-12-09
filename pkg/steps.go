@@ -917,18 +917,14 @@ data:
 			if namespaceCreatedError != nil {
 				return StepResult{Error: namespaceCreatedError}
 			}
-			
+
+			// Create TLS secrets
 			tlsSecretCreatedError := createK8sTLSSecret("kgateway-system", "cluster-tls", tlsCertPath, tlsKeyPath, false)
 			if tlsSecretCreatedError != nil {
 				return StepResult{Error: tlsSecretCreatedError}
 			}
-
-			// Create minio-tenant-default namespace and add TLS secret
-			minioNamespaceCreatedError := createK8sNamespace("minio-tenant-default")
-			if minioNamespaceCreatedError != nil {
-				return StepResult{Error: minioNamespaceCreatedError}
-			}
-			minioTLSSecretCreatedError := createK8sTLSSecret("minio-tenant-default", "cluster-tls", tlsCertPath, tlsECKeyPath, true)
+			
+			minioTLSSecretCreatedError := createK8sTLSSecret("kgateway-system", "cluster-tls-ec", tlsCertPath, tlsECKeyPath, true)
 			if minioTLSSecretCreatedError != nil {
 				return StepResult{Error: minioTLSSecretCreatedError}
 			}
