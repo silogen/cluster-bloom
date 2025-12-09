@@ -1096,14 +1096,14 @@ users:
 			if domain != "" {
 				LogMessage(Info, "For OIDC authentication, configure kubectl using kubeconfig-oidc-template.yaml")
 			}
-			//if viper.GetString("CLUSTERFORGE_RELEASE") != "none" {
-			LogMessage(Info, fmt.Sprintf("The username for devuser at https://airmui.%s is 'devuser@%s'\n", domain, domain))
-			LogMessage(Info, "The devuser password can be retrieved with the following command once the airm resources are up and running:\n")
-			LogMessage(Info, "kubectl -n keycloak get secret airm-devuser-credentials -o jsonpath='{.data.KEYCLOAK_INITIAL_DEVUSER_PASSWORD}' | base64 --decode\n")
-			LogMessage(Info, fmt.Sprintf("The Keycloak admin username for https://kc.%s is 'silogen-admin'\n", domain))
-			LogMessage(Info, "The keycloak admin password can be retrieved with the following command once the keycloak resources are up and running:\n")
-			LogMessage(Info, "kubectl -n keycloak get secret keycloak-credentials -o jsonpath='{.data.KEYCLOAK_INITIAL_ADMIN_PASSWORD}' | base64 --decode\n")
-			//}
+			if viper.GetString("CLUSTERFORGE_RELEASE") != "none" {
+				LogMessage(Info, fmt.Sprintf("The username for devuser at https://airmui.%s is 'devuser@%s'\n", domain, domain))
+				LogMessage(Info, "The devuser password can be retrieved with the following command once the airm resources are up and running:\n")
+				LogMessage(Info, "kubectl -n keycloak get secret airm-devuser-credentials -o jsonpath='{.data.KEYCLOAK_INITIAL_DEVUSER_PASSWORD}' | base64 --decode\n")
+				LogMessage(Info, fmt.Sprintf("The Keycloak admin username for https://kc.%s is 'silogen-admin'\n", domain))
+				LogMessage(Info, "The keycloak admin password can be retrieved with the following command once the keycloak resources are up and running:\n")
+				LogMessage(Info, "kubectl -n keycloak get secret keycloak-credentials -o jsonpath='{.data.KEYCLOAK_INITIAL_ADMIN_PASSWORD}' | base64 --decode\n")
+			}
 			return StepResult{Message: "To setup additional nodes to join the cluster, copy and run the command from additional_node_command.txt"}
 		} else {
 			return StepResult{Error: nil}
