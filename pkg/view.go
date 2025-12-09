@@ -372,15 +372,15 @@ func RunWebInterfaceWithConfig(port string, steps []Step, configFile string, one
 				}()
 			} else {
 				fmt.Println("✅ Installation completed successfully!")
-				if viper.GetString("CLUSTERFORGE_RELEASE") != "none" {
-					domain := viper.GetString("DOMAIN")
-					fmt.Printf("📝 The username for devuser at https://airmui.%s is 'devuser@%s'\n", domain, domain)
-					fmt.Printf("The devuser password can be retrieved with the following command once the airm resources are up and running:\n")
-					fmt.Println("kubectl -n keycloak get secret airm-devuser-credentials -o jsonpath='{.data.KEYCLOAK_INITIAL_DEVUSER_PASSWORD}' | base64 --decode\n")
-					fmt.Printf("📝 The Keycloak admin username for https://kc.%s is 'silogen-admin'\n", domain)
-					fmt.Printf("The keycloak admin password can be retrieved with the following command once the keycloak resources are up and running:\n")
-					fmt.Println("kubectl -n keycloak get secret keycloak-credentials -o jsonpath='{.data.KEYCLOAK_INITIAL_ADMIN_PASSWORD}' | base64 --decode\n")
-				}
+				//if viper.GetString("CLUSTERFORGE_RELEASE") != "none" {
+				domain := viper.GetString("DOMAIN")
+				fmt.Printf("📝 The username for devuser at https://airmui.%s is 'devuser@%s'\n", domain, domain)
+				fmt.Printf("The devuser password can be retrieved with the following command once the airm resources are up and running:\n")
+				fmt.Println("kubectl -n keycloak get secret airm-devuser-credentials -o jsonpath='{.data.KEYCLOAK_INITIAL_DEVUSER_PASSWORD}' | base64 --decode\n")
+				fmt.Printf("📝 The Keycloak admin username for https://kc.%s is 'silogen-admin'\n", domain)
+				fmt.Printf("The keycloak admin password can be retrieved with the following command once the keycloak resources are up and running:\n")
+				fmt.Println("kubectl -n keycloak get secret keycloak-credentials -o jsonpath='{.data.KEYCLOAK_INITIAL_ADMIN_PASSWORD}' | base64 --decode\n")
+				//}
 
 				// In one-shot mode, exit after successful installation
 				if oneShot {
