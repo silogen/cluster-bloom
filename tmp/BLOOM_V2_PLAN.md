@@ -401,15 +401,157 @@ Before starting implementation, need to decide:
    - Package structure?
    - Plugin architecture?
 
+## Implementation Status
+
+### ✅ Completed
+
+**Phase 3: Web UI (HIGH PRIORITY)** - COMPLETE
+- ✅ Web-based bloom.yaml generator (`bloom webui` command)
+- ✅ Schema-driven dynamic form generation from Go backend
+- ✅ HTML5 real-time validation with V1 pattern compatibility
+- ✅ Conditional field visibility based on dependencies
+- ✅ File save to server's cwd with custom filename
+- ✅ Minimal YAML output (only non-default values)
+- ✅ FIRST_NODE and GPU_NODE always included
+- ✅ Port management (auto-discovery from 62078, explicit with --port)
+- ✅ Robot Framework tests (10 essential tests, 100% passing)
+- ✅ V1/V2 schema parity - all V1 arguments present
+
+**Commits:**
+- `eb4d523` feat(webui): add file save with custom filename and minimal YAML output
+- `8f5d384` feat(webui): implement schema-driven validation with V1 pattern compatibility
+- `3a7b079` feat(webui): add HTML5 field validation with real-time feedback
+- `9a3895a` feat(webui): implement smart port management with auto-discovery
+
+**Phase 1: Core Architecture** - PARTIAL
+- ✅ Config parser (internal/config/schema.go - single source of truth)
+- ✅ Config validator (internal/config/validator.go - domain, IP, URL, path validation)
+- ✅ Config generator (Web UI + YAML generation)
+- ❌ **Deployment engine** - NEEDS IMPLEMENTATION
+
+### 🔄 In Progress
+
+**Phase 1b: Ansible Deployment Engine** - IN PROGRESS
+
+**Design Complete** - All architectural decisions finalized (2025-12-10)
+
+**Architecture:**
+- Command: `bloom ansible <config-file>` subcommand
+- Runtime: pkg/ansible/runtime package (extracted from bloomv2 experiment)
+- Playbooks: Embed entire playbooks/ directory with UPPERCASE vars
+- Config: Reuse internal/config package (no conversion needed)
+- Filtering: DISABLED_STEPS/ENABLED_STEPS deferred to v2.1
+
+**Implementation Tasks:**
+1. Add go-containerregistry dependency to go.mod
+2. Create pkg/ansible/runtime package (container execution)
+3. Copy and embed playbooks/ from experiments/bloomv2
+4. Update cluster-bloom.yaml to use UPPERCASE variable names
+5. Add ansible subcommand to cmd/bloom/main.go
+6. Wire up bloom.yaml reading with internal/config
+7. Test basic deployment workflow
+
+### 📋 Not Started
+
+**Phase 2: CLI Generator** - LOW PRIORITY
+- Interactive CLI wizard for bloom.yaml generation
+- Deprioritized since Web UI is complete and working
+
+**Phase 4: Testing (Deployment)** - BLOCKED
+- Waiting for ansible command implementation
+- Web UI tests already complete
+
+**Phase 5: Documentation & Polish** - FUTURE
+- Update README with v2 usage
+- Migration guide from v1 to v2
+- Performance optimization
+
 ## Next Actions
 
 1. ✓ Create bloom-v2 branch in cluster-bloom
 2. ✓ Write planning document
-3. Answer design questions above
-4. Create architecture proposal
-5. Begin Phase 1 implementation
+3. ✓ Design and implement Web UI
+4. ✓ Implement schema-driven validation
+5. ✓ Add Robot Framework tests for Web UI
+6. **→ Implement `bloom ansible` command (CURRENT)**
+   - Copy pattern from /workspace/platform/experiments/bloomv2
+   - Adapt to use bloom.yaml as input
+   - Embed cluster-bloom.yaml playbook
+   - Add to cluster-bloom repository
+7. Test ansible command with generated bloom.yaml files
+8. Complete deployment tests
+9. Documentation and polish
+
+## Outstanding Design Questions
+
+### 1. ✅ Execution Engine - ANSWERED
+**Decision:** Embedded Ansible (from platform/experiments/bloomv2)
+- Proven pattern in PoC
+- Self-contained binary
+- No external dependencies
+- Uses willhallonline/ansible:latest image
+
+### 2. ✅ Config Schema - ANSWERED
+**Decision:** Comprehensive schema matching V1
+- 26 arguments across 6 sections
+- Pattern validation for all fields
+- Conditional field visibility
+- Type-safe with proper defaults
+
+### 3. ✅ Web UI Distribution - ANSWERED
+**Decision:** Embedded in main bloom binary
+- `bloom webui` command
+- Static assets embedded via go:embed
+- No separate deployment
+
+### 4. ✅ Task Orchestration - ANSWERED
+**Decision:** Use existing cluster-bloom.yaml playbook
+- Embed entire playbooks/ directory from experiments/bloomv2
+- Update playbook to use UPPERCASE variable names (no conversion needed)
+- Step filtering (DISABLED_STEPS/ENABLED_STEPS) deferred to v2.1
+
+### 5. ✅ Command Structure - ANSWERED
+**Decision:** Subcommand architecture
+- `bloom ansible <config-file>` as subcommand in cmd/bloom/main.go
+- Consistent with `bloom webui` pattern
+- Single binary distribution
+
+### 6. ✅ Config Reading - ANSWERED
+**Decision:** Reuse existing internal/config package
+- Parse bloom.yaml using internal/config
+- Validate with existing validators
+- Pass Config map directly as Ansible extra vars (-e KEY=value)
+- No conversion logic needed
+
+### 7. ✅ Runtime Architecture - ANSWERED
+**Decision:** Extract into pkg/ansible/runtime package
+- Clean separation from command logic
+- Reusable container runtime: image pulling, layer extraction, namespace creation
+- Better testing isolation
+- More maintainable structure
+
+## Current Blockers
+
+**None** - Path forward is clear:
+1. Implement `bloom ansible` command using bloomv2 experiment pattern
+2. Existing playbooks in platform/experiments/bloomv2/playbooks/cluster-bloom.yaml
+3. Integration with bloom.yaml schema already defined
+
+## Updated Timeline
+
+| Phase | Status | Actual Duration | Notes |
+|-------|--------|-----------------|-------|
+| Phase 1: Foundation | 🔄 Partial | 2 weeks | Config done, need deployment |
+| Phase 2: CLI Generator | ⏸️ Skipped | - | Web UI supersedes this |
+| Phase 3: Web UI | ✅ Complete | 3 weeks | Done with full validation |
+| **Phase 1b: Ansible Command** | 📋 Next | ~1 week | Copy pattern from bloomv2 |
+| Phase 4: Testing | 📋 Pending | ~1 week | After ansible command |
+| Phase 5: Documentation | 📋 Pending | ~3 days | Final polish |
+| **Remaining** | - | **~2-3 weeks** | **To production** |
 
 ---
 
-**Status:** Planning complete, awaiting design decisions
-**Last Updated:** 2025-12-08
+**Status:** Phase 3 (Web UI) complete. Next: Implement ansible deployment engine.
+**Last Updated:** 2025-12-10
+**Branch:** bloom-v2
+**Issue:** #609 (Open, In Progress)
