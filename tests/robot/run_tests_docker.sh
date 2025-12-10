@@ -54,11 +54,13 @@ echo "Target URL: http://$HOST_IP:$BLOOM_PORT"
 docker run --rm \
     --network host \
     -v "$REPO_ROOT/tests/robot:/robot/tests" \
+    -v "$REPO_ROOT/schema:/robot/schema" \
     -v "$REPO_ROOT/results:/robot/results" \
     -e BASE_URL="http://localhost:$BLOOM_PORT" \
     marketsquare/robotframework-browser:latest \
     bash -c "source /home/pwuser/.venv/bin/activate && \
-        pip install --quiet robotframework-requests && \
+        pip install --quiet robotframework-requests pyyaml && \
+        cd /robot/tests && \
         robot --outputdir /robot/results /robot/tests/*.robot"
 
 echo "Tests completed! Results in $REPO_ROOT/results/"

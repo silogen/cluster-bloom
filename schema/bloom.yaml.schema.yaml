@@ -15,16 +15,19 @@ schema:
       type: bool
       default: true
       desc: Set to true if this is the first node in the cluster
+      section: "📋 Basic Configuration"
 
     GPU_NODE:
       type: bool
       default: true
       desc: Set to true if this node has GPUs
+      section: "📋 Basic Configuration"
 
     DOMAIN:
       type: domain
       desc: The domain name for the cluster (required for first node)
       required: when(FIRST_NODE == true)
+      section: "📋 Basic Configuration"
       examples:
         - "cluster.example.com"
         - "k8s.internal.company.com"
@@ -34,38 +37,45 @@ schema:
       type: ipv4
       desc: IP address of the RKE2 server
       required: when(FIRST_NODE == false)
+      section: "🔗 Additional Node Configuration"
 
     JOIN_TOKEN:
       type: str
       desc: Token for joining additional nodes
       required: when(FIRST_NODE == false)
+      section: "🔗 Additional Node Configuration"
 
     CONTROL_PLANE:
       type: bool
       default: false
       desc: Control plane node (only when FIRST_NODE=false)
       applicable: when(FIRST_NODE == false)
+      section: "🔗 Additional Node Configuration"
 
     # 💾 Storage Configuration
     NO_DISKS_FOR_CLUSTER:
       type: bool
       default: false
       desc: Skip all disk-related operations
+      section: "💾 Storage Configuration"
 
     CLUSTER_DISKS:
       type: devicePath
       default: ""
       desc: Comma-separated list of disk device paths
+      section: "💾 Storage Configuration"
 
     CLUSTER_PREMOUNTED_DISKS:
       type: diskList
       default: ""
       desc: Comma-separated list of premounted disk paths
+      section: "💾 Storage Configuration"
 
     SKIP_RANCHER_PARTITION_CHECK:
       type: bool
       default: false
       desc: Skip /var/lib/rancher partition size check
+      section: "💾 Storage Configuration"
 
     # 🔒 SSL/TLS Configuration
     ADDITIONAL_TLS_SAN_URLS:
@@ -73,30 +83,35 @@ schema:
       default: ""
       desc: Additional TLS SAN URLs (comma-separated)
       applicable: when(FIRST_NODE == true)
+      section: "🔒 SSL/TLS Configuration"
 
     USE_CERT_MANAGER:
       type: bool
       default: false
       desc: Use cert-manager with Let's Encrypt
       applicable: when(FIRST_NODE == true)
+      section: "🔒 SSL/TLS Configuration"
 
     CERT_OPTION:
       type: enum
       values: [existing, generate]
       desc: Certificate option when USE_CERT_MANAGER is false
       required: when(USE_CERT_MANAGER == false && FIRST_NODE == true)
+      section: "🔒 SSL/TLS Configuration"
 
     TLS_CERT:
       type: certFilePath
       default: ""
       desc: Path to TLS certificate file
       required: when(CERT_OPTION == existing)
+      section: "🔒 SSL/TLS Configuration"
 
     TLS_KEY:
       type: keyFilePath
       default: ""
       desc: Path to TLS private key file
       required: when(CERT_OPTION == existing)
+      section: "🔒 SSL/TLS Configuration"
 
     # ⚙️ Advanced Configuration
     ROCM_BASE_URL:
@@ -104,27 +119,32 @@ schema:
       default: https://repo.radeon.com/amdgpu-install/7.0.2/ubuntu/
       desc: ROCm base repository URL
       applicable: when(GPU_NODE == true)
+      section: "⚙️ Advanced Configuration"
 
     ROCM_DEB_PACKAGE:
       type: str
       default: amdgpu-install_7.0.2.70002-1_all.deb
       desc: ROCm DEB package name
       applicable: when(GPU_NODE == true)
+      section: "⚙️ Advanced Configuration"
 
     CLUSTERFORGE_RELEASE:
       type: str
       default: https://github.com/silogen/cluster-forge/releases/download/v1.5.2/release-enterprise-ai-v1.5.2.tar.gz
       desc: ClusterForge version URL or 'none'
+      section: "⚙️ Advanced Configuration"
 
     CF_VALUES:
       type: str
       default: ""
       desc: Path to ClusterForge values file
+      section: "⚙️ Advanced Configuration"
 
     ADDITIONAL_OIDC_PROVIDERS:
       type: seq
       default: []
       desc: Additional OIDC providers
+      section: "⚙️ Advanced Configuration"
       sequence:
         - type: map
           mapping:
@@ -139,32 +159,38 @@ schema:
       type: str
       default: docker.io/rocm/pytorch:rocm6.4_ubuntu24.04_py3.12_pytorch_release_2.6.0,docker.io/rocm/vllm:rocm6.4.1_vllm_0.9.0.1_20250605
       desc: Comma-separated list of container images to preload
+      section: "⚙️ Advanced Configuration"
 
     RKE2_INSTALLATION_URL:
       type: url
       default: https://get.rke2.io
       desc: RKE2 installation script URL
+      section: "⚙️ Advanced Configuration"
 
     RKE2_VERSION:
       type: rke2Version
       default: v1.34.1+rke2r1
       desc: Specific RKE2 version to install
+      section: "⚙️ Advanced Configuration"
 
     RKE2_EXTRA_CONFIG:
       type: str
       default: ""
       desc: Additional RKE2 configuration in YAML format
+      section: "⚙️ Advanced Configuration"
 
     # 💻 Command Line Options
     DISABLED_STEPS:
       type: str
       default: ""
       desc: Comma-separated list of step names to skip
+      section: "💻 Command Line Options"
 
     ENABLED_STEPS:
       type: str
       default: ""
       desc: Comma-separated list of steps to run
+      section: "💻 Command Line Options"
 
 # ========================================
 # Type Definitions
@@ -175,6 +201,7 @@ types:
     type: str
     pattern: ^([a-z0-9]([a-z0-9\-]*[a-z0-9])?\.)*[a-z0-9]([a-z0-9\-]*[a-z0-9])?$
     desc: Valid DNS domain name (lowercase alphanumeric with dots/hyphens)
+    errorMessage: Domain must be lowercase alphanumeric with dots/hyphens (e.g., example.com or sub.example.com). Cannot start/end with hyphen or dot, no special characters.
     examples:
       valid:
         - "example.com"
@@ -204,9 +231,9 @@ types:
     type: str
     pattern: ^([a-z0-9]([a-z0-9\-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)*)(\s*,\s*[a-z0-9]([a-z0-9\-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)*)*$|^$
     desc: Comma-separated list of domain names (each matching domain type)
+    errorMessage: Enter comma-separated domain names (lowercase alphanumeric with dots/hyphens)
     examples:
       valid:
-        - ""
         - "example.com"
         - "api.example.com, kubernetes.example.com"
         - "api.example.com,kubernetes.example.com"
@@ -225,9 +252,9 @@ types:
     type: str
     pattern: ^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$|^$
     desc: Valid IPv4 address
+    errorMessage: Valid IPv4 address format xxx.xxx.xxx.xxx (0-255 for each octet)
     examples:
       valid:
-        - ""
         - "10.100.100.11"
         - "192.168.1.100"
         - "0.0.0.0"
@@ -251,6 +278,7 @@ types:
     type: str
     pattern: https?://.+
     desc: Valid HTTP or HTTPS URL
+    errorMessage: Enter a valid URL starting with http:// or https://
     examples:
       valid:
         - "https://example.com"
@@ -271,9 +299,9 @@ types:
     type: str
     pattern: ^(/dev/[a-zA-Z0-9]+)(,/dev/[a-zA-Z0-9]+)*$|^$
     desc: Comma-separated Linux device paths
+    errorMessage: Enter comma-separated device paths like /dev/nvme0n1,/dev/nvme1n1
     examples:
       valid:
-        - ""
         - "/dev/nvme0n1"
         - "/dev/nvme0n1,/dev/nvme1n1"
         - "/dev/sda,/dev/sdb,/dev/sdc"
@@ -295,9 +323,9 @@ types:
     type: str
     pattern: ^(disk[0-9]+)(,disk[0-9]+)*$|^$
     desc: Comma-separated disk names
+    errorMessage: Enter comma-separated disk names like disk1,disk2,disk3
     examples:
       valid:
-        - ""
         - "disk1"
         - "disk1,disk2,disk3"
         - "disk1,disk2"
@@ -319,9 +347,9 @@ types:
     type: str
     pattern: ^(/[a-zA-Z0-9._\-]+)+\.(pem|crt|cert)$|^$
     desc: Absolute path to certificate file
+    errorMessage: Certificate file must be an absolute path ending with .pem, .crt, or .cert
     examples:
       valid:
-        - ""
         - "/etc/ssl/certs/cluster.crt"
         - "/home/user/certs/tls.pem"
         - "/opt/cert.cert"
@@ -343,9 +371,9 @@ types:
     type: str
     pattern: ^(/[a-zA-Z0-9._\-]+)+\.(pem|key)$|^$
     desc: Absolute path to private key file
+    errorMessage: Key file must be an absolute path ending with .pem or .key
     examples:
       valid:
-        - ""
         - "/etc/ssl/private/cluster.key"
         - "/home/user/certs/tls-key.pem"
         - "/opt/key.key"
@@ -365,9 +393,9 @@ types:
     type: str
     pattern: ^v[0-9]+\.[0-9]+\.[0-9]+(\+rke2r[0-9]+)?$|^$
     desc: RKE2 version format
+    errorMessage: Version must be in format v1.2.3 or v1.2.3+rke2r1
     examples:
       valid:
-        - ""
         - "v1.34.1+rke2r1"
         - "v1.33.0+rke2r1"
         - "v1.0.0"

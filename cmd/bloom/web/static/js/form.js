@@ -101,8 +101,11 @@ function createFormField(argument, config) {
             }
         }
 
-        // Set input type based on field characteristics
-        if (argument.key.includes('URL') || argument.key.includes('ISSUER')) {
+        // Set input type based on schema type, not field name
+        // Always use 'text' when pattern is provided - browser validation will use the pattern
+        if (argument.pattern) {
+            input.type = 'text';
+        } else if (argument.key.includes('URL') || argument.key.includes('ISSUER')) {
             input.type = 'url';
         } else if (argument.key.includes('EMAIL')) {
             input.type = 'email';
