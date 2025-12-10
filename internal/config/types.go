@@ -28,3 +28,9 @@ type GenerateRequest struct {
 type GenerateResponse struct {
 	YAML string `json:"yaml"`
 }
+
+// SaveRequest is the JSON request for /api/save
+type SaveRequest struct {
+	Config   Config `json:"config"`
+	Filename string `json:"filename"`
+}

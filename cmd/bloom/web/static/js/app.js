@@ -60,9 +60,9 @@ function setupEventListeners() {
         await handleGenerate();
     });
 
-    // Download button
-    document.getElementById('download-btn').addEventListener('click', () => {
-        downloadYAML();
+    // Download button - now saves to cwd
+    document.getElementById('download-btn').addEventListener('click', async () => {
+        await saveYAML();
     });
 
     // Edit button
@@ -109,21 +109,39 @@ async function handleGenerate() {
     }
 }
 
-function downloadYAML() {
-    if (!window.generatedYAML) {
-        showError('No YAML generated yet');
+async function saveYAML() {
+    if (!currentConfig) {
+        showError('No configuration available');
         return;
     }
 
-    const blob = new Blob([window.generatedYAML], { type: 'text/yaml' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'bloom.yaml';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const filename = document.getElementById('filename').value.trim();
+    if (!filename) {
+        showError('Please enter a filename');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/save', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                config: currentConfig,
+                filename: filename
+            }),
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const result = await response.json();
+        showSuccess(`Saved to ${result.path}`);
+    } catch (error) {
+        showError('Failed to save YAML: ' + error.message);
+    }
 }
 
 function showError(message) {

@@ -16,7 +16,15 @@ func GenerateYAML(cfg Config) string {
 	var keys []string
 	for _, arg := range schema {
 		if value, exists := cfg[arg.Key]; exists && value != nil {
-			keys = append(keys, arg.Key)
+			// Always include FIRST_NODE and GPU_NODE
+			if arg.Key == "FIRST_NODE" || arg.Key == "GPU_NODE" {
+				keys = append(keys, arg.Key)
+				continue
+			}
+			// Only include other fields if value differs from default
+			if !isDefaultValue(arg, value) {
+				keys = append(keys, arg.Key)
+			}
 		}
 	}
 
@@ -30,6 +38,31 @@ func GenerateYAML(cfg Config) string {
 	}
 
 	return strings.Join(lines, "\n") + "\n"
+}
+
+func isDefaultValue(arg Argument, value any) bool {
+	// Compare with default value
+	switch defaultVal := arg.Default.(type) {
+	case bool:
+		if boolVal, ok := value.(bool); ok {
+			return boolVal == defaultVal
+		}
+		if strVal, ok := value.(string); ok {
+			return (strVal == "true" && defaultVal) || (strVal == "false" && !defaultVal) || strVal == ""
+		}
+	case string:
+		if strVal, ok := value.(string); ok {
+			return strVal == defaultVal
+		}
+	case []any:
+		if arrVal, ok := value.([]any); ok {
+			return len(arrVal) == 0 && len(defaultVal) == 0
+		}
+		if strVal, ok := value.(string); ok {
+			return strVal == ""
+		}
+	}
+	return false
 }
 
 func formatYAMLLine(key string, value any) string {

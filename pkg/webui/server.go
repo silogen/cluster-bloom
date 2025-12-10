@@ -64,6 +64,7 @@ func (s *Server) Start() error {
 	http.HandleFunc("/api/schema", handleSchema)
 	http.HandleFunc("/api/validate", handleValidate)
 	http.HandleFunc("/api/generate", handleGenerate)
+	http.HandleFunc("/api/save", handleSave)
 	http.Handle("/", fileServer)
 
 	addr := fmt.Sprintf(":%d", s.Port)

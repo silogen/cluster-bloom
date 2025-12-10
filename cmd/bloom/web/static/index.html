@@ -32,7 +32,11 @@
                 <h2>Preview</h2>
                 <pre id="yaml-preview"></pre>
                 <div class="actions">
-                    <button type="button" id="download-btn" class="btn btn-primary">Download bloom.yaml</button>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                        <label for="filename">Filename:</label>
+                        <input type="text" id="filename" value="bloom.yaml" style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                    </div>
+                    <button type="button" id="download-btn" class="btn btn-primary">Save File</button>
                     <button type="button" id="edit-btn" class="btn btn-secondary">Edit</button>
                 </div>
             </div>
