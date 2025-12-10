@@ -11,14 +11,22 @@ import (
 //go:embed playbooks
 var embeddedPlaybooks embed.FS
 
-const (
-	WorkDir = "/var/lib/bloom"
-	LogDir  = "/var/log/bloom"
-)
+func getWorkDir() (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("get current directory: %w", err)
+	}
+	return filepath.Join(cwd, ".bloom"), nil
+}
 
 func RunPlaybook(config map[string]any, playbookName string) (int, error) {
-	rootfs := filepath.Join(WorkDir, "rootfs")
-	playbookDir := filepath.Join(WorkDir, "playbooks")
+	workDir, err := getWorkDir()
+	if err != nil {
+		return 1, err
+	}
+
+	rootfs := filepath.Join(workDir, "rootfs")
+	playbookDir := filepath.Join(workDir, "playbooks")
 
 	if !ImageCached(rootfs) {
 		fmt.Println("Downloading Ansible image (this may take a few minutes)...")

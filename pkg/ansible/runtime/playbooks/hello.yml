@@ -5,6 +5,7 @@
 
   vars:
     host_root: /host
+    DOMAIN: "test.local"
 
   tasks:
     - name: Create marker file
