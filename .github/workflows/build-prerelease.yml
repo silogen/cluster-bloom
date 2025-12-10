@@ -32,7 +32,7 @@ jobs:
           fi
           
           # Check if any feat: or docs: commits exist since base
-          FEAT_COMMITS=$(git log --oneline "${BASE_SHA}..HEAD" --grep="^feat:" --grep="^docs:" -E || echo "")
+          FEAT_COMMITS=$(git log --oneline "${BASE_SHA}..HEAD" | grep -E "^[a-f0-9]+ (feat|docs):" || echo "")
           
           if [[ -n "$FEAT_COMMITS" ]]; then
             echo "Found feature or documentation commits:"
