@@ -199,7 +199,7 @@ schema:
 types:
   domain:
     type: str
-    pattern: ^([a-z0-9]([a-z0-9\-]*[a-z0-9])?\.)*[a-z0-9]([a-z0-9\-]*[a-z0-9])?$
+    pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?\.)*[a-z0-9]([-a-z0-9]*[a-z0-9])?$
     desc: Valid DNS domain name (lowercase alphanumeric with dots/hyphens)
     errorMessage: Domain must be lowercase alphanumeric with dots/hyphens (e.g., example.com or sub.example.com). Cannot start/end with hyphen or dot, no special characters.
     examples:
@@ -229,7 +229,7 @@ types:
         - "user@example.com"          # email
   domainList:
     type: str
-    pattern: ^([a-z0-9]([a-z0-9\-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)*)(\s*,\s*[a-z0-9]([a-z0-9\-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)*)*$|^$
+    pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)(\s*,\s*[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)*$|^$
     desc: Comma-separated list of domain names (each matching domain type)
     errorMessage: Enter comma-separated domain names (lowercase alphanumeric with dots/hyphens)
     examples:
@@ -321,31 +321,31 @@ types:
 
   diskList:
     type: str
-    pattern: ^(disk[0-9]+)(,disk[0-9]+)*$|^$
-    desc: Comma-separated disk names
-    errorMessage: Enter comma-separated disk names like disk1,disk2,disk3
+    pattern: ^(/[-a-zA-Z0-9._/]+)(,/[-a-zA-Z0-9._/]+)*$|^$
+    desc: Comma-separated absolute paths to premounted disks
+    errorMessage: Enter comma-separated absolute paths like /mnt/disk1,/mnt/disk2
     examples:
       valid:
-        - "disk1"
-        - "disk1,disk2,disk3"
-        - "disk1,disk2"
-        - "disk10"
-        - "disk99"
-        - "disk01"  # leading zeros allowed by pattern
+        - "/mnt/disk1"
+        - "/mnt/disk1,/mnt/disk2,/mnt/disk3"
+        - "/mnt/disk1,/mnt/disk2"
+        - "/data/disk1"
+        - "/storage/disk01"
+        - "/mnt/storage-01"
+        - "/mnt/my_disk"
+        - "/mnt/disk.1"
       invalid:
-        - "disk"           # missing number
-        - "disk1,"         # trailing comma
-        - ",disk1"         # leading comma
-        - "disk1, disk2"   # space after comma
-        - "disk1 disk2"    # space separator
-        - "disk-1"         # hyphen
-        - "disk_1"         # underscore
-        - "diskA"          # letter instead of number
-        - "/dev/disk1"     # path
+        - "disk1"            # not absolute path
+        - "disk1,disk2"      # not absolute paths
+        - "/mnt/disk1,"      # trailing comma
+        - ",/mnt/disk1"      # leading comma
+        - "/mnt/disk1, /mnt/disk2"   # space after comma
+        - "/mnt/disk1 /mnt/disk2"    # space separator
+        - "mnt/disk1"        # missing leading slash
 
   certFilePath:
     type: str
-    pattern: ^(/[a-zA-Z0-9._\-]+)+\.(pem|crt|cert)$|^$
+    pattern: ^(/[-a-zA-Z0-9._]+)+\.(pem|crt|cert)$|^$
     desc: Absolute path to certificate file
     errorMessage: Certificate file must be an absolute path ending with .pem, .crt, or .cert
     examples:
@@ -369,7 +369,7 @@ types:
 
   keyFilePath:
     type: str
-    pattern: ^(/[a-zA-Z0-9._\-]+)+\.(pem|key)$|^$
+    pattern: ^(/[-a-zA-Z0-9._]+)+\.(pem|key)$|^$
     desc: Absolute path to private key file
     errorMessage: Key file must be an absolute path ending with .pem or .key
     examples:
