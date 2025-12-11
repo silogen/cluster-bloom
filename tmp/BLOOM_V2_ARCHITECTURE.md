@@ -24,23 +24,34 @@
 - Less code to write than pure Go
 - Battle-tested modules
 
-### 2. Config Schema: V1 bloom.yaml (Identical)
+### 2. Config Schema: YAML Schema as Single Source of Truth
 
-**Decision:** Keep exact same bloom.yaml format as V1
+**Decision:** Use schema/bloom.yaml.schema.yaml as the single source of truth
 
 **Implementation:**
+- YAML schema defines all field definitions, patterns, and examples
+- Schema loaded at runtime by Go backend (schema_loader.go)
+- Frontend tests extract examples directly from schema
 - Parse same field names (FIRST_NODE, DOMAIN, etc.)
-- Same validation rules
-- Same defaults
-- Same conditional dependencies
+- Validation rules defined in schema types
+- Defaults specified in schema
+- Dependencies mapped from schema conditions
 - Pass as Ansible extra vars
 
-**Rationale:**
-- No migration needed for existing users
-- Web UI/CLI generate familiar format
-- Proven schema works well
+**Schema Location:** `schema/bloom.yaml.schema.yaml`
 
-**Reference:** See `BLOOM_YAML_SPEC_V1.md`
+**Schema Structure:**
+- Type definitions with patterns and examples (domain, ipv4, url, etc.)
+- Field mappings with type, default, description, section
+- Conditional visibility via `applicable` and `required` fields
+
+**Rationale:**
+- Single source of truth eliminates duplication
+- Schema drives both validation and testing
+- Easy to add new fields or patterns
+- Tests automatically stay in sync with schema
+
+**Reference:** See `schema/bloom.yaml.schema.yaml`
 
 ### 3. Task Orchestration: Linear, Fail-Fast
 
@@ -91,8 +102,13 @@ cluster-bloom/  (bloom-v2 branch)
 │   │   ├── image.go          # Image pull & cache
 │   │   └── executor.go       # Playbook execution
 │   ├── config/
-│   │   ├── parser.go         # YAML parsing
+│   │   ├── loader.go         # YAML config parsing
 │   │   ├── validator.go      # Validation rules
+│   │   ├── schema.go         # Argument struct definition
+│   │   ├── schema_loader.go  # Load schema from YAML
+│   │   ├── schema_loader_test.go  # Schema loader tests
+│   │   ├── generator.go      # Generate bloom.yaml
+│   │   ├── patterns_test.go  # Pattern validation tests
 │   │   └── types.go          # Config structs
 │   ├── deploy/
 │   │   ├── orchestrator.go   # Playbook sequencing
@@ -112,12 +128,26 @@ cluster-bloom/  (bloom-v2 branch)
 │   ├── longhorn.yml          # Longhorn deployment
 │   ├── metallb.yml           # MetalLB setup
 │   └── clusterforge.yml      # ClusterForge integration
-├── web/
-│   ├── src/
-│   │   ├── index.html        # Main page
-│   │   ├── app.js            # Form logic
-│   │   └── styles.css        # Styling
-│   └── dist/                 # Built assets (embedded via go:embed)
+├── schema/
+│   └── bloom.yaml.schema.yaml  # Schema definition (single source of truth)
+├── tests/
+│   └── robot/
+│       ├── api.robot         # API endpoint tests
+│       ├── ui.robot          # UI loading tests
+│       ├── validation.robot  # Form validation tests
+│       ├── schema_validation.robot  # Schema-driven validation tests
+│       ├── yaml_loader.py    # Schema example extraction
+│       └── run_tests_docker.sh  # Test runner
+├── cmd/bloom/web/
+│   └── static/
+│       ├── index.html        # Main page
+│       ├── js/
+│       │   ├── app.js        # Application logic
+│       │   ├── form.js       # Form generation from schema
+│       │   ├── schema.js     # Schema utilities
+│       │   └── validator.js  # Frontend validation
+│       └── css/
+│           └── styles.css    # Styling
 ├── tmp/                      # Planning docs (gitignored)
 └── Makefile                  # Build automation
 ```
@@ -322,6 +352,8 @@ sudo bloom deploy bloom.yaml
    - Clean architecture ✓
    - Testable components ✓
    - Robot Framework tests ✓
+   - Schema-driven validation ✓
+   - Comprehensive test coverage (all patterns) ✓
 
 ## Out of Scope (V2.0)
 
