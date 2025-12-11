@@ -17,21 +17,9 @@
 package main
 
 import (
-	"os"
-	"os/exec"
+	"github.com/silogen/cluster-bloom/cmd"
 )
 
 func main() {
-	// Delegate to cmd
-	cmd := exec.Command("go", append([]string{"run", "./cmd"}, os.Args[1:]...)...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
-
-	if err := cmd.Run(); err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			os.Exit(exitErr.ExitCode())
-		}
-		os.Exit(1)
-	}
+	cmd.Execute()
 }

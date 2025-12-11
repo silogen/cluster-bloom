@@ -1,4 +1,4 @@
-package main
+package cmd
 
 import (
 	"fmt"
@@ -20,7 +20,7 @@ func init() {
 	webui.StaticFS = WebFS
 }
 
-func main() {
+func Execute() {
 	// Handle __child__ for namespace re-execution
 	if len(os.Args) > 1 && os.Args[1] == "__child__" {
 		runtime.RunChild()
