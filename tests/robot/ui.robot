@@ -9,8 +9,8 @@ ${BASE_URL}       http://localhost:62080
 Test Web UI Loads Successfully
     [Documentation]    Verify the web UI loads in browser
     New Page    ${BASE_URL}
-    Get Title    ==    Bloom Configuration Generator
-    Get Text    h1    ==    Bloom Configuration Generator
+    Get Title    ==    Cluster-Bloom Configuration Generator
+    Get Text    h1    ==    Cluster-Bloom Configuration Generator
 
 Test Form Elements Are Visible
     [Documentation]    Verify form elements render correctly
