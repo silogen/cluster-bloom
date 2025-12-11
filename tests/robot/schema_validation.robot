@@ -42,6 +42,9 @@ Test Field Examples
 
     Wait For Elements State    id=${field_id}    visible    timeout=5s
 
+    # Check for console errors before testing
+    Check No Console Errors    ${field_name}
+
     # Test all invalid examples first
     FOR    ${invalid_example}    IN    @{invalid_examples}
         Test Invalid Example    ${field_id}    ${field_name}    ${invalid_example}
@@ -51,6 +54,9 @@ Test Field Examples
     FOR    ${valid_example}    IN    @{valid_examples}
         Test Valid Example    ${field_id}    ${field_name}    ${valid_example}
     END
+
+    # Check for console errors after testing
+    Check No Console Errors    ${field_name}
 
 Execute Visibility Steps
     [Arguments]    ${steps}
@@ -95,6 +101,9 @@ Test Invalid Example
     Click    id=GPU_NODE
     Sleep    0.5s
 
+    # Check for console errors after filling this example
+    Check No Console Errors    ${field_name} invalid example: ${example}
+
     ${error_id}=    Set Variable    error-${field_id}
     ${errorText}=    Get Text    id=${error_id}
     Should Not Be Empty    ${errorText}    msg=Field ${field_name} should reject invalid example: ${example}
@@ -107,6 +116,20 @@ Test Valid Example
     Click    id=GPU_NODE
     Sleep    0.5s
 
+    # Check for console errors after filling this example
+    Check No Console Errors    ${field_name} valid example: ${example}
+
     ${error_id}=    Set Variable    error-${field_id}
     ${errorText}=    Get Text    id=${error_id}
     Should Be Empty    ${errorText}    msg=Field ${field_name} should accept valid example: ${example}
+
+Check No Console Errors
+    [Arguments]    ${field_name}
+    ${console_logs}=    Get Console Log
+    FOR    ${log_entry}    IN    @{console_logs}
+        ${type}=    Set Variable    ${log_entry}[type]
+        ${text}=    Set Variable    ${log_entry}[text]
+        IF    '${type}' == 'error'
+            Fail    Console error found while testing ${field_name}: ${text}
+        END
+    END
