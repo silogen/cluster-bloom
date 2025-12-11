@@ -1,0 +1,256 @@
+*** Settings ***
+Documentation     Config generation tests for Bloom V2 Web UI
+Library           Browser
+Library           RequestsLibrary
+Library           Collections
+Library           OperatingSystem
+
+*** Variables ***
+${BASE_URL}       http://localhost:62080
+
+*** Test Cases ***
+Test Generate Valid First Node Config
+    [Documentation]    Generate a valid bloom.yaml for first node deployment
+    New Page    ${BASE_URL}
+    Wait For Elements State    id=FIRST_NODE    visible    timeout=10s
+
+    # First node configuration
+    ${checked}=    Get Checkbox State    id=FIRST_NODE
+    IF    '${checked}' == 'false'
+        Check Checkbox    id=FIRST_NODE
+    END
+    Wait For Elements State    id=DOMAIN    visible    timeout=2s
+    Fill Text    id=DOMAIN    cluster.example.com
+
+    # Set CERT_OPTION (required when USE_CERT_MANAGER=false)
+    Select Options By    id=CERT_OPTION    value    generate
+
+    # Storage - use premounted disks (required - must have exactly one storage option)
+    Fill Text    id=CLUSTER_PREMOUNTED_DISKS    /mnt/disk1,/mnt/disk2
+
+    # Generate config (no need to trigger blur - submit will validate)
+    Click    button[type="submit"]
+    Sleep    1s
+
+    # Verify preview appears
+    Wait For Elements State    id=preview    visible    timeout=5s
+    ${yamlContent}=    Get Text    id=yaml-preview
+    Should Contain    ${yamlContent}    FIRST_NODE: true
+    Should Contain    ${yamlContent}    DOMAIN: cluster.example.com
+    Should Contain    ${yamlContent}    GPU_NODE: true
+    Should Contain    ${yamlContent}    CLUSTER_PREMOUNTED_DISKS: "/mnt/disk1,/mnt/disk2"
+
+Test Generate Valid Additional Node Config
+    [Documentation]    Generate a valid bloom.yaml for additional node
+    New Page    ${BASE_URL}
+    Wait For Elements State    id=FIRST_NODE    visible    timeout=10s
+
+    # Additional node configuration
+    Uncheck Checkbox    id=FIRST_NODE
+    Wait For Elements State    id=SERVER_IP    visible    timeout=2s
+
+    # Required fields for additional node
+    Fill Text    id=SERVER_IP    10.100.100.11
+    Fill Text    id=JOIN_TOKEN    K1234567890abcdef::server:1234567890abcdef
+    Check Checkbox    id=CONTROL_PLANE
+
+    # GPU configuration
+    Check Checkbox    id=GPU_NODE
+
+    # Storage
+    Fill Text    id=CLUSTER_DISKS    /dev/nvme0n1,/dev/nvme1n1
+
+    # Generate config
+    Click    button:has-text("Generate bloom.yaml")
+    Sleep    1s
+
+    # Verify preview
+    Wait For Elements State    id=preview    visible    timeout=5s
+    ${yamlContent}=    Get Text    css=pre
+    Should Contain    ${yamlContent}    FIRST_NODE: false
+    Should Contain    ${yamlContent}    SERVER_IP: 10.100.100.11
+    Should Contain    ${yamlContent}    JOIN_TOKEN:
+    Should Contain    ${yamlContent}    CONTROL_PLANE: true
+
+Test Generate Config With TLS Certificates
+    [Documentation]    Generate config with existing TLS certificates
+    New Page    ${BASE_URL}
+    Wait For Elements State    id=FIRST_NODE    visible    timeout=10s
+
+    # First node with custom certs
+    Check Checkbox    id=FIRST_NODE
+    Fill Text    id=DOMAIN    secure.example.com
+
+    # Configure TLS
+    Wait For Elements State    id=CERT_OPTION    visible    timeout=2s
+    Select Options By    id=CERT_OPTION    value    existing
+    Wait For Elements State    id=TLS_CERT    visible    timeout=2s
+
+    Fill Text    id=TLS_CERT    /etc/ssl/certs/cluster.crt
+    Fill Text    id=TLS_KEY    /etc/ssl/private/cluster.key
+
+    # Storage
+    Fill Text    id=CLUSTER_DISKS    /dev/sda
+
+    # Generate config
+    Click    button:has-text("Generate bloom.yaml")
+    Sleep    1s
+
+    # Verify certificate paths in preview
+    Wait For Elements State    id=preview    visible    timeout=5s
+    ${yamlContent}=    Get Text    css=pre
+    Should Contain    ${yamlContent}    TLS_CERT: /etc/ssl/certs/cluster.crt
+    Should Contain    ${yamlContent}    TLS_KEY: /etc/ssl/private/cluster.key
+    Should Contain    ${yamlContent}    CERT_OPTION: existing
+
+Test Generate Config With Advanced Options
+    [Documentation]    Generate config with advanced ROCm and RKE2 settings
+    New Page    ${BASE_URL}
+    Wait For Elements State    id=FIRST_NODE    visible    timeout=10s
+
+    # Ensure first node is checked
+    ${checked}=    Get Checkbox State    id=FIRST_NODE
+    IF    '${checked}' == 'false'
+        Check Checkbox    id=FIRST_NODE
+    END
+    Wait For Elements State    id=DOMAIN    visible    timeout=2s
+
+    # Basic config
+    Fill Text    id=DOMAIN    ai-cluster.example.com
+    Select Options By    id=CERT_OPTION    value    generate
+
+    # GPU with custom ROCm URL
+    Check Checkbox    id=GPU_NODE
+    Wait For Elements State    id=ROCM_BASE_URL    visible    timeout=2s
+    Fill Text    id=ROCM_BASE_URL    https://custom.repo.com/rocm/
+    Fill Text    id=ROCM_DEB_PACKAGE    custom-rocm-7.0.deb
+
+    # Custom RKE2 version
+    Fill Text    id=RKE2_VERSION    v1.33.0+rke2r1
+    Fill Text    id=RKE2_INSTALLATION_URL    https://custom.rke2.install
+
+    # Storage
+    Fill Text    id=CLUSTER_PREMOUNTED_DISKS    /mnt/disk1
+
+    # Generate config (no need to trigger blur - submit will validate)
+    Click    button[type="submit"]
+    Sleep    1s
+
+    # Verify advanced options in preview
+    Wait For Elements State    id=preview    visible    timeout=5s
+    ${yamlContent}=    Get Text    css=pre
+    Should Contain    ${yamlContent}    ROCM_BASE_URL: "https://custom.repo.com/rocm/"
+    Should Contain    ${yamlContent}    ROCM_DEB_PACKAGE: custom-rocm-7.0.deb
+    Should Contain    ${yamlContent}    RKE2_VERSION: v1.33.0+rke2r1
+
+Test API Generate Endpoint
+    [Documentation]    Test /api/generate endpoint directly
+    Create Session    bloom    ${BASE_URL}
+
+    # Prepare config JSON
+    ${config}=    Create Dictionary
+    ...    FIRST_NODE=true
+    ...    GPU_NODE=true
+    ...    DOMAIN=api-test.example.com
+    ...    CLUSTER_PREMOUNTED_DISKS=/mnt/disk1
+    ${body}=    Create Dictionary    config=${config}
+
+    # Call generate endpoint
+    ${response}=    POST On Session    bloom    /api/generate    json=${body}
+    Status Should Be    200    ${response}
+
+    # Verify response contains YAML
+    ${result}=    Set Variable    ${response.json()}
+    Should Contain    ${result}[yaml]    FIRST_NODE: true
+    Should Contain    ${result}[yaml]    DOMAIN: api-test.example.com
+    Should Contain    ${result}[yaml]    GPU_NODE: true
+
+Test API Generate With Invalid Config
+    [Documentation]    Test /api/generate rejects invalid config
+    Create Session    bloom    ${BASE_URL}
+
+    # Invalid config - missing required DOMAIN
+    ${config}=    Create Dictionary
+    ...    FIRST_NODE=true
+    ...    GPU_NODE=true
+    ...    CLUSTER_PREMOUNTED_DISKS=/mnt/disk1
+    ${body}=    Create Dictionary    config=${config}
+
+    # Call generate endpoint - should fail validation
+    ${response}=    POST On Session    bloom    /api/generate    json=${body}    expected_status=400
+
+    # Verify error response
+    Status Should Be    400    ${response}
+
+Test Generate Config Minimal Output
+    [Documentation]    Verify minimal YAML output (only non-defaults + FIRST_NODE/GPU_NODE)
+    New Page    ${BASE_URL}
+    Wait For Elements State    id=FIRST_NODE    visible    timeout=10s
+
+    # Minimal config - only required fields
+    ${checked}=    Get Checkbox State    id=FIRST_NODE
+    IF    '${checked}' == 'false'
+        Check Checkbox    id=FIRST_NODE
+    END
+    Wait For Elements State    id=DOMAIN    visible    timeout=2s
+    Fill Text    id=DOMAIN    defaults.example.com
+    Select Options By    id=CERT_OPTION    value    generate
+    Fill Text    id=CLUSTER_PREMOUNTED_DISKS    /mnt/disk1
+
+    # Generate config (no need to trigger blur - submit will validate)
+    Click    button[type="submit"]
+    Sleep    1s
+
+    # Verify minimal output - only non-default values plus FIRST_NODE/GPU_NODE
+    Wait For Elements State    id=preview    visible    timeout=5s
+    ${yamlContent}=    Get Text    css=pre
+    Should Contain    ${yamlContent}    FIRST_NODE: true
+    Should Contain    ${yamlContent}    GPU_NODE: true
+    Should Contain    ${yamlContent}    DOMAIN: defaults.example.com
+    Should Contain    ${yamlContent}    CERT_OPTION: generate
+    # Default values should NOT be included
+    Should Not Contain    ${yamlContent}    SKIP_RANCHER_PARTITION_CHECK
+    Should Not Contain    ${yamlContent}    NO_DISKS_FOR_CLUSTER: false
+
+Test Field Visibility Updates Config
+    [Documentation]    Verify conditional fields appear/disappear in generated config
+    New Page    ${BASE_URL}
+    Wait For Elements State    id=FIRST_NODE    visible    timeout=10s
+
+    # Start as first node
+    ${checked}=    Get Checkbox State    id=FIRST_NODE
+    IF    '${checked}' == 'false'
+        Check Checkbox    id=FIRST_NODE
+    END
+    Wait For Elements State    id=DOMAIN    visible    timeout=2s
+    Fill Text    id=DOMAIN    visibility-test.example.com
+    Select Options By    id=CERT_OPTION    value    generate
+    Fill Text    id=CLUSTER_PREMOUNTED_DISKS    /mnt/disk1
+    Click    id=GPU_NODE
+
+    # Generate config
+    Click    button[type="submit"]
+    Sleep    1s
+    Wait For Elements State    id=preview    visible    timeout=5s
+    ${yamlContent}=    Get Text    id=yaml-preview
+    Should Contain    ${yamlContent}    DOMAIN: visibility-test.example.com
+    Should Not Contain    ${yamlContent}    SERVER_IP
+
+    # Edit to switch to additional node
+    Click    id=edit-btn
+    Sleep    1s
+    Uncheck Checkbox    id=FIRST_NODE
+    Wait For Elements State    id=SERVER_IP    visible    timeout=2s
+    Fill Text    id=SERVER_IP    10.100.100.11
+    Fill Text    id=JOIN_TOKEN    testtoken::server:abc123
+    Fill Text    id=CLUSTER_DISKS    /dev/sda
+    Click    id=GPU_NODE
+
+    # Regenerate config
+    Click    button[type="submit"]
+    Sleep    1s
+    Wait For Elements State    id=preview    visible    timeout=5s
+    ${yamlContent}=    Get Text    id=yaml-preview
+    Should Not Contain    ${yamlContent}    DOMAIN
+    Should Contain    ${yamlContent}    SERVER_IP: 10.100.100.11
+    Should Contain    ${yamlContent}    JOIN_TOKEN:
