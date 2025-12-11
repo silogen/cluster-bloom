@@ -46,6 +46,7 @@ __pycache__/
 # Editor directories and files
 .idea
 .vscode
+.claude
 *.suo
 *.ntvs*
 *.njsproj
@@ -56,6 +57,7 @@ __pycache__/
 
 # Task files
 # tasks.json
-# tasks/ 
+# tasks/
 results/
 .bloom/
+.kube/
