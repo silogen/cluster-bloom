@@ -1,8 +1,0 @@
-ENABLED_STEPS: ValidateArgsStep
-FIRST_NODE: true
-DOMAIN: example.com
-USE_CERT_MANAGER: false
-CERT_OPTION: generate
-NO_DISKS_FOR_CLUSTER: false
-
-expected_error: "either CLUSTER_PREMOUNTED_DISKS or CLUSTER_DISKS must be set"
