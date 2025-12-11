@@ -5,9 +5,7 @@ Library           RequestsLibrary
 Library           Collections
 Library           OperatingSystem
 Library           yaml_loader.py
-
-*** Variables ***
-${BASE_URL}       http://localhost:62080
+Resource          keywords.resource
 
 *** Test Cases ***
 Test All Schema Examples Through UI

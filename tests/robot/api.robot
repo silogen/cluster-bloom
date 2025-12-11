@@ -2,9 +2,7 @@
 Documentation     API endpoint tests for Bloom V2 Web UI
 Library           RequestsLibrary
 Library           Collections
-
-*** Variables ***
-${BASE_URL}       http://localhost:62080
+Resource          keywords.resource
 
 *** Test Cases ***
 Test Schema Endpoint Returns Valid JSON

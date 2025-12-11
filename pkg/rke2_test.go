@@ -41,7 +41,7 @@ func TestFetchAndSaveOIDCCertificate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := FetchAndSaveOIDCCertificate(tt.url)
+			err := FetchAndSaveOIDCCertificate(tt.url, 0)
 			if tt.expectError && err == nil {
 				t.Errorf("Expected error for %s, got none", tt.url)
 			} else if !tt.expectError && err != nil {

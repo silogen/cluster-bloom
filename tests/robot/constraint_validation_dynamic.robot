@@ -2,9 +2,7 @@
 Documentation     Dynamic constraint validation tests generated from schema
 Library           Browser
 Library           ConstraintTestGenerator.py
-
-*** Variables ***
-${BASE_URL}       http://localhost:62080
+Resource          keywords.resource
 
 *** Test Cases ***
 Test All Mutually Exclusive Constraints
@@ -23,13 +21,8 @@ Test All One-Of Constraints
 
 *** Keywords ***
 Setup Valid Config
-    [Documentation]    Setup minimal valid configuration
-    New Page    ${BASE_URL}
-    Wait For Elements State    id=FIRST_NODE    visible    timeout=10s
-    Check Checkbox    id=FIRST_NODE
-    Wait For Elements State    id=DOMAIN    visible    timeout=2s
-    Fill Text    id=DOMAIN    cluster.example.com
-    Select Options By    id=CERT_OPTION    value    generate
+    [Documentation]    Setup minimal valid configuration (alias for shared keyword)
+    Setup Minimal Valid First Node Config
 
 Set Field Value
     [Arguments]    ${field}    ${value}
@@ -80,12 +73,10 @@ Test Mutually Exclusive Pair
     Sleep    1s
 
     # Should show error
-    ${error_visible}=    Get Element States    id=error    *=    visible
-    ${has_error}=    Evaluate    "visible" in """${error_visible}"""
-    Should Be True    ${has_error}    Expected error when both ${field1} and ${field2} are set
+    Should Show Validation Error
 
     # Verify error message mentions mutually exclusive
-    ${error_text}=    Get Text    id=error
+    ${error_text}=    Get Error Message If Visible
     Should Contain    ${error_text}    mutually exclusive    ignore_case=True
 
 Test One Of Constraint
@@ -135,9 +126,7 @@ Test No Fields Set
     Sleep    1s
 
     # Should show error
-    ${error_visible}=    Get Element States    id=error    *=    visible
-    ${has_error}=    Evaluate    "visible" in """${error_visible}"""
-    Should Be True    ${has_error}    Expected error when no fields are set
+    Should Show Validation Error
 
 Test Exactly One Field Set
     [Arguments]    ${all_fields}    ${field_to_set}
@@ -163,12 +152,7 @@ Test Exactly One Field Set
     Set Field Value    ${field_to_set}    ${example}
 
     # Submit form
-    Click    button[type="submit"]
-    Wait For Elements State    id=preview    visible    timeout=5s
-
-    # Should succeed and show preview
-    ${yaml}=    Get Text    id=yaml-preview
-    Should Not Be Empty    ${yaml}
+    Submit And Wait For Preview
 
 Test Multiple Fields Set
     [Arguments]    ${field1}    ${field2}
@@ -189,10 +173,8 @@ Test Multiple Fields Set
     Sleep    1s
 
     # Should show error
-    ${error_visible}=    Get Element States    id=error    *=    visible
-    ${has_error}=    Evaluate    "visible" in """${error_visible}"""
-    Should Be True    ${has_error}    Expected error when multiple fields are set
+    Should Show Validation Error
 
     # Verify error message
-    ${error_text}=    Get Text    id=error
+    ${error_text}=    Get Error Message If Visible
     Should Contain Any    ${error_text}    Exactly one    must be set    ignore_case=True

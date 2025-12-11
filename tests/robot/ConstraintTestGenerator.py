@@ -60,75 +60,14 @@ class ConstraintTestGenerator:
                 })
         return result
 
-    def extract_fields_from_conditions(self, conditions):
-        """Extract field names from condition strings"""
-        field_set = set()
-        for condition in conditions:
-            # Split by && for AND logic
-            parts = condition.split(' && ')
-            for part in parts:
-                part = part.strip()
-                # Extract field name (everything before == or !=)
-                if ' == ' in part:
-                    field_name = part.split(' == ')[0].strip()
-                    field_set.add(field_name)
-                elif ' != ' in part:
-                    field_name = part.split(' != ')[0].strip()
-                    field_set.add(field_name)
-        return list(field_set)
-
-    def parse_condition_for_test(self, condition):
-        """
-        Parse a condition string and return field/value mappings for testing.
-        Example: "NO_DISKS_FOR_CLUSTER == true && CLUSTER_DISKS == ''"
-        Returns: {'NO_DISKS_FOR_CLUSTER': 'true', 'CLUSTER_DISKS': ''}
-        """
-        config = {}
-        parts = condition.split(' && ')
-        for part in parts:
-            part = part.strip()
-            if ' == ' in part:
-                tokens = part.split(' == ', 1)
-                key = tokens[0].strip()
-                value = tokens[1].strip().strip('"\'')
-                # Convert string booleans to actual booleans
-                if value.lower() == 'true':
-                    config[key] = True
-                elif value.lower() == 'false':
-                    config[key] = False
-                else:
-                    config[key] = value
-            elif ' != ' in part:
-                # For != we need to set the opposite
-                tokens = part.split(' != ', 1)
-                key = tokens[0].strip()
-                value = tokens[1].strip().strip('"\'')
-                # For != "", we need a valid non-empty value
-                if value == '':
-                    # Get valid example from schema
-                    valid_value = self.get_valid_example_for_field(key)
-                    config[key] = valid_value if valid_value is not None else 'test-value'
-                else:
-                    # For != "something", set to empty
-                    config[key] = ''
-        return config
-
-    def get_required_fields_for_valid_config(self):
-        """Return minimal required fields for a valid config"""
-        # For web UI, we need FIRST_NODE, DOMAIN, CERT_OPTION, and one storage option
-        return {
-            'FIRST_NODE': True,
-            'DOMAIN': 'cluster.example.com',
-            'CERT_OPTION': 'generate'
-        }
-
-    def get_field_default_values(self):
-        """Return default values for fields to create invalid state"""
-        return {
-            'NO_DISKS_FOR_CLUSTER': False,
-            'CLUSTER_DISKS': '',
-            'CLUSTER_PREMOUNTED_DISKS': ''
-        }
+    def get_valid_examples_for_fields(self, field_names):
+        """Get valid example values for multiple fields"""
+        result = {}
+        for field_name in field_names:
+            example = self.get_valid_example_for_field(field_name)
+            if example is not None:
+                result[field_name] = example
+        return result
 
     def get_valid_example_for_field(self, field_name):
         """Get a valid example value for a field from schema"""
@@ -164,29 +103,3 @@ class ConstraintTestGenerator:
             'int': 1,
         }
         return type_defaults.get(field_type, 'test-value')
-
-    def get_valid_examples_for_fields(self, field_names):
-        """Get valid example values for multiple fields"""
-        result = {}
-        for field_name in field_names:
-            example = self.get_valid_example_for_field(field_name)
-            if example is not None:
-                result[field_name] = example
-        return result
-
-    def can_merge_conditions(self, condition1, condition2):
-        """
-        Check if two conditions can be merged without conflicts.
-        Returns (can_merge, merged_config)
-        """
-        config1 = self.parse_condition_for_test(condition1)
-        config2 = self.parse_condition_for_test(condition2)
-
-        # Check for conflicting values
-        for key in config1:
-            if key in config2 and config1[key] != config2[key]:
-                return False, {}
-
-        # Merge configs
-        merged = {**config1, **config2}
-        return True, merged
