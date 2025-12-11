@@ -21,9 +21,10 @@ func main() {
 		return
 	}
 
+	// Default to webui if no command provided
 	if len(os.Args) < 2 {
-		printUsage()
-		os.Exit(1)
+		runWebUI()
+		return
 	}
 
 	command := os.Args[1]
@@ -134,9 +135,10 @@ func printUsage() {
 	fmt.Println("Bloom - Kubernetes Cluster Deployment Tool")
 	fmt.Println()
 	fmt.Println("Usage:")
-	fmt.Println("  bloom <command> [options]")
+	fmt.Println("  bloom [command] [options]")
 	fmt.Println()
 	fmt.Println("Commands:")
+	fmt.Println("  (none)      Start web UI (default)")
 	fmt.Println("  ansible     Deploy cluster using Ansible (requires root)")
 	fmt.Println("  webui       Start the web UI configuration generator")
 	fmt.Println("  version     Show version information")
@@ -150,7 +152,8 @@ func printUsage() {
 	fmt.Println("  --port, -p  Specify port (fails if in use). Default: auto-find from 62078")
 	fmt.Println()
 	fmt.Println("Examples:")
-	fmt.Println("  bloom webui                          # Generate bloom.yaml via web UI")
+	fmt.Println("  bloom                                # Start web UI (default)")
+	fmt.Println("  bloom --port 8080                    # Start web UI on specific port")
 	fmt.Println("  sudo bloom ansible bloom.yaml        # Deploy cluster")
 	fmt.Println("  sudo bloom ansible hello.yml         # Test Ansible runtime")
 }
