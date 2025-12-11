@@ -22,8 +22,8 @@ import (
 )
 
 func main() {
-	// Delegate to cmd/bloom
-	cmd := exec.Command("go", append([]string{"run", "./cmd/bloom"}, os.Args[1:]...)...)
+	// Delegate to cmd
+	cmd := exec.Command("go", append([]string{"run", "./cmd"}, os.Args[1:]...)...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
