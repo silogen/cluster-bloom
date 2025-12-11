@@ -51,6 +51,10 @@ func Validate(cfg Config) []string {
 		}
 	}
 
+	// Validate constraints (mutually exclusive, one-of, etc.)
+	constraintErrors := ValidateConstraints(cfg)
+	errors = append(errors, constraintErrors...)
+
 	return errors
 }
 

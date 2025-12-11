@@ -5,7 +5,8 @@ type Config map[string]any
 
 // SchemaResponse is the JSON response for /api/schema
 type SchemaResponse struct {
-	Arguments []Argument `json:"arguments"`
+	Arguments   []Argument      `json:"arguments"`
+	Constraints []constraintDef `json:"constraints"`
 }
 
 // ValidateRequest is the JSON request for /api/validate

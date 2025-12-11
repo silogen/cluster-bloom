@@ -1,0 +1,285 @@
+package config
+
+import (
+	"fmt"
+	"os"
+	"strings"
+
+	"gopkg.in/yaml.v3"
+)
+
+// ValidateConstraints validates configuration against schema constraints
+func ValidateConstraints(cfg Config) []string {
+	var errors []string
+
+	// Load constraints from schema
+	constraints, err := loadSchemaConstraints()
+	if err != nil {
+		return []string{fmt.Sprintf("Failed to load constraints: %v", err)}
+	}
+
+	// Check each constraint
+	for _, constraint := range constraints {
+		// Mutually exclusive fields - only check if at least one field is present
+		if len(constraint.MutuallyExclusive) >= 2 {
+			if anyFieldPresent(cfg, constraint.MutuallyExclusive) {
+				if err := checkMutuallyExclusive(cfg, constraint.MutuallyExclusive); err != nil {
+					errors = append(errors, err.Error())
+				}
+			}
+		}
+
+		// One-of constraints - only check if any relevant field is present
+		if len(constraint.OneOf) > 0 {
+			if anyFieldPresent(cfg, constraint.OneOf) {
+				if err := checkOneOfFields(cfg, constraint.OneOf, constraint.Error); err != nil {
+					errors = append(errors, err.Error())
+				}
+			}
+		}
+	}
+
+	return errors
+}
+
+// anyFieldPresent checks if any of the fields exist in config
+func anyFieldPresent(cfg Config, fields []string) bool {
+	for _, field := range fields {
+		val, exists := cfg[field]
+		if exists && val != nil && val != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// extractFieldsFromConditions extracts field names from condition strings
+// Example: "NO_DISKS_FOR_CLUSTER == true && CLUSTER_DISKS == ''" -> ["NO_DISKS_FOR_CLUSTER", "CLUSTER_DISKS"]
+func extractFieldsFromConditions(conditions []string) []string {
+	fieldMap := make(map[string]bool)
+
+	for _, condition := range conditions {
+		// Split by && for AND logic
+		parts := strings.Split(condition, " && ")
+
+		for _, part := range parts {
+			part = strings.TrimSpace(part)
+
+			// Extract field name (everything before == or !=)
+			if strings.Contains(part, " == ") {
+				tokens := strings.SplitN(part, " == ", 2)
+				if len(tokens) == 2 {
+					fieldMap[strings.TrimSpace(tokens[0])] = true
+				}
+			} else if strings.Contains(part, " != ") {
+				tokens := strings.SplitN(part, " != ", 2)
+				if len(tokens) == 2 {
+					fieldMap[strings.TrimSpace(tokens[0])] = true
+				}
+			}
+		}
+	}
+
+	// Convert map to slice
+	fields := make([]string, 0, len(fieldMap))
+	for field := range fieldMap {
+		fields = append(fields, field)
+	}
+
+	return fields
+}
+
+// checkMutuallyExclusive verifies only one of the fields is set
+func checkMutuallyExclusive(cfg Config, fields []string) error {
+	setFields := []string{}
+
+	for _, field := range fields {
+		val, exists := cfg[field]
+		if exists && val != nil && val != "" {
+			setFields = append(setFields, field)
+		}
+	}
+
+	if len(setFields) > 1 {
+		return fmt.Errorf("fields %v are mutually exclusive, but %v are set", fields, setFields)
+	}
+
+	return nil
+}
+
+// checkOneOfFields verifies exactly one of the fields is set
+func checkOneOfFields(cfg Config, fields []string, errorMsg string) error {
+	setCount := 0
+	var setFields []string
+
+	for _, field := range fields {
+		if isFieldSet(cfg, field) {
+			setCount++
+			setFields = append(setFields, field)
+		}
+	}
+
+	if setCount != 1 {
+		if errorMsg != "" {
+			return fmt.Errorf("%s", errorMsg)
+		}
+		if setCount == 0 {
+			return fmt.Errorf("exactly one of %v must be set, but none are set", fields)
+		}
+		return fmt.Errorf("exactly one of %v must be set, but %v are set", fields, setFields)
+	}
+
+	return nil
+}
+
+// evaluateCondition evaluates a boolean condition string
+// Format: "KEY == value && KEY2 == value2" or "KEY != value"
+func evaluateCondition(condition string, cfg Config) bool {
+	// Split by && for AND logic
+	parts := strings.Split(condition, " && ")
+
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+
+		// Check for != operator
+		if strings.Contains(part, " != ") {
+			tokens := strings.SplitN(part, " != ", 2)
+			if len(tokens) != 2 {
+				return false
+			}
+
+			key := strings.TrimSpace(tokens[0])
+			expectedValue := strings.TrimSpace(tokens[1])
+			expectedValue = strings.Trim(expectedValue, "\"")
+
+			actualValue := getConfigValue(cfg, key)
+			if actualValue == expectedValue {
+				return false // Values are equal, so != is false
+			}
+			continue
+		}
+
+		// Check for == operator
+		if strings.Contains(part, " == ") {
+			tokens := strings.SplitN(part, " == ", 2)
+			if len(tokens) != 2 {
+				return false
+			}
+
+			key := strings.TrimSpace(tokens[0])
+			expectedValue := strings.TrimSpace(tokens[1])
+			expectedValue = strings.Trim(expectedValue, "\"")
+
+			actualValue := getConfigValue(cfg, key)
+			if actualValue != expectedValue {
+				return false
+			}
+			continue
+		}
+
+		return false
+	}
+
+	return true
+}
+
+// getConfigValue gets a config value as a normalized string
+func getConfigValue(cfg Config, key string) string {
+	val, exists := cfg[key]
+	if !exists {
+		return ""
+	}
+
+	// Convert to string representation
+	switch v := val.(type) {
+	case bool:
+		if v {
+			return "true"
+		}
+		return "false"
+	case string:
+		if v == "" {
+			return ""
+		}
+		return v
+	default:
+		return fmt.Sprintf("%v", v)
+	}
+}
+
+// ConstraintDef represents a constraint from the schema
+type ConstraintDef struct {
+	MutuallyExclusive []string `yaml:"mutually_exclusive" json:"mutually_exclusive,omitempty"`
+	OneOf             []string `yaml:"one_of" json:"one_of,omitempty"`
+	Error             string   `yaml:"error" json:"error,omitempty"`
+}
+
+// Alias for backward compatibility
+type constraintDef = ConstraintDef
+
+// isFieldSet checks if a field has a truthy value
+func isFieldSet(cfg Config, field string) bool {
+	val, exists := cfg[field]
+	if !exists || val == nil {
+		return false
+	}
+
+	// Check boolean fields
+	if boolVal, ok := val.(bool); ok {
+		return boolVal
+	}
+
+	// Check string fields
+	if strVal, ok := val.(string); ok {
+		return strVal != ""
+	}
+
+	return true
+}
+
+// schemaConstraints represents the constraints section
+type schemaConstraints struct {
+	Constraints []constraintDef `yaml:"constraints"`
+}
+
+var cachedConstraints []constraintDef
+
+// LoadConstraints loads constraints from the schema file (exported for API)
+func LoadConstraints() ([]ConstraintDef, error) {
+	return loadSchemaConstraints()
+}
+
+// loadSchemaConstraints loads constraints from the schema file
+func loadSchemaConstraints() ([]constraintDef, error) {
+	if cachedConstraints != nil {
+		return cachedConstraints, nil
+	}
+
+	// Try multiple paths for schema file
+	paths := []string{
+		"schema/bloom.yaml.schema.yaml",
+		"../../schema/bloom.yaml.schema.yaml",
+		"/workspace/cluster-bloom/schema/bloom.yaml.schema.yaml",
+	}
+
+	var data []byte
+	var err error
+	for _, path := range paths {
+		data, err = os.ReadFile(path)
+		if err == nil {
+			break
+		}
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to read schema file: %w", err)
+	}
+
+	var schema schemaConstraints
+	if err := yaml.Unmarshal(data, &schema); err != nil {
+		return nil, fmt.Errorf("failed to parse schema: %w", err)
+	}
+
+	cachedConstraints = schema.Constraints
+	return cachedConstraints, nil
+}

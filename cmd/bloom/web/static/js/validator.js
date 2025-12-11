@@ -47,7 +47,7 @@ function validateField(argument, value, config) {
     return null;
 }
 
-function validateForm(schema, config) {
+async function validateForm(schema, config) {
     clearValidationErrors();
     const errors = [];
 
@@ -59,6 +59,10 @@ function validateForm(schema, config) {
             showValidationError(argument.key, error);
         }
     });
+
+    // Validate constraints (mutually exclusive, one-of, etc.)
+    const constraintErrors = await validateConstraints(config);
+    errors.push(...constraintErrors);
 
     return errors;
 }

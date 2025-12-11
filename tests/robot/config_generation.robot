@@ -4,6 +4,7 @@ Library           Browser
 Library           RequestsLibrary
 Library           Collections
 Library           OperatingSystem
+Resource          keywords.resource
 
 *** Variables ***
 ${BASE_URL}       http://localhost:62080
@@ -230,8 +231,25 @@ Test Field Visibility Updates Config
 
     # Generate config
     Click    button[type="submit"]
-    Sleep    1s
-    Wait For Elements State    id=preview    visible    timeout=5s
+    Sleep    2s
+
+    # Check if preview appeared and log form values if not
+    TRY
+        Wait For Elements State    id=preview    visible    timeout=5s
+    EXCEPT
+        Log To Console    ${\n}Form submission failed - logging debug info
+        Log All Form Values
+        ${error_visible}=    Get Element States    id=error
+        ${has_error}=    Evaluate    "visible" in """${error_visible}"""
+        IF    ${has_error}
+            ${error_text}=    Get Text    id=error
+            Log To Console    Error message: ${error_text}
+        ELSE
+            Log To Console    No error message visible
+        END
+        Fail    Preview did not appear - see console output above for form values and any error
+    END
+
     ${yamlContent}=    Get Text    id=yaml-preview
     Should Contain    ${yamlContent}    DOMAIN: visibility-test.example.com
     Should Not Contain    ${yamlContent}    SERVER_IP
@@ -243,13 +261,32 @@ Test Field Visibility Updates Config
     Wait For Elements State    id=SERVER_IP    visible    timeout=2s
     Fill Text    id=SERVER_IP    10.100.100.11
     Fill Text    id=JOIN_TOKEN    testtoken::server:abc123
+
+    # Clear premounted disks and set regular disks (one-of constraint)
+    Fill Text    id=CLUSTER_PREMOUNTED_DISKS    ${EMPTY}
     Fill Text    id=CLUSTER_DISKS    /dev/sda
-    Click    id=GPU_NODE
 
     # Regenerate config
     Click    button[type="submit"]
-    Sleep    1s
-    Wait For Elements State    id=preview    visible    timeout=5s
+    Sleep    2s
+
+    # Check if preview appeared and log form values if not
+    TRY
+        Wait For Elements State    id=preview    visible    timeout=5s
+    EXCEPT
+        Log To Console    ${\n}Form regeneration failed - logging debug info
+        Log All Form Values
+        ${error_visible}=    Get Element States    id=error
+        ${has_error}=    Evaluate    "visible" in """${error_visible}"""
+        IF    ${has_error}
+            ${error_text}=    Get Text    id=error
+            Log To Console    Error message: ${error_text}
+        ELSE
+            Log To Console    No error message visible
+        END
+        Fail    Preview did not appear after edit - see console output above for form values and any error
+    END
+
     ${yamlContent}=    Get Text    id=yaml-preview
     Should Not Contain    ${yamlContent}    DOMAIN
     Should Contain    ${yamlContent}    SERVER_IP: 10.100.100.11

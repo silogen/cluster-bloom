@@ -14,8 +14,15 @@ func handleSchema(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Load constraints from schema
+	constraints, err := config.LoadConstraints()
+	if err != nil {
+		constraints = []config.ConstraintDef{} // Empty if loading fails
+	}
+
 	response := config.SchemaResponse{
-		Arguments: config.Schema(),
+		Arguments:   config.Schema(),
+		Constraints: constraints,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

@@ -76,9 +76,9 @@ async function handleGenerate() {
     currentConfig = getFormData(schema);
 
     // Validate first
-    const clientErrors = validateForm(schema, currentConfig);
+    const clientErrors = await validateForm(schema, currentConfig);
     if (clientErrors.length > 0) {
-        showError('Please fix validation errors before generating');
+        showError('Validation errors:\n' + clientErrors.join('\n'));
         return;
     }
 
@@ -146,11 +146,9 @@ async function saveYAML() {
 
 function showError(message) {
     const errorDiv = document.getElementById('error');
+    errorDiv.style.whiteSpace = 'pre-line';
     errorDiv.textContent = message;
     errorDiv.classList.remove('hidden');
-    setTimeout(() => {
-        errorDiv.classList.add('hidden');
-    }, 5000);
 }
 
 function showSuccess(message) {
