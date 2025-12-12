@@ -556,33 +556,42 @@ Before starting implementation, need to decide:
 - `3a7b079` feat(webui): add HTML5 field validation with real-time feedback
 - `9a3895a` feat(webui): implement smart port management with auto-discovery
 
-**Phase 1: Core Architecture** - PARTIAL
-- ✅ Config parser (internal/config/schema.go - single source of truth)
-- ✅ Config validator (internal/config/validator.go - domain, IP, URL, path validation)
+**Phase 1: Core Architecture** - COMPLETE ✅
+- ✅ Config parser (pkg/config/schema.go - single source of truth)
+- ✅ Config validator (pkg/config/validator.go - schema-driven validation)
 - ✅ Config generator (Web UI + YAML generation)
-- ❌ **Deployment engine** - NEEDS IMPLEMENTATION
+- ✅ **Deployment engine** - IMPLEMENTED
 
-### 🔄 In Progress
+### ✅ Completed
 
-**Phase 1b: Ansible Deployment Engine** - IN PROGRESS
+**Phase 1b: Ansible Deployment Engine** - COMPLETE ✅
 
 **Design Complete** - All architectural decisions finalized (2025-12-10)
 
 **Architecture:**
 - Command: `bloom ansible <config-file>` subcommand
 - Runtime: pkg/ansible/runtime package (extracted from bloomv2 experiment)
-- Playbooks: Embed entire playbooks/ directory with UPPERCASE vars
-- Config: Reuse internal/config package (no conversion needed)
+- Playbooks: Embedded in pkg/ansible/runtime/playbooks/
+- Config: Reuses pkg/config package (no conversion needed)
 - Filtering: DISABLED_STEPS/ENABLED_STEPS deferred to v2.1
 
 **Implementation Tasks:**
-1. Add go-containerregistry dependency to go.mod
-2. Create pkg/ansible/runtime package (container execution)
-3. Copy and embed playbooks/ from experiments/bloomv2
-4. Update cluster-bloom.yaml to use UPPERCASE variable names
-5. Add ansible subcommand to cmd/bloom/main.go
-6. Wire up bloom.yaml reading with internal/config
-7. Test basic deployment workflow
+1. ✅ Add go-containerregistry dependency to go.mod
+2. ✅ Create pkg/ansible/runtime package (container execution)
+   - container.go: Image pulling and caching
+   - executor_linux.go: Linux namespace container execution
+   - executor_other.go: Stub for non-Linux platforms
+   - playbook.go: Playbook execution orchestration
+3. ✅ Copy and embed playbooks/ from experiments/bloomv2
+   - cluster-bloom.yaml (main deployment playbook)
+   - hello.yml (test playbook)
+4. ✅ Playbooks already use UPPERCASE variable names
+5. ✅ Add ansible subcommand to cmd/main.go
+6. ✅ Wire up bloom.yaml reading with pkg/config
+   - Config loading with LoadConfig()
+   - Validation with Validate()
+   - Pass config as Ansible extra vars
+7. ⬜ Test basic deployment workflow (NEXT STEP)
 
 ### 📋 Not Started
 
@@ -601,17 +610,20 @@ Before starting implementation, need to decide:
 
 ## Next Actions
 
-1. ✓ Create bloom-v2 branch in cluster-bloom
-2. ✓ Write planning document
-3. ✓ Design and implement Web UI
-4. ✓ Implement schema-driven validation
-5. ✓ Add Robot Framework tests for Web UI
-6. **→ Implement `bloom ansible` command (CURRENT)**
-   - Copy pattern from /workspace/platform/experiments/bloomv2
-   - Adapt to use bloom.yaml as input
-   - Embed cluster-bloom.yaml playbook
-   - Add to cluster-bloom repository
-7. Test ansible command with generated bloom.yaml files
+1. ✅ Create bloom-v2 branch in cluster-bloom
+2. ✅ Write planning document
+3. ✅ Design and implement Web UI
+4. ✅ Implement schema-driven validation
+5. ✅ Add Robot Framework tests for Web UI
+6. ✅ Implement `bloom ansible` command
+   - ✅ Copy pattern from /workspace/platform/experiments/bloomv2
+   - ✅ Adapt to use bloom.yaml as input
+   - ✅ Embed cluster-bloom.yaml playbook
+   - ✅ Add to cluster-bloom repository
+7. **→ Test ansible command with generated bloom.yaml files (CURRENT)**
+   - Test hello.yml playbook execution
+   - Verify config loading and validation
+   - Test cluster-bloom.yaml with sample config
 8. Complete deployment tests
 9. Documentation and polish
 

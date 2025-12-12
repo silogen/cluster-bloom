@@ -76,6 +76,19 @@ func Validate(cfg Config) []string {
 		patterns = make(map[string]*regexp.Regexp) // Continue with empty patterns
 	}
 
+	// Build set of valid keys from schema
+	validKeys := make(map[string]bool)
+	for _, arg := range schema {
+		validKeys[arg.Key] = true
+	}
+
+	// Check for unknown keys in config
+	for key := range cfg {
+		if !validKeys[key] {
+			errors = append(errors, fmt.Sprintf("Unknown configuration key: %s", key))
+		}
+	}
+
 	for _, arg := range schema {
 		// Check if field is visible based on dependencies
 		if !isArgVisible(arg, cfg) {

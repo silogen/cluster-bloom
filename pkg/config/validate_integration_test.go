@@ -411,7 +411,33 @@ func TestValidate_AllValidExamplesPass(t *testing.T) {
 	}
 }
 
-// TestValidate_AllInvalidExamplesFail ensures all invalid schema examples fail validation
+func TestValidate_UnknownKeyRejected(t *testing.T) {
+	config := Config{
+		"FIRST_NODE":           true,
+		"DOMAIN":               "test.example.com",
+		"NO_DISKS_FOR_CLUSTER": true,
+		"INVALID_KEY":          "some-value",
+	}
+
+	errors := Validate(config)
+
+	if len(errors) == 0 {
+		t.Fatal("Expected validation error for unknown key INVALID_KEY, but got none")
+	}
+
+	foundError := false
+	for _, err := range errors {
+		if strings.Contains(err, "Unknown configuration key") && strings.Contains(err, "INVALID_KEY") {
+			foundError = true
+			break
+		}
+	}
+
+	if !foundError {
+		t.Errorf("Expected 'Unknown configuration key: INVALID_KEY' error, but got: %v", errors)
+	}
+}
+
 func TestValidate_AllInvalidExamplesFail(t *testing.T) {
 	schema := loadSchemaDefinition(t)
 

@@ -12,7 +12,8 @@ import (
 )
 
 var (
-	port int
+	port            int
+	playbookOverride string
 )
 
 func init() {
@@ -109,11 +110,10 @@ func newRootCmd() *cobra.Command {
 
 	ansibleCmd := &cobra.Command{
 		Use:   "ansible <config-file|playbook.yml>",
-		Short: "Deploy cluster using Ansible (requires root)",
+		Short: "Deploy cluster using Ansible",
 		Long: `Deploy a Kubernetes cluster using Ansible playbooks.
 
-Accepts either a bloom.yaml config file or a direct playbook path.
-Must be run as root for Linux namespace execution.`,
+Accepts either a bloom.yaml config file or a direct playbook path.`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			runAnsible(args[0])
@@ -130,6 +130,7 @@ Must be run as root for Linux namespace execution.`,
 
 	// Add flags
 	rootCmd.PersistentFlags().IntVarP(&port, "port", "p", 62078, "Port for web UI (fails if in use)")
+	ansibleCmd.Flags().StringVar(&playbookOverride, "playbook", "", "Override playbook to run (e.g., print-config.yml)")
 
 	// Add subcommands
 	rootCmd.AddCommand(webuiCmd)
@@ -150,14 +151,6 @@ func runWebUI(cmd *cobra.Command) {
 }
 
 func runAnsible(configOrPlaybook string) {
-	// Check if running as root (required for Linux namespaces)
-	if os.Getuid() != 0 {
-		fmt.Fprintln(os.Stderr, "Error: ansible command must be run as root")
-		fmt.Fprintln(os.Stderr, "Please run with sudo:")
-		fmt.Fprintf(os.Stderr, "  sudo bloom ansible %s\n", configOrPlaybook)
-		os.Exit(1)
-	}
-
 	// Determine if this is a config file or direct playbook
 	var cfg config.Config
 	var playbookName string
@@ -185,8 +178,12 @@ func runAnsible(configOrPlaybook string) {
 			os.Exit(1)
 		}
 
-		// Use cluster-bloom.yaml playbook for config-based deployment
-		playbookName = "cluster-bloom.yaml"
+		// Use playbook override if specified, otherwise use cluster-bloom.yaml
+		if playbookOverride != "" {
+			playbookName = playbookOverride
+		} else {
+			playbookName = "cluster-bloom.yaml"
+		}
 	}
 
 	// Run the playbook

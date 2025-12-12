@@ -1,0 +1,79 @@
+---
+- name: Print Bloom Configuration Values
+  hosts: localhost
+  gather_facts: no
+
+  tasks:
+    - name: Print configuration header
+      debug:
+        msg: "=== Bloom Configuration Values ==="
+
+    - name: Print Basic Configuration
+      debug:
+        msg: |
+          📋 Basic Configuration:
+            FIRST_NODE: {{ FIRST_NODE | default('NOT SET') }}
+            GPU_NODE: {{ GPU_NODE | default('NOT SET') }}
+            DOMAIN: {{ DOMAIN | default('NOT SET') }}
+            SERVER_IP: {{ SERVER_IP | default('NOT SET') }}
+
+    - name: Print Storage Configuration
+      debug:
+        msg: |
+          💾 Storage Configuration:
+            CLUSTER_DISKS: {{ CLUSTER_DISKS | default('NOT SET') }}
+            CLUSTER_PREMOUNTED_DISKS: {{ CLUSTER_PREMOUNTED_DISKS | default('NOT SET') }}
+            NO_DISKS_FOR_CLUSTER: {{ NO_DISKS_FOR_CLUSTER | default('NOT SET') }}
+
+    - name: Print SSL/TLS Configuration
+      debug:
+        msg: |
+          🔒 SSL/TLS Configuration:
+            USE_CERT_MANAGER: {{ USE_CERT_MANAGER | default('NOT SET') }}
+            CERT_OPTION: {{ CERT_OPTION | default('NOT SET') }}
+            TLS_CERT: {{ TLS_CERT | default('NOT SET') }}
+            TLS_KEY: {{ TLS_KEY | default('NOT SET') }}
+            ADDITIONAL_TLS_SAN_URLS: {{ ADDITIONAL_TLS_SAN_URLS | default('NOT SET') }}
+            LETSENCRYPT_EMAIL: {{ LETSENCRYPT_EMAIL | default('NOT SET') }}
+
+    - name: Print GPU Configuration
+      debug:
+        msg: |
+          🎮 GPU Configuration:
+            ROCM_BASE_URL: {{ ROCM_BASE_URL | default('NOT SET') }}
+
+    - name: Print RKE2 Configuration
+      debug:
+        msg: |
+          ⚙️ RKE2 Configuration:
+            RKE2_INSTALLATION_URL: {{ RKE2_INSTALLATION_URL | default('NOT SET') }}
+            RKE2_VERSION: {{ RKE2_VERSION | default('NOT SET') }}
+
+    - name: Print Advanced Configuration
+      debug:
+        msg: |
+          🔧 Advanced Configuration:
+            ENABLE_CLUSTERFORGE: {{ ENABLE_CLUSTERFORGE | default('NOT SET') }}
+            CLUSTERFORGE_AIRGAP_ARCHIVE: {{ CLUSTERFORGE_AIRGAP_ARCHIVE | default('NOT SET') }}
+            ENABLE_CLUSTERFORGE_OIDC: {{ ENABLE_CLUSTERFORGE_OIDC | default('NOT SET') }}
+            OIDC_ISSUER_URL: {{ OIDC_ISSUER_URL | default('NOT SET') }}
+            OIDC_CLIENT_ID: {{ OIDC_CLIENT_ID | default('NOT SET') }}
+            OIDC_CLIENT_SECRET: {{ OIDC_CLIENT_SECRET | default('NOT SET') }}
+            ADDITIONAL_OIDC_PROVIDERS: {{ ADDITIONAL_OIDC_PROVIDERS | default('NOT SET') }}
+
+    - name: Print Command Line Options
+      debug:
+        msg: |
+          💻 Command Line Options:
+            USE_SUDO: {{ USE_SUDO | default('NOT SET') }}
+            DEBUG_MODE: {{ DEBUG_MODE | default('NOT SET') }}
+            SKIP_PREFLIGHT_CHECKS: {{ SKIP_PREFLIGHT_CHECKS | default('NOT SET') }}
+            FORCE_REINSTALL: {{ FORCE_REINSTALL | default('NOT SET') }}
+
+    - name: Print all variables (raw)
+      debug:
+        msg: "All ansible vars: {{ vars | dict2items | selectattr('key', 'match', '^[A-Z_]+$') | list }}"
+
+    - name: Configuration check complete
+      debug:
+        msg: "=== Configuration Print Complete ==="
