@@ -62,7 +62,6 @@ func (s *Server) Start() error {
 
 	// Setup routes
 	http.HandleFunc("/api/schema", handleSchema)
-	http.HandleFunc("/api/validate", handleValidate)
 	http.HandleFunc("/api/generate", handleGenerate)
 	http.HandleFunc("/api/save", handleSave)
 	http.Handle("/", fileServer)

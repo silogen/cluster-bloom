@@ -66,28 +66,3 @@ async function validateForm(schema, config) {
 
     return errors;
 }
-
-async function validateWithServer(config) {
-    try {
-        const response = await fetch('/api/validate', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ config }),
-        });
-
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        const result = await response.json();
-        return result;
-    } catch (error) {
-        console.error('Server validation failed:', error);
-        return {
-            valid: false,
-            errors: ['Failed to validate with server: ' + error.message],
-        };
-    }
-}
