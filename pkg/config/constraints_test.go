@@ -53,8 +53,9 @@ func TestMutuallyExclusiveConstraints(t *testing.T) {
 
 			t.Run("both_"+fields[0]+"_and_"+fields[1]+"_set", func(t *testing.T) {
 				cfg := Config{
-					fields[0]: "value1",
-					fields[1]: "value2",
+					fields[0]:               "value1",
+					fields[1]:               "value2",
+					"NO_DISKS_FOR_CLUSTER": true, // Satisfy storage constraint
 				}
 
 				errors := ValidateConstraints(cfg)
@@ -65,7 +66,8 @@ func TestMutuallyExclusiveConstraints(t *testing.T) {
 
 			t.Run("only_"+fields[0]+"_set", func(t *testing.T) {
 				cfg := Config{
-					fields[0]: "value1",
+					fields[0]:               "value1",
+					"NO_DISKS_FOR_CLUSTER": true, // Satisfy storage constraint
 				}
 
 				errors := ValidateConstraints(cfg)
@@ -76,7 +78,8 @@ func TestMutuallyExclusiveConstraints(t *testing.T) {
 
 			t.Run("only_"+fields[1]+"_set", func(t *testing.T) {
 				cfg := Config{
-					fields[1]: "value1",
+					fields[1]:               "value1",
+					"NO_DISKS_FOR_CLUSTER": true, // Satisfy storage constraint
 				}
 
 				errors := ValidateConstraints(cfg)
@@ -86,7 +89,9 @@ func TestMutuallyExclusiveConstraints(t *testing.T) {
 			})
 
 			t.Run("neither_set", func(t *testing.T) {
-				cfg := Config{}
+				cfg := Config{
+					"NO_DISKS_FOR_CLUSTER": true, // Satisfy storage constraint
+				}
 
 				errors := ValidateConstraints(cfg)
 				if len(errors) > 0 {

@@ -14,19 +14,6 @@ Test Schema Endpoint Returns Valid JSON
     Should Not Be Empty    ${schema}[arguments]
     Length Should Be    ${schema}[arguments]    26
 
-Test Validate Endpoint Accepts Valid Config
-    [Documentation]    Verify /api/validate accepts valid configuration
-    Create Session    bloom    ${BASE_URL}
-    ${config}=    Create Dictionary
-    ...    FIRST_NODE=true
-    ...    GPU_NODE=true
-    ...    DOMAIN=cluster.example.com
-    ${body}=    Create Dictionary    config=${config}
-    ${response}=    POST On Session    bloom    /api/validate    json=${body}
-    Should Be Equal As Integers    ${response.status_code}    200
-    ${result}=    Set Variable    ${response.json()}
-    Should Be True    ${result}[valid]
-
 Test Generate Endpoint Creates YAML
     [Documentation]    Verify /api/generate creates YAML output
     Create Session    bloom    ${BASE_URL}
@@ -34,6 +21,7 @@ Test Generate Endpoint Creates YAML
     ...    FIRST_NODE=true
     ...    GPU_NODE=true
     ...    DOMAIN=cluster.example.com
+    ...    NO_DISKS_FOR_CLUSTER=true
     ${body}=    Create Dictionary    config=${config}
     ${response}=    POST On Session    bloom    /api/generate    json=${body}
     Should Be Equal As Integers    ${response.status_code}    200

@@ -44,12 +44,23 @@
 - Type definitions with patterns and examples (domain, ipv4, url, etc.)
 - Field mappings with type, default, description, section
 - Conditional visibility via `applicable` and `required` fields
+- Constraint definitions (mutually_exclusive, one_of)
+
+**Validation Architecture:**
+- **Frontend (HTML5)**: Real-time pattern validation using schema patterns via HTML5 `pattern` attribute
+- **Frontend (JS)**: Pre-submit validation for required fields and enum values in `validateForm()`
+- **Backend (Go)**: Authoritative validation at `/api/generate` and `/api/save` endpoints
+  - Pattern validation: Loads from schema types at runtime (validator.go)
+  - Constraint validation: Validates mutually_exclusive and one_of rules (constraints.go)
+  - Type preservation: Custom types (domain, ipv4) preserved for accurate validation
 
 **Rationale:**
 - Single source of truth eliminates duplication
 - Schema drives both validation and testing
 - Easy to add new fields or patterns
 - Tests automatically stay in sync with schema
+- Frontend and backend use identical patterns
+- All validation rules centralized in schema YAML
 
 **Reference:** See `schema/bloom.yaml.schema.yaml`
 
@@ -94,32 +105,37 @@ bloom version                 # Show version
 ```
 cluster-bloom/  (bloom-v2 branch)
 ├── cmd/
-│   └── bloom/
-│       └── main.go           # Entry point, subcommand routing
-├── internal/
+│   ├── main.go               # Entry point, subcommand routing
+│   └── web/
+│       └── static/
+│           ├── index.html    # Main page
+│           ├── js/
+│           │   ├── app.js    # Application logic
+│           │   ├── form.js   # Form generation from schema
+│           │   ├── constraints.js  # Constraint validation
+│           │   └── validator.js    # Frontend validation
+│           └── css/
+│               └── styles.css      # Styling
+├── pkg/
 │   ├── ansible/
 │   │   ├── runtime.go        # Container runtime (namespaces)
 │   │   ├── image.go          # Image pull & cache
 │   │   └── executor.go       # Playbook execution
 │   ├── config/
-│   │   ├── loader.go         # YAML config parsing
-│   │   ├── validator.go      # Validation rules
+│   │   ├── config.go         # Config type definition
+│   │   ├── validator.go      # Schema-driven validation
+│   │   ├── validate_test.go  # Validation tests
+│   │   ├── validate_integration_test.go  # Schema-driven integration tests
 │   │   ├── schema.go         # Argument struct definition
-│   │   ├── schema_loader.go  # Load schema from YAML
+│   │   ├── schema_loader.go  # Load schema from YAML at runtime
 │   │   ├── schema_loader_test.go  # Schema loader tests
-│   │   ├── generator.go      # Generate bloom.yaml
-│   │   ├── patterns_test.go  # Pattern validation tests
-│   │   └── types.go          # Config structs
-│   ├── deploy/
-│   │   ├── orchestrator.go   # Playbook sequencing
-│   │   └── logger.go         # Deployment logging
-│   ├── webui/
-│   │   ├── server.go         # HTTP server
-│   │   ├── handlers.go       # API endpoints
-│   │   └── embed.go          # Embedded web assets
-│   └── wizard/
-│       ├── cli.go            # Interactive prompts
-│       └── generator.go      # bloom.yaml generation
+│   │   ├── constraints.go    # Constraint validation logic
+│   │   ├── constraints_test.go    # Constraint tests
+│   │   └── generator.go      # Generate bloom.yaml
+│   └── webui/
+│       ├── server.go         # HTTP server
+│       ├── handlers.go       # API endpoints (/api/schema, /api/generate, /api/save)
+│       └── embed.go          # Embedded web assets
 ├── playbooks/
 │   ├── validate.yml          # Pre-flight checks
 │   ├── system.yml            # System preparation
@@ -134,20 +150,11 @@ cluster-bloom/  (bloom-v2 branch)
 │   └── robot/
 │       ├── api.robot         # API endpoint tests
 │       ├── ui.robot          # UI loading tests
-│       ├── validation.robot  # Form validation tests
+│       ├── config_generation.robot  # Config generation tests
+│       ├── constraint_validation_dynamic.robot  # Constraint tests
 │       ├── schema_validation.robot  # Schema-driven validation tests
 │       ├── yaml_loader.py    # Schema example extraction
 │       └── run_tests_docker.sh  # Test runner
-├── cmd/bloom/web/
-│   └── static/
-│       ├── index.html        # Main page
-│       ├── js/
-│       │   ├── app.js        # Application logic
-│       │   ├── form.js       # Form generation from schema
-│       │   ├── schema.js     # Schema utilities
-│       │   └── validator.js  # Frontend validation
-│       └── css/
-│           └── styles.css    # Styling
 ├── tmp/                      # Planning docs (gitignored)
 └── Makefile                  # Build automation
 ```
@@ -182,9 +189,9 @@ cluster-bloom/  (bloom-v2 branch)
 **API Endpoints:**
 ```
 GET  /                  # Serve web UI
-POST /api/validate      # Validate config JSON
-POST /api/generate      # Generate YAML from JSON
-GET  /api/schema        # Get field definitions & dependencies
+POST /api/generate      # Generate YAML from JSON (includes validation)
+POST /api/save          # Save YAML to file (includes validation)
+GET  /api/schema        # Get field definitions, constraints & dependencies
 ```
 
 **Rationale:**
@@ -263,11 +270,15 @@ User Browser
     ↓
 [Web UI Form] → Fill fields
     ↓
-[POST /api/validate] → Check validity
+[HTML5 Pattern Validation] → Real-time feedback
+    ↓
+[Client-side Validation] → Required fields + enum checks
+    ↓
+[POST /api/generate] → Full validation + generate YAML
     ↓
 [Preview YAML]
     ↓
-[POST /api/generate] → Get bloom.yaml
+[POST /api/save] → Save to server filesystem
     ↓
 Download bloom.yaml
     ↓
@@ -333,27 +344,28 @@ sudo bloom deploy bloom.yaml
 ## Success Criteria
 
 1. **Functionality:**
-   - Web UI generates valid bloom.yaml ✓
-   - CLI wizard generates valid bloom.yaml ✓
-   - bloom deploy successfully deploys cluster ✓
-   - Same success rate as V1 ✓
+   - Web UI generates valid bloom.yaml ✅
+   - CLI wizard generates valid bloom.yaml ⬜ (deferred)
+   - bloom deploy successfully deploys cluster ⬜ (in progress)
+   - Same success rate as V1 ⬜ (pending deployment)
 
 2. **Compatibility:**
-   - V1 bloom.yaml files work in V2 ✓
-   - All V1 config options supported ✓
+   - V1 bloom.yaml files work in V2 ✅
+   - All V1 config options supported ✅
 
 3. **User Experience:**
-   - Single binary distribution ✓
-   - Clear subcommands ✓
-   - Web UI is intuitive ✓
-   - Good error messages ✓
+   - Single binary distribution ✅
+   - Clear subcommands ✅
+   - Web UI is intuitive ✅
+   - Good error messages ✅
 
 4. **Code Quality:**
-   - Clean architecture ✓
-   - Testable components ✓
-   - Robot Framework tests ✓
-   - Schema-driven validation ✓
-   - Comprehensive test coverage (all patterns) ✓
+   - Clean architecture ✅
+   - Testable components ✅
+   - Robot Framework tests ✅ (18/18 passing)
+   - Schema-driven validation ✅
+   - Comprehensive test coverage (all patterns) ✅
+   - Go unit tests ✅ (100% passing)
 
 ## Out of Scope (V2.0)
 

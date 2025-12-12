@@ -113,8 +113,8 @@ func mapType(yamlType string) string {
 	case "enum":
 		return "enum"
 	default:
-		// Custom types (domain, ipv4, url, etc.) map to "string"
-		return "string"
+		// Keep custom types (domain, ipv4, url, etc.) for pattern validation
+		return yamlType
 	}
 }
 

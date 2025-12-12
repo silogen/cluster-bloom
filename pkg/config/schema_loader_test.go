@@ -25,8 +25,8 @@ func TestLoadSchema(t *testing.T) {
 	for _, arg := range args {
 		if arg.Key == "DOMAIN" {
 			foundDomain = true
-			if arg.Type != "string" {
-				t.Errorf("DOMAIN type should be 'string', got '%s'", arg.Type)
+			if arg.Type != "domain" {
+				t.Errorf("DOMAIN type should be 'domain', got '%s'", arg.Type)
 			}
 			if arg.Section != "📋 Basic Configuration" {
 				t.Errorf("DOMAIN section should be '📋 Basic Configuration', got '%s'", arg.Section)
@@ -69,8 +69,8 @@ func TestLoadSchemaTypes(t *testing.T) {
 		expectedType string
 	}{
 		{"FIRST_NODE", "bool"},
-		{"DOMAIN", "string"},
-		{"SERVER_IP", "string"},
+		{"DOMAIN", "domain"},
+		{"SERVER_IP", "ipv4"},
 		{"CERT_OPTION", "enum"},
 		{"ADDITIONAL_OIDC_PROVIDERS", "array"},
 	}

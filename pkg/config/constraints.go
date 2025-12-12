@@ -29,12 +29,10 @@ func ValidateConstraints(cfg Config) []string {
 			}
 		}
 
-		// One-of constraints - only check if any relevant field is present
+		// One-of constraints - always check (must have exactly one)
 		if len(constraint.OneOf) > 0 {
-			if anyFieldPresent(cfg, constraint.OneOf) {
-				if err := checkOneOfFields(cfg, constraint.OneOf, constraint.Error); err != nil {
-					errors = append(errors, err.Error())
-				}
+			if err := checkOneOfFields(cfg, constraint.OneOf, constraint.Error); err != nil {
+				errors = append(errors, err.Error())
 			}
 		}
 	}
