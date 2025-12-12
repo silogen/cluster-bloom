@@ -5,19 +5,14 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 REPO_ROOT="$( cd "$SCRIPT_DIR/../.." && pwd )"
 
 echo "Starting Bloom V2 Web UI..."
-# Build if binary doesn't exist
-if [ ! -f "$REPO_ROOT/dist/bloom-v2" ]; then
-    echo "Building bloom-v2..."
-    cd "$REPO_ROOT"
-    CGO_ENABLED=0 go build -o dist/bloom-v2 ./cmd/bloom
-fi
 
 # Use fixed port for tests (fail if in use)
 BLOOM_PORT=62080
 echo "Using port: $BLOOM_PORT"
 
 # Start bloom webui in background with explicit port (will fail if port is in use)
-"$REPO_ROOT/dist/bloom-v2" webui --port $BLOOM_PORT &
+cd "$REPO_ROOT"
+go run . webui --port $BLOOM_PORT &
 BLOOM_PID=$!
 
 # Wait briefly and check if process is still running (fails fast if port in use)
@@ -36,7 +31,7 @@ sleep 2
 cleanup() {
     echo "Stopping Bloom Web UI (PID: $BLOOM_PID)..."
     kill $BLOOM_PID 2>/dev/null || true
-    pkill -f bloom-v2 2>/dev/null || true
+    pkill -f "go run.*webui" 2>/dev/null || true
 }
 trap cleanup EXIT
 

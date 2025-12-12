@@ -5,8 +5,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/silogen/cluster-bloom/internal/config"
 	"github.com/silogen/cluster-bloom/pkg/ansible/runtime"
+	"github.com/silogen/cluster-bloom/pkg/config"
 	"github.com/silogen/cluster-bloom/pkg/webui"
 	"github.com/spf13/cobra"
 )

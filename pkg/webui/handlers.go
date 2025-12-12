@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/silogen/cluster-bloom/internal/config"
+	"github.com/silogen/cluster-bloom/pkg/config"
 )
 
 func handleSchema(w http.ResponseWriter, r *http.Request) {
