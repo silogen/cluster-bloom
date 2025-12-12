@@ -170,7 +170,7 @@ func SetArguments() {
 		},
 		{
 			Key:         "CLUSTERFORGE_RELEASE",
-			Default:     "https://github.com/silogen/cluster-forge/releases/download/v1.6.0/release-enterprise-ai-v1.6.0.tar.gz",
+			Default:     "https://github.com/silogen/cluster-forge/releases/download/v1.7.0/release-enterprise-ai-v1.7.0.tar.gz",
 			Description: "The version of Cluster-Forge to install. Pass the URL for a specific release, or 'none' to not install ClusterForge.",
 			Type:        "url",
 		},
