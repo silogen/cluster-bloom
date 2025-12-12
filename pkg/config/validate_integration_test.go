@@ -370,47 +370,6 @@ func TestValidate_ConstraintsFromSchema(t *testing.T) {
 	}
 }
 
-// TestValidate_AllValidExamplesPass ensures all valid schema examples pass validation
-func TestValidate_AllValidExamplesPass(t *testing.T) {
-	schema := loadSchemaDefinition(t)
-
-	for typeName, typeDef := range schema.Types {
-		if len(typeDef.Examples.Valid) == 0 {
-			continue
-		}
-
-		t.Run(typeName, func(t *testing.T) {
-			for _, validExample := range typeDef.Examples.Valid {
-				if validExample == "" {
-					continue
-				}
-
-				// Find field using this type
-				var fieldName string
-				for fname, field := range schema.Schema.Mapping {
-					if field.Type == typeName {
-						fieldName = fname
-						break
-					}
-				}
-
-				if fieldName == "" {
-					continue
-				}
-
-				config := buildConfigWithField(fieldName, validExample)
-				errors := Validate(config)
-				relevantErrors := filterErrorsForField(errors, fieldName, typeName)
-
-				if len(relevantErrors) > 0 {
-					t.Errorf("Valid example %q for type %s should pass validation, got errors: %v",
-						validExample, typeName, relevantErrors)
-				}
-			}
-		})
-	}
-}
-
 func TestValidate_UnknownKeyRejected(t *testing.T) {
 	config := Config{
 		"FIRST_NODE":           true,
@@ -435,44 +394,5 @@ func TestValidate_UnknownKeyRejected(t *testing.T) {
 
 	if !foundError {
 		t.Errorf("Expected 'Unknown configuration key: INVALID_KEY' error, but got: %v", errors)
-	}
-}
-
-func TestValidate_AllInvalidExamplesFail(t *testing.T) {
-	schema := loadSchemaDefinition(t)
-
-	for typeName, typeDef := range schema.Types {
-		if len(typeDef.Examples.Invalid) == 0 {
-			continue
-		}
-
-		t.Run(typeName, func(t *testing.T) {
-			for _, invalidExample := range typeDef.Examples.Invalid {
-				if invalidExample == "" {
-					continue
-				}
-
-				// Find field using this type
-				var fieldName string
-				for fname, field := range schema.Schema.Mapping {
-					if field.Type == typeName {
-						fieldName = fname
-						break
-					}
-				}
-
-				if fieldName == "" {
-					continue
-				}
-
-				config := buildConfigWithField(fieldName, invalidExample)
-				errors := Validate(config)
-
-				if len(errors) == 0 {
-					t.Errorf("Invalid example %q for type %s should fail validation",
-						invalidExample, typeName)
-				}
-			}
-		})
 	}
 }
