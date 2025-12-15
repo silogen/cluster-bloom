@@ -136,15 +136,19 @@
     - name: Prepare Longhorn Disks
       when: not NO_DISKS_FOR_CLUSTER and CLUSTER_PREMOUNTED_DISKS == ""
       block:
+        - name: Convert CLUSTER_DISKS from comma-separated string to list
+          set_fact:
+            cluster_disks_list: "{{ CLUSTER_DISKS.split(',') if CLUSTER_DISKS is string and CLUSTER_DISKS != '' else (CLUSTER_DISKS if CLUSTER_DISKS is sequence else []) }}"
+
         - name: Create mount points for cluster disks
           file:
             path: "/mnt/disk{{ item.0 }}"
             state: directory
             mode: "0755"
-          loop: "{{ CLUSTER_DISKS | default([]) | zip_longest([], fillvalue='') | list }}"
+          loop: "{{ cluster_disks_list | default([]) | zip_longest([], fillvalue='') | list }}"
           loop_control:
             index_var: disk_index
-          when: CLUSTER_DISKS | length > 0
+          when: cluster_disks_list | length > 0
 
         - name: Format disks with ext4 (if not already formatted)
           shell: |
@@ -152,8 +156,8 @@
               wipefs -a {{ item }}
               mkfs.ext4 -F -F {{ item }}
             fi
-          loop: "{{ CLUSTER_DISKS | default([]) }}"
-          when: CLUSTER_DISKS | length > 0
+          loop: "{{ cluster_disks_list | default([]) }}"
+          when: cluster_disks_list | length > 0
 
         - name: Mount cluster disks
           mount:
@@ -162,16 +166,16 @@
             fstype: ext4
             opts: defaults,nofail
             state: mounted
-          loop: "{{ range(CLUSTER_DISKS | length) | list | zip(CLUSTER_DISKS) | list }}"
-          when: CLUSTER_DISKS | length > 0
+          loop: "{{ range(cluster_disks_list | length) | list | zip(cluster_disks_list) | list }}"
+          when: cluster_disks_list | length > 0
 
         - name: Add mount entries to fstab with bloom tag
           lineinfile:
             path: /etc/fstab
             line: "UUID={{ ansible_facts['devices'][item.1 | basename]['links']['uuids'][0] }} /mnt/disk{{ item.0 }} ext4 defaults,nofail 0 2 {{ bloom_fstab_tag }}"
             state: present
-          loop: "{{ range(CLUSTER_DISKS | length) | list | zip(CLUSTER_DISKS) | list }}"
-          when: CLUSTER_DISKS | length > 0
+          loop: "{{ range(cluster_disks_list | length) | list | zip(cluster_disks_list) | list }}"
+          when: cluster_disks_list | length > 0
           ignore_errors: yes
       tags: [storage]
 
@@ -549,34 +553,34 @@
 
         - name: Create .kube directory for user
           file:
-            path: "{{ ansible_env.HOME }}/.kube"
+            path: "/home/{{ ansible_user }}/.kube"
             state: directory
             mode: "0755"
-            owner: "{{ ansible_env.SUDO_USER | default(ansible_user_id) }}"
-            group: "{{ ansible_env.SUDO_USER | default(ansible_user_id) }}"
+            owner: "{{ ansible_user }}"
+            group: "{{ ansible_user }}"
 
         - name: Copy kubeconfig to user directory
           copy:
             src: /etc/rancher/rke2/rke2.yaml
-            dest: "{{ ansible_env.HOME }}/.kube/config"
+            dest: "/home/{{ ansible_user }}/.kube/config"
             remote_src: yes
             mode: "0600"
-            owner: "{{ ansible_env.SUDO_USER | default(ansible_user_id) }}"
-            group: "{{ ansible_env.SUDO_USER | default(ansible_user_id) }}"
+            owner: "{{ ansible_user }}"
+            group: "{{ ansible_user }}"
 
         - name: Update PATH in bash_profile for k9s
           lineinfile:
-            path: "{{ ansible_env.HOME }}/.bash_profile"
+            path: "/home/{{ ansible_user }}/.bash_profile"
             line: "export PATH=$PATH:/snap/k9s/current/bin"
             create: yes
-            owner: "{{ ansible_env.SUDO_USER | default(ansible_user_id) }}"
+            owner: "{{ ansible_user }}"
 
         - name: Update PATH in bashrc for k9s
           lineinfile:
-            path: "{{ ansible_env.HOME }}/.bashrc"
+            path: "/home/{{ ansible_user }}/.bashrc"
             line: "export PATH=$PATH:/snap/k9s/current/bin"
             create: yes
-            owner: "{{ ansible_env.SUDO_USER | default(ansible_user_id) }}"
+            owner: "{{ ansible_user }}"
       tags: [kubeconfig]
 
     - name: Create Chrony Config (First Node)
@@ -687,7 +691,7 @@
             apiVersion: v1
             kind: ConfigMap
             metadata:
-              name: cluster-DOMAIN
+              name: cluster-domain
               namespace: default
             data:
               DOMAIN: "{{ DOMAIN }}"
@@ -768,9 +772,8 @@
           copy:
             content: |
               echo -e 'FIRST_NODE: false\nJOIN_TOKEN: {{ JOIN_TOKEN_content.content | b64decode | trim }}\nSERVER_IP: {{ main_ip_final.stdout }}' > bloom.yaml && sudo ./bloom --config bloom.yaml
-            dest: "{{ playbook_dir }}/additional_node_command.txt"
+            dest: "/tmp/additional_node_command.txt"
             mode: "0644"
-          delegate_to: localhost
           become: no
 
         - name: Display join information

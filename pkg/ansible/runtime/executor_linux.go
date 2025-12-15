@@ -12,8 +12,20 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func RunContainer(rootfs, playbookDir, playbook string, extraArgs []string) int {
-	childArgs := []string{"__child__", rootfs, playbookDir, playbook}
+func RunContainer(rootfs, playbookDir, playbook string, extraArgs []string, dryRun bool) int {
+	// Detect the actual user (not root if using sudo)
+	actualUser := os.Getenv("SUDO_USER")
+	if actualUser == "" {
+		actualUser = os.Getenv("USER")
+	}
+	if actualUser == "" {
+		actualUser = "ubuntu"
+	}
+
+	childArgs := []string{"__child__", rootfs, playbookDir, playbook, actualUser}
+	if dryRun {
+		childArgs = append(childArgs, "--dry-run")
+	}
 	childArgs = append(childArgs, extraArgs...)
 
 	cmd := exec.Command("/proc/self/exe", childArgs...)
@@ -41,7 +53,18 @@ func RunChild() {
 	rootfs := os.Args[2]
 	playbookDir := os.Args[3]
 	playbook := os.Args[4]
-	extraArgs := os.Args[5:]
+	username := os.Args[5]
+
+	// Check if --dry-run flag is present
+	dryRun := false
+	extraArgs := []string{}
+	for i := 6; i < len(os.Args); i++ {
+		if os.Args[i] == "--dry-run" {
+			dryRun = true
+		} else {
+			extraArgs = append(extraArgs, os.Args[i])
+		}
+	}
 
 	syscall.Sethostname([]byte("bloom"))
 
@@ -57,6 +80,15 @@ func RunChild() {
 	if err := syscall.Mount("/", hostMount, "", syscall.MS_BIND|syscall.MS_REC, ""); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to mount host: %v\n", err)
 		os.Exit(1)
+	}
+
+	// Mount host SSH directory for authentication
+	hostSSHDir := filepath.Join("/home", username, ".ssh")
+	containerSSHDir := filepath.Join(rootfs, "root", ".ssh")
+	os.MkdirAll(containerSSHDir, 0700)
+	if err := syscall.Mount(hostSSHDir, containerSSHDir, "", syscall.MS_BIND, ""); err != nil {
+		// SSH directory might not exist, that's ok
+		fmt.Fprintf(os.Stderr, "Warning: Failed to mount %s: %v\n", hostSSHDir, err)
 	}
 
 	if err := pivotRoot(rootfs); err != nil {
@@ -92,9 +124,15 @@ func RunChild() {
 	}
 
 	ansibleArgs := []string{
-		"--connection=local",
-		"--inventory=localhost,",
+		"--connection=ssh",
+		"--inventory=127.0.0.1,",
+		"--user=" + username,
+		"--become",
+		"--ssh-extra-args=-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null",
 		filepath.Join("/playbooks", playbook),
+	}
+	if dryRun {
+		ansibleArgs = append(ansibleArgs, "--check")
 	}
 	ansibleArgs = append(ansibleArgs, extraArgs...)
 
@@ -105,6 +143,7 @@ func RunChild() {
 	cmd.Env = []string{
 		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 		"HOME=/root",
+		"USER=" + username,
 		"ANSIBLE_LOCALHOST_WARNING=False",
 		"ANSIBLE_PYTHON_INTERPRETER=/usr/bin/python3",
 	}

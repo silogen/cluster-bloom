@@ -7,7 +7,7 @@ import (
 	"os"
 )
 
-func RunContainer(rootfs, playbookDir, playbook string, extraArgs []string) int {
+func RunContainer(rootfs, playbookDir, playbook string, extraArgs []string, dryRun bool) int {
 	fmt.Fprintln(os.Stderr, "Error: Ansible deployment is only supported on Linux")
 	return 1
 }

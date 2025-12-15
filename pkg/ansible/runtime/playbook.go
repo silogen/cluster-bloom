@@ -19,7 +19,7 @@ func getWorkDir() (string, error) {
 	return filepath.Join(cwd, ".bloom"), nil
 }
 
-func RunPlaybook(config map[string]any, playbookName string) (int, error) {
+func RunPlaybook(config map[string]any, playbookName string, dryRun bool) (int, error) {
 	workDir, err := getWorkDir()
 	if err != nil {
 		return 1, err
@@ -48,7 +48,7 @@ func RunPlaybook(config map[string]any, playbookName string) (int, error) {
 
 	extraArgs := configToAnsibleVars(config)
 
-	exitCode := RunContainer(rootfs, playbookDir, playbookName, extraArgs)
+	exitCode := RunContainer(rootfs, playbookDir, playbookName, extraArgs, dryRun)
 	return exitCode, nil
 }
 
@@ -81,7 +81,28 @@ func extractEmbeddedPlaybooks(destDir string) error {
 func configToAnsibleVars(config map[string]any) []string {
 	var args []string
 	for key, value := range config {
-		args = append(args, "-e", fmt.Sprintf("%s=%v", key, value))
+		// Use @file syntax to pass values as JSON to preserve types
+		// This ensures booleans stay as booleans, not strings
+		var valueStr string
+		switch v := value.(type) {
+		case bool:
+			// Pass as JSON boolean
+			if v {
+				valueStr = "true"
+			} else {
+				valueStr = "false"
+			}
+			// Use JSON format to preserve boolean type
+			args = append(args, "-e", fmt.Sprintf(`{"` + key + `": ` + valueStr + `}`))
+		case string:
+			// Quote strings in JSON
+			valueStr = fmt.Sprintf(`"%s"`, v)
+			args = append(args, "-e", fmt.Sprintf(`{"` + key + `": ` + valueStr + `}`))
+		default:
+			// Numbers and other types
+			valueStr = fmt.Sprintf("%v", v)
+			args = append(args, "-e", fmt.Sprintf(`{"` + key + `": ` + valueStr + `}`))
+		}
 	}
 	return args
 }
