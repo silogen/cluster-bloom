@@ -46,6 +46,10 @@ func RunPlaybook(config map[string]any, playbookName string, dryRun bool) (int, 
 		return 1, fmt.Errorf("extract playbooks: %w", err)
 	}
 
+	if err := ExtractManifests(playbookDir); err != nil {
+		return 1, fmt.Errorf("extract manifests: %w", err)
+	}
+
 	extraArgs := configToAnsibleVars(config)
 
 	exitCode := RunContainer(rootfs, playbookDir, playbookName, extraArgs, dryRun)

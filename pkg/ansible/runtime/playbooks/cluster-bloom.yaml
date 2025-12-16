@@ -119,6 +119,89 @@
           notify: Restart multipathd
       tags: [storage]
 
+    - name: Setup and Check ROCm
+      when: GPU_NODE
+      block:
+        - name: Check if rocm-smi exists
+          stat:
+            path: /opt/rocm/bin/rocm-smi
+          register: rocm_smi_check
+
+        - name: Get Ubuntu codename
+          shell: grep VERSION_CODENAME /etc/os-release | cut -d= -f2
+          register: ubuntu_codename
+          changed_when: false
+
+        - name: Get kernel version
+          shell: uname -r
+          register: kernel_version
+          changed_when: false
+
+        - name: Install kernel headers and modules
+          apt:
+            name:
+              - "linux-headers-{{ kernel_version.stdout }}"
+              - "linux-modules-extra-{{ kernel_version.stdout }}"
+              - python3-setuptools
+              - python3-wheel
+            state: present
+          when: not rocm_smi_check.stat.exists
+          environment:
+            DEBIAN_FRONTEND: noninteractive
+            NEEDRESTART_MODE: a
+            NEEDRESTART_SUSPEND: "1"
+
+        - name: Download amdgpu-install package
+          get_url:
+            url: "{{ ROCM_BASE_URL }}/{{ ubuntu_codename.stdout }}/{{ ROCM_DEB_PACKAGE }}"
+            dest: "/tmp/{{ ROCM_DEB_PACKAGE }}"
+            mode: "0644"
+          when: not rocm_smi_check.stat.exists
+
+        - name: Install amdgpu-install package
+          apt:
+            deb: "/tmp/{{ ROCM_DEB_PACKAGE }}"
+            state: present
+          when: not rocm_smi_check.stat.exists
+          environment:
+            DEBIAN_FRONTEND: noninteractive
+
+        - name: Install ROCm
+          shell: amdgpu-install --usecase=rocm,dkms --yes
+          when: not rocm_smi_check.stat.exists
+          environment:
+            DEBIAN_FRONTEND: noninteractive
+
+        - name: Load amdgpu module
+          modprobe:
+            name: amdgpu
+            state: present
+
+        - name: Verify GPUs with rocm-smi
+          shell: rocm-smi -i --json | jq -r '.[] | .["Device Name"]' | sort | uniq -c
+          register: rocm_smi_output
+          changed_when: false
+
+        - name: Display detected GPUs
+          debug:
+            msg: "ROCm Devices:\n{{ rocm_smi_output.stdout }}"
+
+        - name: Validate GPU detection
+          fail:
+            msg: "No GPUs detected by rocm-smi"
+          when: rocm_smi_output.stdout == ""
+
+        - name: Read ROCm version
+          slurp:
+            src: /opt/rocm/.info/version
+          register: rocm_version_file
+
+        - name: Display ROCm version
+          debug:
+            msg: "ROCm version: {{ rocm_version_file.content | b64decode | trim }}"
+
+      tags: [gpu, rocm]
+
     - name: Update Modprobe (GPU nodes)
       when: GPU_NODE
       block:
@@ -178,6 +261,159 @@
           when: cluster_disks_list | length > 0
           ignore_errors: yes
       tags: [storage]
+
+    - name: Validate System Requirements
+      block:
+        - name: Check disk space on root partition
+          shell: df -BG / | awk 'NR==2 {print $4}' | sed 's/G//'
+          register: root_disk_space
+          changed_when: false
+
+        - name: Validate root partition has at least 20GB
+          assert:
+            that: root_disk_space.stdout | int >= 20
+            fail_msg: "Root partition requires at least 20GB free space (found {{ root_disk_space.stdout }}GB)"
+
+        - name: Check total memory
+          shell: grep MemTotal /proc/meminfo | awk '{print int($2/1024/1024)}'
+          register: total_memory
+          changed_when: false
+
+        - name: Validate minimum 4GB RAM
+          assert:
+            that: total_memory.stdout | int >= 4
+            fail_msg: "System requires at least 4GB RAM (found {{ total_memory.stdout }}GB)"
+
+        - name: Check CPU cores
+          shell: grep -c ^processor /proc/cpuinfo
+          register: cpu_cores
+          changed_when: false
+
+        - name: Validate minimum 2 CPU cores
+          assert:
+            that: cpu_cores.stdout | int >= 2
+            fail_msg: "System requires at least 2 CPU cores (found {{ cpu_cores.stdout }})"
+
+        - name: Check required kernel modules
+          shell: |
+            for mod in overlay br_netfilter; do
+              if ! lsmod | grep -q "^$mod"; then
+                if ! modinfo $mod &>/dev/null; then
+                  echo "MISSING:$mod"
+                  exit 1
+                fi
+              fi
+            done
+          register: kernel_modules_check
+          failed_when: kernel_modules_check.rc != 0
+          changed_when: false
+
+      tags: [validation]
+
+    - name: Check /var/lib/rancher partition size
+      when: GPU_NODE and not SKIP_RANCHER_PARTITION_CHECK
+      block:
+        - name: Create /var/lib/rancher directory
+          file:
+            path: /var/lib/rancher
+            state: directory
+            mode: "0755"
+
+        - name: Get partition size
+          shell: df -BG /var/lib/rancher | awk 'NR==2 {print $2}' | sed 's/G//'
+          register: rancher_partition_size
+          changed_when: false
+
+        - name: Warn if partition less than 500GB
+          debug:
+            msg: "WARNING: /var/lib/rancher partition is {{ rancher_partition_size.stdout }}GB, recommended 500GB for GPU nodes"
+          when: rancher_partition_size.stdout | int < 500
+
+        - name: Fail if partition less than 500GB
+          fail:
+            msg: "/var/lib/rancher partition size ({{ rancher_partition_size.stdout }}GB) is less than recommended 500GB"
+          when: rancher_partition_size.stdout | int < 500
+      tags: [validation]
+
+    - name: Clean Longhorn Mounts
+      block:
+        - name: Stop Longhorn services
+          systemd:
+            name: "longhorn-*"
+            state: stopped
+          ignore_errors: yes
+
+        - name: Unmount Longhorn volumes (3 retries)
+          shell: |
+            for i in 1 2 3; do
+              sudo umount -lf /dev/longhorn/pvc-* 2>/dev/null || true
+              sudo umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/pvc-* 2>/dev/null || true
+              sudo umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/*/mount 2>/dev/null || true
+              mount | grep 'driver.longhorn.io' | awk '{print $3}' | xargs -r sudo umount -lf 2>/dev/null || true
+            done
+          ignore_errors: yes
+
+        - name: Kill processes using Longhorn mounts
+          shell: sudo fuser -km /dev/longhorn/ 2>/dev/null || true
+          ignore_errors: yes
+
+        - name: Clean Longhorn device files
+          file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - /dev/longhorn/pvc-*
+            - /var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io
+          ignore_errors: yes
+      tags: [cleanup]
+
+    - name: Uninstall RKE2
+      block:
+        - name: Execute RKE2 uninstall script
+          shell: /usr/local/bin/rke2-uninstall.sh
+          register: rke2_uninstall
+          ignore_errors: yes
+
+        - name: Log RKE2 uninstall output
+          debug:
+            msg: "{{ rke2_uninstall.stdout }}"
+          when: rke2_uninstall.stdout is defined
+      tags: [cleanup]
+
+    - name: Clean Bloom-Managed Disks
+      block:
+        - name: Backup fstab
+          copy:
+            src: /etc/fstab
+            dest: "/etc/fstab.bak-{{ ansible_date_time.epoch }}"
+            remote_src: yes
+
+        - name: Find bloom-tagged mounts in fstab
+          shell: grep '# managed by cluster-bloom' /etc/fstab | awk '{print $2}' || true
+          register: bloom_mounts
+          changed_when: false
+
+        - name: Unmount bloom-tagged disks
+          shell: sudo umount -lf {{ item }}
+          loop: "{{ bloom_mounts.stdout_lines }}"
+          ignore_errors: yes
+          when: bloom_mounts.stdout_lines | length > 0
+
+        - name: Remove bloom entries from fstab
+          lineinfile:
+            path: /etc/fstab
+            regexp: '.*# managed by cluster-bloom.*'
+            state: absent
+
+        - name: Wipe filesystems on unmounted disks
+          shell: |
+            for disk in $(lsblk -nd -o NAME,TYPE | awk '$2=="disk" {print $1}'); do
+              if ! mount | grep -q "/dev/$disk"; then
+                sudo wipefs -a /dev/$disk 2>/dev/null || true
+              fi
+            done
+          ignore_errors: yes
+      tags: [cleanup]
 
     - name: Prepare RKE2
       block:
@@ -754,6 +990,215 @@
                   --dry-run=client -o yaml | \
                 /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml apply -f -
       tags: [DOMAIN]
+
+    - name: Preload Container Images
+      when: FIRST_NODE and PRELOAD_IMAGES is defined and PRELOAD_IMAGES != ""
+      block:
+        - name: Parse image list
+          set_fact:
+            image_list: "{{ PRELOAD_IMAGES.split(',') }}"
+
+        - name: Pull container images
+          shell: /var/lib/rancher/rke2/bin/ctr --namespace k8s.io image pull {{ item }}
+          loop: "{{ image_list }}"
+          async: 3600
+          poll: 0
+          register: image_pull_jobs
+
+        - name: Wait for image pulls to complete
+          async_status:
+            jid: "{{ item.ansible_job_id }}"
+          loop: "{{ image_pull_jobs.results }}"
+          register: image_pull_results
+          until: image_pull_results.finished
+          retries: 360
+          delay: 10
+
+      tags: [images]
+
+    - name: Longhorn Preflight Check
+      when: FIRST_NODE and not NO_DISKS_FOR_CLUSTER
+      block:
+        - name: Copy Longhorn preflight script
+          copy:
+            src: manifests/scripts/longhorn_preflight_check.sh
+            dest: /tmp/longhorn_preflight.sh
+            mode: "0755"
+
+        - name: Run Longhorn preflight check
+          shell: bash /tmp/longhorn_preflight.sh
+          register: longhorn_preflight
+          failed_when: false
+          environment:
+            HOME: "/home/{{ ansible_user }}"
+
+        - name: Display preflight results
+          debug:
+            msg: "{{ longhorn_preflight.stdout }}"
+
+        - name: Fail if preflight check failed
+          fail:
+            msg: "Longhorn preflight check failed. Review output above."
+          when: longhorn_preflight.rc != 0
+
+      tags: [longhorn, validation]
+
+    - name: Setup Longhorn
+      when: FIRST_NODE and not NO_DISKS_FOR_CLUSTER
+      block:
+        - name: Create Longhorn manifests directory on host
+          file:
+            path: /var/lib/rancher/rke2/server/manifests/longhorn
+            state: directory
+            mode: "0755"
+
+        - name: Copy Longhorn manifests to RKE2
+          copy:
+            src: "manifests/longhorn/{{ item }}"
+            dest: "/var/lib/rancher/rke2/server/manifests/longhorn/{{ item }}"
+            mode: "0644"
+          loop:
+            - longhorn-namespace.yaml
+            - longhorn.yaml
+            - node-annotator.yaml
+            - httproute-longhorn.yaml
+
+        - name: Wait for node annotator cronjob
+          shell: |
+            /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+              wait --for=create --timeout=600s cronjob/label-and-annotate-nodes -n default
+          register: cronjob_wait
+          retries: 3
+          delay: 10
+          failed_when: false
+
+        - name: Trigger initial node annotation
+          shell: |
+            /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+              create job --from=cronjob/label-and-annotate-nodes \
+              label-and-annotate-nodes-initial -n default
+          ignore_errors: yes
+
+        - name: Wait for node annotation to complete
+          shell: |
+            /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+              wait --for=jsonpath={.status.lastSuccessfulTime} \
+              --timeout=600s cronjob/label-and-annotate-nodes -n default
+          register: annotation_wait
+          retries: 3
+          delay: 10
+          failed_when: false
+
+      tags: [longhorn]
+
+    - name: Wait for Cluster Ready
+      when: FIRST_NODE and not NO_DISKS_FOR_CLUSTER
+      block:
+        - name: Create test PVC
+          shell: |
+            cat <<EOF | /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml apply -f -
+            apiVersion: v1
+            kind: PersistentVolumeClaim
+            metadata:
+              name: longhorn-test-pvc
+              namespace: default
+            spec:
+              accessModes:
+                - ReadWriteOnce
+              storageClassName: default
+              resources:
+                requests:
+                  storage: 1Gi
+            EOF
+
+        - name: Wait for PVC to be bound
+          shell: |
+            /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+              get pvc longhorn-test-pvc -o jsonpath='{.status.phase}'
+          register: pvc_status
+          until: pvc_status.stdout == "Bound"
+          retries: 60
+          delay: 5
+
+        - name: Delete test PVC
+          shell: |
+            /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+              delete pvc longhorn-test-pvc --wait=false
+          ignore_errors: yes
+
+        - name: Log success
+          debug:
+            msg: "Longhorn is operational - test PVC successfully created and bound"
+
+      tags: [longhorn, validation]
+
+    - name: Create Bloom ConfigMap
+      when: FIRST_NODE
+      block:
+        - name: Get bloom version
+          set_fact:
+            bloom_version: "{{ BLOOM_VERSION | default('2.0.0') }}"
+
+        - name: Create bloom config ConfigMap
+          shell: |
+            cat <<EOF | /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml apply -f -
+            apiVersion: v1
+            kind: ConfigMap
+            metadata:
+              name: bloom-config
+              namespace: default
+            data:
+              version: "{{ bloom_version }}"
+              gpu_node: "{{ GPU_NODE | lower }}"
+              domain: "{{ DOMAIN }}"
+              rke2_version: "{{ RKE2_VERSION }}"
+            EOF
+
+      tags: [config]
+
+    - name: Setup ClusterForge
+      when: FIRST_NODE and CLUSTERFORGE_RELEASE != "none"
+      block:
+        - name: Create temporary directory for ClusterForge
+          tempfile:
+            state: directory
+            suffix: clusterforge
+          register: cf_temp_dir
+
+        - name: Download ClusterForge release
+          get_url:
+            url: "{{ CLUSTERFORGE_RELEASE }}"
+            dest: "{{ cf_temp_dir.path }}/clusterforge.tar.gz"
+            mode: "0644"
+
+        - name: Extract ClusterForge release
+          unarchive:
+            src: "{{ cf_temp_dir.path }}/clusterforge.tar.gz"
+            dest: "{{ cf_temp_dir.path }}"
+            remote_src: yes
+
+        - name: Find Helm chart in extracted files
+          find:
+            paths: "{{ cf_temp_dir.path }}"
+            patterns: "*.tgz"
+            recurse: yes
+          register: cf_chart_files
+
+        - name: Install ClusterForge with Helm
+          shell: |
+            /usr/local/bin/helm --kubeconfig /etc/rancher/rke2/rke2.yaml install clusterforge \
+              {{ cf_chart_files.files[0].path }} \
+              {{ '--values ' + CF_VALUES if CF_VALUES else '' }} \
+              --namespace clusterforge-system \
+              --create-namespace
+          when: cf_chart_files.matched > 0
+
+        - name: Clean up temporary directory
+          file:
+            path: "{{ cf_temp_dir.path }}"
+            state: absent
+
+      tags: [clusterforge]
 
     - name: Generate Join Command (First Node)
       when: FIRST_NODE
