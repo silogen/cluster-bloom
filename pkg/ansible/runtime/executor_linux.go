@@ -4,6 +4,7 @@ package runtime
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,7 +23,14 @@ func RunContainer(rootfs, playbookDir, playbook string, extraArgs []string, dryR
 		actualUser = "ubuntu"
 	}
 
-	childArgs := []string{"__child__", rootfs, playbookDir, playbook, actualUser}
+	// Get current working directory to pass to child for log file
+	cwd, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to get working directory: %v\n", err)
+		cwd = ""
+	}
+
+	childArgs := []string{"__child__", rootfs, playbookDir, playbook, actualUser, cwd}
 	if dryRun {
 		childArgs = append(childArgs, "--dry-run")
 	}
@@ -54,11 +62,12 @@ func RunChild() {
 	playbookDir := os.Args[3]
 	playbook := os.Args[4]
 	username := os.Args[5]
+	workDir := os.Args[6]
 
 	// Check if --dry-run flag is present
 	dryRun := false
 	extraArgs := []string{}
-	for i := 6; i < len(os.Args); i++ {
+	for i := 7; i < len(os.Args); i++ {
 		if os.Args[i] == "--dry-run" {
 			dryRun = true
 		} else {
@@ -136,10 +145,35 @@ func RunChild() {
 	}
 	ansibleArgs = append(ansibleArgs, extraArgs...)
 
+	// Open log file on host (via /host mount)
+	var logFile *os.File
+	if workDir != "" {
+		logPath := "/host" + workDir + "/bloom.log"
+		var err error
+		logFile, err = os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to open bloom.log at %s: %v\n", logPath, err)
+			logFile = nil
+		}
+	}
+	defer func() {
+		if logFile != nil {
+			logFile.Close()
+		}
+	}()
+
 	cmd := exec.Command("ansible-playbook", ansibleArgs...)
 	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+
+	// Tee output to both stdout and log file
+	if logFile != nil {
+		cmd.Stdout = io.MultiWriter(os.Stdout, logFile)
+		cmd.Stderr = io.MultiWriter(os.Stderr, logFile)
+	} else {
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+	}
+
 	cmd.Env = []string{
 		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 		"HOME=/root",
