@@ -3,13 +3,13 @@ package config
 import (
 	_ "embed"
 	"fmt"
-	"os"
 	"regexp"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
+//go:embed bloom.yaml.schema.yaml
 var schemaData []byte
 
 // FieldDefinition represents a field in the YAML schema
@@ -36,30 +36,8 @@ type YAMLSchema struct {
 	} `yaml:"types"`
 }
 
-// LoadSchema loads the schema from schema/bloom.yaml.schema.yaml
+// LoadSchema loads the embedded schema
 func LoadSchema() ([]Argument, error) {
-	// Load schema from file
-	if len(schemaData) == 0 {
-		// Try multiple paths for schema file
-		paths := []string{
-			"schema/bloom.yaml.schema.yaml",
-			"../../schema/bloom.yaml.schema.yaml",
-			"/workspace/cluster-bloom/schema/bloom.yaml.schema.yaml",
-		}
-
-		var err error
-		for _, path := range paths {
-			schemaData, err = os.ReadFile(path)
-			if err == nil {
-				break
-			}
-		}
-
-		if err != nil {
-			return nil, fmt.Errorf("failed to read schema file: %w", err)
-		}
-	}
-
 	var schema YAMLSchema
 	if err := yaml.Unmarshal(schemaData, &schema); err != nil {
 		return nil, fmt.Errorf("failed to parse schema: %w", err)
