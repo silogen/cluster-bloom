@@ -52,6 +52,9 @@ func RunPlaybook(config map[string]any, playbookName string, dryRun bool) (int, 
 
 	extraArgs := configToAnsibleVars(config)
 
+	// Add BLOOM_DIR to Ansible variables
+	extraArgs = append(extraArgs, "-e", fmt.Sprintf(`{"BLOOM_DIR": "%s"}`, workDir))
+
 	exitCode := RunContainer(rootfs, playbookDir, playbookName, extraArgs, dryRun)
 	return exitCode, nil
 }

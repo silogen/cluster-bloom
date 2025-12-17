@@ -138,6 +138,7 @@ func RunChild() {
 		"--user=" + username,
 		"--become",
 		"--ssh-extra-args=-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null",
+		"-v",
 		filepath.Join("/playbooks", playbook),
 	}
 	if dryRun {

@@ -524,16 +524,27 @@
       tags: [rke2]
 
     - name: Generate Node Labels
-      blockinfile:
-        path: /etc/rancher/rke2/config.yaml
-        block: |
-          node-label:
-          {% if not NO_DISKS_FOR_CLUSTER %}
-            - node.longhorn.io/create-default-disk=config
-            - node.longhorn.io/instance-manager=true
-          {% endif %}
-            - cluster-bloom/gpu-node={{ GPU_NODE | lower }}
-        marker: "# {mark} ANSIBLE MANAGED BLOCK - node labels"
+      block:
+        - name: Build disk labels list
+          set_fact:
+            disk_labels: "{{ disk_labels | default([]) + ['bloom.disk___mnt___disk' + item.0|string + '=disk' + item.1|replace('/', '___')] }}"
+          loop: "{{ range(cluster_disks_list | default([]) | length) | list | zip(cluster_disks_list | default([])) | list }}"
+          when: not NO_DISKS_FOR_CLUSTER and cluster_disks_list is defined and cluster_disks_list | length > 0
+
+        - name: Write node labels to config
+          blockinfile:
+            path: /etc/rancher/rke2/config.yaml
+            block: |
+              node-label:
+              {% if not NO_DISKS_FOR_CLUSTER %}
+                - node.longhorn.io/create-default-disk=config
+                - node.longhorn.io/instance-manager=true
+              {% endif %}
+                - cluster-bloom/gpu-node={{ GPU_NODE | lower }}
+              {% for label in disk_labels | default([]) %}
+                - {{ label }}
+              {% endfor %}
+            marker: "# {mark} ANSIBLE MANAGED BLOCK - node labels"
       tags: [rke2]
 
     - name: Install Kubernetes Tools
@@ -1060,16 +1071,10 @@
     - name: Setup Longhorn
       when: FIRST_NODE and not NO_DISKS_FOR_CLUSTER
       block:
-        - name: Create Longhorn manifests directory on host
-          file:
-            path: /var/lib/rancher/rke2/server/manifests/longhorn
-            state: directory
-            mode: "0755"
-
         - name: Copy Longhorn manifests to RKE2
           copy:
             src: "manifests/longhorn/{{ item }}"
-            dest: "/var/lib/rancher/rke2/server/manifests/longhorn/{{ item }}"
+            dest: "/var/lib/rancher/rke2/server/manifests/{{ item }}"
             mode: "0644"
           loop:
             - longhorn-namespace.yaml
@@ -1173,44 +1178,40 @@
     - name: Setup ClusterForge
       when: FIRST_NODE and CLUSTERFORGE_RELEASE != "none"
       block:
-        - name: Create temporary directory for ClusterForge
-          tempfile:
+        - name: Create ClusterForge directory in .bloom
+          file:
+            path: "{{ BLOOM_DIR }}/clusterforge"
             state: directory
-            suffix: clusterforge
-          register: cf_temp_dir
+            mode: "0755"
 
         - name: Download ClusterForge release
           get_url:
             url: "{{ CLUSTERFORGE_RELEASE }}"
-            dest: "{{ cf_temp_dir.path }}/clusterforge.tar.gz"
+            dest: "{{ BLOOM_DIR }}/clusterforge/clusterforge.tar.gz"
             mode: "0644"
 
         - name: Extract ClusterForge release
           unarchive:
-            src: "{{ cf_temp_dir.path }}/clusterforge.tar.gz"
-            dest: "{{ cf_temp_dir.path }}"
+            src: "{{ BLOOM_DIR }}/clusterforge/clusterforge.tar.gz"
+            dest: "{{ BLOOM_DIR }}/clusterforge"
             remote_src: yes
+            extra_opts: [--no-same-owner]
 
-        - name: Find Helm chart in extracted files
-          find:
-            paths: "{{ cf_temp_dir.path }}"
-            patterns: "*.tgz"
-            recurse: yes
-          register: cf_chart_files
-
-        - name: Install ClusterForge with Helm
+        - name: Run ClusterForge bootstrap script
           shell: |
-            /usr/local/bin/helm --kubeconfig /etc/rancher/rke2/rke2.yaml install clusterforge \
-              {{ cf_chart_files.files[0].path }} \
-              {{ '--values ' + CF_VALUES if CF_VALUES else '' }} \
-              --namespace clusterforge-system \
-              --create-namespace
-          when: cf_chart_files.matched > 0
+            cd {{ BLOOM_DIR }}/clusterforge/cluster-forge/scripts
+            {% if CF_VALUES != "" %}
+            bash ./bootstrap.sh {{ DOMAIN }} {{ CF_VALUES }}
+            {% else %}
+            bash ./bootstrap.sh {{ DOMAIN }}
+            {% endif %}
+          register: cf_bootstrap
+          environment:
+            KUBECONFIG: /etc/rancher/rke2/rke2.yaml
 
-        - name: Clean up temporary directory
-          file:
-            path: "{{ cf_temp_dir.path }}"
-            state: absent
+        - name: Display ClusterForge deployment output
+          debug:
+            msg: "{{ cf_bootstrap.stdout }}"
 
       tags: [clusterforge]
 
