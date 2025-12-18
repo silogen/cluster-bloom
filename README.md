@@ -1,4 +1,4 @@
-# ClusterBloom
+q# ClusterBloom
 **ClusterBloom** is a tool for deploying and configuring Kubernetes clusters using RKE2, with specialized support for AMD GPU environments. It automates the process of setting up multi-node clusters, configuring storage with Longhorn, and integrating with various tools and services.
 
 
@@ -98,6 +98,9 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | OIDC_URL | The URL of the OIDC provider | "" |
 | RKE2_VERSION | Specific RKE2 version to install (e.g., "v1.34.1+rke2r1") | "" |
 | SERVER_IP | The IP address of the RKE2 server (required for additional nodes) | |
+| NODE_IP | The IP address to advertise when setting up additional node. Optional. | "" |
+| NODE_EXTERNAL_IP | The external IP address to advertise for additional node. Optional. | "" |
+| ADVERTISE_ADDRESS | IP address the apiserver uses to advertise to members of the cluster. Optional. | "" |
 | SKIP_RANCHER_PARTITION_CHECK | Set to true to skip /var/lib/rancher partition size check | false |
 | TLS_CERT | Path to TLS certificate file for ingress (required if CERT_OPTION is 'existing') | "" |
 | TLS_KEY | Path to TLS private key file for ingress (required if CERT_OPTION is 'existing') | "" |

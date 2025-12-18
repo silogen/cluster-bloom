@@ -51,12 +51,32 @@ func SetArguments() {
 			Dependencies: "FIRST_NODE=true",
 		},
 		{
+			Key:          "NODE_IP",
+			Default:      "",
+			Description:  "The IP address to advertise for this node. Optional.",
+			Type:         "ip-address",
+			Dependencies: "FIRST_NODE=false",
+		},
+		{
+			Key:          "NODE_EXTERNAL_IP",
+			Default:      "",
+			Description:  "The external IP address to advertise for this node. Optional.",
+			Type:         "ip-address",
+			Dependencies: "FIRST_NODE=false",
+		},
+		{
+			Key:          "ADVERTISE_ADDRESS",
+			Default:      "",
+			Description:  "The IP address the  apiserver uses to advertise to members of the cluster. Optional.",
+			Type:         "ip-address",
+			Dependencies: "FIRST_NODE=false",
+		},
+		{
 			Key:         "CF_VALUES",
 			Default:     "",
 			Description: "Path to ClusterForge values file (e.g., \"values_cf.yaml\"). Optional.",
 			Type:        "string",
 		},
-
 		// TLS/Certificate configuration
 		{
 			Key:          "USE_CERT_MANAGER",
