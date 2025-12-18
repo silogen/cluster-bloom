@@ -35,7 +35,6 @@ func init() {
 		{Key: "NODE_IP", Default: "", Description: "The IP address to advertise for this node. Optional.", Type: "ip-address", Dependencies: "FIRST_NODE=false"},
 		{Key: "NODE_EXTERNAL_IP", Default: "", Description: "The external IP address to advertise for this node. Optional.", Type: "ip-address", Dependencies: "FIRST_NODE=false"},
 		{Key: "ADVERTISE_ADDRESS", Default: "", Description: "The address to advertise for this node. Optional.", Type: "ip-address", Dependencies: "FIRST_NODE=false"},
-		{Key: "TLS_SAN", Default: "", Description: "Additional Subject Alternative Names (SANs) to add to the TLS certificate. Comma-separated list of IPs or hostnames.", Type: "string", Dependencies: "FIRST_NODE=true", Validators: []func(value string) error{args.ValidateListOfHostnames}},
 		{Key: "CF_VALUES", Default: "", Description: "Path to ClusterForge values file (e.g., \"values_cf.yaml\"). Optional.", Type: "string"},
 		{Key: "USE_CERT_MANAGER", Default: false, Description: "Use cert-manager with Let's Encrypt for automatic TLS certificates.", Type: "bool", Dependencies: "FIRST_NODE=true"},
 		{Key: "CERT_OPTION", Default: "", Description: "Certificate option when USE_CERT_MANAGER is false. Choose 'existing' or 'generate'.", Type: "enum", Options: []string{"existing", "generate"}, Dependencies: "USE_CERT_MANAGER=false,FIRST_NODE=true"},

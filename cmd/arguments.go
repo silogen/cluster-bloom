@@ -72,13 +72,6 @@ func SetArguments() {
 			Dependencies: "FIRST_NODE=false",
 		},
 		{
-			Key:          "TLS_SAN",
-			Default:      "",
-			Description:  "Additional hostnames or IPv4 addresses as Subject Alternative Names on the server TLS cert. Comma-separated list of IP's and/or hostnames. Optional.",
-			Type:         "string",
-			Validators:   []func(value string) error{args.ValidateListOfHostnames},
-		},
-		{
 			Key:         "CF_VALUES",
 			Default:     "",
 			Description: "Path to ClusterForge values file (e.g., \"values_cf.yaml\"). Optional.",

@@ -458,11 +458,6 @@ func SetupRKE2Additional() error {
 	nodeIP := viper.GetString("NODE_IP")
 	nodeExternalIP := viper.GetString("NODE_EXTERNAL_IP")
 	advertiseAddress := viper.GetString("ADVERTISE_ADDRESS")
-	tlsSANstring := viper.GetString("TLS_SAN")
-	tlsSANIPs := []string{}
-	if tlsSANstring != "" {
-		tlsSANIPs = strings.Split(tlsSANstring, ",")
-	}
 
 	rke2ConfigPath := "/etc/rancher/rke2/config.yaml"
 
@@ -475,12 +470,6 @@ func SetupRKE2Additional() error {
 	}
 	if advertiseAddress != "" {
 		configContent += fmt.Sprintf("advertise-address: %s\n", advertiseAddress)
-	}
-	if len(tlsSANIPs) > 0 {
-		configContent += "tls-san:\n"
-		for i := range tlsSANIPs {
-			configContent += fmt.Sprintf("  - %s\n", tlsSANIPs[i])
-		}
 	}
 
 	file, err := os.OpenFile(rke2ConfigPath, os.O_APPEND|os.O_WRONLY, 0644)
@@ -533,11 +522,6 @@ func SetupRKE2ControlPlane() error {
 	nodeIP := viper.GetString("NODE_IP")
 	nodeExternalIP := viper.GetString("NODE_EXTERNAL_IP")
 	advertiseAddress := viper.GetString("ADVERTISE_ADDRESS")
-	tlsSANstring := viper.GetString("TLS_SAN")
-	tlsSANIPs := []string{}
-	if tlsSANstring != "" {
-		tlsSANIPs = strings.Split(tlsSANstring, ",")
-	}
 
 	rke2ConfigPath := "/etc/rancher/rke2/config.yaml"
 
@@ -552,13 +536,6 @@ func SetupRKE2ControlPlane() error {
 	if advertiseAddress != "" {
 		configContent += fmt.Sprintf("advertise-address: %s\n", advertiseAddress)
 	}
-	if len(tlsSANIPs) > 0 {
-		configContent += "tls-san:\n"
-		for i := range tlsSANIPs {
-			configContent += fmt.Sprintf("  - %s\n", tlsSANIPs[i])
-		}
-	}
-
 
 	file, err := os.OpenFile(rke2ConfigPath, os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
