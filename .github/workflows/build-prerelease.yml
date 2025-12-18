@@ -11,10 +11,53 @@ on:
         description: 'Is this a prerelease?'
         required: false
         type: boolean
-        default: 'true'
+        default: true
 
 jobs:
+  prd-sync-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check PRD.md sync with conventional commits
+        run: |
+          # Get the base commit to compare against
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          else
+            # For workflow_dispatch or release, check last commit
+            BASE_SHA="HEAD^"
+          fi
+          
+          # Check if any feat: or docs: commits exist since base
+          FEAT_COMMITS=$(git log --oneline "${BASE_SHA}..HEAD" | grep -E "^[a-f0-9]+ (feat|docs):" || echo "")
+          
+          if [[ -n "$FEAT_COMMITS" ]]; then
+            echo "Found feature or documentation commits:"
+            echo "$FEAT_COMMITS"
+            
+            # Check if PRD.md was modified in the same range
+            PRD_MODIFIED=$(git diff --name-only "${BASE_SHA}..HEAD" | grep -E "^docs/" || echo "")
+            
+            if [[ -z "$PRD_MODIFIED" ]]; then
+              echo "❌ ERROR: Found feat:/docs: commits but PRD.md was not updated"
+              echo ""
+              echo "Commits requiring PRD update:"
+              echo "$FEAT_COMMITS"
+              echo ""
+              echo "Please update PRD.md to reflect these changes."
+              exit 1
+            else
+              echo "✅ PRD.md was updated alongside feat:/docs: commits"
+            fi
+          else
+            echo "✅ No feat:/docs: commits found, PRD sync check not required"
+          fi
+
   version:
+    needs: [prd-sync-check]
     runs-on: ubuntu-latest
     outputs:
       new_version: ${{ steps.version.outputs.new_version }}

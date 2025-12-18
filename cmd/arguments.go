@@ -117,10 +117,16 @@ func SetArguments() {
 
 		// Authentication
 		{
-			Key:         "OIDC_URL",
-			Default:     "",
-			Description: "The URL of the OIDC provider.",
-			Type:        "url",
+			Key:         "ADDITIONAL_OIDC_PROVIDERS",
+			Default:     []interface{}{},
+			Description: "Additional OIDC providers for authentication. Each provider needs a URL and audiences. Example: [{\"url\": \"https://provider.com/realms/k8s\", \"audiences\": [\"k8s\"]}]",
+			Type:        "array",
+		},
+		{
+			Key:         "ADDITIONAL_TLS_SAN_URLS",
+			Default:     []string{},
+			Description: "Additional TLS Subject Alternative Name URLs for Kubernetes API server certificate. Example: [\"api.example.com\", \"kubernetes.example.com\"]",
+			Type:        "string-array",
 		},
 
 		// ROCm configuration (depends on GPU_NODE)
@@ -177,6 +183,12 @@ func SetArguments() {
 			Type:        "non-empty-url",
 		},
 		{
+			Key:         "RKE2_VERSION",
+			Default:     "v1.34.1+rke2r1",
+			Description: "Specific RKE2 version to install (e.g., \"v1.34.1+rke2r1\").",
+			Type:        "string",
+		},
+		{
 			Key:         "RKE2_EXTRA_CONFIG",
 			Default:     "",
 			Description: "Additional RKE2 configuration in YAML format to append to /etc/rancher/rke2/config.yaml. Example: \"node-name: my-node\\ntls-san:\\n  - example.com\".",
@@ -185,7 +197,7 @@ func SetArguments() {
 		},
 		{
 			Key:         "CLUSTERFORGE_RELEASE",
-			Default:     "https://github.com/silogen/cluster-forge/releases/download/v1.5.2/release-enterprise-ai-v1.5.2.tar.gz",
+			Default:     "https://github.com/silogen/cluster-forge/releases/download/v1.7.0/release-enterprise-ai-v1.7.0.tar.gz",
 			Description: "The version of Cluster-Forge to install. Pass the URL for a specific release, or 'none' to not install ClusterForge.",
 			Type:        "url",
 		},

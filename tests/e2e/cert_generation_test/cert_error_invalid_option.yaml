@@ -1,0 +1,10 @@
+# tests/e2e/cert_generation_test/cert_error_invalid_option.yaml
+# E2E Test case: Error with invalid CERT_OPTION
+ENABLED_STEPS: PrepareRKE2Step
+DOMAIN: test.local
+FIRST_NODE: true
+GPU_NODE: false
+USE_CERT_MANAGER: false
+CERT_OPTION: invalid_option
+
+# Expected: Should fail with CERT_OPTION must be 'generate' or 'existing' error

@@ -1,0 +1,14 @@
+ENABLED_STEPS: PrepareRKE2Step
+DOMAIN: test.local
+FIRST_NODE: true
+GPU_NODE: false
+USE_CERT_MANAGER: false
+CERT_OPTION: generate
+ADDITIONAL_OIDC_PROVIDERS:
+  - url: "https://kc.test.local/realms/k8s"
+    audiences: ["k8s"]
+
+mocks:
+  PrepareRKE2.RunCommand.chmod:
+    output: ""
+    args: ["chmod", "0755", "/etc/rancher/rke2"]

@@ -1,0 +1,28 @@
+# tests/integration/step/10_PrepareRKE2Step/06-oidc-conflicting-default-domain/bloom.yaml
+# Test case: OIDC provider conflicting with default airm realm
+ENABLED_STEPS: PrepareRKE2Step
+DOMAIN: test.local
+FIRST_NODE: true
+GPU_NODE: false
+USE_CERT_MANAGER: false
+CERT_OPTION: generate
+
+ADDITIONAL_OIDC_PROVIDERS:
+  - url: "https://kc.test.local/realms/airm"  # Conflicts with default
+    audiences: ["k8s"]
+
+expected_error: "conflicts with default OIDC provider"
+
+mocks:
+  PrepareRKE2.RunCommand.modprobe:
+    output: ""
+    args: ["iscsi_tcp"]
+  PrepareRKE2.RunCommand.modprobe:
+    output: ""
+    args: ["dm_mod"]
+  PrepareRKE2.RunCommand.mkdir:
+    output: ""
+    args: ["-p", "/etc/rancher/rke2"]
+  PrepareRKE2.RunCommand.chmod:
+    output: ""
+    args: ["0755", "/etc/rancher/rke2"]

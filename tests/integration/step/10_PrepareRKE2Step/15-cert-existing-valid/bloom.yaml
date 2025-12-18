@@ -1,0 +1,33 @@
+# tests/integration/step/10_PrepareRKE2Step/15-cert-existing-valid/bloom.yaml
+# Test case: Using existing valid certificate files
+ENABLED_STEPS: PrepareRKE2Step
+DOMAIN: test.local
+FIRST_NODE: true
+GPU_NODE: false
+USE_CERT_MANAGER: false
+CERT_OPTION: existing
+TLS_CERT: "/tmp/test.crt"
+TLS_KEY: "/tmp/test.key"
+
+# Expected: Should copy existing certificates successfully
+# Verify: Certificates copied to /etc/rancher/rke2/certs/
+
+mocks:
+  PrepareRKE2.RunCommand.modprobe:
+    output: ""
+    args: ["iscsi_tcp"]
+  PrepareRKE2.RunCommand.modprobe:
+    output: ""
+    args: ["dm_mod"]
+  PrepareRKE2.RunCommand.mkdir:
+    output: ""
+    args: ["-p", "/etc/rancher/rke2"]
+  PrepareRKE2.RunCommand.chmod:
+    output: ""
+    args: ["0755", "/etc/rancher/rke2"]
+  PrepareRKE2.FileExists.tls_cert:
+    path: "/tmp/test.crt"
+    exists: true
+  PrepareRKE2.FileExists.tls_key:
+    path: "/tmp/test.key"
+    exists: true

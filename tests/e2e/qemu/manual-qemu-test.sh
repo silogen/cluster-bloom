@@ -391,14 +391,14 @@ echo ""
 echo "Test execution completed"
 echo "Results saved to: test-results.yaml"
 
-# Clean up VM
+# Manual testing - VM cleanup disabled
 echo ""
-echo "Cleaning up VM..."
-bash "$VM_NAME/stop-vm.sh" || killall qemu-system-x86_64 2>/dev/null || true
-sleep 2
-
-echo "Removing $VM_NAME directory..."
-rm -rf "$VM_NAME"
-
+echo "✓ Test execution completed"
+echo "VM is still running for manual testing"
 echo ""
-echo "✓ VM deleted and cleaned up"
+echo "To access the VM:"
+echo "  cd $VM_NAME && ./ssh-vm.sh"
+echo ""
+echo "To stop the VM when done:"
+echo "  cd $VM_NAME && ./stop-vm.sh"
+echo "  rm -rf $VM_NAME  # Optional: remove VM files"
