@@ -176,7 +176,7 @@ func SetArguments() {
 		},
 		{
 			Key:         "PRELOAD_IMAGES",
-			Default:     "docker.io/rocm/pytorch:rocm6.4_ubuntu24.04_py3.12_pytorch_release_2.6.0,docker.io/rocm/vllm:rocm6.4.1_vllm_0.9.0.1_20250605",
+			Default:     "docker.io/rocm/pytorch:rocm6.4_ubuntu24.04_py3.12_pytorch_release_2.6.0,docker.io/rocm/vllm:rocm6.4.1_vllm_0.9.0.1_20250605,docker.io/rocm/pytorch:rocm7.0.2_ubuntu22.04_py3.10_pytorch_release_2.7.1",
 			Description: "Comma-separated list of the container images to preload.",
 			Type:        "string",
 		},
