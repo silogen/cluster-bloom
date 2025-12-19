@@ -64,7 +64,80 @@
               - ubuntu_version.stdout in supported_ubuntu_versions
             fail_msg: "Ubuntu {{ ubuntu_version.stdout }} is not supported. Supported versions: {{ supported_ubuntu_versions | join(', ') }}"
             success_msg: "Running on supported Ubuntu {{ ubuntu_version.stdout }}"
-      tags: [validate]
+      tags: [validate_node]
+
+    - name: Validate System Requirements
+      block:
+        - name: Check disk space on root partition
+          shell: df -BG / | awk 'NR==2 {print $4}' | sed 's/G//'
+          register: root_disk_space
+          changed_when: false
+
+        - name: Validate root partition has at least 20GB
+          assert:
+            that: root_disk_space.stdout | int >= 20
+            fail_msg: "Root partition requires at least 20GB free space (found {{ root_disk_space.stdout }}GB)"
+
+        - name: Check total memory
+          shell: grep MemTotal /proc/meminfo | awk '{print int($2/1024/1024)}'
+          register: total_memory
+          changed_when: false
+
+        - name: Validate minimum 4GB RAM
+          assert:
+            that: total_memory.stdout | int >= 4
+            fail_msg: "System requires at least 4GB RAM (found {{ total_memory.stdout }}GB)"
+
+        - name: Check CPU cores
+          shell: grep -c ^processor /proc/cpuinfo
+          register: cpu_cores
+          changed_when: false
+
+        - name: Validate minimum 2 CPU cores
+          assert:
+            that: cpu_cores.stdout | int >= 2
+            fail_msg: "System requires at least 2 CPU cores (found {{ cpu_cores.stdout }})"
+
+        - name: Check required kernel modules
+          shell: |
+            for mod in overlay br_netfilter; do
+              if ! lsmod | grep -q "^$mod"; then
+                if ! modinfo $mod >/dev/null 2>&1; then
+                  echo "MISSING:$mod"
+                  exit 1
+                fi
+              fi
+            done
+          register: kernel_modules_check
+          failed_when: kernel_modules_check.rc != 0
+          changed_when: false
+
+      tags: [validate_node]
+
+    - name: Check /var/lib/rancher partition size
+      when: GPU_NODE and not SKIP_RANCHER_PARTITION_CHECK
+      block:
+        - name: Create /var/lib/rancher directory
+          file:
+            path: /var/lib/rancher
+            state: directory
+            mode: "0755"
+
+        - name: Get partition size
+          shell: df -BG /var/lib/rancher | awk 'NR==2 {print $2}' | sed 's/G//'
+          register: rancher_partition_size
+          changed_when: false
+
+        - name: Warn if partition less than 500GB
+          debug:
+            msg: "WARNING: /var/lib/rancher partition is {{ rancher_partition_size.stdout }}GB, recommended 500GB for GPU nodes"
+          when: rancher_partition_size.stdout | int < 500
+
+        - name: Fail if partition less than 500GB
+          fail:
+            msg: "/var/lib/rancher partition size ({{ rancher_partition_size.stdout }}GB) is less than recommended 500GB"
+          when: rancher_partition_size.stdout | int < 500
+      tags: [validate_node]
 
     - name: Install Dependent Packages
       block:
@@ -88,7 +161,86 @@
             DEBIAN_FRONTEND: noninteractive
             NEEDRESTART_MODE: a
             NEEDRESTART_SUSPEND: "1"
-      tags: [packages]
+      tags: [packages, prep_node]
+
+    - name: Clean Longhorn Mounts
+      block:
+        - name: Stop Longhorn services
+          shell: sudo systemctl stop longhorn-* 2>/dev/null
+          ignore_errors: yes
+
+        - name: Unmount Longhorn volumes (3 retries)
+          shell: |
+            for i in 1 2 3; do
+              sudo umount -lf /dev/longhorn/pvc-* 2>/dev/null
+              sudo umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/pvc-* 2>/dev/null
+              sudo umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/*/mount 2>/dev/null
+              mount | grep 'driver.longhorn.io' | awk '{print $3}' | xargs -r sudo umount -lf 2>/dev/null
+              sudo umount -Af /var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/* 2>/dev/null
+            done
+          ignore_errors: yes
+
+        - name: Kill processes using Longhorn mounts
+          shell: sudo fuser -km /dev/longhorn/ 2>/dev/null
+          ignore_errors: yes
+
+        - name: Clean Longhorn device files
+          file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - /dev/longhorn/pvc-*
+            - /var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io
+          ignore_errors: yes
+      tags: [cleanup]
+
+    - name: Uninstall RKE2
+      block:
+        - name: Execute RKE2 uninstall script
+          shell: /usr/local/bin/rke2-uninstall.sh
+          register: rke2_uninstall
+          ignore_errors: yes
+
+        - name: Log RKE2 uninstall output
+          debug:
+            msg: "{{ rke2_uninstall.stdout }}"
+          when: rke2_uninstall.stdout is defined
+      tags: [cleanup]
+
+    - name: Clean Bloom-Managed Disks
+      block:
+        - name: Backup fstab
+          copy:
+            src: /etc/fstab
+            dest: "/etc/fstab.bak-{{ ansible_date_time.epoch }}"
+            remote_src: yes
+
+        - name: Find bloom-tagged mounts in fstab
+          shell: grep '# managed by cluster-bloom' /etc/fstab | awk '{print $2}' || true
+          register: bloom_mounts
+          changed_when: false
+
+        - name: Unmount bloom-tagged disks
+          shell: sudo umount -lf {{ item }}
+          loop: "{{ bloom_mounts.stdout_lines }}"
+          ignore_errors: yes
+          when: bloom_mounts.stdout_lines | length > 0
+
+        - name: Remove bloom entries from fstab
+          lineinfile:
+            path: /etc/fstab
+            regexp: '.*# managed by cluster-bloom.*'
+            state: absent
+
+        - name: Wipe filesystems on unmounted disks
+          shell: |
+            for disk in $(lsblk -nd -o NAME,TYPE | awk '$2=="disk" {print $1}'); do
+              if ! mount | grep -q "/dev/$disk"; then
+                sudo wipefs -a /dev/$disk 2>/dev/null
+              fi
+            done
+          ignore_errors: yes
+      tags: [cleanup]
 
     - name: Setup Multipath
       block:
@@ -117,7 +269,7 @@
             marker: "# {mark} ANSIBLE MANAGED BLOCK - cluster-bloom"
           when: multipath_conf.stat.exists
           notify: Restart multipathd
-      tags: [storage]
+      tags: [storage, prep_node]
 
     - name: Setup and Check ROCm
       when: GPU_NODE
@@ -200,7 +352,7 @@
           debug:
             msg: "ROCm version: {{ rocm_version_file.content | b64decode | trim }}"
 
-      tags: [gpu, rocm]
+      tags: [gpu, rocm, prep_node]
 
     - name: Update Modprobe (GPU nodes)
       when: GPU_NODE
@@ -214,7 +366,7 @@
             name: amdgpu
             state: present
           ignore_errors: yes
-      tags: [gpu]
+      tags: [gpu, prep_node]
 
     - name: Prepare Longhorn Disks
       when: not NO_DISKS_FOR_CLUSTER and CLUSTER_PREMOUNTED_DISKS == ""
@@ -225,10 +377,10 @@
 
         - name: Create mount points for cluster disks
           file:
-            path: "/mnt/disk{{ item.0 }}"
+            path: "/mnt/disk{{ disk_index }}"
             state: directory
             mode: "0755"
-          loop: "{{ cluster_disks_list | default([]) | zip_longest([], fillvalue='') | list }}"
+          loop: "{{ cluster_disks_list | default([]) }}"
           loop_control:
             index_var: disk_index
           when: cluster_disks_list | length > 0
@@ -266,161 +418,7 @@
             state: present
           loop: "{{ disk_uuids.results }}"
           when: cluster_disks_list | length > 0 and not item.skipped | default(false)
-          ignore_errors: yes
-      tags: [storage]
-
-    - name: Validate System Requirements
-      block:
-        - name: Check disk space on root partition
-          shell: df -BG / | awk 'NR==2 {print $4}' | sed 's/G//'
-          register: root_disk_space
-          changed_when: false
-
-        - name: Validate root partition has at least 20GB
-          assert:
-            that: root_disk_space.stdout | int >= 20
-            fail_msg: "Root partition requires at least 20GB free space (found {{ root_disk_space.stdout }}GB)"
-
-        - name: Check total memory
-          shell: grep MemTotal /proc/meminfo | awk '{print int($2/1024/1024)}'
-          register: total_memory
-          changed_when: false
-
-        - name: Validate minimum 4GB RAM
-          assert:
-            that: total_memory.stdout | int >= 4
-            fail_msg: "System requires at least 4GB RAM (found {{ total_memory.stdout }}GB)"
-
-        - name: Check CPU cores
-          shell: grep -c ^processor /proc/cpuinfo
-          register: cpu_cores
-          changed_when: false
-
-        - name: Validate minimum 2 CPU cores
-          assert:
-            that: cpu_cores.stdout | int >= 2
-            fail_msg: "System requires at least 2 CPU cores (found {{ cpu_cores.stdout }})"
-
-        - name: Check required kernel modules
-          shell: |
-            for mod in overlay br_netfilter; do
-              if ! lsmod | grep -q "^$mod"; then
-                if ! modinfo $mod >/dev/null 2>&1; then
-                  echo "MISSING:$mod"
-                  exit 1
-                fi
-              fi
-            done
-          register: kernel_modules_check
-          failed_when: kernel_modules_check.rc != 0
-          changed_when: false
-
-      tags: [validation]
-
-    - name: Check /var/lib/rancher partition size
-      when: GPU_NODE and not SKIP_RANCHER_PARTITION_CHECK
-      block:
-        - name: Create /var/lib/rancher directory
-          file:
-            path: /var/lib/rancher
-            state: directory
-            mode: "0755"
-
-        - name: Get partition size
-          shell: df -BG /var/lib/rancher | awk 'NR==2 {print $2}' | sed 's/G//'
-          register: rancher_partition_size
-          changed_when: false
-
-        - name: Warn if partition less than 500GB
-          debug:
-            msg: "WARNING: /var/lib/rancher partition is {{ rancher_partition_size.stdout }}GB, recommended 500GB for GPU nodes"
-          when: rancher_partition_size.stdout | int < 500
-
-        - name: Fail if partition less than 500GB
-          fail:
-            msg: "/var/lib/rancher partition size ({{ rancher_partition_size.stdout }}GB) is less than recommended 500GB"
-          when: rancher_partition_size.stdout | int < 500
-      tags: [validation]
-
-    - name: Clean Longhorn Mounts
-      block:
-        - name: Stop Longhorn services
-          systemd:
-            name: "longhorn-*"
-            state: stopped
-          ignore_errors: yes
-
-        - name: Unmount Longhorn volumes (3 retries)
-          shell: |
-            for i in 1 2 3; do
-              sudo umount -lf /dev/longhorn/pvc-* 2>/dev/null || true
-              sudo umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/pvc-* 2>/dev/null || true
-              sudo umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/*/mount 2>/dev/null || true
-              mount | grep 'driver.longhorn.io' | awk '{print $3}' | xargs -r sudo umount -lf 2>/dev/null || true
-            done
-          ignore_errors: yes
-
-        - name: Kill processes using Longhorn mounts
-          shell: sudo fuser -km /dev/longhorn/ 2>/dev/null || true
-          ignore_errors: yes
-
-        - name: Clean Longhorn device files
-          file:
-            path: "{{ item }}"
-            state: absent
-          loop:
-            - /dev/longhorn/pvc-*
-            - /var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io
-          ignore_errors: yes
-      tags: [cleanup]
-
-    - name: Uninstall RKE2
-      block:
-        - name: Execute RKE2 uninstall script
-          shell: /usr/local/bin/rke2-uninstall.sh
-          register: rke2_uninstall
-          ignore_errors: yes
-
-        - name: Log RKE2 uninstall output
-          debug:
-            msg: "{{ rke2_uninstall.stdout }}"
-          when: rke2_uninstall.stdout is defined
-      tags: [cleanup]
-
-    - name: Clean Bloom-Managed Disks
-      block:
-        - name: Backup fstab
-          copy:
-            src: /etc/fstab
-            dest: "/etc/fstab.bak-{{ ansible_date_time.epoch }}"
-            remote_src: yes
-
-        - name: Find bloom-tagged mounts in fstab
-          shell: grep '# managed by cluster-bloom' /etc/fstab | awk '{print $2}' || true
-          register: bloom_mounts
-          changed_when: false
-
-        - name: Unmount bloom-tagged disks
-          shell: sudo umount -lf {{ item }}
-          loop: "{{ bloom_mounts.stdout_lines }}"
-          ignore_errors: yes
-          when: bloom_mounts.stdout_lines | length > 0
-
-        - name: Remove bloom entries from fstab
-          lineinfile:
-            path: /etc/fstab
-            regexp: '.*# managed by cluster-bloom.*'
-            state: absent
-
-        - name: Wipe filesystems on unmounted disks
-          shell: |
-            for disk in $(lsblk -nd -o NAME,TYPE | awk '$2=="disk" {print $1}'); do
-              if ! mount | grep -q "/dev/$disk"; then
-                sudo wipefs -a /dev/$disk 2>/dev/null || true
-              fi
-            done
-          ignore_errors: yes
-      tags: [cleanup]
+      tags: [storage, prep_node]
 
     - name: Prepare RKE2
       block:
@@ -521,7 +519,7 @@
                     - "--oidc-username-prefix=oidc"
                     - "--oidc-groups-prefix=oidc"
                 marker: "# {mark} ANSIBLE MANAGED BLOCK - OIDC"
-      tags: [rke2]
+      tags: [rke2, deploy_cluster]
 
     - name: Generate Node Labels
       block:
@@ -545,7 +543,7 @@
                 - {{ label }}
               {% endfor %}
             marker: "# {mark} ANSIBLE MANAGED BLOCK - node labels"
-      tags: [rke2]
+      tags: [rke2, deploy_cluster]
 
     - name: Install Kubernetes Tools
       block:
@@ -574,7 +572,7 @@
             rm /tmp/get-helm-4.sh
           args:
             creates: /usr/local/bin/helm
-      tags: [tools]
+      tags: [tools, deploy_cluster]
 
     - name: Configure inotify instances
       block:
@@ -591,7 +589,7 @@
             sysctl_file: /etc/sysctl.conf
             reload: yes
           when: current_inotify.stdout | int < inotify_target_value
-      tags: [system]
+      tags: [system, prep_node]
 
     - name: Open Firewall Ports
       block:
@@ -614,7 +612,7 @@
             jump: ACCEPT
           loop: "{{ rke2_ports_udp }}"
           notify: Save iptables
-      tags: [firewall]
+      tags: [firewall, prep_node]
 
     - name: Update Udev Rules (GPU nodes)
       when: GPU_NODE
@@ -632,7 +630,7 @@
           shell: |
             udevadm control --reload-rules
             udevadm trigger
-      tags: [gpu]
+      tags: [gpu, prep_node]
 
     - name: Configure logrotate
       block:
@@ -695,7 +693,7 @@
             name: cron
             state: started
             enabled: yes
-      tags: [logging]
+      tags: [logging, prep_node]
 
     - name: Configure rsyslog rate limiting
       block:
@@ -721,7 +719,7 @@
             dest: /etc/rsyslog.d/01-iscsi-filter.conf
             mode: "0644"
           notify: Restart rsyslog
-      tags: [logging]
+      tags: [logging, prep_node]
 
     - name: Setup RKE2 (First Node)
       when: FIRST_NODE
@@ -747,7 +745,7 @@
             path: /var/lib/rancher/rke2/server/node-token
             state: present
             timeout: 300
-      tags: [rke2]
+      tags: [rke2, deploy_cluster]
 
     - name: Setup RKE2 (Additional Node - Worker)
       when: not FIRST_NODE and not CONTROL_PLANE
@@ -774,7 +772,7 @@
           service:
             name: rke2-agent
             state: started
-      tags: [rke2]
+      tags: [rke2, deploy_cluster]
 
     - name: Setup RKE2 (Additional Node - Control Plane)
       when: not FIRST_NODE and CONTROL_PLANE
@@ -801,7 +799,7 @@
           service:
             name: rke2-server
             state: started
-      tags: [rke2]
+      tags: [rke2, deploy_cluster]
 
     - name: Setup KubeConfig (First Node)
       when: FIRST_NODE
@@ -842,7 +840,7 @@
             line: "export PATH=$PATH:/snap/k9s/current/bin"
             create: yes
             owner: "{{ ansible_user }}"
-      tags: [kubeconfig]
+      tags: [kubeconfig, deploy_cluster]
 
     - name: Create Chrony Config (First Node)
       when: FIRST_NODE
@@ -867,7 +865,7 @@
             dest: /etc/chrony/chrony.conf
             mode: "0644"
           notify: Restart chronyd
-      tags: [ntp]
+      tags: [ntp, prep_node]
 
     - name: Create Chrony Config (Additional Node)
       when: not FIRST_NODE and SERVER_IP != ""
@@ -892,7 +890,7 @@
             dest: /etc/chrony/chrony.conf
             mode: "0644"
           notify: Restart chronyd
-      tags: [ntp]
+      tags: [ntp, prep_node]
 
     - name: Setup Longhorn (First Node)
       when: FIRST_NODE and not NO_DISKS_FOR_CLUSTER
@@ -908,7 +906,7 @@
             path: /var/lib/rancher/rke2/bin/kubectl
             state: present
             timeout: 300
-      tags: [longhorn]
+      tags: [longhorn, deploy_k8s_apps]
 
     - name: Setup MetalLB (First Node)
       when: FIRST_NODE
@@ -937,7 +935,7 @@
                 namespace: metallb-system
             dest: /var/lib/rancher/rke2/server/manifests/metallb-address.yaml
             mode: "0644"
-      tags: [metallb]
+      tags: [metallb, deploy_k8s_apps]
 
     - name: Create Domain Configuration (First Node)
       when: FIRST_NODE and DOMAIN != ""
@@ -1014,7 +1012,7 @@
                   -n kgateway-system \
                   --dry-run=client -o yaml | \
                 /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml apply -f -
-      tags: [DOMAIN]
+      tags: [DOMAIN, deploy_k8s_apps]
 
     - name: Preload Container Images
       when: FIRST_NODE and PRELOAD_IMAGES is defined and PRELOAD_IMAGES != ""
@@ -1039,7 +1037,7 @@
           retries: 360
           delay: 10
 
-      tags: [images]
+      tags: [images, deploy_k8s_apps]
 
     - name: Longhorn Preflight Check
       when: FIRST_NODE and not NO_DISKS_FOR_CLUSTER
@@ -1066,7 +1064,7 @@
             msg: "Longhorn preflight check failed. Review output above."
           when: longhorn_preflight.rc != 0
 
-      tags: [longhorn, validation]
+      tags: [longhorn, validate_deployment, deploy_k8s_apps]
 
     - name: Setup Longhorn
       when: FIRST_NODE and not NO_DISKS_FOR_CLUSTER
@@ -1096,7 +1094,6 @@
             /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
               create job --from=cronjob/label-and-annotate-nodes \
               label-and-annotate-nodes-initial -n default
-          ignore_errors: yes
 
         - name: Wait for node annotation to complete
           shell: |
@@ -1108,7 +1105,7 @@
           delay: 10
           failed_when: false
 
-      tags: [longhorn]
+      tags: [longhorn, deploy_k8s_apps]
 
     - name: Wait for Cluster Ready
       when: FIRST_NODE and not NO_DISKS_FOR_CLUSTER
@@ -1149,7 +1146,7 @@
           debug:
             msg: "Longhorn is operational - test PVC successfully created and bound"
 
-      tags: [longhorn, validation]
+      tags: [longhorn, validate_deployment, deploy_k8s_apps]
 
     - name: Create Bloom ConfigMap
       when: FIRST_NODE
@@ -1173,7 +1170,7 @@
               rke2_version: "{{ RKE2_VERSION }}"
             EOF
 
-      tags: [config]
+      tags: [config, deploy_k8s_apps]
 
     - name: Setup ClusterForge
       when: FIRST_NODE and CLUSTERFORGE_RELEASE != "none"
@@ -1213,7 +1210,7 @@
           debug:
             msg: "{{ cf_bootstrap.stdout }}"
 
-      tags: [clusterforge]
+      tags: [clusterforge, deploy_clusterforge]
 
     - name: Generate Join Command (First Node)
       when: FIRST_NODE
@@ -1243,7 +1240,7 @@
               To add additional nodes, use:
               ansible-playbook cluster-bloom.yaml -e "FIRST_NODE=false SERVER_IP={{ node_ip }} JOIN_TOKEN={{ JOIN_TOKEN_content.content | b64decode | trim }}"
               ============================================
-      tags: [output]
+      tags: [output, deploy_cluster]
 
   handlers:
     - name: Restart multipathd

@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 //go:embed playbooks
@@ -19,10 +20,37 @@ func getWorkDir() (string, error) {
 	return filepath.Join(cwd, ".bloom"), nil
 }
 
-func RunPlaybook(config map[string]any, playbookName string, dryRun bool) (int, error) {
+func backupLogFile(workDir string) error {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("get current directory: %w", err)
+	}
+
+	logPath := filepath.Join(cwd, "bloom.log")
+
+	if _, err := os.Stat(logPath); os.IsNotExist(err) {
+		return nil
+	}
+
+	timestamp := time.Now().Format("20060102-150405")
+	backupPath := filepath.Join(cwd, fmt.Sprintf("bloom-%s.log", timestamp))
+
+	if err := os.Rename(logPath, backupPath); err != nil {
+		return fmt.Errorf("failed to backup bloom.log: %w", err)
+	}
+
+	fmt.Printf("Backed up bloom.log to %s\n", filepath.Base(backupPath))
+	return nil
+}
+
+func RunPlaybook(config map[string]any, playbookName string, dryRun bool, tags string) (int, error) {
 	workDir, err := getWorkDir()
 	if err != nil {
 		return 1, err
+	}
+
+	if err := backupLogFile(workDir); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
 	}
 
 	rootfs := filepath.Join(workDir, "rootfs")
@@ -55,7 +83,7 @@ func RunPlaybook(config map[string]any, playbookName string, dryRun bool) (int, 
 	// Add BLOOM_DIR to Ansible variables
 	extraArgs = append(extraArgs, "-e", fmt.Sprintf(`{"BLOOM_DIR": "%s"}`, workDir))
 
-	exitCode := RunContainer(rootfs, playbookDir, playbookName, extraArgs, dryRun)
+	exitCode := RunContainer(rootfs, playbookDir, playbookName, extraArgs, dryRun, tags)
 	return exitCode, nil
 }
 

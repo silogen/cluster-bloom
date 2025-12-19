@@ -12,9 +12,10 @@ import (
 )
 
 var (
-	port            int
+	port             int
 	playbookOverride string
-	dryRun          bool
+	dryRun           bool
+	tags             string
 )
 
 func init() {
@@ -133,6 +134,7 @@ Accepts either a bloom.yaml config file or a direct playbook path.`,
 	rootCmd.PersistentFlags().IntVarP(&port, "port", "p", 62078, "Port for web UI (fails if in use)")
 	ansibleCmd.Flags().StringVar(&playbookOverride, "playbook", "", "Override playbook to run (e.g., print-config.yml)")
 	ansibleCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Run in check mode without making changes")
+	ansibleCmd.Flags().StringVar(&tags, "tags", "", "Run only tasks with specific tags (e.g., cleanup, validate, storage)")
 
 	// Add subcommands
 	rootCmd.AddCommand(webuiCmd)
@@ -189,7 +191,7 @@ func runAnsible(configOrPlaybook string) {
 	}
 
 	// Run the playbook
-	exitCode, err := runtime.RunPlaybook(cfg, playbookName, dryRun)
+	exitCode, err := runtime.RunPlaybook(cfg, playbookName, dryRun, tags)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
