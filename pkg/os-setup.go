@@ -399,22 +399,152 @@ func setupMultipath() error {
 	return nil
 }
 
-func updateModprobe() error {
-	cmd := exec.Command("sh", "-c", "sudo sed -i '/^blacklist amdgpu/s/^/# /' /etc/modprobe.d/*.conf")
-	output, err := cmd.Output()
+// checkAmdgpuBlacklist checks if amdgpu is blacklisted in kernel cmdline or modprobe.d
+func checkAmdgpuBlacklist() (bool, error) {
+	// Check kernel command line
+	cmdlineCmd := exec.Command("sh", "-c", "cat /proc/cmdline")
+	cmdlineOutput, err := cmdlineCmd.CombinedOutput()
 	if err != nil {
-		LogMessage(Warn, fmt.Sprintf("Modprobe configuration returned: %s", output))
-		return fmt.Errorf("failed to configure Modprobe: %w", err)
-	} else {
-		LogMessage(Info, "")
+		return false, fmt.Errorf("failed to read /proc/cmdline: %w", err)
 	}
-	cmd = exec.Command("modprobe", "amdgpu")
-	output, err = cmd.Output()
-	if err != nil {
-		LogMessage(Warn, fmt.Sprintf("Modprobe amdgpu returned: %s", output))
-		return fmt.Errorf("failed to modprobe amdgpu: %w", err)
-	} else {
-		LogMessage(Info, "")
+
+	hasKernelBlacklist := strings.Contains(string(cmdlineOutput), "modprobe.blacklist=amdgpu")
+
+	// Check modprobe.d
+	modprobeCmd := exec.Command("sh", "-c", "grep -r '^[[:space:]]*blacklist[[:space:]]*amdgpu' /etc/modprobe.d/ 2>/dev/null || true")
+	modprobeOutput, _ := modprobeCmd.CombinedOutput()
+	hasModprobeBlacklist := len(modprobeOutput) > 0
+
+	if hasKernelBlacklist {
+		LogMessage(Warn, "amdgpu is blacklisted in ACTIVE kernel command line (reboot required to fix)")
 	}
+	if hasModprobeBlacklist {
+		LogMessage(Warn, fmt.Sprintf("amdgpu is blacklisted in modprobe.d:\n%s", string(modprobeOutput)))
+	}
+
+	return hasKernelBlacklist || hasModprobeBlacklist, nil
+}
+
+// removeAmdgpuBlacklist removes amdgpu blacklist from modprobe.d and GRUB configuration
+// Returns true if reboot is required, and any error encountered
+func removeAmdgpuBlacklist() (bool, error) {
+	LogMessage(Info, "Starting amdgpu blacklist removal process...")
+	needsReboot := false
+
+	// Step 1: Check current kernel command line for blacklist
+	checkCmdlineCmd := exec.Command("sh", "-c", "cat /proc/cmdline | grep -o 'modprobe.blacklist=amdgpu' || true")
+	cmdlineOutput, _ := checkCmdlineCmd.CombinedOutput()
+	if len(cmdlineOutput) > 0 {
+		LogMessage(Warn, "Found 'modprobe.blacklist=amdgpu' in ACTIVE kernel command line")
+		needsReboot = true
+	}
+
+	// Step 2: Remove amdgpu blacklist from modprobe.d
+	LogMessage(Info, "Removing amdgpu blacklist from /etc/modprobe.d/...")
+
+	sedCmd := exec.Command("sh", "-c", "sed -i '/^[[:space:]]*blacklist[[:space:]]*amdgpu/s/^/# /' /etc/modprobe.d/*.conf 2>/dev/null || true")
+	if output, err := sedCmd.CombinedOutput(); err != nil {
+		LogMessage(Warn, fmt.Sprintf("sed command output: %s", string(output)))
+	}
+
+	// Step 3: Update GRUB configuration
+	LogMessage(Info, "Updating GRUB configuration to remove amdgpu blacklist...")
+
+	// Backup original GRUB config
+	backupCmd := exec.Command("cp", "/etc/default/grub", "/etc/default/grub.backup")
+	if err := backupCmd.Run(); err != nil {
+		LogMessage(Warn, fmt.Sprintf("Failed to backup GRUB config: %v", err))
+	} else {
+		LogMessage(Info, "Backed up /etc/default/grub to /etc/default/grub.backup")
+	}
+
+	// Check if GRUB config has the blacklist
+	checkGrubCmd := exec.Command("sh", "-c", "grep 'modprobe.blacklist=amdgpu' /etc/default/grub || true")
+	checkGrubOutput, _ := checkGrubCmd.CombinedOutput()
+	if len(checkGrubOutput) > 0 {
+		needsReboot = true
+		LogMessage(Info, "Found amdgpu blacklist in GRUB config, removing...")
+	}
+
+	// Remove modprobe.blacklist=amdgpu from GRUB
+	grubSedCmd := exec.Command("sh", "-c", `sed -i 's/modprobe\.blacklist=amdgpu[[:space:]]*//g' /etc/default/grub`)
+	if output, err := grubSedCmd.CombinedOutput(); err != nil {
+		LogMessage(Error, fmt.Sprintf("Failed to update GRUB config: %s", string(output)))
+		return needsReboot, fmt.Errorf("failed to update GRUB configuration: %w", err)
+	}
+	LogMessage(Info, "Successfully updated /etc/default/grub")
+
+	// Step 4: Verify GRUB changes
+	verifyGrubCmd := exec.Command("sh", "-c", "grep -E 'GRUB_CMDLINE_LINUX' /etc/default/grub")
+	if verifyOutput, err := verifyGrubCmd.CombinedOutput(); err == nil {
+		LogMessage(Info, fmt.Sprintf("Updated GRUB config:\n%s", string(verifyOutput)))
+	}
+
+	// Step 5: Update GRUB
+	LogMessage(Info, "Running update-grub...")
+	updateGrubCmd := exec.Command("update-grub")
+	if output, err := updateGrubCmd.CombinedOutput(); err != nil {
+		LogMessage(Error, fmt.Sprintf("update-grub failed: %s", string(output)))
+		return needsReboot, fmt.Errorf("failed to run update-grub: %w", err)
+	}
+	LogMessage(Info, "Successfully ran update-grub")
+
+	// Step 6: Verify no active blacklist in config files
+	verifyCmd := exec.Command("sh", "-c", "grep -r '^[[:space:]]*blacklist[[:space:]]*amdgpu' /etc/modprobe.d/ 2>/dev/null || true")
+	verifyOutput, _ := verifyCmd.CombinedOutput()
+	if len(verifyOutput) > 0 {
+		LogMessage(Warn, fmt.Sprintf("WARNING: Still found uncommented blacklist entries:\n%s", string(verifyOutput)))
+		return needsReboot, fmt.Errorf("blacklist entries still present after cleanup")
+	} else {
+		LogMessage(Info, "Verified: No active amdgpu blacklist entries in /etc/modprobe.d/")
+	}
+
+	LogMessage(Info, "Successfully removed amdgpu blacklist from modprobe.d and GRUB")
+
+	if needsReboot {
+		LogMessage(Warn, "════════════════════════════════════════════════════════")
+		LogMessage(Warn, "  REBOOT REQUIRED FOR CHANGES TO TAKE EFFECT!")
+		LogMessage(Warn, "  The kernel was booted with amdgpu blacklisted.")
+		LogMessage(Warn, "  Run: sudo reboot")
+		LogMessage(Warn, "════════════════════════════════════════════════════════")
+	}
+
+	return needsReboot, nil
+}
+
+// verifyAmdgpuDriverBinding verifies that the amdgpu module is loaded and GPUs are bound
+func verifyAmdgpuDriverBinding() error {
+	LogMessage(Info, "Verifying amdgpu driver binding...")
+
+	// Check if amdgpu module is loaded
+	lsmodCmd := exec.Command("sh", "-c", "lsmod | grep '^amdgpu' || true")
+	lsmodOutput, _ := lsmodCmd.CombinedOutput()
+	if len(lsmodOutput) == 0 {
+		LogMessage(Error, "amdgpu module is NOT loaded")
+		return fmt.Errorf("amdgpu module not loaded")
+	}
+	LogMessage(Info, "amdgpu module is loaded")
+
+	// Check if GPUs are bound to amdgpu driver
+	lspciCmd := exec.Command("sh", "-c", "lspci -nnk -d 1002:75a3 | grep -A 3 'Processing accelerators'")
+	lspciOutput, _ := lspciCmd.CombinedOutput()
+
+	if !strings.Contains(string(lspciOutput), "Kernel driver in use: amdgpu") {
+		LogMessage(Error, "MI355X GPUs are NOT bound to amdgpu driver")
+		LogMessage(Info, fmt.Sprintf("lspci output:\n%s", string(lspciOutput)))
+		return fmt.Errorf("GPUs not bound to amdgpu driver")
+	}
+	LogMessage(Info, "MI355X GPUs are bound to amdgpu driver")
+
+	// Check for render nodes
+	renderNodesCmd := exec.Command("sh", "-c", "ls -la /dev/dri/renderD* 2>/dev/null || true")
+	renderNodesOutput, _ := renderNodesCmd.CombinedOutput()
+	if len(renderNodesOutput) == 0 {
+		LogMessage(Warn, "No render nodes found in /dev/dri/")
+		return fmt.Errorf("no render nodes found")
+	}
+	LogMessage(Info, fmt.Sprintf("Render nodes found:\n%s", string(renderNodesOutput)))
+
+	LogMessage(Info, "Successfully verified amdgpu driver binding")
 	return nil
 }

@@ -302,21 +302,24 @@ var SetupMultipathStep = Step{
 
 var UpdateModprobeStep = Step{
 	Id:          "UpdateModprobeStep",
-	Name:        "Update Modprobe",
-	Description: "Update Modprobe to unblacklist amdgpu",
+	Name:        "Remove AMD GPU Blacklist",
+	Description: "Remove amdgpu blacklist from modprobe.d and GRUB configuration",
 	Skip: func() bool {
 		if !viper.GetBool("GPU_NODE") {
-			LogMessage(Info, "Skipping ROCm setup for non-GPU node")
+			LogMessage(Info, "Skipping amdgpu blacklist removal for non-GPU node")
 			return true
 		}
 		return false
 	},
 	Action: func() StepResult {
-		err := updateModprobe()
+		needsReboot, err := removeAmdgpuBlacklist()
 		if err != nil {
 			return StepResult{
-				Error: fmt.Errorf("update Modprobe failed: %w", err),
+				Error: fmt.Errorf("amdgpu blacklist removal failed: %w", err),
 			}
+		}
+		if needsReboot {
+			LogMessage(Warn, "System reboot required for GPU configuration to take effect")
 		}
 		return StepResult{Error: nil}
 	},
@@ -839,12 +842,12 @@ data:
 			// Get certificate paths from PrepareRKE2Step
 			tlsCertPath := viper.GetString("RUNTIME_TLS_CERT")
 			tlsKeyPath := viper.GetString("RUNTIME_TLS_KEY")
-			
+
 			if tlsCertPath == "" || tlsKeyPath == "" {
 				LogMessage(Error, "Certificate paths not found - PrepareRKE2 may have failed")
 				return StepResult{Error: fmt.Errorf("certificate paths not found - PrepareRKE2 may have failed")}
 			}
-			
+
 			// Verify files still exist
 			if _, err := os.Stat(tlsCertPath); os.IsNotExist(err) {
 				LogMessage(Error, fmt.Sprintf("Certificate file missing: %s", tlsCertPath))
@@ -857,7 +860,7 @@ data:
 
 			// Create ClusterRoleBindings for OIDC authorization
 			LogMessage(Info, "Creating OIDC ClusterRoleBindings")
-			
+
 			clusterRoleBindingFile, err := os.CreateTemp("", "cluster-role-binding-*.yaml")
 			if err != nil {
 				LogMessage(Error, fmt.Sprintf("Failed to create temporary ClusterRoleBinding file: %v", err))
@@ -948,7 +951,7 @@ metadata:
 			LogMessage(Info, "Successfully created TLS secret")
 			return StepResult{Message: "Domain ConfigMap and TLS secret created successfully"}
 		}
-		
+
 		return StepResult{Message: "Domain ConfigMap created successfully"}
 	},
 }
