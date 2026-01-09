@@ -20,9 +20,7 @@ def load_schema_examples():
     # Try multiple possible paths
     script_dir = os.path.dirname(os.path.abspath(__file__))
     schema_paths = [
-        '/robot/schema/bloom.yaml.schema.yaml',  # Docker mount
-        os.path.join(script_dir, '../../schema/bloom.yaml.schema.yaml'),  # Local relative
-        '/workspace/cluster-bloom/schema/bloom.yaml.schema.yaml',  # Absolute workspace path
+        os.path.join('/robot/schema/bloom.yaml.schema.yaml'),  # Current location
     ]
 
     schema_path = None

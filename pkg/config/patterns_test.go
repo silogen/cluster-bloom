@@ -1,7 +1,6 @@
 package config
 
 import (
-	"os"
 	"regexp"
 	"testing"
 
@@ -10,9 +9,9 @@ import (
 
 // TypeDefinition represents a type definition from the schema
 type TypeDefinition struct {
-	Type     string   `yaml:"type"`
-	Pattern  string   `yaml:"pattern"`
-	Desc     string   `yaml:"desc"`
+	Type     string `yaml:"type"`
+	Pattern  string `yaml:"pattern"`
+	Desc     string `yaml:"desc"`
 	Examples struct {
 		Valid   []string `yaml:"valid"`
 		Invalid []string `yaml:"invalid"`
@@ -26,19 +25,15 @@ type SchemaFile struct {
 
 var schemaFile *SchemaFile
 
-// loadSchemaFile loads the schema file once
+// loadSchemaFile loads the embedded schema data
 func loadSchemaFile(t *testing.T) *SchemaFile {
 	if schemaFile != nil {
 		return schemaFile
 	}
 
-	data, err := os.ReadFile("../../schema/bloom.yaml.schema.yaml")
-	if err != nil {
-		t.Fatalf("Failed to read schema file: %v", err)
-	}
-
+	// Use the embedded schema data from schema_loader.go
 	var schema SchemaFile
-	if err := yaml.Unmarshal(data, &schema); err != nil {
+	if err := yaml.Unmarshal(schemaData, &schema); err != nil {
 		t.Fatalf("Failed to parse schema file: %v", err)
 	}
 

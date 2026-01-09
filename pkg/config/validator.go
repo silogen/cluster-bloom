@@ -1,8 +1,8 @@
 package config
 
 import (
+	_ "embed"
 	"fmt"
-	"os"
 	"regexp"
 	"strings"
 
@@ -23,33 +23,15 @@ type SchemaTypes struct {
 
 var cachedPatterns map[string]*regexp.Regexp
 
-// loadTypePatterns loads regex patterns from schema
+// loadTypePatterns loads regex patterns from embedded schema
 func loadTypePatterns() (map[string]*regexp.Regexp, error) {
 	if cachedPatterns != nil {
 		return cachedPatterns, nil
 	}
 
-	paths := []string{
-		"schema/bloom.yaml.schema.yaml",
-		"../../schema/bloom.yaml.schema.yaml",
-		"/workspace/cluster-bloom/schema/bloom.yaml.schema.yaml",
-	}
-
-	var data []byte
-	var err error
-	for _, path := range paths {
-		data, err = os.ReadFile(path)
-		if err == nil {
-			break
-		}
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to read schema file: %w", err)
-	}
-
+	// Use the embedded schema data from schema_loader.go
 	var schema SchemaTypes
-	if err := yaml.Unmarshal(data, &schema); err != nil {
+	if err := yaml.Unmarshal(schemaData, &schema); err != nil {
 		return nil, fmt.Errorf("failed to parse schema: %w", err)
 	}
 

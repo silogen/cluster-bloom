@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -52,7 +51,7 @@ func anyFieldPresent(cfg Config, fields []string) bool {
 }
 
 // extractFieldsFromConditions extracts field names from condition strings
-// Example: "NO_DISKS_FOR_CLUSTER == true && CLUSTER_DISKS == ''" -> ["NO_DISKS_FOR_CLUSTER", "CLUSTER_DISKS"]
+// Example: "NO_DISKS_FOR_CLUSTER == true && CLUSTER_DISKS == ”" -> ["NO_DISKS_FOR_CLUSTER", "CLUSTER_DISKS"]
 func extractFieldsFromConditions(conditions []string) []string {
 	fieldMap := make(map[string]bool)
 
@@ -253,28 +252,9 @@ func loadSchemaConstraints() ([]constraintDef, error) {
 		return cachedConstraints, nil
 	}
 
-	// Try multiple paths for schema file
-	paths := []string{
-		"schema/bloom.yaml.schema.yaml",
-		"../../schema/bloom.yaml.schema.yaml",
-		"/workspace/cluster-bloom/schema/bloom.yaml.schema.yaml",
-	}
-
-	var data []byte
-	var err error
-	for _, path := range paths {
-		data, err = os.ReadFile(path)
-		if err == nil {
-			break
-		}
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to read schema file: %w", err)
-	}
-
+	// Use the embedded schema data from schema_loader.go
 	var schema schemaConstraints
-	if err := yaml.Unmarshal(data, &schema); err != nil {
+	if err := yaml.Unmarshal(schemaData, &schema); err != nil {
 		return nil, fmt.Errorf("failed to parse schema: %w", err)
 	}
 

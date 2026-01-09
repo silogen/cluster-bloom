@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 
@@ -12,8 +11,8 @@ import (
 // SchemaDefinition represents the complete schema structure
 type SchemaDefinition struct {
 	Schema struct {
-		Type    string                    `yaml:"type"`
-		Mapping map[string]SchemaField    `yaml:"mapping"`
+		Type    string                 `yaml:"type"`
+		Mapping map[string]SchemaField `yaml:"mapping"`
 	} `yaml:"schema"`
 	Types       map[string]TypeDefinition `yaml:"types"`
 	Constraints []ConstraintDef           `yaml:"constraints"`
@@ -33,19 +32,15 @@ type SchemaField struct {
 
 var schemaDefinition *SchemaDefinition
 
-// loadSchemaDefinition loads the complete schema file
+// loadSchemaDefinition loads the complete embedded schema
 func loadSchemaDefinition(t *testing.T) *SchemaDefinition {
 	if schemaDefinition != nil {
 		return schemaDefinition
 	}
 
-	data, err := os.ReadFile("../../schema/bloom.yaml.schema.yaml")
-	if err != nil {
-		t.Fatalf("Failed to read schema file: %v", err)
-	}
-
+	// Use the embedded schema data from schema_loader.go
 	var schema SchemaDefinition
-	if err := yaml.Unmarshal(data, &schema); err != nil {
+	if err := yaml.Unmarshal(schemaData, &schema); err != nil {
 		t.Fatalf("Failed to parse schema file: %v", err)
 	}
 
@@ -56,21 +51,21 @@ func loadSchemaDefinition(t *testing.T) *SchemaDefinition {
 // getBaseValidConfig returns a minimal valid config for first node
 func getBaseValidConfig() Config {
 	return Config{
-		"FIRST_NODE":            true,
-		"GPU_NODE":              false,
-		"DOMAIN":                "test.example.com",
+		"FIRST_NODE":           true,
+		"GPU_NODE":             false,
+		"DOMAIN":               "test.example.com",
 		"NO_DISKS_FOR_CLUSTER": true,
-		"CERT_OPTION":           "generate",
+		"CERT_OPTION":          "generate",
 	}
 }
 
 // getAdditionalNodeConfig returns a valid config for additional node
 func getAdditionalNodeConfig() Config {
 	return Config{
-		"FIRST_NODE":            false,
-		"GPU_NODE":              false,
-		"SERVER_IP":             "192.168.1.10",
-		"JOIN_TOKEN":            "K10token::server:abc123",
+		"FIRST_NODE":           false,
+		"GPU_NODE":             false,
+		"SERVER_IP":            "192.168.1.10",
+		"JOIN_TOKEN":           "K10token::server:abc123",
 		"NO_DISKS_FOR_CLUSTER": true,
 	}
 }
@@ -252,14 +247,14 @@ func TestValidate_RequiredFieldsFromSchema(t *testing.T) {
 	schema := loadSchemaDefinition(t)
 
 	tests := []struct {
-		name       string
-		config     Config
-		wantError  string
+		name      string
+		config    Config
+		wantError string
 	}{
 		{
 			name: "DOMAIN required when FIRST_NODE=true",
 			config: Config{
-				"FIRST_NODE":            true,
+				"FIRST_NODE":           true,
 				"NO_DISKS_FOR_CLUSTER": true,
 			},
 			wantError: "DOMAIN",
@@ -267,8 +262,8 @@ func TestValidate_RequiredFieldsFromSchema(t *testing.T) {
 		{
 			name: "SERVER_IP required when FIRST_NODE=false",
 			config: Config{
-				"FIRST_NODE":            false,
-				"JOIN_TOKEN":            "K10token::server:abc",
+				"FIRST_NODE":           false,
+				"JOIN_TOKEN":           "K10token::server:abc",
 				"NO_DISKS_FOR_CLUSTER": true,
 			},
 			wantError: "SERVER_IP",
@@ -276,8 +271,8 @@ func TestValidate_RequiredFieldsFromSchema(t *testing.T) {
 		{
 			name: "JOIN_TOKEN required when FIRST_NODE=false",
 			config: Config{
-				"FIRST_NODE":            false,
-				"SERVER_IP":             "192.168.1.10",
+				"FIRST_NODE":           false,
+				"SERVER_IP":            "192.168.1.10",
 				"NO_DISKS_FOR_CLUSTER": true,
 			},
 			wantError: "JOIN_TOKEN",

@@ -21,8 +21,10 @@ class ConstraintTestGenerator:
         # Try multiple paths for schema file (Docker vs local)
         possible_paths = [
             "/robot/schema/bloom.yaml.schema.yaml",  # Docker mount
-            "../../schema/bloom.yaml.schema.yaml",   # Local relative
-            "../schema/bloom.yaml.schema.yaml",      # Alternative local
+            "../../pkg/config/bloom.yaml.schema.yaml",   # Current location relative
+            "../pkg/config/bloom.yaml.schema.yaml",      # Alternative relative
+            "../../schema/bloom.yaml.schema.yaml",   # Legacy location
+            "../schema/bloom.yaml.schema.yaml",      # Legacy alternative
         ]
 
         schema_data = None

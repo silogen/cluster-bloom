@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"os"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -23,19 +22,15 @@ type SchemaWithConstraints struct {
 
 var constraintsCache *SchemaWithConstraints
 
-// loadConstraints loads constraints from schema file
+// loadConstraints loads constraints from embedded schema data
 func loadConstraints(t *testing.T) *SchemaWithConstraints {
 	if constraintsCache != nil {
 		return constraintsCache
 	}
 
-	data, err := os.ReadFile("../../schema/bloom.yaml.schema.yaml")
-	if err != nil {
-		t.Fatalf("Failed to read schema file: %v", err)
-	}
-
+	// Use the embedded schema data from schema_loader.go
 	var schema SchemaWithConstraints
-	if err := yaml.Unmarshal(data, &schema); err != nil {
+	if err := yaml.Unmarshal(schemaData, &schema); err != nil {
 		t.Fatalf("Failed to parse schema file: %v", err)
 	}
 
@@ -53,8 +48,8 @@ func TestMutuallyExclusiveConstraints(t *testing.T) {
 
 			t.Run("both_"+fields[0]+"_and_"+fields[1]+"_set", func(t *testing.T) {
 				cfg := Config{
-					fields[0]:               "value1",
-					fields[1]:               "value2",
+					fields[0]:              "value1",
+					fields[1]:              "value2",
 					"NO_DISKS_FOR_CLUSTER": true, // Satisfy storage constraint
 				}
 
@@ -66,7 +61,7 @@ func TestMutuallyExclusiveConstraints(t *testing.T) {
 
 			t.Run("only_"+fields[0]+"_set", func(t *testing.T) {
 				cfg := Config{
-					fields[0]:               "value1",
+					fields[0]:              "value1",
 					"NO_DISKS_FOR_CLUSTER": true, // Satisfy storage constraint
 				}
 
@@ -78,7 +73,7 @@ func TestMutuallyExclusiveConstraints(t *testing.T) {
 
 			t.Run("only_"+fields[1]+"_set", func(t *testing.T) {
 				cfg := Config{
-					fields[1]:               "value1",
+					fields[1]:              "value1",
 					"NO_DISKS_FOR_CLUSTER": true, // Satisfy storage constraint
 				}
 
@@ -175,7 +170,6 @@ func TestOneOfConstraints(t *testing.T) {
 		}
 	}
 }
-
 
 // TestAllConstraintsAreParsed verifies all constraints in schema are readable
 func TestAllConstraintsAreParsed(t *testing.T) {

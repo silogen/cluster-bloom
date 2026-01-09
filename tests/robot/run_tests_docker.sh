@@ -31,7 +31,7 @@ sleep 2
 cleanup() {
     echo "Stopping Bloom Web UI (PID: $BLOOM_PID)..."
     kill $BLOOM_PID 2>/dev/null || true
-    pkill -f "go run.*webui" 2>/dev/null || true
+    pkill "cluster-bloom webui --port 62080" 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -49,7 +49,7 @@ echo "Target URL: http://$HOST_IP:$BLOOM_PORT"
 docker run --rm \
     --network host \
     -v "$REPO_ROOT/tests/robot:/robot/tests" \
-    -v "$REPO_ROOT/schema:/robot/schema" \
+    -v "$REPO_ROOT/pkg/config/bloom.yaml.schema.yaml:/robot/schema/bloom.yaml.schema.yaml" \
     -v "$REPO_ROOT/results:/robot/results" \
     -e BASE_URL="http://localhost:$BLOOM_PORT" \
     marketsquare/robotframework-browser:latest \
