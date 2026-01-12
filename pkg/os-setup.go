@@ -500,13 +500,23 @@ func removeAmdgpuBlacklist() (bool, error) {
 	}
 
 	LogMessage(Info, "Successfully removed amdgpu blacklist from modprobe.d and GRUB")
-
-	if needsReboot {
-		LogMessage(Warn, "════════════════════════════════════════════════════════")
-		LogMessage(Warn, "  REBOOT REQUIRED FOR CHANGES TO TAKE EFFECT!")
-		LogMessage(Warn, "  The kernel was booted with amdgpu blacklisted.")
-		LogMessage(Warn, "  Run: sudo reboot")
-		LogMessage(Warn, "════════════════════════════════════════════════════════")
+	// Step 7: Try to load the amdgpu module if not already loaded
+	if !needsReboot {
+		LogMessage(Info, "Attempting to load amdgpu kernel module...")
+		lsmodCmd := exec.Command("sh", "-c", "lsmod | grep '^amdgpu' || true")
+		lsmodOutput, _ := lsmodCmd.CombinedOutput()
+		if len(lsmodOutput) == 0 {
+			modprobeCmd := exec.Command("modprobe", "amdgpu")
+			if output, err := modprobeCmd.CombinedOutput(); err != nil {
+				LogMessage(Warn, fmt.Sprintf("Failed to load amdgpu module: %s", string(output)))
+				LogMessage(Warn, "A system reboot may be required")
+				needsReboot = true
+			} else {
+				LogMessage(Info, "Successfully loaded amdgpu kernel module")
+			}
+		} else {
+			LogMessage(Info, "amdgpu kernel module already loaded")
+		}
 	}
 
 	return needsReboot, nil

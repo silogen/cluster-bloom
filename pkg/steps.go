@@ -318,10 +318,45 @@ var UpdateModprobeStep = Step{
 				Error: fmt.Errorf("amdgpu blacklist removal failed: %w", err),
 			}
 		}
-		if needsReboot {
-			LogMessage(Warn, "System reboot required for GPU configuration to take effect")
+		return StepResult{
+			Error:          nil,
+			RebootRequired: needsReboot,
+			Message:        "AMD GPU blacklist removed from modprobe.d and GRUB",
 		}
-		return StepResult{Error: nil}
+	},
+}
+
+var VerifyAmdgpuDriverStep = Step{
+	Id:          "VerifyAmdgpuDriverStep",
+	Name:        "Verify AMD GPU Driver",
+	Description: "Verify amdgpu driver is loaded and GPUs are properly bound",
+	Skip: func() bool {
+		if !viper.GetBool("GPU_NODE") {
+			LogMessage(Info, "Skipping AMD GPU driver verification for non-GPU node")
+			return true
+		}
+		return false
+	},
+	Action: func() StepResult {
+		if err := verifyAmdgpuDriverBinding(); err != nil {
+			LogMessage(Error, fmt.Sprintf("AMD GPU driver verification failed: %v", err))
+			// Check if this is likely a reboot requirement
+			if strings.Contains(err.Error(), "not loaded") || strings.Contains(err.Error(), "not bound") {
+				return StepResult{
+					Error:          fmt.Errorf("AMD GPU driver not accessible - %w", err),
+					RebootRequired: true,
+					Message:        "GPU driver verification failed - reboot recommended",
+				}
+			}
+			return StepResult{
+				Error:   fmt.Errorf("AMD GPU driver verification failed: %w", err),
+				Message: "GPU driver verification failed",
+			}
+		}
+		return StepResult{
+			Error:   nil,
+			Message: "AMD GPU driver verified and operational",
+		}
 	},
 }
 
