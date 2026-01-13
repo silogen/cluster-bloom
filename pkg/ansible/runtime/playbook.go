@@ -128,15 +128,15 @@ func configToAnsibleVars(config map[string]any) []string {
 				valueStr = "false"
 			}
 			// Use JSON format to preserve boolean type
-			args = append(args, "-e", fmt.Sprintf(`{"` + key + `": ` + valueStr + `}`))
+			args = append(args, "-e", fmt.Sprintf(`{"`+key+`": `+valueStr+`}`))
 		case string:
 			// Quote strings in JSON
 			valueStr = fmt.Sprintf(`"%s"`, v)
-			args = append(args, "-e", fmt.Sprintf(`{"` + key + `": ` + valueStr + `}`))
+			args = append(args, "-e", fmt.Sprintf(`{"`+key+`": `+valueStr+`}`))
 		default:
 			// Numbers and other types
 			valueStr = fmt.Sprintf("%v", v)
-			args = append(args, "-e", fmt.Sprintf(`{"` + key + `": ` + valueStr + `}`))
+			args = append(args, "-e", fmt.Sprintf(`{"`+key+`": `+valueStr+`}`))
 		}
 	}
 	return args
