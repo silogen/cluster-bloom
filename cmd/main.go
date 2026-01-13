@@ -12,10 +12,10 @@ import (
 )
 
 var (
-	port             int
-	playbookOverride string
-	dryRun           bool
-	tags             string
+	port         int
+	playbookName string
+	dryRun       bool
+	tags         string
 )
 
 func init() {
@@ -111,11 +111,11 @@ func newRootCmd() *cobra.Command {
 	}
 
 	ansibleCmd := &cobra.Command{
-		Use:   "ansible <config-file|playbook.yml>",
+		Use:   "ansible <config-file>",
 		Short: "Deploy cluster using Ansible",
 		Long: `Deploy a Kubernetes cluster using Ansible playbooks.
 
-Accepts either a bloom.yaml config file or a direct playbook path.`,
+Requires a configuration file (typically bloom.yaml). Use --playbook to specify which playbook to run.`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			runClusterCleanup()
@@ -149,7 +149,7 @@ The cleanup runs immediately without confirmation prompts.`,
 
 	// Add flags
 	rootCmd.PersistentFlags().IntVarP(&port, "port", "p", 62078, "Port for web UI (fails if in use)")
-	ansibleCmd.Flags().StringVar(&playbookOverride, "playbook", "", "Override playbook to run (e.g., print-config.yml)")
+	ansibleCmd.Flags().StringVar(&playbookName, "playbook", "cluster-bloom.yaml", "Playbook to run (default: cluster-bloom.yaml)")
 	ansibleCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Run in check mode without making changes")
 	ansibleCmd.Flags().StringVar(&tags, "tags", "", "Run only tasks with specific tags (e.g., cleanup, validate, storage)")
 
@@ -172,40 +172,22 @@ func runWebUI(cmd *cobra.Command) {
 	}
 }
 
-func runAnsible(configOrPlaybook string) {
-	// Determine if this is a config file or direct playbook
-	var cfg config.Config
-	var playbookName string
+func runAnsible(configFile string) {
+	// Load and validate config file
+	cfg, err := config.LoadConfig(configFile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
+		os.Exit(1)
+	}
 
-	if configOrPlaybook == "hello.yml" || configOrPlaybook == "cluster-bloom.yaml" {
-		// Direct playbook execution without config
-		playbookName = configOrPlaybook
-		cfg = make(config.Config)
-	} else {
-		// Load and validate config file
-		var err error
-		cfg, err = config.LoadConfig(configOrPlaybook)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
-			os.Exit(1)
+	// Validate config
+	errors := config.Validate(cfg)
+	if len(errors) > 0 {
+		fmt.Fprintln(os.Stderr, "Configuration validation errors:")
+		for _, err := range errors {
+			fmt.Fprintf(os.Stderr, "  - %s\n", err)
 		}
-
-		// Validate config
-		errors := config.Validate(cfg)
-		if len(errors) > 0 {
-			fmt.Fprintln(os.Stderr, "Configuration validation errors:")
-			for _, err := range errors {
-				fmt.Fprintf(os.Stderr, "  - %s\n", err)
-			}
-			os.Exit(1)
-		}
-
-		// Use playbook override if specified, otherwise use cluster-bloom.yaml
-		if playbookOverride != "" {
-			playbookName = playbookOverride
-		} else {
-			playbookName = "cluster-bloom.yaml"
-		}
+		os.Exit(1)
 	}
 
 	// Run the playbook
