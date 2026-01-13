@@ -156,6 +156,21 @@ func RunStepsWithUI(steps []Step) error {
 				if result.Message != "" {
 					monitor.AddLog("INFO", fmt.Sprintf("Message: %s", result.Message), step.Id)
 				}
+				if result.RebootRequired {
+					monitor.AddLog("WARNING", "═══════════════════════════════════════════════════════", step.Id)
+					monitor.AddLog("WARNING", "⚠️  SYSTEM REBOOT REQUIRED", step.Id)
+					monitor.AddLog("WARNING", "═══════════════════════════════════════════════════════", step.Id)
+					monitor.AddLog("WARNING", "The system configuration has been updated, but a reboot", step.Id)
+					monitor.AddLog("WARNING", "is required for changes to take effect.", step.Id)
+					monitor.AddLog("WARNING", "", step.Id)
+					monitor.AddLog("WARNING", "Please run: sudo reboot", step.Id)
+					monitor.AddLog("WARNING", "", step.Id)
+					monitor.AddLog("WARNING", "Then re-run cluster-bloom to continue setup.", step.Id)
+					monitor.AddLog("WARNING", "═══════════════════════════════════════════════════════", step.Id)
+					finalErr = fmt.Errorf("system reboot required - please reboot and re-run")
+					monitor.CompleteStep(step.Id, finalErr)
+					break
+				}
 				monitor.AddLog("INFO", fmt.Sprintf("Completed in %v", duration.Round(time.Millisecond)), step.Id)
 				monitor.CompleteStep(step.Id, nil)
 			}
@@ -696,6 +711,7 @@ const (
 )
 
 type StepResult struct {
-	Error   error
-	Message string
+	Error          error
+	Message        string
+	RebootRequired bool
 }
