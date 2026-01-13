@@ -73,6 +73,7 @@ Test API Generate Endpoint
     ...    FIRST_NODE=true
     ...    GPU_NODE=true
     ...    DOMAIN=api-test.example.com
+    ...    CLUSTER_SIZE=medium
     ...    CLUSTER_PREMOUNTED_DISKS=/mnt/disk1
     ${body}=    Create Dictionary    config=${config}
     ${response}=    POST On Session    bloom    /api/generate    json=${body}
@@ -81,6 +82,7 @@ Test API Generate Endpoint
     Should Contain    ${result}[yaml]    FIRST_NODE: true
     Should Contain    ${result}[yaml]    DOMAIN: api-test.example.com
     Should Contain    ${result}[yaml]    GPU_NODE: true
+    Should Contain    ${result}[yaml]    CLUSTER_SIZE: medium
 
 Test API Generate With Invalid Config
     [Documentation]    Test /api/generate rejects invalid config
@@ -129,3 +131,35 @@ Test Field Visibility Updates Config
     Should Not Contain    ${yamlContent}    DOMAIN
     Should Contain    ${yamlContent}    SERVER_IP: 10.100.100.11
     Should Contain    ${yamlContent}    JOIN_TOKEN:
+
+Test Generate Config With Custom CLUSTER_SIZE
+    [Documentation]    Verify CLUSTER_SIZE enum field works correctly
+    Setup Minimal Valid First Node Config
+    Select Options By    id=CLUSTER_SIZE    value    large
+    Fill Text    id=CLUSTER_PREMOUNTED_DISKS    /mnt/disk1
+    Submit And Wait For Preview
+    ${yamlContent}=    Get Text    css=pre
+    Should Contain    ${yamlContent}    CLUSTER_SIZE: large
+    Should Contain    ${yamlContent}    DOMAIN: cluster.example.com
+
+Test CLUSTER_SIZE Custom Value
+    [Documentation]    Verify CLUSTER_SIZE custom value appears in generated YAML
+    Setup Minimal Valid First Node Config
+    Select Options By    id=CLUSTER_SIZE    value    medium
+    Fill Text    id=CLUSTER_PREMOUNTED_DISKS    /mnt/disk1
+    Submit And Wait For Preview
+    ${yamlContent}=    Get Text    css=pre
+    Should Contain    ${yamlContent}    CLUSTER_SIZE: medium
+
+Test API Generate With Invalid CLUSTER_SIZE
+    [Documentation]    Test /api/generate rejects invalid CLUSTER_SIZE value
+    Create Session    bloom    ${BASE_URL}
+    ${config}=    Create Dictionary
+    ...    FIRST_NODE=true
+    ...    GPU_NODE=true
+    ...    DOMAIN=api-test.example.com
+    ...    CLUSTER_SIZE=invalid_size
+    ...    CLUSTER_PREMOUNTED_DISKS=/mnt/disk1
+    ${body}=    Create Dictionary    config=${config}
+    ${response}=    POST On Session    bloom    /api/generate    json=${body}    expected_status=400
+    Status Should Be    400    ${response}

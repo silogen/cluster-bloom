@@ -11,6 +11,7 @@
     GPU_NODE: true
     CONTROL_PLANE: false
     DOMAIN: ""
+    CLUSTER_SIZE: small
     SERVER_IP: ""
     JOIN_TOKEN: ""
     NO_DISKS_FOR_CLUSTER: false

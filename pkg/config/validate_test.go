@@ -12,11 +12,12 @@ func TestValidate_ValidConfigs(t *testing.T) {
 		{
 			name: "valid first node minimal",
 			config: Config{
-				"FIRST_NODE":            true,
-				"GPU_NODE":              false,
-				"DOMAIN":                "cluster.example.com",
+				"FIRST_NODE":           true,
+				"GPU_NODE":             false,
+				"DOMAIN":               "cluster.example.com",
+				"CLUSTER_SIZE":         "small",
 				"NO_DISKS_FOR_CLUSTER": true,
-				"CERT_OPTION":           "generate",
+				"CERT_OPTION":          "generate",
 			},
 		},
 		{
@@ -25,6 +26,7 @@ func TestValidate_ValidConfigs(t *testing.T) {
 				"FIRST_NODE":       true,
 				"GPU_NODE":         true,
 				"DOMAIN":           "ai.cluster.com",
+				"CLUSTER_SIZE":     "medium",
 				"USE_CERT_MANAGER": true,
 				"CLUSTER_DISKS":    "/dev/nvme0n1,/dev/nvme1n1",
 			},
@@ -32,20 +34,21 @@ func TestValidate_ValidConfigs(t *testing.T) {
 		{
 			name: "valid additional node",
 			config: Config{
-				"FIRST_NODE":            false,
-				"GPU_NODE":              false,
-				"SERVER_IP":             "192.168.1.10",
-				"JOIN_TOKEN":            "K10token::server:abc123",
+				"FIRST_NODE":           false,
+				"GPU_NODE":             false,
+				"SERVER_IP":            "192.168.1.10",
+				"JOIN_TOKEN":           "K10token::server:abc123",
 				"NO_DISKS_FOR_CLUSTER": true,
 			},
 		},
 		{
 			name: "valid with premounted disks",
 			config: Config{
-				"FIRST_NODE":              true,
-				"DOMAIN":                  "test.local",
+				"FIRST_NODE":               true,
+				"DOMAIN":                   "test.local",
+				"CLUSTER_SIZE":             "large",
 				"CLUSTER_PREMOUNTED_DISKS": "/mnt/disk1,/mnt/disk2",
-				"CERT_OPTION":             "generate",
+				"CERT_OPTION":              "generate",
 			},
 		},
 	}

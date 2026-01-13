@@ -54,6 +54,7 @@ func getBaseValidConfig() Config {
 		"FIRST_NODE":           true,
 		"GPU_NODE":             false,
 		"DOMAIN":               "test.example.com",
+		"CLUSTER_SIZE":         "small",
 		"NO_DISKS_FOR_CLUSTER": true,
 		"CERT_OPTION":          "generate",
 	}
@@ -276,6 +277,17 @@ func TestValidate_RequiredFieldsFromSchema(t *testing.T) {
 				"NO_DISKS_FOR_CLUSTER": true,
 			},
 			wantError: "JOIN_TOKEN",
+		},
+		{
+			name: "Invalid CLUSTER_SIZE value",
+			config: Config{
+				"FIRST_NODE":           true,
+				"DOMAIN":               "test.example.com",
+				"CLUSTER_SIZE":         "invalid_size",
+				"NO_DISKS_FOR_CLUSTER": true,
+				"CERT_OPTION":          "generate",
+			},
+			wantError: "CLUSTER_SIZE",
 		},
 	}
 

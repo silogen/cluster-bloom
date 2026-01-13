@@ -38,6 +38,13 @@ Configuration sources in priority order (highest to lowest):
 - **Values**: `true` | `false`
 - **Example**: `GPU_NODE: true`
 
+#### CLUSTER_SIZE
+- **Type**: Enum
+- **Default**: `small`
+- **Description**: Size category for cluster deployment planning
+- **Values**: `small` | `medium` | `large`
+- **Example**: `CLUSTER_SIZE: medium`
+
 ### Cluster Joining Configuration
 
 #### SERVER_IP

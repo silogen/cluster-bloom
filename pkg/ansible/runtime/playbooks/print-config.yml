@@ -15,6 +15,7 @@
             FIRST_NODE: {{ FIRST_NODE | default('NOT SET') }}
             GPU_NODE: {{ GPU_NODE | default('NOT SET') }}
             DOMAIN: {{ DOMAIN | default('NOT SET') }}
+            CLUSTER_SIZE: {{ CLUSTER_SIZE | default('NOT SET') }}
             SERVER_IP: {{ SERVER_IP | default('NOT SET') }}
 
     - name: Print Storage Configuration

@@ -12,7 +12,7 @@ Test Schema Endpoint Returns Valid JSON
     Should Be Equal As Integers    ${response.status_code}    200
     ${schema}=    Set Variable    ${response.json()}
     Should Not Be Empty    ${schema}[arguments]
-    Length Should Be    ${schema}[arguments]    26
+    Length Should Be    ${schema}[arguments]    27
 
 Test Generate Endpoint Creates YAML
     [Documentation]    Verify /api/generate creates YAML output

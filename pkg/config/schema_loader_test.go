@@ -14,9 +14,9 @@ func TestLoadSchema(t *testing.T) {
 		t.Fatal("LoadSchema() returned no arguments")
 	}
 
-	// Check that we have expected number of fields (26 fields in schema)
-	if len(args) != 26 {
-		t.Errorf("Expected 26 arguments, got %d", len(args))
+	// Check that we have expected number of fields (27 fields in schema including CLUSTER_SIZE)
+	if len(args) != 27 {
+		t.Errorf("Expected 27 arguments, got %d", len(args))
 	}
 
 	// Verify critical fields are present
@@ -70,6 +70,7 @@ func TestLoadSchemaTypes(t *testing.T) {
 	}{
 		{"FIRST_NODE", "bool"},
 		{"DOMAIN", "domain"},
+		{"CLUSTER_SIZE", "enum"},
 		{"SERVER_IP", "ipv4"},
 		{"CERT_OPTION", "enum"},
 		{"ADDITIONAL_OIDC_PROVIDERS", "array"},
@@ -99,8 +100,11 @@ func TestLoadSchemaEnumOptions(t *testing.T) {
 	}
 
 	// Find CERT_OPTION and verify it has options
+	certFound := false
+	clusterSizeFound := false
 	for _, arg := range args {
 		if arg.Key == "CERT_OPTION" {
+			certFound = true
 			if len(arg.Options) != 2 {
 				t.Errorf("CERT_OPTION should have 2 options, got %d", len(arg.Options))
 			}
@@ -110,10 +114,26 @@ func TestLoadSchemaEnumOptions(t *testing.T) {
 					t.Errorf("Unexpected option for CERT_OPTION: %s", opt)
 				}
 			}
-			return
+		}
+		if arg.Key == "CLUSTER_SIZE" {
+			clusterSizeFound = true
+			if len(arg.Options) != 3 {
+				t.Errorf("CLUSTER_SIZE should have 3 options, got %d", len(arg.Options))
+			}
+			expectedOptions := map[string]bool{"small": true, "medium": true, "large": true}
+			for _, opt := range arg.Options {
+				if !expectedOptions[opt] {
+					t.Errorf("Unexpected option for CLUSTER_SIZE: %s", opt)
+				}
+			}
 		}
 	}
-	t.Error("CERT_OPTION not found in schema")
+	if !certFound {
+		t.Error("CERT_OPTION not found in schema")
+	}
+	if !clusterSizeFound {
+		t.Error("CLUSTER_SIZE not found in schema")
+	}
 }
 
 func TestLoadSchemaComplexDependencies(t *testing.T) {

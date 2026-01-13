@@ -32,6 +32,13 @@ schema:
         - "cluster.example.com"
         - "k8s.internal.company.com"
 
+    CLUSTER_SIZE:
+      type: enum
+      values: [small, medium, large]
+      default: small
+      desc: Size category for cluster deployment planning
+      section: "📋 Basic Configuration"
+
     # 🔗 Additional Node Configuration
     SERVER_IP:
       type: ipv4
