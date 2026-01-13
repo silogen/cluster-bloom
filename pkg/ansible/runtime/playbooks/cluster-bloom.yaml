@@ -953,15 +953,13 @@
           notify: Restart chronyd
       tags: [ntp, prep_node]
 
-    - name: Setup Longhorn (First Node)
+    - name: Wait for kubectl to be available (Storage Setup)
       when: FIRST_NODE and not NO_DISKS_FOR_CLUSTER
-      block:
-        - name: Wait for kubectl to be available
-          wait_for:
-            path: /var/lib/rancher/rke2/bin/kubectl
-            state: present
-            timeout: 300
-      tags: [longhorn, deploy_k8s_apps]
+      wait_for:
+        path: /var/lib/rancher/rke2/bin/kubectl
+        state: present
+        timeout: 300
+      tags: [storage, deploy_k8s_apps]
 
     - name: Setup MetalLB (First Node)
       when: FIRST_NODE
@@ -1094,114 +1092,15 @@
 
       tags: [images, deploy_k8s_apps]
 
-    - name: Longhorn Preflight Check
-      when: FIRST_NODE and not NO_DISKS_FOR_CLUSTER
-      block:
-        - name: Copy Longhorn preflight script
-          copy:
-            src: manifests/scripts/longhorn_preflight_check.sh
-            dest: /tmp/longhorn_preflight.sh
-            mode: "0755"
+    - name: Setup Storage Provisioner (Small Clusters - Local-Path)
+      when: FIRST_NODE and not NO_DISKS_FOR_CLUSTER and CLUSTER_SIZE == "small"
+      include_tasks: tasks/setup_local_path.yml
+      tags: [storage, local-path, deploy_k8s_apps]
 
-        - name: Run Longhorn preflight check
-          shell: bash /tmp/longhorn_preflight.sh
-          register: longhorn_preflight
-          failed_when: false
-          environment:
-            HOME: "/home/{{ ansible_user }}"
-
-        - name: Display preflight results
-          debug:
-            msg: "{{ longhorn_preflight.stdout }}"
-
-        - name: Fail if preflight check failed
-          fail:
-            msg: "Longhorn preflight check failed. Review output above."
-          when: longhorn_preflight.rc != 0
-
-      tags: [longhorn, validate_deployment, deploy_k8s_apps]
-
-    - name: Setup Longhorn
-      when: FIRST_NODE and not NO_DISKS_FOR_CLUSTER
-      block:
-        - name: Copy Longhorn manifests to RKE2
-          copy:
-            src: "manifests/longhorn/{{ item }}"
-            dest: "/var/lib/rancher/rke2/server/manifests/{{ item }}"
-            mode: "0644"
-          loop:
-            - longhorn-namespace.yaml
-            - longhorn.yaml
-            - node-annotator.yaml
-            - httproute-longhorn.yaml
-
-        - name: Wait for node annotator cronjob
-          shell: |
-            /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
-              wait --for=create --timeout=600s cronjob/label-and-annotate-nodes -n default
-          register: cronjob_wait
-          retries: 3
-          delay: 10
-          failed_when: false
-
-        - name: Trigger initial node annotation
-          shell: |
-            /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
-              create job --from=cronjob/label-and-annotate-nodes \
-              label-and-annotate-nodes-initial -n default
-
-        - name: Wait for node annotation to complete
-          shell: |
-            /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
-              wait --for=jsonpath={.status.lastSuccessfulTime} \
-              --timeout=600s cronjob/label-and-annotate-nodes -n default
-          register: annotation_wait
-          retries: 3
-          delay: 10
-          failed_when: false
-
-      tags: [longhorn, deploy_k8s_apps]
-
-    - name: Wait for Cluster Ready
-      when: FIRST_NODE and not NO_DISKS_FOR_CLUSTER
-      block:
-        - name: Create test PVC
-          shell: |
-            cat <<EOF | /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml apply -f -
-            apiVersion: v1
-            kind: PersistentVolumeClaim
-            metadata:
-              name: longhorn-test-pvc
-              namespace: default
-            spec:
-              accessModes:
-                - ReadWriteOnce
-              storageClassName: default
-              resources:
-                requests:
-                  storage: 1Gi
-            EOF
-
-        - name: Wait for PVC to be bound
-          shell: |
-            /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
-              get pvc longhorn-test-pvc -o jsonpath='{.status.phase}'
-          register: pvc_status
-          until: pvc_status.stdout == "Bound"
-          retries: 60
-          delay: 5
-
-        - name: Delete test PVC
-          shell: |
-            /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
-              delete pvc longhorn-test-pvc --wait=false
-          ignore_errors: yes
-
-        - name: Log success
-          debug:
-            msg: "Longhorn is operational - test PVC successfully created and bound"
-
-      tags: [longhorn, validate_deployment, deploy_k8s_apps]
+    - name: Setup Storage Provisioner (Medium/Large Clusters - Longhorn)  
+      when: FIRST_NODE and not NO_DISKS_FOR_CLUSTER and CLUSTER_SIZE in ["medium", "large"]
+      include_tasks: tasks/setup_longhorn.yml
+      tags: [storage, longhorn, deploy_k8s_apps]
 
     - name: Create Bloom ConfigMap
       when: FIRST_NODE

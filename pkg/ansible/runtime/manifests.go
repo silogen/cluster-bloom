@@ -11,6 +11,9 @@ import (
 //go:embed manifests/longhorn/*.yaml
 var longhornManifests embed.FS
 
+//go:embed manifests/local-path/*.yaml
+var localPathManifests embed.FS
+
 //go:embed manifests/scripts/*.sh
 var scriptsManifests embed.FS
 
@@ -21,6 +24,11 @@ func ExtractManifests(playbookDir string) error {
 	// Extract Longhorn manifests
 	if err := extractFS(longhornManifests, "manifests/longhorn", filepath.Join(manifestsDir, "longhorn")); err != nil {
 		return fmt.Errorf("extract longhorn manifests: %w", err)
+	}
+
+	// Extract local-path manifests
+	if err := extractFS(localPathManifests, "manifests/local-path", filepath.Join(manifestsDir, "local-path")); err != nil {
+		return fmt.Errorf("extract local-path manifests: %w", err)
 	}
 
 	// Extract scripts
