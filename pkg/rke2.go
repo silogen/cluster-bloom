@@ -470,11 +470,21 @@ func SetupRKE2Additional() error {
 	}
 
 	LogMessage(Info, fmt.Sprintf("Appended configuration to %s", rke2ConfigPath))
+
+	// Build RKE2 installation command with version specification
+	installCommand := "curl -sfL " + viper.GetString("RKE2_INSTALLATION_URL")
+	rke2Version := viper.GetString("RKE2_VERSION")
+	if rke2Version != "" {
+		installCommand += " | INSTALL_RKE2_TYPE=agent INSTALL_RKE2_VERSION=\"" + rke2Version + "\" sh -"
+	} else {
+		installCommand += " | INSTALL_RKE2_TYPE=agent sh -"
+	}
+
 	commands := []struct {
 		command string
 		args    []string
 	}{
-		{"sh", []string{"-c", "curl -sfL " + viper.GetString("RKE2_INSTALLATION_URL") + " | INSTALL_RKE2_TYPE=agent sh -"}},
+		{"sh", []string{"-c", installCommand}},
 		{"systemctl", []string{"enable", "rke2-agent.service"}},
 	}
 	for _, cmd := range commands {
@@ -519,11 +529,21 @@ func SetupRKE2ControlPlane() error {
 	}
 
 	LogMessage(Info, fmt.Sprintf("Appended configuration to %s", rke2ConfigPath))
+
+	// Build RKE2 installation command with version specification
+	installCommand := "curl -sfL " + viper.GetString("RKE2_INSTALLATION_URL")
+	rke2Version := viper.GetString("RKE2_VERSION")
+	if rke2Version != "" {
+		installCommand += " | INSTALL_RKE2_TYPE=server INSTALL_RKE2_VERSION=\"" + rke2Version + "\" sh -"
+	} else {
+		installCommand += " | INSTALL_RKE2_TYPE=server sh -"
+	}
+
 	commands := []struct {
 		command string
 		args    []string
 	}{
-		{"sh", []string{"-c", "curl -sfL " + viper.GetString("RKE2_INSTALLATION_URL") + " | INSTALL_RKE2_TYPE=server sh -"}},
+		{"sh", []string{"-c", installCommand}},
 		{"systemctl", []string{"enable", "rke2-server.service"}},
 	}
 	for _, cmd := range commands {
