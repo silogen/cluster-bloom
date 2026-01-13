@@ -2,6 +2,10 @@
 - name: Cluster Bloom - RKE2 Kubernetes Cluster Setup
   hosts: all
   become: yes
+  gather_facts: true
+  gather_subset:
+    - min
+    - network
   vars:
     FIRST_NODE: true
     GPU_NODE: true
@@ -162,85 +166,6 @@
             NEEDRESTART_MODE: a
             NEEDRESTART_SUSPEND: "1"
       tags: [packages, prep_node]
-
-    - name: Clean Longhorn Mounts
-      block:
-        - name: Stop Longhorn services
-          shell: sudo systemctl stop longhorn-* 2>/dev/null
-          ignore_errors: yes
-
-        - name: Unmount Longhorn volumes (3 retries)
-          shell: |
-            for i in 1 2 3; do
-              sudo umount -lf /dev/longhorn/pvc-* 2>/dev/null
-              sudo umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/pvc-* 2>/dev/null
-              sudo umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/*/mount 2>/dev/null
-              mount | grep 'driver.longhorn.io' | awk '{print $3}' | xargs -r sudo umount -lf 2>/dev/null
-              sudo umount -Af /var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/* 2>/dev/null
-            done
-          ignore_errors: yes
-
-        - name: Kill processes using Longhorn mounts
-          shell: sudo fuser -km /dev/longhorn/ 2>/dev/null
-          ignore_errors: yes
-
-        - name: Clean Longhorn device files
-          file:
-            path: "{{ item }}"
-            state: absent
-          loop:
-            - /dev/longhorn/pvc-*
-            - /var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io
-          ignore_errors: yes
-      tags: [cleanup]
-
-    - name: Uninstall RKE2
-      block:
-        - name: Execute RKE2 uninstall script
-          shell: /usr/local/bin/rke2-uninstall.sh
-          register: rke2_uninstall
-          ignore_errors: yes
-
-        - name: Log RKE2 uninstall output
-          debug:
-            msg: "{{ rke2_uninstall.stdout }}"
-          when: rke2_uninstall.stdout is defined
-      tags: [cleanup]
-
-    - name: Clean Bloom-Managed Disks
-      block:
-        - name: Backup fstab
-          copy:
-            src: /etc/fstab
-            dest: "/etc/fstab.bak-{{ ansible_date_time.epoch }}"
-            remote_src: yes
-
-        - name: Find bloom-tagged mounts in fstab
-          shell: grep '# managed by cluster-bloom' /etc/fstab | awk '{print $2}' || true
-          register: bloom_mounts
-          changed_when: false
-
-        - name: Unmount bloom-tagged disks
-          shell: sudo umount -lf {{ item }}
-          loop: "{{ bloom_mounts.stdout_lines }}"
-          ignore_errors: yes
-          when: bloom_mounts.stdout_lines | length > 0
-
-        - name: Remove bloom entries from fstab
-          lineinfile:
-            path: /etc/fstab
-            regexp: '.*# managed by cluster-bloom.*'
-            state: absent
-
-        - name: Wipe filesystems on unmounted disks
-          shell: |
-            for disk in $(lsblk -nd -o NAME,TYPE | awk '$2=="disk" {print $1}'); do
-              if ! mount | grep -q "/dev/$disk"; then
-                sudo wipefs -a /dev/$disk 2>/dev/null
-              fi
-            done
-          ignore_errors: yes
-      tags: [cleanup]
 
     - name: Setup Multipath
       block:

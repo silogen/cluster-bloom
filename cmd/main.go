@@ -118,6 +118,7 @@ func newRootCmd() *cobra.Command {
 Accepts either a bloom.yaml config file or a direct playbook path.`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
+			runClusterCleanup()
 			runAnsible(args[0])
 		},
 	}
@@ -127,6 +128,22 @@ Accepts either a bloom.yaml config file or a direct playbook path.`,
 		Short: "Show version information",
 		Run: func(cmd *cobra.Command, args []string) {
 			fmt.Println("Bloom V2.0.0-alpha")
+		},
+	}
+
+	cleanupCmd := &cobra.Command{
+		Use:   "cleanup",
+		Short: "Clean up existing Bloom cluster installation",
+		Long: `Removes RKE2 services, Longhorn mounts, and managed disks from previous Bloom installations.
+
+This command performs the equivalent of Bloom v1 cleanup operations:
+- Stops Longhorn services and unmounts all Longhorn-related storage
+- Executes RKE2 uninstall script to remove RKE2 components  
+- Cleans up bloom-managed disks and removes temp drives
+
+The cleanup runs immediately without confirmation prompts.`,
+		Run: func(cmd *cobra.Command, args []string) {
+			runClusterCleanup()
 		},
 	}
 
@@ -140,6 +157,7 @@ Accepts either a bloom.yaml config file or a direct playbook path.`,
 	rootCmd.AddCommand(webuiCmd)
 	rootCmd.AddCommand(ansibleCmd)
 	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(cleanupCmd)
 
 	return rootCmd
 }
@@ -198,4 +216,33 @@ func runAnsible(configOrPlaybook string) {
 	}
 
 	os.Exit(exitCode)
+}
+
+func runClusterCleanup() {
+	fmt.Println("🧹 Starting Bloom cluster cleanup...")
+
+	var errors []string
+
+	// Step 1: Clean Longhorn Mounts (equivalent to CleanLonghornMountsStep)
+	if err := runtime.CleanupLonghornMounts(); err != nil {
+		errors = append(errors, fmt.Sprintf("Longhorn cleanup: %v", err))
+	}
+
+	// Step 2: Uninstall RKE2 (equivalent to UninstallRKE2Step)
+	if err := runtime.UninstallRKE2(); err != nil {
+		errors = append(errors, fmt.Sprintf("RKE2 uninstall: %v", err))
+	}
+
+	// Step 3: Clean Disks (equivalent to CleanDisksStep)
+	if err := runtime.CleanupBloomDisks(); err != nil {
+		errors = append(errors, fmt.Sprintf("Disk cleanup: %v", err))
+	}
+
+	// Report results
+	if len(errors) > 0 {
+		fmt.Printf("⚠️  Cleanup completed with warnings: %s\n", strings.Join(errors, "; "))
+		os.Exit(1)
+	} else {
+		fmt.Println("✅ Bloom cluster cleanup completed successfully")
+	}
 }
