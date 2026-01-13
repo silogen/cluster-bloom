@@ -55,6 +55,91 @@
     bloom_fstab_tag: "# managed by cluster-bloom"
 
   tasks:
+    - name: Pre-deployment Validation - Check for Existing RKE2 Installation
+      block:
+        - name: Check if RKE2 server service exists and is running
+          systemd:
+            name: rke2-server
+          register: rke2_server_service
+          failed_when: false
+          changed_when: false
+
+        - name: Check if RKE2 agent service exists and is running
+          systemd:
+            name: rke2-agent
+          register: rke2_agent_service
+          failed_when: false
+          changed_when: false
+
+        - name: Check if RKE2 data directory exists
+          stat:
+            path: /var/lib/rancher/rke2
+          register: rke2_data_dir
+
+        - name: Check if RKE2 data directory is empty (if it exists)
+          find:
+            paths: /var/lib/rancher/rke2
+            file_type: any
+          register: rke2_data_contents
+          when: rke2_data_dir.stat.exists
+
+        - name: Check if RKE2 config directory exists
+          stat:
+            path: /etc/rancher/rke2
+          register: rke2_config_dir
+
+        - name: Check if RKE2 config directory is empty (if it exists)
+          find:
+            paths: /etc/rancher/rke2
+            file_type: any
+          register: rke2_config_contents
+          when: rke2_config_dir.stat.exists
+
+        - name: Fail if RKE2 server service is running
+          fail:
+            msg: |
+              Previous RKE2 installation detected: RKE2 server service is {{ rke2_server_service.status.ActiveState | default('unknown') }}.
+              Please clean up the existing RKE2 installation before proceeding.
+              Add the --cleanup flag to your command.
+          when: 
+            - rke2_server_service.status is defined
+            - rke2_server_service.status.ActiveState == "active"
+
+        - name: Fail if RKE2 agent service is running
+          fail:
+            msg: |
+              Previous RKE2 installation detected: RKE2 agent service is {{ rke2_agent_service.status.ActiveState | default('unknown') }}.
+              Please clean up the existing RKE2 installation before proceeding.
+              Add the --cleanup flag to your command.
+          when:
+            - rke2_agent_service.status is defined
+            - rke2_agent_service.status.ActiveState == "active"
+
+        - name: Fail if RKE2 data directory exists and is not empty
+          fail:
+            msg: |
+              Previous RKE2 installation detected: /var/lib/rancher/rke2 directory exists and contains {{ rke2_data_contents.matched }} items.
+              Please clean up the existing RKE2 installation before proceeding.
+              Add the --cleanup flag to your command.
+          when:
+            - rke2_data_dir.stat.exists
+            - rke2_data_contents.matched > 0
+
+        - name: Fail if RKE2 config directory exists and is not empty
+          fail:
+            msg: |
+              Previous RKE2 installation detected: /etc/rancher/rke2 directory exists and contains {{ rke2_config_contents.matched }} items.
+              Please clean up the existing RKE2 installation before proceeding.
+              Add the --cleanup flag to your command.
+          when:
+            - rke2_config_dir.stat.exists
+            - rke2_config_contents.matched > 0
+
+        - name: Display pre-deployment validation success
+          debug:
+            msg: "✓ Pre-deployment validation passed: No existing RKE2 installation detected"
+      tags: [validate_node, pre_deployment]
+
     - name: Validate Ubuntu Version
       block:
         - name: Get Ubuntu version

@@ -16,6 +16,7 @@ var (
 	playbookName string
 	dryRun       bool
 	tags         string
+	cleanup      bool
 )
 
 func init() {
@@ -118,7 +119,9 @@ func newRootCmd() *cobra.Command {
 Requires a configuration file (typically bloom.yaml). Use --playbook to specify which playbook to run.`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			runClusterCleanup()
+			if cleanup {
+				runClusterCleanup()
+			}
 			runAnsible(args[0])
 		},
 	}
@@ -152,6 +155,7 @@ The cleanup runs immediately without confirmation prompts.`,
 	ansibleCmd.Flags().StringVar(&playbookName, "playbook", "cluster-bloom.yaml", "Playbook to run (default: cluster-bloom.yaml)")
 	ansibleCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Run in check mode without making changes")
 	ansibleCmd.Flags().StringVar(&tags, "tags", "", "Run only tasks with specific tags (e.g., cleanup, validate, storage)")
+	ansibleCmd.Flags().BoolVar(&cleanup, "cleanup", false, "Run cleanup before deployment and enable pre-deployment validation")
 
 	// Add subcommands
 	rootCmd.AddCommand(webuiCmd)
