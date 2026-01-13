@@ -530,6 +530,56 @@
                     - "--oidc-username-prefix=oidc"
                     - "--oidc-groups-prefix=oidc"
                 marker: "# {mark} ANSIBLE MANAGED BLOCK - OIDC"
+
+        - name: Create RKE2 manifests directory
+          file:
+            path: /var/lib/rancher/rke2/server/manifests
+            state: directory
+            mode: "0755"
+
+        - name: Create Cilium HelmChartConfig for cluster size optimization
+          copy:
+            content: |
+              apiVersion: helm.cattle.io/v1
+              kind: HelmChartConfig
+              metadata:
+                name: rke2-cilium
+                namespace: kube-system
+              spec:
+                valuesContent: |-
+                  # Cilium Operator Configuration
+                  operator:
+                    # Set replicas based on cluster size
+                    replicas: {{ '1' if CLUSTER_SIZE == 'small' else '2' }}
+                    
+                    # Resource limits appropriate for cluster size
+                    resources:
+                      limits:
+                        cpu: {{ '500m' if CLUSTER_SIZE == 'small' else '1000m' }}
+                        memory: {{ '512Mi' if CLUSTER_SIZE == 'small' else '1Gi' }}
+                      requests:
+                        cpu: {{ '50m' if CLUSTER_SIZE == 'small' else '100m' }}
+                        memory: 128Mi
+                  
+                  # Hubble observability (disabled for all cluster sizes)
+                  hubble:
+                    enabled: false
+                    relay:
+                      enabled: false
+                    ui:
+                      enabled: false
+                    metrics:
+                      enabled: []
+                  
+                  # Network policy enforcement
+                  policyEnforcement: "default"
+                  
+                  # IPAM configuration
+                  ipam:
+                    mode: kubernetes
+            dest: /var/lib/rancher/rke2/server/manifests/rke2-cilium-config.yaml
+            mode: "0644"
+
       tags: [rke2, deploy_cluster]
 
     - name: Generate Node Labels
@@ -906,12 +956,6 @@
     - name: Setup Longhorn (First Node)
       when: FIRST_NODE and not NO_DISKS_FOR_CLUSTER
       block:
-        - name: Create RKE2 manifests directory
-          file:
-            path: /var/lib/rancher/rke2/server/manifests
-            state: directory
-            mode: "0755"
-
         - name: Wait for kubectl to be available
           wait_for:
             path: /var/lib/rancher/rke2/bin/kubectl
@@ -1178,6 +1222,8 @@
               version: "{{ bloom_version }}"
               gpu_node: "{{ GPU_NODE | lower }}"
               domain: "{{ DOMAIN }}"
+              cluster_size: "{{ CLUSTER_SIZE }}"
+              cilium_operator_replicas: "{{ '1' if CLUSTER_SIZE == 'small' else '2' }}"
               rke2_version: "{{ RKE2_VERSION }}"
             EOF
 

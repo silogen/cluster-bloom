@@ -18,6 +18,30 @@
             CLUSTER_SIZE: {{ CLUSTER_SIZE | default('NOT SET') }}
             SERVER_IP: {{ SERVER_IP | default('NOT SET') }}
 
+    - name: Print Cluster Size Optimizations
+      debug:
+        msg: |
+          📏 Cluster Size Impact ({{ CLUSTER_SIZE | default('NOT SET') }}):
+          {% if CLUSTER_SIZE == 'small' %}
+            🔧 Cilium Operator Replicas: 1 (optimized for minimal resource usage)
+            🎯 Target Scale: Up to 3 nodes, development/testing workloads
+            💾 Resource Profile: Minimal overhead, reduced HA for cost efficiency
+            📊 Hubble Observability: Disabled (saves resources)
+          {% elif CLUSTER_SIZE == 'medium' %}
+            🔧 Cilium Operator Replicas: 2 (balanced reliability and resources)
+            🎯 Target Scale: 4-10 nodes, production workloads
+            💾 Resource Profile: Balanced performance and high availability
+            📊 Hubble Observability: Disabled (performance focused)
+          {% elif CLUSTER_SIZE == 'large' %}
+            🔧 Cilium Operator Replicas: 2 (high availability optimized)
+            🎯 Target Scale: 10+ nodes, enterprise workloads
+            💾 Resource Profile: High availability and performance
+            📊 Hubble Observability: Disabled (security and performance)
+          {% else %}
+            🔧 Cilium Operator Replicas: 2 (default configuration)
+            📝 Note: Set CLUSTER_SIZE (small/medium/large) to optimize deployment
+          {% endif %}
+
     - name: Print Storage Configuration
       debug:
         msg: |
