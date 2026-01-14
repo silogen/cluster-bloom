@@ -16,7 +16,7 @@ var (
 	playbookName string
 	dryRun       bool
 	tags         string
-	cleanup      bool
+	destroyData  bool
 )
 
 func init() {
@@ -119,7 +119,7 @@ func newRootCmd() *cobra.Command {
 Requires a configuration file (typically bloom.yaml). Use --playbook to specify which playbook to run.`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			if cleanup {
+			if destroyData {
 				runClusterCleanup()
 			}
 			runAnsible(args[0])
@@ -155,7 +155,7 @@ The cleanup runs immediately without confirmation prompts.`,
 	ansibleCmd.Flags().StringVar(&playbookName, "playbook", "cluster-bloom.yaml", "Playbook to run (default: cluster-bloom.yaml)")
 	ansibleCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Run in check mode without making changes")
 	ansibleCmd.Flags().StringVar(&tags, "tags", "", "Run only tasks with specific tags (e.g., cleanup, validate, storage)")
-	ansibleCmd.Flags().BoolVar(&cleanup, "cleanup", false, "Run cleanup before deployment and enable pre-deployment validation")
+	ansibleCmd.Flags().BoolVar(&destroyData, "destroy-data", false, "WARNING: Destroys ALL existing data (cluster + disks) for fresh deployment")
 
 	// Add subcommands
 	rootCmd.AddCommand(webuiCmd)
@@ -184,7 +184,7 @@ func runAnsible(configFile string) {
 		os.Exit(1)
 	}
 
-	// Validate config
+	// Validate config (before injecting CLI flags)
 	errors := config.Validate(cfg)
 	if len(errors) > 0 {
 		fmt.Fprintln(os.Stderr, "Configuration validation errors:")
