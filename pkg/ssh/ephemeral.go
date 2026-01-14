@@ -112,7 +112,16 @@ func (e *EphemeralSSHManager) Cleanup() error {
 
 	// Remove public key from authorized_keys
 	if err := e.removePublicKey(); err != nil {
-		fmt.Printf("   Warning: Failed to remove public key: %v\n", err)
+		fmt.Printf("   ⚠️  Failed to remove public key: %v\n", err)
+		return err
+	}
+
+	// Verify the key was actually removed
+	if e.verifyKeyRemoved() {
+		fmt.Println("   ✅ Ephemeral public key successfully removed from authorized_keys")
+	} else {
+		fmt.Println("   🔥 WARNING: Ephemeral key may still be present in authorized_keys!")
+		fmt.Printf("   🔧 Manual check recommended: %s\n", e.AuthorizedKeysPath)
 	}
 
 	// Remove ephemeral key files
@@ -225,19 +234,79 @@ func (e *EphemeralSSHManager) removePublicKey() error {
 		return nil // Nothing to remove
 	}
 
-	// Check if backup exists
+	// Method 1: Try to restore from backup
 	if _, err := os.Stat(e.AuthorizedKeysBackup); err == nil {
-		// Restore from backup
-		return copyFile(e.AuthorizedKeysBackup, e.AuthorizedKeysPath)
-	} else {
-		// No backup existed, remove the authorized_keys file entirely
-		if err := os.Remove(e.AuthorizedKeysPath); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("failed to remove authorized_keys: %w", err)
+		if copyErr := copyFile(e.AuthorizedKeysBackup, e.AuthorizedKeysPath); copyErr == nil {
+			e.isInstalled = false
+			return nil
+		} else {
+			fmt.Printf("   Warning: Backup restore failed (%v), trying manual key removal...\n", copyErr)
+			// Fall through to Method 2
 		}
+	}
+
+	// Method 2: Try to manually remove our specific key using the comment
+	if err := e.removeEphemeralKeyFromFile(); err == nil {
+		e.isInstalled = false
+		return nil
+	} else {
+		fmt.Printf("   Warning: Manual key removal failed (%v), trying complete file removal...\n", err)
+		// Fall through to Method 3
+	}
+
+	// Method 3: Last resort - remove authorized_keys file entirely
+	if err := os.Remove(e.AuthorizedKeysPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("all cleanup methods failed, manual intervention required: %w", err)
 	}
 
 	e.isInstalled = false
 	return nil
+}
+
+// removeEphemeralKeyFromFile manually removes lines containing our ephemeral key comment
+// This is a fallback when backup restore fails
+func (e *EphemeralSSHManager) removeEphemeralKeyFromFile() error {
+	// Read the current authorized_keys file
+	content, err := os.ReadFile(e.AuthorizedKeysPath)
+	if err != nil {
+		return fmt.Errorf("failed to read authorized_keys: %w", err)
+	}
+
+	// Split into lines and filter out our ephemeral key lines
+	lines := strings.Split(string(content), "\n")
+	var filteredLines []string
+
+	for _, line := range lines {
+		// Skip lines that contain our ephemeral key marker
+		if !strings.Contains(line, "bloom-ephemeral-key") {
+			filteredLines = append(filteredLines, line)
+		}
+	}
+
+	// Write the filtered content back
+	newContent := strings.Join(filteredLines, "\n")
+	if err := os.WriteFile(e.AuthorizedKeysPath, []byte(newContent), 0600); err != nil {
+		return fmt.Errorf("failed to write filtered authorized_keys: %w", err)
+	}
+
+	return nil
+}
+
+// verifyKeyRemoved checks if the ephemeral key has been successfully removed
+func (e *EphemeralSSHManager) verifyKeyRemoved() bool {
+	// Read the authorized_keys file
+	content, err := os.ReadFile(e.AuthorizedKeysPath)
+	if err != nil {
+		// If file doesn't exist, key is definitely removed
+		if os.IsNotExist(err) {
+			return true
+		}
+		// If we can't read the file, we can't verify
+		return false
+	}
+
+	// Check if our ephemeral key marker is still present
+	return !strings.Contains(string(content), "bloom-ephemeral-key")
 }
 
 // removeKeyFiles deletes the ephemeral key files and backup

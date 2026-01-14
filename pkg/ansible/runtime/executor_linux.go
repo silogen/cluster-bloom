@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"syscall"
 
@@ -105,6 +106,9 @@ func RunChild() {
 		fmt.Fprintf(os.Stderr, "Failed to setup ephemeral SSH: %v\n", err)
 		os.Exit(1)
 	}
+
+	// Setup signal handling for immediate SSH cleanup on interruption
+	setupSSHSignalHandling(sshManager)
 
 	// Ensure cleanup happens even if process is interrupted
 	defer func() {
@@ -240,4 +244,39 @@ func pivotRoot(newRoot string) error {
 	}
 
 	return os.RemoveAll(putOld)
+}
+
+// setupSSHSignalHandling sets up signal handlers specifically for SSH cleanup
+// This ensures ephemeral SSH keys are removed from authorized_keys even if the process is killed
+func setupSSHSignalHandling(sshManager *ssh.EphemeralSSHManager) {
+	c := make(chan os.Signal, 1)
+	// Note: SIGKILL cannot be caught, but SIGTERM and SIGINT are the most common
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT)
+
+	go func() {
+		sig := <-c
+		fmt.Printf("\n🛑 Received signal %v, performing emergency SSH cleanup...\n", sig)
+
+		// Critical: Clean up SSH keys immediately
+		if err := sshManager.Cleanup(); err != nil {
+			fmt.Fprintf(os.Stderr, "🔥 CRITICAL: Failed to cleanup ephemeral SSH keys: %v\n", err)
+			fmt.Fprintf(os.Stderr, "🔧 Manual cleanup may be required - check ~/.ssh/authorized_keys\n")
+		} else {
+			fmt.Println("   ✅ Emergency SSH cleanup completed successfully")
+		}
+
+		// Exit with appropriate signal-based code
+		switch sig {
+		case os.Interrupt:
+			os.Exit(130) // 128 + SIGINT
+		case syscall.SIGTERM:
+			os.Exit(143) // 128 + SIGTERM
+		case syscall.SIGHUP:
+			os.Exit(129) // 128 + SIGHUP
+		case syscall.SIGQUIT:
+			os.Exit(131) // 128 + SIGQUIT
+		default:
+			os.Exit(1)
+		}
+	}()
 }
