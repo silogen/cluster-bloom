@@ -163,7 +163,7 @@ func RunChild() {
 		"--inventory=127.0.0.1,",
 		"--user=" + username,
 		"--become",
-		"--ssh-extra-args=-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null",
+		"--ssh-extra-args=-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -i /root/.ssh/id_ephemeral",
 		"-v",
 	}
 	if tags != "" {
