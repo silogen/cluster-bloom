@@ -13,6 +13,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/silogen/cluster-bloom/pkg/ssh"
 )
 
 // PreExecutionCleanup performs comprehensive cleanup before running Ansible playbooks
@@ -383,6 +385,39 @@ func CleanupOnExit() {
 
 	// Clean up any control sockets we created
 	cleanupSSHControlSockets()
+
+	// Clean up ephemeral SSH keys
+	cleanupEphemeralSSH()
+}
+
+// cleanupEphemeralSSH attempts to cleanup any remaining ephemeral SSH keys
+// This is a safety net in case normal cleanup failed
+func cleanupEphemeralSSH() {
+	// Try to detect work directory from current working directory
+	cwd, err := os.Getwd()
+	if err != nil {
+		return // Can't determine work directory, skip cleanup
+	}
+
+	// Try common username detection patterns
+	usernames := []string{
+		os.Getenv("SUDO_USER"),
+		os.Getenv("USER"),
+		"ubuntu", // Default fallback
+	}
+
+	for _, username := range usernames {
+		if username == "" {
+			continue
+		}
+
+		// Attempt cleanup with this username
+		sshManager := ssh.NewEphemeralSSHManager(cwd, username)
+		if err := sshManager.Cleanup(); err == nil {
+			fmt.Printf("   ✓ Cleaned up ephemeral SSH keys for user %s\n", username)
+			return // Successfully cleaned up
+		}
+	}
 }
 
 // CleanupLonghornMounts performs cleanup of Longhorn PVCs and mounts

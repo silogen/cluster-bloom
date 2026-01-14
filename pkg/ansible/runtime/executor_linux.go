@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"syscall"
 
+	"github.com/silogen/cluster-bloom/pkg/ssh"
 	"golang.org/x/sys/unix"
 )
 
@@ -98,13 +99,27 @@ func RunChild() {
 		os.Exit(1)
 	}
 
-	// Mount host SSH directory for authentication
-	hostSSHDir := filepath.Join("/home", username, ".ssh")
+	// Setup ephemeral SSH key for authentication
+	sshManager := ssh.NewEphemeralSSHManager(workDir, username)
+	if err := sshManager.Setup(); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to setup ephemeral SSH: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Ensure cleanup happens even if process is interrupted
+	defer func() {
+		if err := sshManager.Cleanup(); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: SSH cleanup failed: %v\n", err)
+		}
+	}()
+
+	// Mount ephemeral SSH directory for container
+	ephemeralSSHDir := filepath.Join(workDir, "ssh")
 	containerSSHDir := filepath.Join(rootfs, "root", ".ssh")
 	os.MkdirAll(containerSSHDir, 0700)
-	if err := syscall.Mount(hostSSHDir, containerSSHDir, "", syscall.MS_BIND, ""); err != nil {
-		// SSH directory might not exist, that's ok
-		fmt.Fprintf(os.Stderr, "Warning: Failed to mount %s: %v\n", hostSSHDir, err)
+	if err := syscall.Mount(ephemeralSSHDir, containerSSHDir, "", syscall.MS_BIND, ""); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to mount ephemeral SSH directory: %v\n", err)
+		os.Exit(1)
 	}
 
 	if err := pivotRoot(rootfs); err != nil {
