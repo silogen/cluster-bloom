@@ -1,0 +1,103 @@
+---
+# Longhorn Storage Setup Tasks for Medium/Large Clusters
+# This file contains tasks for setting up Longhorn distributed storage
+
+- name: Longhorn Preflight Check
+  block:
+    - name: Copy Longhorn preflight script
+      copy:
+        src: manifests/scripts/longhorn_preflight_check.sh
+        dest: /tmp/longhorn_preflight.sh
+        mode: "0755"
+
+    - name: Run Longhorn preflight check
+      shell: bash /tmp/longhorn_preflight.sh
+      register: longhorn_preflight
+      failed_when: false
+      environment:
+        HOME: "/home/{{ ansible_user }}"
+
+    - name: Display preflight results
+      debug:
+        msg: "{{ longhorn_preflight.stdout }}"
+
+    - name: Fail if preflight check failed
+      fail:
+        msg: "Longhorn preflight check failed. Review output above."
+      when: longhorn_preflight.rc != 0
+
+- name: Deploy Longhorn Manifests
+  block:
+    - name: Copy Longhorn manifests to RKE2
+      copy:
+        src: "manifests/longhorn/{{ item }}"
+        dest: "/var/lib/rancher/rke2/server/manifests/{{ item }}"
+        mode: "0644"
+      loop:
+        - longhorn-namespace.yaml
+        - longhorn.yaml
+        - node-annotator.yaml
+        - httproute-longhorn.yaml
+
+    - name: Wait for node annotator cronjob
+      shell: |
+        /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+          wait --for=create --timeout=600s cronjob/label-and-annotate-nodes -n default
+      register: cronjob_wait
+      retries: 3
+      delay: 10
+      failed_when: false
+
+    - name: Trigger initial node annotation
+      shell: |
+        /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+          create job --from=cronjob/label-and-annotate-nodes \
+          label-and-annotate-nodes-initial -n default
+
+    - name: Wait for node annotation to complete
+      shell: |
+        /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+          wait --for=jsonpath={.status.lastSuccessfulTime} \
+          --timeout=600s cronjob/label-and-annotate-nodes -n default
+      register: annotation_wait
+      retries: 3
+      delay: 10
+      failed_when: false
+
+- name: Validate Longhorn Storage
+  block:
+    - name: Create test PVC for Longhorn validation
+      shell: |
+        cat <<EOF | /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml apply -f -
+        apiVersion: v1
+        kind: PersistentVolumeClaim
+        metadata:
+          name: storage-test-pvc
+          namespace: default
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          storageClassName: default
+          resources:
+            requests:
+              storage: 1Gi
+        EOF
+
+    - name: Wait for PVC to be bound
+      shell: |
+        /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+          get pvc storage-test-pvc -o jsonpath='{.status.phase}'
+      register: pvc_status
+      until: pvc_status.stdout == "Bound"
+      retries: 60
+      delay: 5
+
+    - name: Delete test PVC
+      shell: |
+        /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+          delete pvc storage-test-pvc --wait=false
+      ignore_errors: yes
+
+    - name: Log Longhorn success
+      debug:
+        msg: "Longhorn distributed storage is operational - test PVC successfully created and bound"

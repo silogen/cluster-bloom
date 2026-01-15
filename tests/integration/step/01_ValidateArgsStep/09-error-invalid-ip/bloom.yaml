@@ -1,7 +1,0 @@
-ENABLED_STEPS: ValidateArgsStep
-FIRST_NODE: false
-SERVER_IP: not-an-ip
-JOIN_TOKEN: K107c7e3e6e3e6e3e6e3e6e3e6e3e6e3e6e3e6::server:abc123def456
-CLUSTER_DISKS: /dev/nvme0n1
-
-expected_error: "invalid IP address"

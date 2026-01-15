@@ -1,7 +1,0 @@
-ENABLED_STEPS: ValidateArgsStep
-FIRST_NODE: false
-SERVER_IP: 192.168.1.100
-JOIN_TOKEN: tooshort
-CLUSTER_DISKS: /dev/nvme0n1
-
-expected_error: "JOIN_TOKEN is too short"

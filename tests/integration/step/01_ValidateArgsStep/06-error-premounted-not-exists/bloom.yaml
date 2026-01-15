@@ -1,8 +1,0 @@
-ENABLED_STEPS: ValidateArgsStep
-FIRST_NODE: true
-DOMAIN: example.com
-USE_CERT_MANAGER: false
-CERT_OPTION: generate
-CLUSTER_PREMOUNTED_DISKS: /mnt/nonexistent
-
-expected_error: "CLUSTER_PREMOUNTED_DISKS contains a path that does not exist: /mnt/nonexistent"

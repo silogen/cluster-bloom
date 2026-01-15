@@ -8,6 +8,7 @@
 *.so
 *.dylib
 dist/
+bloom
 
 # Test binary, built with `go test -c`
 *.test
@@ -35,10 +36,17 @@ yarn-error.log*
 dev-debug.log
 # Dependency directories
 node_modules/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
 # Environment variables
 # Editor directories and files
 .idea
 .vscode
+.claude
 *.suo
 *.ntvs*
 *.njsproj
@@ -49,4 +57,7 @@ node_modules/
 
 # Task files
 # tasks.json
-# tasks/ 
+# tasks/
+results/
+.bloom/
+.kube/
