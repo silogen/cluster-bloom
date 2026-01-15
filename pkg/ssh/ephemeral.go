@@ -353,37 +353,6 @@ func (e *EphemeralSSHManager) removePublicKey() error {
 	})
 }
 
-// verifyKeyRemoved checks if the ephemeral key has been successfully removed
-// Runs as root and reads the file directly (root can read all files)
-func (e *EphemeralSSHManager) verifyKeyRemoved() bool {
-	fmt.Printf("   🔍 Verifying ephemeral key removal from %s\n", e.AuthorizedKeysPath)
-
-	// Read the authorized_keys file
-	content, err := os.ReadFile(e.AuthorizedKeysPath)
-	if err != nil {
-		// If file doesn't exist, key is definitely removed
-		if os.IsNotExist(err) {
-			fmt.Printf("      ✓ File does not exist - key definitely removed\n")
-			return true
-		}
-		// If we can't read the file, we can't verify
-		fmt.Printf("      ❌ Cannot read file for verification: %v\n", err)
-		return false
-	}
-
-	// Check if our ephemeral key markers are still present
-	hasBloomComment := strings.Contains(string(content), "# bloom-ephemeral-key")
-	hasBloomHostname := strings.Contains(string(content), "bloom-ephemeral@localhost")
-
-	if hasBloomComment || hasBloomHostname {
-		fmt.Printf("      ❌ Ephemeral key marker still found in file\n")
-		return false
-	} else {
-		fmt.Printf("      ✓ Ephemeral key marker not found - removal verified\n")
-		return true
-	}
-}
-
 // removeKeyFiles deletes the ephemeral key files (preserves backup)
 func (e *EphemeralSSHManager) removeKeyFiles() error {
 	files := []string{
@@ -403,36 +372,6 @@ func (e *EphemeralSSHManager) removeKeyFiles() error {
 	os.Remove(sshDir) // Ignore error - directory might not be empty
 
 	return nil
-}
-
-// logFileOperations logs all files created/edited during SSH setup
-func (e *EphemeralSSHManager) logFileOperations() {
-	fmt.Println("   📁 Files created/edited for SSH:")
-
-	// Log generated key files
-	if _, err := os.Stat(e.PrivateKeyPath); err == nil {
-		fmt.Printf("   • Created: %s (private key)\n", e.PrivateKeyPath)
-	}
-
-	if _, err := os.Stat(e.PublicKeyPath); err == nil {
-		fmt.Printf("   • Created: %s (public key)\n", e.PublicKeyPath)
-	}
-
-	// Log backup file if created
-	if _, err := os.Stat(e.AuthorizedKeysBackup); err == nil {
-		fmt.Printf("   • Created: %s (authorized_keys backup)\n", e.AuthorizedKeysBackup)
-	}
-
-	// Log modified authorized_keys
-	if e.isInstalled {
-		fmt.Printf("   • Modified: %s (added ephemeral public key)\n", e.AuthorizedKeysPath)
-	}
-
-	// Log SSH directory
-	sshDir := filepath.Dir(e.PrivateKeyPath)
-	if _, err := os.Stat(sshDir); err == nil {
-		fmt.Printf("   • Created: %s/ (SSH working directory)\n", sshDir)
-	}
 }
 
 // copyFile copies a file from src to dst, preserving permissions
