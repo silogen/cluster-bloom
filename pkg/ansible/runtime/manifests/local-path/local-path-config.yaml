@@ -29,5 +29,5 @@ data:
     spec:
       containers:
       - name: helper-pod
-        image: busybox
+        image: ghcr.io/silogen/cluster-busybox:1.37.0
         imagePullPolicy: IfNotPresent

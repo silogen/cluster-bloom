@@ -121,6 +121,7 @@ func newRootCmd() *cobra.Command {
 Requires a configuration file (typically bloom.yaml). Use --playbook to specify which playbook to run.`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
+			checkRootPrivileges("ansible")
 			runAnsible(args[0])
 		},
 	}
@@ -145,6 +146,7 @@ This command performs the equivalent of Bloom v1 cleanup operations:
 
 By default, this command requires confirmation before proceeding. Use --force to skip confirmation.`,
 		Run: func(cmd *cobra.Command, args []string) {
+			checkRootPrivileges("cleanup")
 			// Check if force flag is used to bypass confirmation
 			if !forceCleanup {
 				if !confirmCleanupOperation() {
@@ -291,6 +293,25 @@ func confirmCleanupOperation() bool {
 
 	fmt.Println("\n✅ Cleanup confirmed. Proceeding...")
 	return true
+}
+
+// checkRootPrivileges verifies that the current process is running with root privileges
+func checkRootPrivileges(commandName string) {
+	if os.Getuid() != 0 {
+		fmt.Fprintf(os.Stderr, "❌ Error: %s requires root privileges\n\n", commandName)
+		fmt.Fprintf(os.Stderr, "Please run this command with root privileges:\n")
+		fmt.Fprintf(os.Stderr, "  sudo bloom %s", commandName)
+
+		// Add the original arguments
+		if len(os.Args) > 2 {
+			for _, arg := range os.Args[2:] {
+				fmt.Fprintf(os.Stderr, " %s", arg)
+			}
+		}
+		fmt.Fprintf(os.Stderr, "\n\n")
+
+		os.Exit(1)
+	}
 }
 
 func runClusterCleanup() {

@@ -6,7 +6,7 @@ metadata:
   labels:
     app.kubernetes.io/name: local-path-provisioner
     app.kubernetes.io/instance: local-path-provisioner
-    app.kubernetes.io/version: v0.0.29
+    app.kubernetes.io/version: v0.0.34
 spec:
   replicas: 1
   strategy:
@@ -26,7 +26,7 @@ spec:
       serviceAccountName: local-path-provisioner-service-account
       containers:
         - name: local-path-provisioner
-          image: rancher/local-path-provisioner:v0.0.29
+          image: ghcr.io/silogen/cluster-lpr:v0.0.34
           imagePullPolicy: IfNotPresent
           command:
             - local-path-provisioner
