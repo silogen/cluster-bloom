@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"strings"
@@ -17,6 +18,7 @@ var (
 	dryRun       bool
 	tags         string
 	destroyData  bool
+	forceCleanup bool
 )
 
 func init() {
@@ -119,9 +121,6 @@ func newRootCmd() *cobra.Command {
 Requires a configuration file (typically bloom.yaml). Use --playbook to specify which playbook to run.`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			if destroyData {
-				runClusterCleanup()
-			}
 			runAnsible(args[0])
 		},
 	}
@@ -144,8 +143,17 @@ This command performs the equivalent of Bloom v1 cleanup operations:
 - Executes RKE2 uninstall script to remove RKE2 components  
 - Cleans up bloom-managed disks and removes temp drives
 
-The cleanup runs immediately without confirmation prompts.`,
+By default, this command requires confirmation before proceeding. Use --force to skip confirmation.`,
 		Run: func(cmd *cobra.Command, args []string) {
+			// Check if force flag is used to bypass confirmation
+			if !forceCleanup {
+				if !confirmCleanupOperation() {
+					fmt.Println("❌ Cleanup aborted by user.")
+					os.Exit(0)
+				}
+			} else {
+				fmt.Println("🚀 Force cleanup requested - bypassing confirmation")
+			}
 			runClusterCleanup()
 		},
 	}
@@ -155,7 +163,10 @@ The cleanup runs immediately without confirmation prompts.`,
 	ansibleCmd.Flags().StringVar(&playbookName, "playbook", "cluster-bloom.yaml", "Playbook to run (default: cluster-bloom.yaml)")
 	ansibleCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Run in check mode without making changes")
 	ansibleCmd.Flags().StringVar(&tags, "tags", "", "Run only tasks with specific tags (e.g., cleanup, validate, storage)")
-	ansibleCmd.Flags().BoolVar(&destroyData, "destroy-data", false, "WARNING: Destroys ALL existing data (cluster + disks) for fresh deployment")
+	ansibleCmd.Flags().BoolVar(&destroyData, "destroy-data", false, "⚠️  DANGER: Permanently destroys ALL cluster data, storage, and disks. Requires interactive confirmation.")
+
+	// Add cleanup-specific flags
+	cleanupCmd.Flags().BoolVarP(&forceCleanup, "force", "f", false, "Skip confirmation prompt and force immediate cleanup (USE WITH CAUTION)")
 
 	// Add subcommands
 	rootCmd.AddCommand(webuiCmd)
@@ -194,6 +205,15 @@ func runAnsible(configFile string) {
 		os.Exit(1)
 	}
 
+	// Handle destructive data cleanup if requested
+	if destroyData {
+		if !confirmDestructiveOperation(cfg) {
+			fmt.Println("\n❌ Operation aborted by user. No data was harmed.")
+			os.Exit(0)
+		}
+		runClusterCleanup()
+	}
+
 	// Run the playbook
 	exitCode, err := runtime.RunPlaybook(cfg, playbookName, dryRun, tags)
 	if err != nil {
@@ -202,6 +222,75 @@ func runAnsible(configFile string) {
 	}
 
 	os.Exit(exitCode)
+}
+
+// confirmDestructiveOperation prompts the user to confirm the dangerous --destroy-data operation
+func confirmDestructiveOperation(cfg config.Config) bool {
+	fmt.Println("\n⚠️  DANGER: DESTRUCTIVE OPERATION REQUESTED ⚠️")
+	fmt.Println()
+	fmt.Println("You are about to PERMANENTLY DESTROY:")
+	fmt.Println("• Entire Kubernetes cluster (RKE2 uninstall)")
+	// Show specific devices that will be wiped if CLUSTER_DISKS is configured
+	if clusterDisks, exists := cfg["CLUSTER_DISKS"]; exists && clusterDisks != nil {
+		if disksStr, ok := clusterDisks.(string); ok && disksStr != "" {
+			fmt.Printf("• All data on these storage devices: %s\n", disksStr)
+		}
+	}
+	fmt.Println()
+
+	// Read user input
+	fmt.Print("Type \"yes\" to confirm destruction of all data: ")
+
+	reader := bufio.NewReader(os.Stdin)
+	input, err := reader.ReadString('\n')
+	if err != nil {
+		fmt.Printf("\n❌ Error reading input: %v\n", err)
+		return false
+	}
+
+	// Trim whitespace and check for exact match
+	input = strings.TrimSpace(input)
+	if input != "yes" {
+		fmt.Printf("\n❌ Operation aborted. Received: \"%s\", expected: \"yes\"\n", input)
+		return false
+	}
+
+	fmt.Println("\n✅ Destructive operation confirmed. Proceeding with data destruction...")
+	return true
+}
+
+// confirmCleanupOperation prompts the user to confirm the cleanup command
+func confirmCleanupOperation() bool {
+	fmt.Println("\n⚠️  CLUSTER CLEANUP REQUESTED ⚠️")
+	fmt.Println()
+	fmt.Println("This will PERMANENTLY DESTROY:")
+	fmt.Println("• Entire Kubernetes cluster (RKE2 uninstall)")
+	fmt.Println("• ALL Longhorn storage volumes and data")
+	fmt.Println("• ALL managed disk devices (wipefs + deletion)")
+	fmt.Println("• All cluster configuration and state")
+	fmt.Println()
+	fmt.Println("This action cannot be undone.")
+	fmt.Println()
+
+	// Read user input
+	fmt.Print("Type \"yes\" to proceed with cleanup: ")
+
+	reader := bufio.NewReader(os.Stdin)
+	input, err := reader.ReadString('\n')
+	if err != nil {
+		fmt.Printf("\n❌ Error reading input: %v\n", err)
+		return false
+	}
+
+	// Trim whitespace and check for exact match
+	input = strings.TrimSpace(input)
+	if input != "yes" {
+		fmt.Printf("\n❌ Cleanup aborted. Received: \"%s\", expected: \"yes\"\n", input)
+		return false
+	}
+
+	fmt.Println("\n✅ Cleanup confirmed. Proceeding...")
+	return true
 }
 
 func runClusterCleanup() {
