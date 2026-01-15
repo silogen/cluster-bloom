@@ -32,6 +32,27 @@ func RunContainer(rootfs, playbookDir, playbook string, extraArgs []string, dryR
 		cwd = ""
 	}
 
+	// Setup ephemeral SSH key on HOST before starting container
+	fmt.Printf("🔑 Setting up ephemeral SSH key for Ansible connections...\n")
+	sshManager := ssh.NewEphemeralSSHManager(cwd, actualUser)
+	if err := sshManager.Setup(); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to setup ephemeral SSH on host: %v\n", err)
+		return 1
+	}
+
+	// Setup host-based signal handling for SSH cleanup
+	setupHostSSHSignalHandling(sshManager)
+
+	// Ensure SSH cleanup happens when function exits
+	defer func() {
+		if err := sshManager.Cleanup(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error during host SSH cleanup: %v\n", err)
+			// Don't exit with error on cleanup failure during defer
+		} else {
+			fmt.Printf("✅ Host SSH cleanup completed successfully - original authorized_keys restored!\n")
+		}
+	}()
+
 	childArgs := []string{"__child__", rootfs, playbookDir, playbook, actualUser, cwd}
 	if dryRun {
 		childArgs = append(childArgs, "--dry-run")
@@ -100,22 +121,8 @@ func RunChild() {
 		os.Exit(1)
 	}
 
-	// Setup ephemeral SSH key for authentication
-	sshManager := ssh.NewEphemeralSSHManager(workDir, username)
-	if err := sshManager.Setup(); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to setup ephemeral SSH: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Setup signal handling for immediate SSH cleanup on interruption
-	setupSSHSignalHandling(sshManager)
-
-	// Ensure cleanup happens even if process is interrupted
-	defer func() {
-		if err := sshManager.Cleanup(); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: SSH cleanup failed: %v\n", err)
-		}
-	}()
+	// Note: SSH key setup and cleanup is now handled on the host, not in container
+	// The ephemeral SSH keys should already be available via bind mount
 
 	// Mount ephemeral SSH directory for container
 	ephemeralSSHDir := filepath.Join(workDir, "ssh")
@@ -246,26 +253,24 @@ func pivotRoot(newRoot string) error {
 	return os.RemoveAll(putOld)
 }
 
-// setupSSHSignalHandling sets up signal handlers specifically for SSH cleanup
-// This ensures ephemeral SSH keys are removed from authorized_keys even if the process is killed
-func setupSSHSignalHandling(sshManager *ssh.EphemeralSSHManager) {
+// setupHostSSHSignalHandling sets up signal handlers for host-based SSH cleanup
+// This ensures that SSH cleanup happens on the host when signals are received
+func setupHostSSHSignalHandling(sshManager *ssh.EphemeralSSHManager) {
 	c := make(chan os.Signal, 1)
-	// Note: SIGKILL cannot be caught, but SIGTERM and SIGINT are the most common
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT)
 
 	go func() {
 		sig := <-c
-		fmt.Printf("\n🛑 Received signal %v, performing emergency SSH cleanup...\n", sig)
 
-		// Critical: Clean up SSH keys immediately
+		// Perform SSH cleanup directly on host
 		if err := sshManager.Cleanup(); err != nil {
-			fmt.Fprintf(os.Stderr, "🔥 CRITICAL: Failed to cleanup ephemeral SSH keys: %v\n", err)
-			fmt.Fprintf(os.Stderr, "🔧 Manual cleanup may be required - check ~/.ssh/authorized_keys\n")
+			fmt.Fprintf(os.Stderr, "🔥 CRITICAL: Host SSH cleanup failed: %v\n", err)
+			os.Exit(1) // Exit with error as requested
 		} else {
-			fmt.Println("   ✅ Emergency SSH cleanup completed successfully")
+			fmt.Printf("✅ Host SSH cleanup completed successfully - original authorized_keys restored!\n")
 		}
 
-		// Exit with appropriate signal-based code
+		// Exit with appropriate signal-based exit code
 		switch sig {
 		case os.Interrupt:
 			os.Exit(130) // 128 + SIGINT

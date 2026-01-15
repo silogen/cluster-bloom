@@ -7,14 +7,11 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"os/signal"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"syscall"
 	"time"
-
-	"github.com/silogen/cluster-bloom/pkg/ssh"
 )
 
 // PreExecutionCleanup performs comprehensive cleanup before running Ansible playbooks
@@ -360,64 +357,6 @@ func cleanupAnsibleProcesses() error {
 	}
 	fmt.Println("   Killed existing ansible-playbook processes")
 	return nil
-}
-
-// setupSignalHandling sets up signal handlers for graceful cleanup
-func setupSignalHandling() {
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-
-	go func() {
-		<-c
-		fmt.Println("\n🛑 Received interrupt signal, cleaning up...")
-		cleanupContainerSSHProcesses()
-		cleanupAnsibleProcesses()
-		os.Exit(130) // Exit with 128 + SIGINT
-	}()
-}
-
-// CleanupOnExit performs cleanup when the program exits (for use with defer)
-func CleanupOnExit() {
-	fmt.Println("🧹 Performing exit cleanup...")
-
-	// Quick cleanup of SSH processes we might have spawned
-	cleanupSSHProcesses()
-
-	// Clean up any control sockets we created
-	cleanupSSHControlSockets()
-
-	// Clean up ephemeral SSH keys
-	cleanupEphemeralSSH()
-}
-
-// cleanupEphemeralSSH attempts to cleanup any remaining ephemeral SSH keys
-// This is a safety net in case normal cleanup failed
-func cleanupEphemeralSSH() {
-	// Try to detect work directory from current working directory
-	cwd, err := os.Getwd()
-	if err != nil {
-		return // Can't determine work directory, skip cleanup
-	}
-
-	// Try common username detection patterns
-	usernames := []string{
-		os.Getenv("SUDO_USER"),
-		os.Getenv("USER"),
-		"ubuntu", // Default fallback
-	}
-
-	for _, username := range usernames {
-		if username == "" {
-			continue
-		}
-
-		// Attempt cleanup with this username
-		sshManager := ssh.NewEphemeralSSHManager(cwd, username)
-		if err := sshManager.Cleanup(); err == nil {
-			fmt.Printf("   ✓ Cleaned up ephemeral SSH keys for user %s\n", username)
-			return // Successfully cleaned up
-		}
-	}
 }
 
 // CleanupLonghornMounts performs cleanup of Longhorn PVCs and mounts

@@ -1111,12 +1111,47 @@
     - name: Preload Container Images
       when: FIRST_NODE and PRELOAD_IMAGES is defined and PRELOAD_IMAGES != ""
       block:
+        - name: Check for RKE2 containerd socket
+          stat:
+            path: /run/containerd/containerd.sock
+          register: rke2_containerd_socket
+
+        - name: Check for K3s containerd socket  
+          stat:
+            path: /run/k3s/containerd/containerd.sock
+          register: k3s_containerd_socket
+
+        - name: Determine containerd socket path
+          set_fact:
+            containerd_socket_path: "{{ '/run/containerd/containerd.sock' if rke2_containerd_socket.stat.exists else ('/run/k3s/containerd/containerd.sock' if k3s_containerd_socket.stat.exists else '') }}"
+            containerd_runtime: "{{ 'RKE2' if rke2_containerd_socket.stat.exists else ('K3s' if k3s_containerd_socket.stat.exists else 'none') }}"
+
+        - name: Fail if no containerd socket found
+          fail:
+            msg: |
+              Error: No accessible containerd socket found.
+              
+              Checked locations:
+                - RKE2: /run/containerd/containerd.sock ({{ 'FOUND' if rke2_containerd_socket.stat.exists else 'NOT FOUND' }})
+                - K3s:  /run/k3s/containerd/containerd.sock ({{ 'FOUND' if k3s_containerd_socket.stat.exists else 'NOT FOUND' }})
+              
+              Please ensure RKE2 or K3s is installed and containerd is running:
+                For RKE2: systemctl status containerd
+                For K3s:  systemctl status k3s
+                
+              Verify socket permissions and that the container runtime is properly configured.
+          when: containerd_socket_path == ''
+
         - name: Parse image list
           set_fact:
             image_list: "{{ PRELOAD_IMAGES.split(',') }}"
 
+        - name: Report detected container runtime
+          debug:
+            msg: "Using {{ containerd_runtime }} containerd socket: {{ containerd_socket_path }}"
+
         - name: Pull container images
-          shell: /var/lib/rancher/rke2/bin/ctr --namespace k8s.io image pull {{ item }}
+          shell: /var/lib/rancher/rke2/bin/ctr --address={{ containerd_socket_path }} --namespace k8s.io image pull {{ item }}
           loop: "{{ image_list }}"
           async: 3600
           poll: 0
@@ -1131,6 +1166,27 @@
           retries: 360
           delay: 10
 
+      rescue:
+        - name: Container image preloading failed
+          fail:
+            msg: |
+              Container image preloading failed. This may be due to:
+                1. Containerd not running properly (detected: {{ containerd_runtime }})
+                2. Network connectivity issues preventing image downloads
+                3. Invalid or incompatible image names in PRELOAD_IMAGES variable
+                4. Insufficient disk space for image storage
+              
+              Note: For best compatibility, use fully qualified image names (e.g., 'docker.io/library/alpine:latest' instead of 'alpine:latest')
+              
+              Troubleshooting steps:
+                1. Check container runtime status:
+                   - RKE2: systemctl status containerd  
+                   - K3s:  systemctl status k3s
+                2. Verify socket: ls -la {{ containerd_socket_path }}
+                3. Test manual image pull: /var/lib/rancher/rke2/bin/ctr --address={{ containerd_socket_path }} --namespace k8s.io image pull docker.io/library/alpine:latest
+                4. Check network connectivity and DNS resolution
+                5. Verify PRELOAD_IMAGES variable contains valid image references
+      
       tags: [images, deploy_k8s_apps]
 
     - name: Setup Storage Provisioner (Small Clusters - Local-Path)
