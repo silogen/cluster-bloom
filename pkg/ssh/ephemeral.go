@@ -190,56 +190,105 @@ func (e *EphemeralSSHManager) generateKey() error {
 	return nil
 }
 
+// validateAuthorizedKeys checks that .ssh directory and authorized_keys file exist with correct permissions
+func (e *EphemeralSSHManager) validateAuthorizedKeys() error {
+	userSSHDir := filepath.Dir(e.AuthorizedKeysPath)
+
+	// Check if .ssh directory exists and has 700 permissions
+	sshInfo, err := os.Stat(userSSHDir)
+	if os.IsNotExist(err) {
+		fmt.Printf("❌ ERROR: SSH directory does not exist: %s\n", userSSHDir)
+		fmt.Printf("   Please ensure SSH is properly configured for user %s\n", e.Username)
+		return fmt.Errorf("SSH directory missing: %s", userSSHDir)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to check SSH directory: %w", err)
+	}
+
+	sshPerms := sshInfo.Mode().Perm()
+	if sshPerms != 0700 {
+		fmt.Printf("❌ ERROR: SSH directory has incorrect permissions: %o (expected 700)\n", sshPerms)
+		fmt.Printf("   Please fix permissions: chmod 700 %s\n", userSSHDir)
+		return fmt.Errorf("SSH directory has incorrect permissions: %o", sshPerms)
+	}
+
+	// Check if authorized_keys file exists and has 600 permissions
+	authKeysInfo, err := os.Stat(e.AuthorizedKeysPath)
+	if os.IsNotExist(err) {
+		fmt.Printf("❌ ERROR: authorized_keys file does not exist: %s\n", e.AuthorizedKeysPath)
+		fmt.Printf("   Please ensure authorized_keys is properly configured for user %s\n", e.Username)
+		return fmt.Errorf("authorized_keys file missing: %s", e.AuthorizedKeysPath)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to check authorized_keys file: %w", err)
+	}
+
+	authKeysPerms := authKeysInfo.Mode().Perm()
+	if authKeysPerms != 0600 {
+		fmt.Printf("❌ ERROR: authorized_keys file has incorrect permissions: %o (expected 600)\n", authKeysPerms)
+		fmt.Printf("   Please fix permissions: chmod 600 %s\n", e.AuthorizedKeysPath)
+		return fmt.Errorf("authorized_keys file has incorrect permissions: %o", authKeysPerms)
+	}
+
+	// Check if bloom ephemeral key already exists
+	authKeysContent, err := os.ReadFile(e.AuthorizedKeysPath)
+	if err != nil {
+		return fmt.Errorf("failed to read authorized_keys for validation: %w", err)
+	}
+
+	// Check for either bloom marker (comment or hostname)
+	hasBloomComment := strings.Contains(string(authKeysContent), "# bloom-ephemeral-key")
+	hasBloomHostname := strings.Contains(string(authKeysContent), "bloom-ephemeral@localhost")
+
+	if hasBloomComment || hasBloomHostname {
+		fmt.Printf("❌ ERROR: Bloom ephemeral key already exists in authorized_keys\n")
+		fmt.Printf("   This indicates a previous bloom run was not cleaned up properly.\n")
+		fmt.Printf("   RECOMMENDED: Restore from backup (if available):\n")
+		fmt.Printf("   1. Check for backup files: ls %s*.backup.*\n", e.AuthorizedKeysPath)
+		fmt.Printf("   2. Restore the most recent backup:\n")
+		fmt.Printf("      cp %s.backup.YYYYMMDD_HHMMSS %s\n", e.AuthorizedKeysPath, e.AuthorizedKeysPath)
+		fmt.Printf("   3. Re-run bloom\n")
+		fmt.Printf("   ALTERNATIVE: Manual removal (if no backup available):\n")
+		fmt.Printf("   1. Edit the file: nano %s\n", e.AuthorizedKeysPath)
+		fmt.Printf("   2. Look for and remove lines containing:\n")
+		fmt.Printf("      - '# bloom-ephemeral-key' (comment marker)\n")
+		fmt.Printf("      - 'bloom-ephemeral@localhost' (hostname marker)\n")
+		fmt.Printf("   3. The line will look like:\n")
+		fmt.Printf("      ssh-ed25519 AAAAC3NzaC... bloom-ephemeral@localhost # bloom-ephemeral-key\n")
+		fmt.Printf("   4. Delete the entire line(s) with bloom markers\n")
+		fmt.Printf("   5. Save and re-run bloom\n")
+		return fmt.Errorf("bloom ephemeral key already exists in authorized_keys")
+	}
+
+	return nil
+}
+
 // installPublicKey backs up original authorized_keys and adds ephemeral public key
-// Process: 1) backup, 2) make temp copy, 3) add ephemeral key to temp, 4) fix ownership, 5) overwrite original
+// Process: 1) validate prerequisites, 2) backup, 3) temp copy, 4) add key, 5) fix ownership, 6) overwrite original
 func (e *EphemeralSSHManager) installPublicKey() error {
 	return e.runAsUser(func() error {
-		// Ensure user's .ssh directory exists
-		userSSHDir := filepath.Dir(e.AuthorizedKeysPath)
-		if err := os.MkdirAll(userSSHDir, 0700); err != nil {
-			return fmt.Errorf("failed to create user SSH directory: %w", err)
+		// Validate .ssh directory and authorized_keys file exist with correct permissions
+		if err := e.validateAuthorizedKeys(); err != nil {
+			return err
 		}
 
-		// Step 1: Check existing file and back up if needed
-		var originalUID, originalGID int
-		var originalMode os.FileMode
-		originalExists := false
+		// Step 1: Get original file info and create backup
+		// (we know the file exists because validateAuthorizedKeys() passed)
+		uid, gid, mode, err := getFileInfo(e.AuthorizedKeysPath)
+		if err != nil {
+			return fmt.Errorf("failed to get original file info: %w", err)
+		}
+		originalUID, originalGID, originalMode := uid, gid, mode
 
-		if _, err := os.Stat(e.AuthorizedKeysPath); err == nil {
-			originalExists = true
-
-			// Get original file info (ownership and permissions)
-			uid, gid, mode, err := getFileInfo(e.AuthorizedKeysPath)
-			if err != nil {
-				return fmt.Errorf("failed to get original file info: %w", err)
-			}
-			originalUID, originalGID, originalMode = uid, gid, mode
-
-			// Create backup
-			if err := copyFile(e.AuthorizedKeysPath, e.AuthorizedKeysBackup); err != nil {
-				return fmt.Errorf("failed to backup authorized_keys: %w", err)
-			}
-		} else {
-			// No original file exists - set default ownership and permissions
-			targetUID, targetGID, err := getUserInfo(e.Username)
-			if err != nil {
-				return fmt.Errorf("failed to get target user info: %w", err)
-			}
-			originalUID, originalGID = int(targetUID), int(targetGID)
-			originalMode = 0600
+		// Create backup
+		if err := copyFile(e.AuthorizedKeysPath, e.AuthorizedKeysBackup); err != nil {
+			return fmt.Errorf("failed to backup authorized_keys: %w", err)
 		}
 
 		// Step 2: Make a temporary copy of authorized_keys
 		tmpPath := e.AuthorizedKeysPath + ".tmp"
-		if originalExists {
-			if err := copyFile(e.AuthorizedKeysPath, tmpPath); err != nil {
-				return fmt.Errorf("failed to copy existing file: %w", err)
-			}
-		} else {
-			// Create empty temp file if no original exists
-			if err := os.WriteFile(tmpPath, []byte(""), originalMode.Perm()); err != nil {
-				return fmt.Errorf("failed to create temporary file: %w", err)
-			}
+		if err := copyFile(e.AuthorizedKeysPath, tmpPath); err != nil {
+			return fmt.Errorf("failed to copy existing file: %w", err)
 		}
 
 		// Step 3: Add ephemeral key to temporary copy
@@ -322,9 +371,11 @@ func (e *EphemeralSSHManager) verifyKeyRemoved() bool {
 		return false
 	}
 
-	// Check if our ephemeral key marker is still present
-	hasEphemeralKey := strings.Contains(string(content), "bloom-ephemeral-key")
-	if hasEphemeralKey {
+	// Check if our ephemeral key markers are still present
+	hasBloomComment := strings.Contains(string(content), "# bloom-ephemeral-key")
+	hasBloomHostname := strings.Contains(string(content), "bloom-ephemeral@localhost")
+
+	if hasBloomComment || hasBloomHostname {
 		fmt.Printf("      ❌ Ephemeral key marker still found in file\n")
 		return false
 	} else {
