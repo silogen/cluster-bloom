@@ -105,13 +105,3 @@ func escapeString(s string) string {
 	// Escape quotes in strings
 	return strings.ReplaceAll(s, "\"", "\\\"")
 }
-
-// GetFieldOrder returns the schema order for deterministic YAML generation
-func GetFieldOrder() []string {
-	schema := Schema()
-	keys := make([]string, len(schema))
-	for i, arg := range schema {
-		keys[i] = arg.Key
-	}
-	return keys
-}

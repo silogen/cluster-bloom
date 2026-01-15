@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -50,42 +49,6 @@ func anyFieldPresent(cfg Config, fields []string) bool {
 	return false
 }
 
-// extractFieldsFromConditions extracts field names from condition strings
-// Example: "NO_DISKS_FOR_CLUSTER == true && CLUSTER_DISKS == ”" -> ["NO_DISKS_FOR_CLUSTER", "CLUSTER_DISKS"]
-func extractFieldsFromConditions(conditions []string) []string {
-	fieldMap := make(map[string]bool)
-
-	for _, condition := range conditions {
-		// Split by && for AND logic
-		parts := strings.Split(condition, " && ")
-
-		for _, part := range parts {
-			part = strings.TrimSpace(part)
-
-			// Extract field name (everything before == or !=)
-			if strings.Contains(part, " == ") {
-				tokens := strings.SplitN(part, " == ", 2)
-				if len(tokens) == 2 {
-					fieldMap[strings.TrimSpace(tokens[0])] = true
-				}
-			} else if strings.Contains(part, " != ") {
-				tokens := strings.SplitN(part, " != ", 2)
-				if len(tokens) == 2 {
-					fieldMap[strings.TrimSpace(tokens[0])] = true
-				}
-			}
-		}
-	}
-
-	// Convert map to slice
-	fields := make([]string, 0, len(fieldMap))
-	for field := range fieldMap {
-		fields = append(fields, field)
-	}
-
-	return fields
-}
-
 // checkMutuallyExclusive verifies only one of the fields is set
 func checkMutuallyExclusive(cfg Config, fields []string) error {
 	setFields := []string{}
@@ -127,81 +90,6 @@ func checkOneOfFields(cfg Config, fields []string, errorMsg string) error {
 	}
 
 	return nil
-}
-
-// evaluateCondition evaluates a boolean condition string
-// Format: "KEY == value && KEY2 == value2" or "KEY != value"
-func evaluateCondition(condition string, cfg Config) bool {
-	// Split by && for AND logic
-	parts := strings.Split(condition, " && ")
-
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-
-		// Check for != operator
-		if strings.Contains(part, " != ") {
-			tokens := strings.SplitN(part, " != ", 2)
-			if len(tokens) != 2 {
-				return false
-			}
-
-			key := strings.TrimSpace(tokens[0])
-			expectedValue := strings.TrimSpace(tokens[1])
-			expectedValue = strings.Trim(expectedValue, "\"")
-
-			actualValue := getConfigValue(cfg, key)
-			if actualValue == expectedValue {
-				return false // Values are equal, so != is false
-			}
-			continue
-		}
-
-		// Check for == operator
-		if strings.Contains(part, " == ") {
-			tokens := strings.SplitN(part, " == ", 2)
-			if len(tokens) != 2 {
-				return false
-			}
-
-			key := strings.TrimSpace(tokens[0])
-			expectedValue := strings.TrimSpace(tokens[1])
-			expectedValue = strings.Trim(expectedValue, "\"")
-
-			actualValue := getConfigValue(cfg, key)
-			if actualValue != expectedValue {
-				return false
-			}
-			continue
-		}
-
-		return false
-	}
-
-	return true
-}
-
-// getConfigValue gets a config value as a normalized string
-func getConfigValue(cfg Config, key string) string {
-	val, exists := cfg[key]
-	if !exists {
-		return ""
-	}
-
-	// Convert to string representation
-	switch v := val.(type) {
-	case bool:
-		if v {
-			return "true"
-		}
-		return "false"
-	case string:
-		if v == "" {
-			return ""
-		}
-		return v
-	default:
-		return fmt.Sprintf("%v", v)
-	}
 }
 
 // ConstraintDef represents a constraint from the schema

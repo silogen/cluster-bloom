@@ -417,16 +417,6 @@ func getUserInfo(username string) (uint32, uint32, error) {
 	return uint32(uid), uint32(gid), nil
 }
 
-// validatePrivilegeContext verifies the current user context matches expectations
-func validatePrivilegeContext(expectedUID int, context string) error {
-	currentUID := os.Getuid()
-	if currentUID != expectedUID {
-		return fmt.Errorf("privilege context validation failed (%s): expected uid %d, got uid %d", context, expectedUID, currentUID)
-	}
-
-	return nil
-}
-
 // getFileInfo gets the ownership, permissions, and other info for a file
 func getFileInfo(filePath string) (uid int, gid int, mode os.FileMode, err error) {
 	fileInfo, err := os.Stat(filePath)
