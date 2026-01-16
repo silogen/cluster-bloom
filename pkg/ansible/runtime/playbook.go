@@ -80,8 +80,12 @@ func RunPlaybook(config map[string]any, playbookName string, dryRun bool, tags s
 
 	extraArgs := configToAnsibleVars(config)
 
-	// Add BLOOM_DIR to Ansible variables
-	extraArgs = append(extraArgs, "-e", fmt.Sprintf(`{"BLOOM_DIR": "%s"}`, workDir))
+	// Add BLOOM_DIR to Ansible variables (current working directory, not .bloom subdir)
+	cwd, err := os.Getwd()
+	if err != nil {
+		return 1, fmt.Errorf("get current directory: %w", err)
+	}
+	extraArgs = append(extraArgs, "-e", fmt.Sprintf(`{"BLOOM_DIR": "%s"}`, cwd))
 
 	exitCode := RunContainer(rootfs, playbookDir, playbookName, extraArgs, dryRun, tags)
 	return exitCode, nil

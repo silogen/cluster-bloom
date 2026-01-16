@@ -446,16 +446,6 @@
           loop: "{{ cluster_disks_list | default([]) }}"
           when: cluster_disks_list | length > 0
 
-        - name: Mount cluster disks
-          mount:
-            path: "/mnt/disk{{ item.0 }}"
-            src: "{{ item.1 }}"
-            fstype: ext4
-            opts: defaults,nofail
-            state: mounted
-          loop: "{{ range(cluster_disks_list | length) | list | zip(cluster_disks_list) | list }}"
-          when: cluster_disks_list | length > 0
-
         - name: Get UUIDs for cluster disks
           shell: blkid -s UUID -o value {{ item.1 }}
           loop: "{{ range(cluster_disks_list | length) | list | zip(cluster_disks_list) | list }}"
@@ -470,6 +460,13 @@
             state: present
           loop: "{{ disk_uuids.results }}"
           when: cluster_disks_list | length > 0 and not item.skipped | default(false)
+
+        - name: Mount cluster disks using fstab entries (verifies fstab)
+          shell: mount /mnt/disk{{ item.item.0 }}
+          loop: "{{ disk_uuids.results }}"
+          when: cluster_disks_list | length > 0 and not item.skipped | default(false)
+          register: mount_results
+          failed_when: mount_results.rc != 0
       tags: [storage, prep_node]
 
     - name: Prepare RKE2
@@ -903,9 +900,15 @@
             state: started
       tags: [rke2, deploy_cluster]
 
-    - name: Setup KubeConfig (First Node)
-      when: FIRST_NODE
+    - name: Setup KubeConfig (Control Plane Nodes)
+      when: FIRST_NODE or CONTROL_PLANE
       block:
+        - name: Wait for RKE2 kubeconfig to be available
+          wait_for:
+            path: /etc/rancher/rke2/rke2.yaml
+            state: present
+            timeout: 300
+
         - name: Update RKE2 kubeconfig with actual IP
           replace:
             path: /etc/rancher/rke2/rke2.yaml
@@ -1277,7 +1280,7 @@
           copy:
             content: |
               echo -e 'FIRST_NODE: false\nJOIN_TOKEN: {{ JOIN_TOKEN_content.content | b64decode | trim }}\nSERVER_IP: {{ node_ip }}' > bloom.yaml && sudo ./bloom --config bloom.yaml
-            dest: "/tmp/additional_node_command.txt"
+            dest: "{{ BLOOM_DIR }}/additional_node_command.txt"
             mode: "0644"
           become: no
 
