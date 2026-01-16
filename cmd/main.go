@@ -13,6 +13,7 @@ import (
 )
 
 var (
+	Version      string // Set via ldflags during build
 	port         int
 	playbookName string
 	dryRun       bool
@@ -129,7 +130,11 @@ Requires a configuration file (typically bloom.yaml). Use --playbook to specify 
 		Use:   "version",
 		Short: "Show version information",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println("Bloom V2.0.0-alpha")
+			if Version != "" {
+				fmt.Printf("%s\n", Version)
+			} else {
+				fmt.Println("dev")
+			}
 		},
 	}
 
