@@ -19,10 +19,10 @@ This documentation provides comprehensive instructions forsetting up, recovering
 
 Longhorn is a distributed block storage system for Kubernetes that requires proper disk configuration to ensure data persistence across node reboots. This documentation covers:
 
-- **Drive Priority**: NVMe drives (preferred) → SSD drives → HDD drives (sda, sdb, etc.)
+- **Drive Priority**: NVMe drives (preferred) → SSD drives → HDD drives
 - **RAID Restriction**: Longhorn explicitly does NOT support RAID configurations
 - **Special Requirements**: `/var/lib/rancher` needs dedicated mountpoint only if root partition is space-constrained
-- **Mount Pattern**: Disks mounted at `/mnt/diskX` where X starts from 0 and increments
+- **Mount Pattern**: Disks mounted at `/mnt/diskX` where X starts from 0 and increments by one for each additional disk
 - **Filesystem**: ext4 with UUID-based mounting for reliability
 
 ## Prerequisites
@@ -104,17 +104,19 @@ In the above example, **md0** shows a RAID0 array using multiple NVMe drives - t
 
 ### RAID Removal Process
 
-The automation script can safely backup, remove, and optionally restore RAID configurations:
+**⚠️ WARNING ** The automation [script](../experimental/longhorn-disk-setup.sh) is not robustly tested, but rather serves as a starting point for your particular use case.
+
+The automation script (`/cluster-bloom/experimental/longhorn-disk-setup.sh`) can backup, remove, and optionally restore RAID configurations:
 
 ```bash
 # Check if RAID is present
 cat /proc/mdstat
 
 # Backup and remove RAID (interactive)
-sudo bash longhorn-disk-setup.sh --remove-raid
+sudo bash experimental/longhorn-disk-setup.sh --remove-raid
 
 # Force RAID removal without confirmation
-sudo bash longhorn-disk-setup.sh --force-raid-removal
+sudo bash experimental/longhorn-disk-setup.sh --force-raid-removal
 ```
 
 #### RAID Backup and Restore
@@ -293,19 +295,22 @@ Expected output:
 
 ## Automation Script
 
-The automation script provides comprehensive disk management including RAID detection and removal:
+The automation [script](../experimental/longhorn-disk-setup.sh) at `cluster-forge/experimental/longhorn-disk-setup.sh` provides comprehensive disk management capabilities, including RAID handling, disk discovery, formatting, mounting, and fstab configuration.
 
 ### Script Usage
 
 ```bash
+# The automation script is available in the experimental folder
+# Script location: experimental/longhorn-disk-setup.sh
+
 # Dry run to see recommendations without making changes
-sudo bash longhorn-disk-setup.sh --dry-run
+sudo bash experimental/longhorn-disk-setup.sh --dry-run
 
 # Full interactive setup (with RAID handling if needed)  
-sudo bash longhorn-disk-setup.sh
+sudo bash experimental/longhorn-disk-setup.sh
 
 # Force RAID backup and removal (if detected)
-sudo bash longhorn-disk-setup.sh --remove-raid
+sudo bash experimental/longhorn-disk-setup.sh --remove-raid
 ```
 
 ### Script Capabilities
