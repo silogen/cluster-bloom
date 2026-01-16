@@ -8,7 +8,7 @@ This documentation provides comprehensive instructions forsetting up, recovering
 2. [Prerequisites](#prerequisites)
 3. [Disk Space Requirements](#disk-space-requirements)
 4. [RAID Considerations](#raid-considerations)
-5. [Reboot Checklist](#reboot-checklist)
+5. [Reboot Checklist](reboot-checklist.md)
 6. [Manual Disk Setup Procedure](#manual-disk-setup-procedure)
 7. [Automation Script](#automation-script)
 8. [Longhorn UI Configuration](#longhorn-ui-configuration)
@@ -145,37 +145,20 @@ sudo mdadm --assemble --scan --config=/root/longhorn-raid-backup/mdadm.conf.back
 
 ## Reboot Checklist
 
-After any node reboot, verify that all Longhorn storage disks are properly mounted:
+For comprehensive reboot procedures, including pre-reboot preparation and post-reboot validation, see the dedicated [Reboot Checklist](reboot-checklist.md).
 
-### Quick Validation Commands
+### Quick Reference
 
-```bash
-# 1. Check current fstab entries for Longhorn disks
-sudo cat /etc/fstab | grep -E "/mnt/disk[0-9]+"
-
-# 2. Check currently mounted disks
-df -h | grep -E "/mnt/disk[0-9]+"
-
-# 3. List all disks with UUIDs
-lsblk -o +UUID
-
-# 4. Verify all fstab entries mount correctly
-sudo mount -a && echo "All mounts successful" || echo "Mount errors detected"
-```
-
-### Expected fstab Format
-
-Your `/etc/fstab` should contain entries like:
+After any node reboot, verify that all Longhorn storage disks are properly mounted using these basic commands:
 
 ```bash
-UUID=f9134cf2-0205-4012-8e8b-ac44757a0d15 /mnt/disk0 ext4 defaults,nofail 0 2
-UUID=9111f9b3-e4e5-4a50-a9cc-3258d40786f3 /mnt/disk1 ext4 defaults,nofail 0 2
-UUID=e27fc7cd-356a-40de-89ae-ea1f0af59d24 /mnt/disk2 ext4 defaults,nofail 0 2
-UUID=489f3576-cf3b-4319-ba9d-a07427225f81 /mnt/disk3 ext4 defaults,nofail 0 2
-UUID=3206db8b-109e-4b9f-8320-7db4cca5210d /mnt/disk4 ext4 defaults,nofail 0 2
+# Quick validation commands
+sudo cat /etc/fstab | grep -E "/mnt/disk[0-9]+"     # Check fstab entries
+df -h | grep -E "/mnt/disk[0-9]+"                   # Check mounted disks
+sudo mount -a && echo "✓ Success" || echo "✗ Errors" # Test all mounts
 ```
 
-**Note**: The `nofail` option ensures the system boots even if a disk is unavailable.
+**For detailed pre-reboot preparation and comprehensive validation procedures, follow the [complete reboot checklist](reboot-checklist.md).**
 
 ## Manual Disk Setup Procedure
 
