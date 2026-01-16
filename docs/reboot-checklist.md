@@ -1,28 +1,28 @@
 # Cluster Reboot Checklist
 
-This comprehensive checklist ensures that your cluster's storage infrastructure remains stable and functional across node reboots. Following this checklist helps prevent data loss and storage-related issues when rebooting cluster nodes with Longhorn storage.
+This comprehensive checklist ensures that your GPU-enabled cluster remains stable and functional across node reboots. Following this checklist helps prevent data loss, GPU workload interruption, and storage-related issues when rebooting cluster nodes.
 
 ## Table of Contents
 
 1. [Overview](#overview)
 2. [Pre-Reboot Preparation](#pre-reboot-preparation)
-3. [GPU Workload Management](#gpu-workload-management)
-4. [Reboot Execution](#reboot-execution)
-5. [Post-Reboot Validation](#post-reboot-validation)
-6. [Troubleshooting](#troubleshooting)
-7. [Emergency Recovery](#emergency-recovery)
+3. [Reboot Execution](#reboot-execution)
+4. [Post-Reboot Validation](#post-reboot-validation)
+5. [Troubleshooting](#troubleshooting)
+6. [Emergency Recovery](#emergency-recovery)
 
 ## Overview
 
-This checklist covers the disk and storage-related aspects of cluster node reboots, specifically focusing on:
+This checklist covers the essential aspects of rebooting GPU-enabled cluster nodes, specifically focusing on:
 
+- **GPU workload management and migration**
 - **Longhorn storage disk persistence**
-- **Mount point validation**
+- **AI/ML training job continuity**
 - **Storage health verification** 
-- **Cluster storage availability**
-- **Data integrity checks**
+- **GPU resource availability**
+- **Cluster stability and data integrity**
 
-**⚠️ Important**: This checklist assumes you're using Longhorn for distributed storage and have disks mounted at `/mnt/diskX` locations.
+**🎯 Target Environment**: GPU-enabled Kubernetes clusters running AI/ML workloads with Longhorn distributed storage and disks mounted at `/mnt/diskX` locations.
 
 ## Pre-Reboot Preparation
 
@@ -44,11 +44,36 @@ cp /etc/fstab "$SNAPSHOT_DIR/fstab-before.txt"
 echo "System state documented in: $SNAPSHOT_DIR"
 ```
 
-### 2. Verify Longhorn Storage Health
+### 2. Verify GPU and Storage Infrastructure Health
 
-Check the overall health of your Longhorn storage system:
+Check the overall health of your GPU-enabled cluster infrastructure:
 
 ```bash
+echo "=== GPU Infrastructure Health Check ==="
+
+# Check GPU node status
+kubectl get nodes -l cluster-bloom/gpu-node=true -o wide
+
+# Verify GPU resources are available
+echo "GPU resources per node:"
+kubectl describe nodes -l cluster-bloom/gpu-node=true | grep -E "nvidia.com/gpu|amd.com/gpu" | grep -E "Capacity|Allocatable"
+
+# Check GPU device plugins
+kubectl get pods -n kube-system -l name=nvidia-device-plugin -o wide 2>/dev/null || \
+kubectl get pods -n kube-system -l app.kubernetes.io/name=amd-gpu-device-plugin -o wide 2>/dev/null || \
+echo "⚠️  No GPU device plugin found"
+
+# Check current GPU utilization on this node
+if command -v nvidia-smi >/dev/null 2>&1; then
+    echo "Current NVIDIA GPU status:"
+    nvidia-smi --query-gpu=index,name,utilization.gpu,memory.used,memory.total --format=csv
+elif command -v rocm-smi >/dev/null 2>&1; then
+    echo "Current AMD GPU status:"
+    rocm-smi --showuse --csv
+fi
+
+echo -e "\n=== Longhorn Storage Health Check ==="
+
 # Check Longhorn manager pods
 kubectl get pods -n longhorn-system | grep longhorn-manager
 
@@ -62,11 +87,49 @@ kubectl get volumes -n longhorn-system -o json | jq -r '.items[] | select(.statu
 kubectl get lhnodes -n longhorn-system -o wide
 ```
 
-### 3. Check Current Disk Mount Status
+### 3. Assess Running GPU Workloads and Storage Status
 
-Verify all expected storage disks are properly mounted:
+Identify critical GPU workloads and verify storage infrastructure:
 
 ```bash
+echo "=== GPU Workload Discovery ==="
+
+# Identify GPU workloads on this node
+echo "GPU workloads running on this node:"
+kubectl get pods --all-namespaces --field-selector spec.nodeName="$(hostname)" -o json | jq -r '
+  .items[] | 
+  select(.spec.containers[]?.resources.requests."nvidia.com/gpu" or .spec.containers[]?.resources.limits."nvidia.com/gpu" or .spec.containers[]?.resources.requests."amd.com/gpu" or .spec.containers[]?.resources.limits."amd.com/gpu") |
+  "\(.metadata.namespace)/\(.metadata.name): \(.spec.containers[0].image | split("/")[-1] | split(":")[0])"
+'
+
+# Check for AI/ML framework workloads
+echo -e "\n=== AI/ML Framework Detection ==="
+kubectl get pods --all-namespaces --field-selector spec.nodeName="$(hostname)" -o json | jq -r '
+  .items[] |
+  select(.spec.containers[].image | test("pytorch|tensorflow|cuda|rocm|jupyter|notebook|huggingface")) |
+  "\(.metadata.namespace)/\(.metadata.name): \(.spec.containers[].image | split("/")[-1] | split(":")[0]) (running \(((now - (.status.startTime | fromdateiso8601))/3600) | floor)h)"
+'
+
+# Check for long-running training jobs
+echo -e "\n=== Long-Running Training Jobs ==="
+kubectl get pods --all-namespaces --field-selector spec.nodeName="$(hostname)",status.phase=Running -o json | jq -r '
+  .items[] |
+  select(.status.startTime) |
+  select((now - (.status.startTime | fromdateiso8601)) > 3600) |
+  select(.spec.containers[]?.resources.requests."nvidia.com/gpu" or .spec.containers[]?.resources.requests."amd.com/gpu") |
+  "\(.metadata.namespace)/\(.metadata.name): running for \(((now - (.status.startTime | fromdateiso8601))/3600) | floor)h \(((now - (.status.startTime | fromdateiso8601))/60%60) | floor)m"
+'
+
+# Check for workloads with checkpointing capability
+echo -e "\n=== Checkpointing-Capable Workloads ==="
+kubectl get pods --all-namespaces --field-selector spec.nodeName="$(hostname)" -o json | jq -r '
+  .items[] |
+  select(.metadata.annotations."checkpoint.enabled" or .metadata.labels."checkpoint.enabled" or .spec.containers[]?.env[]?.name == "CHECKPOINT_DIR") |
+  "\(.metadata.namespace)/\(.metadata.name): supports checkpointing"
+'
+
+echo -e "\n=== Storage Mount Status ==="
+
 # Check current fstab entries for Longhorn disks
 echo "=== Current fstab entries ==="
 sudo cat /etc/fstab | grep -E "/mnt/disk[0-9]+"
@@ -174,7 +237,126 @@ for disk in $(df -h | grep -E "/mnt/disk[0-9]+" | awk '{print $6}'); do
 done
 ```
 
-### 7. Backup Critical Configuration
+### 7. GPU Workload Management Strategy Selection
+
+Choose and implement the appropriate strategy for handling GPU workloads during reboot:
+
+```bash
+echo "=== GPU Workload Management Strategy Selection ==="
+
+# Get cluster GPU capacity analysis
+TOTAL_GPU_NODES=$(kubectl get nodes -l cluster-bloom/gpu-node=true --no-headers | wc -l)
+CURRENT_NODE=$(hostname)
+CORDONED_NODES=$(kubectl get nodes -o json | jq -r '.items[] | select(.spec.unschedulable == true) | .metadata.name' | wc -l)
+AVAILABLE_GPU_NODES=$((TOTAL_GPU_NODES - CORDONED_NODES))
+
+echo "Total GPU nodes: $TOTAL_GPU_NODES"
+echo "Currently cordoned nodes: $CORDONED_NODES"
+echo "Available GPU nodes: $AVAILABLE_GPU_NODES"
+
+# Analyze GPU workloads requiring migration
+GPU_WORKLOADS_ON_NODE=$(kubectl get pods --all-namespaces --field-selector spec.nodeName="$CURRENT_NODE" -o json | jq -r '
+  .items[] | 
+  select(.spec.containers[]?.resources.requests."nvidia.com/gpu" or .spec.containers[]?.resources.requests."amd.com/gpu") |
+  select(.metadata.namespace != "kube-system") |
+  "\(.metadata.namespace)/\(.metadata.name)"
+' | wc -l)
+
+echo "GPU workloads on this node: $GPU_WORKLOADS_ON_NODE"
+
+# Recommend strategy based on cluster state
+if [ "$TOTAL_GPU_NODES" -eq 1 ]; then
+    echo "🔸 SINGLE GPU NODE DETECTED"
+    echo "Recommended: Coordinated shutdown (all workloads will be terminated)"
+    RECOMMENDED_STRATEGY="coordinated"
+elif [ "$AVAILABLE_GPU_NODES" -gt 1 ]; then
+    echo "🔸 MULTI-NODE CLUSTER WITH CAPACITY"
+    echo "Recommended: Sequential reboot (workloads can migrate)"
+    RECOMMENDED_STRATEGY="sequential"
+else
+    echo "🔸 LIMITED REMAINING CAPACITY"
+    echo "Recommended: Workload-aware approach (check PDBs and criticality)"
+    RECOMMENDED_STRATEGY="workload-aware"
+fi
+
+echo "Recommended strategy: $RECOMMENDED_STRATEGY"
+echo ""
+
+# Strategy A: Sequential Node Reboot (Multi-node clusters)
+if [ "$RECOMMENDED_STRATEGY" = "sequential" ] && [ "$GPU_WORKLOADS_ON_NODE" -gt 0 ]; then
+    echo "=== Implementing Sequential Reboot Strategy ==="
+    
+    # Cordon this node
+    echo "Cordoning node to prevent new workloads..."
+    kubectl cordon "$CURRENT_NODE"
+    
+    # Drain with extended timeout for GPU workloads
+    echo "Draining GPU workloads (this may take several minutes)..."
+    kubectl drain "$CURRENT_NODE" \
+        --ignore-daemonsets \
+        --delete-emptydir-data \
+        --force \
+        --grace-period=300 \
+        --timeout=1800s \
+        --skip-wait-for-delete-timeout=10
+        
+    if [ $? -eq 0 ]; then
+        echo "✓ Node drained successfully"
+    else
+        echo "⚠️  Drain encountered issues - check remaining workloads"
+        kubectl get pods --all-namespaces --field-selector spec.nodeName="$CURRENT_NODE" --no-headers | grep -v -E "(kube-system|longhorn-system)"
+    fi
+
+# Strategy B: Coordinated shutdown for single-node or maintenance
+elif [ "$RECOMMENDED_STRATEGY" = "coordinated" ] || [ "$TOTAL_GPU_NODES" -eq 1 ]; then
+    echo "=== Implementing Coordinated Shutdown Strategy ==="
+    
+    # Scale down non-critical deployments
+    echo "Scaling down non-critical deployments..."
+    kubectl get deployments --all-namespaces -o json | jq -r '
+      .items[] |
+      select(.metadata.annotations."maintenance.downscale" != "false") |
+      select(.metadata.labels."app.kubernetes.io/component" != "critical") |
+      "\(.metadata.namespace) \(.metadata.name) \(.spec.replicas)"
+    ' > /tmp/deployment-replicas.backup
+    
+    while IFS= read -r line; do
+        NAMESPACE=$(echo "$line" | awk '{print $1}')
+        DEPLOYMENT=$(echo "$line" | awk '{print $2}')
+        REPLICAS=$(echo "$line" | awk '{print $3}')
+        
+        if [ "$REPLICAS" -gt 0 ]; then
+            echo "Scaling down $NAMESPACE/$DEPLOYMENT (currently $REPLICAS replicas)"
+            kubectl scale deployment "$DEPLOYMENT" -n "$NAMESPACE" --replicas=0
+        fi
+    done < /tmp/deployment-replicas.backup
+    
+    # Cordon node
+    kubectl cordon "$CURRENT_NODE"
+
+# Strategy C: Workload-aware (respect PDBs)
+else
+    echo "=== Implementing Workload-Aware Strategy ==="
+    
+    # Check for existing PDBs
+    echo "Checking Pod Disruption Budget coverage..."
+    kubectl get pdb --all-namespaces
+    
+    # Cordon and drain with PDB respect
+    kubectl cordon "$CURRENT_NODE"
+    kubectl drain "$CURRENT_NODE" \
+        --ignore-daemonsets \
+        --delete-emptydir-data \
+        --grace-period=600 \
+        --timeout=3600s \
+        --skip-wait-for-delete-timeout=30 \
+        --pod-running-timeout=10m
+fi
+
+echo "✓ GPU workload management strategy implemented"
+```
+
+### 8. Backup Critical Configuration
 
 Create backups of essential configuration files:
 
@@ -190,443 +372,206 @@ sudo cp /etc/fstab "$BACKUP_DIR/fstab.backup"
 mount > "$BACKUP_DIR/current-mounts.backup"
 lsblk -o +UUID > "$BACKUP_DIR/lsblk.backup"
 
+# Backup GPU workload state
+kubectl get pods --all-namespaces --field-selector spec.nodeName="$(hostname)" -o yaml > "$BACKUP_DIR/node-workloads.yaml" 2>/dev/null || echo "Could not backup workloads"
+
 # Backup Longhorn configuration (if accessible)
 kubectl get lhnodes -n longhorn-system -o yaml > "$BACKUP_DIR/longhorn-nodes.yaml" 2>/dev/null || echo "Could not backup Longhorn nodes"
 
 echo "Configuration backed up to: $BACKUP_DIR"
 ```
 
-### 8. Pre-Reboot Checklist Summary
+### 9. Pre-Reboot Checklist Summary
 
 **✓ Complete this checklist before proceeding with reboot:**
 
 - [ ] System state documented
+- [ ] GPU infrastructure health verified
+- [ ] Running GPU workloads identified and assessed
+- [ ] Appropriate workload management strategy implemented
+- [ ] Node cordoned and workloads drained/migrated as needed
 - [ ] Longhorn storage health verified
 - [ ] All expected disks are mounted
 - [ ] fstab entries test successfully
 - [ ] Filesystem integrity confirmed
 - [ ] Adequate disk space available
-- [ ] Configuration files backed up
-- [ ] No critical Longhorn operations in progress
+- [ ] Configuration files backed up (including GPU workload state)
+- [ ] No critical operations in progress
 
-## GPU Workload Management
 
-**⚠️ CRITICAL**: For GPU-enabled clusters running AI/ML workloads, proper workload management is essential to prevent data loss and job interruption during reboots.
-
-### GPU Workload Strategy Options
-
-Choose the appropriate strategy based on your cluster configuration and workload criticality:
-
-#### Option A: Sequential Node Reboot (Recommended for Multi-Node GPU Clusters)
-- **Best for**: Multi-node clusters with distributed GPU workloads
-- **Advantage**: Zero downtime for workloads, automatic rescheduling
-- **Time**: Longer, but safer
-
-#### Option B: Coordinated Cluster Shutdown (Fastest for Small Clusters)
-- **Best for**: Small clusters, maintenance windows, urgent updates
-- **Advantage**: Faster completion, full cluster consistency
-- **Time**: Shorter, but requires downtime
-
-#### Option C: Workload-Aware Rolling Updates
-- **Best for**: Production clusters with SLA requirements  
-- **Advantage**: Respects pod disruption budgets, graceful handling
-- **Time**: Variable, depends on workload cooperation
-
-### 1. Identify Running GPU Workloads
-
-First, discover all GPU-utilizing workloads across the cluster:
-
-```bash
-echo "=== GPU Workload Discovery ==="
-
-# Check GPU node labels and taints
-echo "GPU-enabled nodes:"
-kubectl get nodes -l cluster-bloom/gpu-node=true -o wide
-
-# Find pods requesting GPU resources
-echo -e "\n=== Pods using GPUs ==="
-kubectl get pods --all-namespaces -o json | jq -r '
-  .items[] | 
-  select(.spec.containers[]?.resources.requests."nvidia.com/gpu" or .spec.containers[]?.resources.limits."nvidia.com/gpu" or .spec.containers[]?.resources.requests."amd.com/gpu" or .spec.containers[]?.resources.limits."amd.com/gpu") |
-  "\(.metadata.namespace)/\(.metadata.name) on \(.spec.nodeName // "unscheduled")"
-'
-
-# Check for running AI/ML frameworks
-echo -e "\n=== AI/ML Framework Detection ==="
-kubectl get pods --all-namespaces -o json | jq -r '
-  .items[] |
-  select(.spec.containers[].image | test("pytorch|tensorflow|cuda|rocm|jupyter|notebook")) |
-  "\(.metadata.namespace)/\(.metadata.name): \(.spec.containers[].image | split("/")[-1] | split(":")[0])"
-'
-
-# Check GPU utilization on current node (if GPU node)
-echo -e "\n=== Current Node GPU Status ==="
-if command -v nvidia-smi >/dev/null 2>&1; then
-    echo "NVIDIA GPU Status:"
-    nvidia-smi --query-gpu=index,name,utilization.gpu,memory.used,memory.total --format=csv
-elif command -v rocm-smi >/dev/null 2>&1; then
-    echo "AMD GPU Status:"
-    rocm-smi --showuse --csv
-else
-    echo "No GPU monitoring tools found (node may not have GPUs)"
-fi
-
-# Check for long-running training jobs
-echo -e "\n=== Long-Running Workload Detection ==="
-kubectl get pods --all-namespaces --field-selector=status.phase=Running -o json | jq -r '
-  .items[] |
-  select(.status.startTime) |
-  select((now - (.status.startTime | fromdateiso8601)) > 3600) |
-  "\(.metadata.namespace)/\(.metadata.name): running for \(((now - (.status.startTime | fromdateiso8601))/3600) | floor)h"
-'
-```
-
-### 2. Assess Workload Criticality and State
-
-Determine which workloads can be safely interrupted:
-
-```bash
-echo "=== Workload State Assessment ==="
-
-# Check for StatefulSets (usually critical)
-echo "StatefulSets with GPU workloads:"
-kubectl get statefulsets --all-namespaces -o json | jq -r '
-  .items[] |
-  select(.spec.template.spec.containers[]?.resources.requests."nvidia.com/gpu" or .spec.template.spec.containers[]?.resources.requests."amd.com/gpu") |
-  "\(.metadata.namespace)/\(.metadata.name) (replicas: \(.spec.replicas))"
-'
-
-# Check for Jobs and CronJobs
-echo -e "\nBatch Jobs with GPU requirements:"
-kubectl get jobs --all-namespaces -o json | jq -r '
-  .items[] |
-  select(.spec.template.spec.containers[]?.resources.requests."nvidia.com/gpu" or .spec.template.spec.containers[]?.resources.requests."amd.com/gpu") |
-  "\(.metadata.namespace)/\(.metadata.name) - completions: \(.status.succeeded // 0)/\(.spec.completions // "unlimited")"
-'
-
-# Check Pod Disruption Budgets that might affect GPU workloads
-echo -e "\nPod Disruption Budgets:"
-kubectl get pdb --all-namespaces
-
-# Look for checkpointing annotations/labels (indicates resumable workloads)
-echo -e "\nCheckpointing-enabled workloads:"
-kubectl get pods --all-namespaces -o json | jq -r '
-  .items[] |
-  select(.metadata.annotations."checkpoint.enabled" or .metadata.labels."checkpoint.enabled") |
-  "\(.metadata.namespace)/\(.metadata.name)"
-'
-```
-
-### 3. Strategy A: Sequential Node Reboot (Recommended)
-
-This approach maintains cluster availability while safely rebooting nodes one at a time:
-
-```bash
-echo "=== Sequential Node Reboot Strategy ==="
-
-# Step 1: Get list of all GPU nodes
-GPU_NODES=($(kubectl get nodes -l cluster-bloom/gpu-node=true -o name | sed 's/node\///'))
-CURRENT_NODE=$(hostname)
-TOTAL_NODES=${#GPU_NODES[@]}
-
-echo "GPU nodes in cluster: ${GPU_NODES[*]}"
-echo "Current node: $CURRENT_NODE"
-echo "Total GPU nodes: $TOTAL_NODES"
-
-if [ "$TOTAL_NODES" -eq 1 ]; then
-    echo "⚠️  Single GPU node cluster detected!"
-    echo "Consider Strategy B (Coordinated Shutdown) to avoid workload termination"
-    echo "Or ensure all critical workloads support checkpointing/resumption"
-fi
-
-# Step 2: Check if this is the last node to be rebooted
-echo -e "\n=== Checking Node Status ==="
-echo "Cordoned nodes:"
-kubectl get nodes -o json | jq -r '.items[] | select(.spec.unschedulable == true) | .metadata.name'
-
-CORDONED_COUNT=$(kubectl get nodes -o json | jq -r '.items[] | select(.spec.unschedulable == true) | .metadata.name' | wc -l)
-READY_NODES=$(kubectl get nodes --no-headers | grep " Ready " | grep -v SchedulingDisabled | wc -l)
-
-echo "Cordoned nodes: $CORDONED_COUNT"
-echo "Ready & schedulable nodes: $READY_NODES"
-
-# Step 3: Cordon this node and wait for workload migration
-echo -e "\n=== Cordoning Current Node ==="
-kubectl cordon "$CURRENT_NODE"
-
-if [ "$READY_NODES" -gt 1 ]; then
-    echo "✓ Other nodes available for workload rescheduling"
-    
-    # Step 4: Gracefully drain GPU workloads
-    echo "Initiating graceful drain with extended timeout for GPU workloads..."
-    
-    # Use longer timeout for GPU workloads (they may need time to checkpoint)
-    kubectl drain "$CURRENT_NODE" \
-        --ignore-daemonsets \
-        --delete-emptydir-data \
-        --force \
-        --grace-period=300 \
-        --timeout=1800s \
-        --skip-wait-for-delete-timeout=10
-        
-    echo "✓ Node drained successfully"
-    
-else
-    echo "⚠️  WARNING: This appears to be the last available GPU node!"
-    echo "Proceeding will terminate all GPU workloads."
-    echo "Consider the following options:"
-    echo ""
-    echo "1. Cancel reboot and use Strategy B (Coordinated Shutdown)"
-    echo "2. Continue if workloads support automatic restart/checkpointing"
-    echo "3. Manually migrate critical workloads to other node types"
-    echo ""
-    
-    read -p "Continue with reboot? (yes/no): " CONFIRM
-    if [ "$CONFIRM" != "yes" ]; then
-        echo "Reboot cancelled. Uncordoning node..."
-        kubectl uncordon "$CURRENT_NODE"
-        exit 1
-    fi
-    
-    echo "Proceeding with final node reboot..."
-    kubectl drain "$CURRENT_NODE" \
-        --ignore-daemonsets \
-        --delete-emptydir-data \
-        --force \
-        --grace-period=180 \
-        --timeout=600s
-fi
-```
-
-### 4. Strategy B: Coordinated Cluster Shutdown
-
-For planned maintenance or when you need to reboot all nodes:
-
-```bash
-echo "=== Coordinated Cluster Shutdown Strategy ==="
-
-# Step 1: Announce maintenance window
-echo "Initiating coordinated cluster maintenance..."
-
-# Step 2: Scale down non-critical workloads
-echo "Scaling down non-critical deployments..."
-
-# Get deployments that are not marked as critical
-kubectl get deployments --all-namespaces -o json | jq -r '
-  .items[] |
-  select(.metadata.annotations."maintenance.downscale" != "false") |
-  select(.metadata.labels."app.kubernetes.io/component" != "critical") |
-  "\(.metadata.namespace) \(.metadata.name) \(.spec.replicas)"
-' > /tmp/deployment-replicas.backup
-
-# Scale down eligible deployments
-while IFS= read -r line; do
-    NAMESPACE=$(echo "$line" | awk '{print $1}')
-    DEPLOYMENT=$(echo "$line" | awk '{print $2}')
-    REPLICAS=$(echo "$line" | awk '{print $3}')
-    
-    if [ "$REPLICAS" -gt 0 ]; then
-        echo "Scaling down $NAMESPACE/$DEPLOYMENT (currently $REPLICAS replicas)"
-        kubectl scale deployment "$DEPLOYMENT" -n "$NAMESPACE" --replicas=0
-    fi
-done < /tmp/deployment-replicas.backup
-
-# Step 3: Wait for GPU workloads to complete or reach safe stopping point
-echo -e "\n=== Waiting for GPU workload completion ==="
-
-# Monitor long-running jobs
-echo "Monitoring GPU jobs for completion..."
-while true; do
-    RUNNING_GPU_JOBS=$(kubectl get jobs --all-namespaces -o json | jq -r '
-        .items[] |
-        select(.spec.template.spec.containers[]?.resources.requests."nvidia.com/gpu" or .spec.template.spec.containers[]?.resources.requests."amd.com/gpu") |
-        select(.status.conditions[]?.type != "Complete") |
-        "\(.metadata.namespace)/\(.metadata.name)"
-    ' | wc -l)
-    
-    if [ "$RUNNING_GPU_JOBS" -eq 0 ]; then
-        echo "✓ All GPU jobs completed"
-        break
-    fi
-    
-    echo "Waiting for $RUNNING_GPU_JOBS GPU jobs to complete..."
-    sleep 30
-done
-
-# Step 4: Cordon all GPU nodes
-echo "Cordoning all GPU nodes..."
-kubectl get nodes -l cluster-bloom/gpu-node=true -o name | xargs kubectl cordon
-
-# Step 5: Final cleanup
-echo "Performing final GPU workload cleanup..."
-kubectl delete pods --all-namespaces --field-selector=status.phase=Succeeded --force --grace-period=0 2>/dev/null || true
-```
-
-### 5. Strategy C: Workload-Aware Rolling Updates
-
-For production clusters with strict SLA requirements:
-
-```bash
-echo "=== Workload-Aware Rolling Update Strategy ==="
-
-# Step 1: Create Pod Disruption Budgets for critical workloads without them
-echo "Checking Pod Disruption Budget coverage..."
-
-kubectl get deployments --all-namespaces -o json | jq -r '
-  .items[] |
-  select(.spec.template.spec.containers[]?.resources.requests."nvidia.com/gpu") |
-  "\(.metadata.namespace) \(.metadata.name)"
-' | while IFS= read -r line; do
-    NAMESPACE=$(echo "$line" | awk '{print $1}')
-    DEPLOYMENT=$(echo "$line" | awk '{print $2}')
-    
-    # Check if PDB exists
-    if ! kubectl get pdb -n "$NAMESPACE" "$DEPLOYMENT-pdb" >/dev/null 2>&1; then
-        echo "Creating PDB for $NAMESPACE/$DEPLOYMENT"
-        kubectl create -f - <<EOF
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: $DEPLOYMENT-pdb
-  namespace: $NAMESPACE
-spec:
-  minAvailable: 1
-  selector:
-    matchLabels:
-      app: $DEPLOYMENT
-EOF
-    fi
-done
-
-# Step 2: Check workload tolerance for disruption
-echo "Checking workload disruption tolerance..."
-
-# Look for restart-tolerant workloads
-kubectl get pods --all-namespaces -o json | jq -r '
-  .items[] |
-  select(.spec.containers[]?.resources.requests."nvidia.com/gpu") |
-  select(.spec.restartPolicy != "Never") |
-  "\(.metadata.namespace)/\(.metadata.name): restart-tolerant"
-'
-
-# Look for checkpointing capabilities
-kubectl get pods --all-namespaces -o json | jq -r '
-  .items[] |
-  select(.metadata.annotations."checkpoint.interval" or .spec.containers[]?.env[]?.name == "CHECKPOINT_DIR") |
-  "\(.metadata.namespace)/\(.metadata.name): supports checkpointing"
-'
-
-# Step 3: Implement gradual drain with monitoring
-echo "Implementing workload-aware drain..."
-
-# Drain with respect to PDBs and longer grace periods
-kubectl drain "$CURRENT_NODE" \
-    --ignore-daemonsets \
-    --delete-emptydir-data \
-    --grace-period=600 \
-    --timeout=3600s \
-    --skip-wait-for-delete-timeout=30 \
-    --pod-running-timeout=10m
-```
-
-### 6. GPU Workload Verification Before Reboot
-
-Final checks before proceeding with the actual reboot:
-
-```bash
-echo "=== Final GPU Workload Verification ==="
-
-# Verify no critical GPU workloads remain on this node
-REMAINING_GPU_PODS=$(kubectl get pods --all-namespaces --field-selector spec.nodeName="$CURRENT_NODE" -o json | jq -r '
-  .items[] |
-  select(.spec.containers[]?.resources.requests."nvidia.com/gpu" or .spec.containers[]?.resources.requests."amd.com/gpu") |
-  select(.metadata.namespace != "kube-system") |
-  "\(.metadata.namespace)/\(.metadata.name)"
-')
-
-if [ -n "$REMAINING_GPU_PODS" ]; then
-    echo "⚠️  GPU workloads still running on this node:"
-    echo "$REMAINING_GPU_PODS"
-    echo ""
-    echo "Options:"
-    echo "1. Wait longer for graceful termination"
-    echo "2. Force delete remaining pods (may cause data loss)"
-    echo "3. Cancel reboot"
-    echo ""
-    
-    read -p "How do you want to proceed? (wait/force/cancel): " ACTION
-    case "$ACTION" in
-        wait)
-            echo "Waiting additional time for graceful termination..."
-            sleep 300
-            ;;
-        force)
-            echo "Force deleting remaining GPU pods..."
-            echo "$REMAINING_GPU_PODS" | while IFS= read -r pod; do
-                kubectl delete pod "$pod" --force --grace-period=0
-            done
-            ;;
-        cancel)
-            echo "Reboot cancelled. Uncordoning node..."
-            kubectl uncordon "$CURRENT_NODE"
-            exit 1
-            ;;
-    esac
-else
-    echo "✓ No GPU workloads remaining on this node"
-fi
-
-# Check cluster-wide GPU capacity
-TOTAL_GPU_CAPACITY=$(kubectl describe nodes -l cluster-bloom/gpu-node=true | grep "amd.com/gpu\|nvidia.com/gpu" | grep "Capacity" | awk '{sum += $2} END {print sum}')
-AVAILABLE_GPU_CAPACITY=$(kubectl describe nodes -l cluster-bloom/gpu-node=true | grep "amd.com/gpu\|nvidia.com/gpu" | grep "Allocatable" | awk '{sum += $2} END {print sum}')
-
-echo "Cluster GPU Status:"
-echo "Total GPU capacity: $TOTAL_GPU_CAPACITY"
-echo "Available GPU capacity: $AVAILABLE_GPU_CAPACITY"
-
-# Final confirmation
-echo -e "\n=== Reboot Readiness Check ==="
-echo "✓ GPU workloads handled according to selected strategy"
-echo "✓ Node is cordoned (no new workloads will be scheduled)"
-echo "✓ Critical workloads migrated or safely stopped"
-echo "✓ Storage infrastructure verified (from previous steps)"
-echo ""
-echo "🔥 Ready for reboot!"
-```
-
-### 7. GPU Workload Management Summary
-
-**✓ Complete this checklist for GPU workload management:**
-
-**Strategy Selection:**
-- [ ] Identified running GPU workloads and their criticality
-- [ ] Selected appropriate reboot strategy (Sequential/Coordinated/Workload-Aware)
-- [ ] Verified cluster has sufficient capacity for workload migration
-
-**Workload Handling:**
-- [ ] Cordoned current node to prevent new GPU workload scheduling
-- [ ] Drained GPU workloads with appropriate grace periods
-- [ ] Verified critical workloads migrated to other nodes OR safely stopped
-- [ ] Confirmed no critical GPU processes remain on this node
-
-**Cluster State:**
-- [ ] Verified remaining GPU capacity can handle current workloads
-- [ ] Documented any workloads that will be interrupted
-- [ ] Ensured Pod Disruption Budgets are respected
-- [ ] Prepared recovery plan for any terminated workloads
 
 ## Reboot Execution
 
 ### Safe Reboot Procedure
 
+After completing all pre-reboot preparation and GPU workload management, follow this sequence:
+
 ```bash
-# 1. Gracefully drain the node (if part of multi-node cluster)
-kubectl drain <node-name> --ignore-daemonsets --delete-emptydir-data --force
+echo "=== Final Reboot Sequence ==="
 
-# 2. Perform the reboot
+# 1. Final verification that node is properly drained
+echo "Verifying node drain status..."
+REMAINING_WORKLOADS=$(kubectl get pods --all-namespaces --field-selector spec.nodeName="$(hostname)" --no-headers | grep -v -E "(kube-system|longhorn-system)" | wc -l)
+
+if [ "$REMAINING_WORKLOADS" -gt 0 ]; then
+    echo "⚠️  $REMAINING_WORKLOADS non-system workloads still running on this node"
+    echo "Workloads:"
+    kubectl get pods --all-namespaces --field-selector spec.nodeName="$(hostname)" --no-headers | grep -v -E "(kube-system|longhorn-system)"
+    echo ""
+    echo "Recommend completing workload migration before proceeding"
+    read -p "Continue anyway? (yes/no): " FORCE_CONTINUE
+    if [ "$FORCE_CONTINUE" != "yes" ]; then
+        echo "Reboot cancelled"
+        exit 1
+    fi
+else
+    echo "✓ Node properly drained of user workloads"
+fi
+
+# 2. Determine RKE2 service type and stop gracefully
+echo "Determining RKE2 service type..."
+
+if systemctl is-active --quiet rke2-server; then
+    RKE2_SERVICE="rke2-server"
+    NODE_TYPE="control-plane"
+elif systemctl is-active --quiet rke2-agent; then
+    RKE2_SERVICE="rke2-agent" 
+    NODE_TYPE="worker"
+else
+    echo "⚠️  No active RKE2 service found"
+    echo "Checking service status..."
+    systemctl status rke2-server rke2-agent --no-pager || true
+    RKE2_SERVICE=""
+    NODE_TYPE="unknown"
+fi
+
+if [ -n "$RKE2_SERVICE" ]; then
+    echo "Detected $NODE_TYPE node running $RKE2_SERVICE"
+    
+    # 3. Gracefully stop RKE2 service
+    echo "Gracefully stopping $RKE2_SERVICE..."
+    sudo systemctl stop "$RKE2_SERVICE"
+    
+    # 4. Verify service stopped
+    echo "Verifying $RKE2_SERVICE stopped..."
+    sleep 5
+    
+    if systemctl is-active --quiet "$RKE2_SERVICE"; then
+        echo "⚠️  $RKE2_SERVICE still active, waiting..."
+        sleep 10
+        
+        if systemctl is-active --quiet "$RKE2_SERVICE"; then
+            echo "⚠️  $RKE2_SERVICE failed to stop gracefully"
+            echo "Service status:"
+            systemctl status "$RKE2_SERVICE" --no-pager
+            
+            read -p "Force stop service? (yes/no): " FORCE_STOP
+            if [ "$FORCE_STOP" = "yes" ]; then
+                sudo systemctl kill "$RKE2_SERVICE"
+                sleep 3
+            fi
+        fi
+    fi
+    
+    if ! systemctl is-active --quiet "$RKE2_SERVICE"; then
+        echo "✓ $RKE2_SERVICE stopped successfully"
+    else
+        echo "⚠️  $RKE2_SERVICE still running - proceeding with reboot anyway"
+    fi
+    
+    # 5. Stop containerd if it's still running (optional, for cleaner shutdown)
+    echo "Checking containerd status..."
+    if systemctl is-active --quiet containerd && [ "$RKE2_SERVICE" = "rke2-server" ]; then
+        echo "Stopping containerd for cleaner shutdown..."
+        sudo systemctl stop containerd
+        sleep 2
+    fi
+else
+    echo "No RKE2 service to stop, proceeding with reboot"
+fi
+
+# 6. Final system state snapshot
+echo "=== Final System State ==="
+echo "Node type: $NODE_TYPE"
+echo "RKE2 service: ${RKE2_SERVICE:-none}"
+echo "Timestamp: $(date)"
+echo "Uptime: $(uptime -p)"
+
+# 7. Sync filesystems and perform reboot
+echo "Syncing filesystems..."
+sync
+
+echo "=== INITIATING REBOOT ==="
+echo "Rebooting node in 5 seconds..."
+sleep 5
+
 sudo reboot
+```
 
-# Note: If this is a single-node cluster, skip the drain step
+### Alternative Manual Steps
+
+If you prefer to execute the steps manually:
+
+```bash
+# For Control Plane Nodes
+sudo systemctl stop rke2-server
+
+# For Worker Nodes  
+sudo systemctl stop rke2-agent
+
+# Optional: Stop containerd for cleaner shutdown (control plane nodes)
+sudo systemctl stop containerd
+
+# Sync and reboot
+sync
+sudo reboot
+```
+
+### Service Stop Verification
+
+To verify services stopped correctly before reboot:
+
+```bash
+# Check RKE2 service status
+systemctl status rke2-server rke2-agent --no-pager
+
+# Check for any remaining RKE2 processes
+ps aux | grep rke2 | grep -v grep
+
+# Check containerd status  
+systemctl status containerd --no-pager
+
+# List any remaining Kubernetes processes
+ps aux | grep -E "(kubelet|kube-|etcd)" | grep -v grep
+```
+
+### Important Notes
+
+- **Control Plane Nodes**: Stopping `rke2-server` will make the API server unavailable from this node
+- **Worker Nodes**: Stopping `rke2-agent` disconnects the node from the cluster
+- **Graceful Shutdown**: RKE2 services handle SIGTERM gracefully and will clean up resources
+- **Containerd**: Will stop automatically when RKE2 stops, but can be stopped manually for cleaner shutdown
+- **Timing**: Allow 10-30 seconds for services to stop gracefully before forcing
+
+### Single-Node Cluster Considerations
+
+For single-node clusters:
+
+```bash
+echo "⚠️  Single-node cluster detected"
+echo "Stopping RKE2 will make the entire cluster unavailable"
+echo "All workloads will be terminated"
+
+# Ensure all critical data is saved/checkpointed
+echo "Ensure all critical workloads have saved state before proceeding"
+
+# Stop the server
+sudo systemctl stop rke2-server
+sudo systemctl stop containerd
+
+# Immediate reboot (no drain needed)
+sync
+sudo reboot
 ```
 
 ## Post-Reboot Validation
@@ -753,12 +698,100 @@ for mount_point in $(df | grep -E "/mnt/disk[0-9]+" | awk '{print $6}'); do
 done
 ```
 
-### 5. Kubernetes and Longhorn Recovery
+### 5. RKE2 Service and Cluster Recovery
 
-If this is a Kubernetes node, verify cluster connectivity and Longhorn status:
+Verify that RKE2 services started correctly and cluster connectivity is restored:
 
 ```bash
-echo "=== Kubernetes connectivity test ==="
+echo "=== RKE2 Service Recovery ==="
+
+# Check which RKE2 service should be running
+if [ -f /etc/rancher/rke2/config.yaml ]; then
+    if grep -q "server:" /etc/rancher/rke2/config.yaml; then
+        EXPECTED_SERVICE="rke2-agent"
+        NODE_TYPE="worker"
+    else
+        EXPECTED_SERVICE="rke2-server"
+        NODE_TYPE="control-plane"
+    fi
+else
+    # Check if server config exists
+    if [ -d /var/lib/rancher/rke2/server ]; then
+        EXPECTED_SERVICE="rke2-server"
+        NODE_TYPE="control-plane"
+    else
+        EXPECTED_SERVICE="rke2-agent"
+        NODE_TYPE="worker"
+    fi
+fi
+
+echo "Expected node type: $NODE_TYPE"
+echo "Expected service: $EXPECTED_SERVICE"
+
+# Check RKE2 service status
+echo "Checking RKE2 service status..."
+if systemctl is-active --quiet "$EXPECTED_SERVICE"; then
+    echo "✓ $EXPECTED_SERVICE is running"
+    
+    # Get service start time to ensure it started after reboot
+    SERVICE_START=$(systemctl show "$EXPECTED_SERVICE" --property=ActiveEnterTimestamp --value)
+    echo "Service started: $SERVICE_START"
+    
+else
+    echo "⚠️  $EXPECTED_SERVICE is not running"
+    echo "Service status:"
+    systemctl status "$EXPECTED_SERVICE" --no-pager
+    
+    echo "Attempting to start $EXPECTED_SERVICE..."
+    sudo systemctl start "$EXPECTED_SERVICE"
+    
+    # Wait for service to start
+    echo "Waiting for service to start..."
+    sleep 30
+    
+    if systemctl is-active --quiet "$EXPECTED_SERVICE"; then
+        echo "✓ $EXPECTED_SERVICE started successfully"
+    else
+        echo "✗ Failed to start $EXPECTED_SERVICE"
+        echo "Check logs: journalctl -u $EXPECTED_SERVICE -n 50"
+    fi
+fi
+
+# Check containerd status (should start automatically with RKE2)
+echo "Checking containerd status..."
+if systemctl is-active --quiet containerd; then
+    echo "✓ containerd is running"
+else
+    echo "⚠️  containerd is not running"
+    systemctl status containerd --no-pager
+fi
+
+# For control plane nodes, wait for API server availability
+if [ "$NODE_TYPE" = "control-plane" ]; then
+    echo "Waiting for Kubernetes API server to become available..."
+    
+    # Wait up to 5 minutes for API server
+    TIMEOUT=300
+    ELAPSED=0
+    
+    while [ $ELAPSED -lt $TIMEOUT ]; do
+        if curl -k https://127.0.0.1:6443/readyz >/dev/null 2>&1; then
+            echo "✓ Kubernetes API server is responding"
+            break
+        fi
+        
+        echo "Waiting for API server... (${ELAPSED}s/${TIMEOUT}s)"
+        sleep 10
+        ELAPSED=$((ELAPSED + 10))
+    done
+    
+    if [ $ELAPSED -ge $TIMEOUT ]; then
+        echo "⚠️  API server not responding after ${TIMEOUT}s"
+        echo "Check RKE2 server logs: journalctl -u rke2-server -n 50"
+    fi
+fi
+
+echo -e "\n=== Kubernetes connectivity test ==="
 
 # Test kubectl connectivity
 if kubectl get nodes >/dev/null 2>&1; then
@@ -851,9 +884,9 @@ echo "4. Consider running extended storage health checks"
 echo -e "\nReboot validation completed at: $(date)"
 ```
 
-### 7. GPU Workload Recovery
+### 7. GPU Infrastructure and Workload Recovery
 
-After successful reboot, restore GPU workload capacity and verify GPU functionality:
+After successful reboot, verify GPU hardware and restore workload capacity:
 
 ```bash
 echo "=== GPU System Recovery ==="
