@@ -277,6 +277,7 @@
             update_cache: yes
           environment:
             DEBIAN_FRONTEND: noninteractive
+          ignore_errors: yes
 
         - name: Install required packages
           apt:
