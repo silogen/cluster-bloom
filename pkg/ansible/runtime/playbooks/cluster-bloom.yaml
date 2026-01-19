@@ -1345,6 +1345,22 @@
         name: multipathd
         state: restarted
 
+    - name: Create iptables directory
+      ansible.builtin.file:
+      path: /etc/iptables
+      state: directory
+      owner: root
+      group: root
+      mode: '0755'
+
+    - name: Set permissions on iptables rules file
+      ansible.builtin.file:
+      path: /etc/iptables/rules.v4
+      owner: root
+      group: root
+      mode: '0644'
+
+
     - name: Save iptables
       shell: iptables-save > /etc/iptables/rules.v4
       ignore_errors: yes
