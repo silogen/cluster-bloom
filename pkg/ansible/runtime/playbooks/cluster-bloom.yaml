@@ -1347,11 +1347,11 @@
 
     - name: Create iptables directory
       ansible.builtin.file:
-      path: /etc/iptables
-      state: directory
-      owner: root
-      group: root
-      mode: '0755'
+        path: /etc/iptables
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
 
     - name: Save iptables
       shell: iptables-save > /etc/iptables/rules.v4
@@ -1359,10 +1359,10 @@
 
     - name: Set permissions on iptables rules file
       ansible.builtin.file:
-      path: /etc/iptables/rules.v4
-      owner: root
-      group: root
-      mode: '0644'
+        path: /etc/iptables/rules.v4
+        owner: root
+        group: root
+        mode: '0644'
 
     - name: Reload udev
       shell: |
