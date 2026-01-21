@@ -972,7 +972,7 @@
 
         - name: Create .kube directory for user
           file:
-            path: "/home/{{ ansible_user }}/.kube"
+            path: "{{ ansible_env.HOME }}/.kube"
             state: directory
             mode: "0755"
             owner: "{{ ansible_user }}"
@@ -981,7 +981,7 @@
         - name: Copy kubeconfig to user directory
           copy:
             src: /etc/rancher/rke2/rke2.yaml
-            dest: "/home/{{ ansible_user }}/.kube/config"
+            dest: "{{ ansible_env.HOME }}/.kube/config"
             remote_src: yes
             mode: "0600"
             owner: "{{ ansible_user }}"
@@ -989,14 +989,14 @@
 
         - name: Update PATH in bash_profile for k9s
           lineinfile:
-            path: "/home/{{ ansible_user }}/.bash_profile"
+            path: "{{ ansible_env.HOME }}/.bash_profile"
             line: "export PATH=$PATH:/snap/k9s/current/bin"
             create: yes
             owner: "{{ ansible_user }}"
 
         - name: Update PATH in bashrc for k9s
           lineinfile:
-            path: "/home/{{ ansible_user }}/.bashrc"
+            path: "{{ ansible_env.HOME }}/.bashrc"
             line: "export PATH=$PATH:/snap/k9s/current/bin"
             create: yes
             owner: "{{ ansible_user }}"
@@ -1052,13 +1052,18 @@
           notify: Restart chronyd
       tags: [ntp, prep_node]
 
-    - name: Wait for kubectl to be available (Storage Setup)
+    - name: Wait for kubectl to be available
       when: FIRST_NODE and not NO_DISKS_FOR_CLUSTER
       wait_for:
         path: /var/lib/rancher/rke2/bin/kubectl
         state: present
         timeout: 300
       tags: [storage, deploy_k8s_apps]
+
+    - name: Setup Node Annotator
+      when: FIRST_NODE
+      include_tasks: tasks/setup_node_annotator.yml
+      tags: [node-annotator, deploy_k8s_apps]
 
     - name: Setup MetalLB (First Node)
       when: FIRST_NODE
