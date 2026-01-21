@@ -289,7 +289,12 @@ function getFormData(schema) {
             if (value !== '') {
                 config[argument.key] = value;
             } else if (argument.default !== '') {
-                config[argument.key] = argument.default;
+                // If field is empty but has non-empty default, set as explicit empty string
+                // This indicates user intentionally cleared a pre-populated field
+                config[argument.key] = "";
+            } else {
+                // Field has no default or empty default, use default or empty string
+                config[argument.key] = argument.default || "";
             }
         }
     });
