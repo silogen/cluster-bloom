@@ -121,6 +121,13 @@ async function saveYAML() {
         return;
     }
 
+    // Get button reference and store original text
+    const saveBtn = document.getElementById('download-btn');
+    const originalText = saveBtn.textContent;
+    
+    // Change button text immediately for visual feedback
+    saveBtn.textContent = 'Saved';
+
     try {
         const response = await fetch('/api/save', {
             method: 'POST',
@@ -139,7 +146,15 @@ async function saveYAML() {
 
         const result = await response.json();
         showSuccess(`Saved to ${result.path}`);
+        
+        // Keep "Saved" text for 3 seconds, then revert
+        setTimeout(() => {
+            saveBtn.textContent = originalText;
+        }, 1000);
+        
     } catch (error) {
+        // On error: restore button text immediately
+        saveBtn.textContent = originalText;
         showError('Failed to save YAML: ' + error.message);
     }
 }
