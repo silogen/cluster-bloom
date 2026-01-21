@@ -46,11 +46,14 @@ type EphemeralSSHManager struct {
 }
 
 // NewEphemeralSSHManager creates a new ephemeral SSH key manager for single-node deployment
-func NewEphemeralSSHManager(workDir, username string) *EphemeralSSHManager {
+func NewEphemeralSSHManager(workDir, username string) (*EphemeralSSHManager, error) {
 	sshDir := filepath.Join(workDir, "ssh")
 
 	// Get the user's actual home directory
-	userSSHDir := getUserSSHDir(username)
+	userSSHDir, err := getUserSSHDir(username)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create SSH manager: %w", err)
+	}
 
 	// Generate timestamped backup filename in the same directory as authorized_keys
 	timestamp := time.Now().Format("20060102_150405")
@@ -65,32 +68,14 @@ func NewEphemeralSSHManager(workDir, username string) *EphemeralSSHManager {
 		AuthorizedKeysPath:   filepath.Join(userSSHDir, "authorized_keys"),
 		AuthorizedKeysBackup: authKeysBackupPath,
 		isInstalled:          false,
-	}
+	}, nil
 }
-
-// getUserSSHDir returns the .ssh directory path for the given username
-// Handles various scenarios including sudo, root, and different home directory layouts
-//
-// This function properly resolves user home directories by:
-// 1. Using os/user.Lookup() to get actual home directory (works for any user layout)
-// 2. Falling back to well-known paths if lookup fails
-// 3. Handling root user specially (/root vs /home/root)
-//
-// When running with sudo, the caller should pass SUDO_USER (original user) not root,
-// so SSH keys get installed in the original user's home directory for proper access.
-func getUserSSHDir(username string) string {
-	// Try to look up the user to get their actual home directory
-	if userInfo, err := user.Lookup(username); err == nil {
-		return filepath.Join(userInfo.HomeDir, ".ssh")
+func getUserSSHDir(username string) (string, error) {
+	homeDir := os.Getenv("HOME")
+	if homeDir == "" {
+		return "", fmt.Errorf("HOME environment variable not set")
 	}
-
-	// Fallback: construct path based on username
-	if username == "root" {
-		return "/root/.ssh"
-	}
-
-	// Default fallback for regular users
-	return filepath.Join("/home", username, ".ssh")
+	return filepath.Join(homeDir, ".ssh"), nil
 }
 
 // Setup generates ephemeral SSH keys and installs the public key for localhost access

@@ -34,7 +34,11 @@ func RunContainer(rootfs, playbookDir, playbook string, extraArgs []string, dryR
 
 	// Setup ephemeral SSH key on HOST before starting container
 	fmt.Printf("🔑 Setting up ephemeral SSH key for Ansible connections...\n")
-	sshManager := ssh.NewEphemeralSSHManager(cwd, actualUser)
+	sshManager, err := ssh.NewEphemeralSSHManager(cwd, actualUser)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create SSH manager: %v\n", err)
+		return 1
+	}
 	if err := sshManager.Setup(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to setup ephemeral SSH on host: %v\n", err)
 		return 1

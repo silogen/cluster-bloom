@@ -120,7 +120,8 @@ func newRootCmd() *cobra.Command {
 		Long: `Deploy a Kubernetes cluster using Ansible playbooks.
 
 Requires a configuration file (typically bloom.yaml). Use --playbook to specify which playbook to run.`,
-		Args: cobra.ExactArgs(1),
+		Args:   cobra.ExactArgs(1),
+		Hidden: true, // Hide from help but keep functional for backward compatibility
 		Run: func(cmd *cobra.Command, args []string) {
 			checkRootPrivileges("ansible")
 			runAnsible(args[0])
@@ -165,6 +166,19 @@ By default, this command requires confirmation before proceeding. Use --force to
 		},
 	}
 
+	cliCmd := &cobra.Command{
+		Use:   "cli <config-file>",
+		Short: "Deploy cluster using configuration file",
+		Long: `Deploy a Kubernetes cluster using the specified configuration file.
+
+Requires a configuration file (typically bloom.yaml). Use --playbook to specify which playbook to run.`,
+		Args: cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			checkRootPrivileges("cli")
+			runAnsible(args[0])
+		},
+	}
+
 	// Add flags
 	rootCmd.PersistentFlags().IntVarP(&port, "port", "p", 62078, "Port for web UI (fails if in use)")
 	ansibleCmd.Flags().StringVar(&playbookName, "playbook", "cluster-bloom.yaml", "Playbook to run (default: cluster-bloom.yaml)")
@@ -172,11 +186,18 @@ By default, this command requires confirmation before proceeding. Use --force to
 	ansibleCmd.Flags().StringVar(&tags, "tags", "", "Run only tasks with specific tags (e.g., cleanup, validate, storage)")
 	ansibleCmd.Flags().BoolVar(&destroyData, "destroy-data", false, "⚠️  DANGER: Permanently destroys ALL cluster data, storage, and disks. Requires interactive confirmation.")
 
+	// Add CLI command flags (identical to ansible)
+	cliCmd.Flags().StringVar(&playbookName, "playbook", "cluster-bloom.yaml", "Playbook to run (default: cluster-bloom.yaml)")
+	cliCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Run in check mode without making changes")
+	cliCmd.Flags().StringVar(&tags, "tags", "", "Run only tasks with specific tags (e.g., cleanup, validate, storage)")
+	cliCmd.Flags().BoolVar(&destroyData, "destroy-data", false, "⚠️  DANGER: Permanently destroys ALL cluster data, storage, and disks. Requires interactive confirmation.")
+
 	// Add cleanup-specific flags
 	cleanupCmd.Flags().BoolVarP(&forceCleanup, "force", "f", false, "Skip confirmation prompt and force immediate cleanup (USE WITH CAUTION)")
 
 	// Add subcommands
 	rootCmd.AddCommand(webuiCmd)
+	rootCmd.AddCommand(cliCmd)
 	rootCmd.AddCommand(ansibleCmd)
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(cleanupCmd)
