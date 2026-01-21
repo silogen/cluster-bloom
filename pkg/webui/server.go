@@ -67,8 +67,15 @@ func (s *Server) Start() error {
 	http.Handle("/", fileServer)
 
 	addr := fmt.Sprintf(":%d", s.Port)
-	log.Printf("Starting Bloom Web UI at http://localhost%s", addr)
-	log.Printf("Press Ctrl+C to stop")
+	fmt.Printf("🚀 Starting Cluster-Bloom Web Interface...\n")
+	fmt.Printf("\n")
+	fmt.Printf("🌐 Web interface starting on http://127.0.0.1:%d\n", s.Port)
+	fmt.Printf("📊 Configuration interface accessible only from localhost\n")
+	fmt.Printf("🔧 Configure your cluster at http://127.0.0.1:%d\n", s.Port)
+	fmt.Printf("\n")
+	fmt.Printf("🔗 For remote access, create an SSH tunnel:\n")
+	fmt.Printf("   ssh -L %d:127.0.0.1:%d user@remote-server\n", s.Port, s.Port)
+	fmt.Printf("   Then access: http://127.0.0.1:%d\n", s.Port)
 
 	return http.ListenAndServe(addr, nil)
 }
