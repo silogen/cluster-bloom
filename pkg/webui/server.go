@@ -1,17 +1,23 @@
 package webui
 
 import (
+	"bufio"
+	"context"
 	"fmt"
 	"io/fs"
 	"log"
 	"net"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 )
 
 // Server represents the web UI server
 type Server struct {
 	Port          int
 	PortSpecified bool // true if user explicitly specified port via --port flag
+	server        *http.Server
 }
 
 // findAvailablePort finds an available port starting from startPort
@@ -67,6 +73,9 @@ func (s *Server) Start() error {
 	http.Handle("/", fileServer)
 
 	addr := fmt.Sprintf(":%d", s.Port)
+	s.server = &http.Server{Addr: addr}
+
+	// Print startup messages
 	fmt.Printf("🚀 Starting Cluster-Bloom Web Interface...\n")
 	fmt.Printf("\n")
 	fmt.Printf("🌐 Web interface starting on http://127.0.0.1:%d\n", s.Port)
@@ -76,6 +85,41 @@ func (s *Server) Start() error {
 	fmt.Printf("🔗 For remote access, create an SSH tunnel:\n")
 	fmt.Printf("   ssh -L %d:127.0.0.1:%d user@remote-server\n", s.Port, s.Port)
 	fmt.Printf("   Then access: http://127.0.0.1:%d\n", s.Port)
+	fmt.Printf("\n")
+	fmt.Printf("💡 Press Enter to exit\n")
 
-	return http.ListenAndServe(addr, nil)
+	// Start server in goroutine
+	errChan := make(chan error, 1)
+	go func() {
+		if err := s.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			errChan <- err
+		}
+	}()
+
+	// Wait for exit signal
+	exitChan := make(chan bool, 1)
+
+	// Monitor Enter key
+	go func() {
+		reader := bufio.NewReader(os.Stdin)
+		reader.ReadString('\n')
+		exitChan <- true
+	}()
+
+	// Monitor Ctrl+C
+	go func() {
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+		<-sigChan
+		exitChan <- true
+	}()
+
+	// Wait for either server error or exit signal
+	select {
+	case err := <-errChan:
+		return err
+	case <-exitChan:
+		fmt.Println("   Shutting down server...")
+		return s.server.Shutdown(context.Background())
+	}
 }
