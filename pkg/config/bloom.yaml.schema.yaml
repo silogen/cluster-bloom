@@ -35,7 +35,7 @@ schema:
     CLUSTER_SIZE:
       type: enum
       values: [small, medium, large]
-      default: small
+      default: medium
       desc: Size category for cluster deployment planning
       section: "📋 Basic Configuration"
 
