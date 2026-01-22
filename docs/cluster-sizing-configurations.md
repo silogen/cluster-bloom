@@ -42,41 +42,37 @@ No HA (expected)
 
 Great for local dev/solo work
 
-### 2. Medium — Team Cluster
+### 2. Medium — Development Cluster
 
 #### Intent
 
-Shared environment for a small team (5–20 users)
+Alternative minimal cluster size, identical to small
 
-Supports concurrent jobs, serving workloads, larger datasets
+Optimized for single-node development and testing scenarios
 
 #### Specs
 
-Nodes: 1–3 nodes
+Nodes: 1 node (embedded control plane + etcd + worker)
 
-Option A: 1×control plane + 1–2 GPU workers
+CPU: 4-8 vCPU (similar to small cluster)
 
-Option B: 3×control-plane (HA) + optional GPU workers
+Memory: 16-32 GB RAM 
 
-CPU: 32–64 vCPU per GPU node
-
-Memory: 128–256 GB RAM per GPU node
-
-GPU: Up to 8 GPUs total, partitioning optional
+GPU: Optional, single GPU workstation class
 
 Storage:
 
-4–16 TB total NVMe
+Local-path provisioner for high-performance local storage
 
-Internal S3: 2–10 TB via MinIO or similar
+Single-node storage, no distributed requirements
 
 #### RKE2 Notes:
 
-Path to HA (3 cp nodes) is documented
+Single embedded control plane + etcd + worker
 
-Use taints/labels for GPU worker separation
+Optimized for development, testing, and PoC scenarios
 
-Networking: 10 GbE recommended
+Networking: Standard requirements
 
 ### 3. Large — Production-Path / Scale-Out
 

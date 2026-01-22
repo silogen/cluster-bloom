@@ -643,15 +643,15 @@
                   # Cilium Operator Configuration
                   operator:
                     # Set replicas based on cluster size
-                    replicas: {{ '1' if CLUSTER_SIZE == 'small' else '2' }}
+                    replicas: {{ '1' if CLUSTER_SIZE in ['small', 'medium'] else '2' }}
                     
                     # Resource limits appropriate for cluster size
                     resources:
                       limits:
-                        cpu: {{ '500m' if CLUSTER_SIZE == 'small' else '1000m' }}
-                        memory: {{ '512Mi' if CLUSTER_SIZE == 'small' else '1Gi' }}
+                        cpu: {{ '500m' if CLUSTER_SIZE in ['small', 'medium'] else '1000m' }}
+                        memory: {{ '512Mi' if CLUSTER_SIZE in ['small', 'medium'] else '1Gi' }}
                       requests:
-                        cpu: {{ '50m' if CLUSTER_SIZE == 'small' else '100m' }}
+                        cpu: {{ '50m' if CLUSTER_SIZE in ['small', 'medium'] else '100m' }}
                         memory: 128Mi
                   
                   # Hubble observability (disabled for all cluster sizes)
@@ -1238,13 +1238,13 @@
       
       tags: [images, deploy_k8s_apps]
 
-    - name: Setup Storage Provisioner (Small Clusters - Local-Path)
-      when: FIRST_NODE and not NO_DISKS_FOR_CLUSTER and CLUSTER_SIZE == "small"
+    - name: Setup Storage Provisioner (Small/Medium Clusters - Local-Path)
+      when: FIRST_NODE and not NO_DISKS_FOR_CLUSTER and CLUSTER_SIZE in ["small", "medium"]
       include_tasks: tasks/setup_local_path.yml
       tags: [storage, local-path, deploy_k8s_apps]
 
-    - name: Setup Storage Provisioner (Medium/Large Clusters - Longhorn)  
-      when: FIRST_NODE and not NO_DISKS_FOR_CLUSTER and CLUSTER_SIZE in ["medium", "large"]
+    - name: Setup Storage Provisioner (Large Clusters - Longhorn)  
+      when: FIRST_NODE and not NO_DISKS_FOR_CLUSTER and CLUSTER_SIZE == "large"
       include_tasks: tasks/setup_longhorn.yml
       tags: [storage, longhorn, deploy_k8s_apps]
 
@@ -1268,7 +1268,6 @@
               gpu_node: "{{ GPU_NODE | lower }}"
               domain: "{{ DOMAIN }}"
               cluster_size: "{{ CLUSTER_SIZE }}"
-              cilium_operator_replicas: "{{ '1' if CLUSTER_SIZE == 'small' else '2' }}"
               rke2_version: "{{ RKE2_VERSION }}"
             EOF
 

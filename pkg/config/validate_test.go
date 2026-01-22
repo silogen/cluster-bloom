@@ -51,6 +51,16 @@ func TestValidate_ValidConfigs(t *testing.T) {
 				"CERT_OPTION":              "generate",
 			},
 		},
+		{
+			name: "valid large cluster with regular disks",
+			config: Config{
+				"FIRST_NODE":    true,
+				"DOMAIN":        "large.cluster.local",
+				"CLUSTER_SIZE":  "large",
+				"CLUSTER_DISKS": "/dev/nvme0n1,/dev/nvme1n1",
+				"CERT_OPTION":   "generate",
+			},
+		},
 	}
 
 	for _, tt := range tests {
