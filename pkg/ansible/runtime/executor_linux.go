@@ -4,7 +4,6 @@ package runtime
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -15,7 +14,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func RunContainer(rootfs, playbookDir, playbook string, extraArgs []string, dryRun bool, tags string) int {
+func RunContainer(rootfs, playbookDir, playbook string, extraArgs []string, dryRun bool, tags string, outputMode OutputMode) int {
 	// Detect the actual user (not root if using sudo)
 	actualUser := os.Getenv("SUDO_USER")
 	if actualUser == "" {
@@ -33,7 +32,7 @@ func RunContainer(rootfs, playbookDir, playbook string, extraArgs []string, dryR
 	}
 
 	// Setup ephemeral SSH key on HOST before starting container
-	fmt.Printf("🔑 Setting up ephemeral SSH key for Ansible connections...\n")
+	fmt.Printf("🔑 Setting up ephemeral SSH key...\n")
 	sshManager, err := ssh.NewEphemeralSSHManager(cwd, actualUser)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create SSH manager: %v\n", err)
@@ -57,7 +56,7 @@ func RunContainer(rootfs, playbookDir, playbook string, extraArgs []string, dryR
 		}
 	}()
 
-	childArgs := []string{"__child__", rootfs, playbookDir, playbook, actualUser, cwd}
+	childArgs := []string{"__child__", rootfs, playbookDir, playbook, actualUser, cwd, string(outputMode)}
 	if dryRun {
 		childArgs = append(childArgs, "--dry-run")
 	}
@@ -93,12 +92,13 @@ func RunChild() {
 	playbook := os.Args[4]
 	username := os.Args[5]
 	workDir := os.Args[6]
+	outputMode := OutputMode(os.Args[7])
 
 	// Check if --dry-run and --tags flags are present
 	dryRun := false
 	tags := ""
 	extraArgs := []string{}
-	for i := 7; i < len(os.Args); i++ {
+	for i := 8; i < len(os.Args); i++ {
 		if os.Args[i] == "--dry-run" {
 			dryRun = true
 		} else if os.Args[i] == "--tags" && i+1 < len(os.Args) {
@@ -131,6 +131,20 @@ func RunChild() {
 	// Mount ephemeral SSH directory for container
 	ephemeralSSHDir := filepath.Join(workDir, "ssh")
 	containerSSHDir := filepath.Join(rootfs, "root", ".ssh")
+
+	// Verify ephemeral SSH directory exists
+	if _, err := os.Stat(ephemeralSSHDir); os.IsNotExist(err) {
+		fmt.Fprintf(os.Stderr, "Ephemeral SSH directory does not exist: %s\n", ephemeralSSHDir)
+		os.Exit(1)
+	}
+
+	// Verify private key exists
+	privKeyPath := filepath.Join(ephemeralSSHDir, "id_ephemeral")
+	if _, err := os.Stat(privKeyPath); os.IsNotExist(err) {
+		fmt.Fprintf(os.Stderr, "Ephemeral private key does not exist: %s\n", privKeyPath)
+		os.Exit(1)
+	}
+
 	os.MkdirAll(containerSSHDir, 0700)
 	if err := syscall.Mount(ephemeralSSHDir, containerSSHDir, "", syscall.MS_BIND, ""); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to mount ephemeral SSH directory: %v\n", err)
@@ -203,17 +217,34 @@ func RunChild() {
 		}
 	}()
 
+	// Create output processor
+	processor := NewOutputProcessor(outputMode, logFile)
+
 	cmd := exec.Command("ansible-playbook", ansibleArgs...)
 	cmd.Stdin = os.Stdin
 
-	// Tee output to both stdout and log file
-	if logFile != nil {
-		cmd.Stdout = io.MultiWriter(os.Stdout, logFile)
-		cmd.Stderr = io.MultiWriter(os.Stderr, logFile)
-	} else {
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
+	// Use pipes to capture and process output
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create stdout pipe: %v\n", err)
+		os.Exit(1)
 	}
+
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create stderr pipe: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Start the command
+	if err := cmd.Start(); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to start cluster deployment: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Process output streams
+	go processor.ProcessStream(stdoutPipe, os.Stdout)
+	go processor.ProcessStream(stderrPipe, os.Stderr)
 
 	cmd.Env = []string{
 		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
@@ -223,12 +254,19 @@ func RunChild() {
 		"ANSIBLE_PYTHON_INTERPRETER=/usr/bin/python3",
 	}
 
-	if err := cmd.Run(); err != nil {
+	// Wait for command to complete
+	if err := cmd.Wait(); err != nil {
+		// Print summary before exiting (if clean mode)
+		processor.PrintSummary()
+
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			os.Exit(exitErr.ExitCode())
 		}
 		os.Exit(1)
 	}
+
+	// Print summary on success (if clean mode)
+	processor.PrintSummary()
 }
 
 func pivotRoot(newRoot string) error {

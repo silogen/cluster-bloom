@@ -95,7 +95,7 @@ func newRootCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:   "bloom",
 		Short: "Kubernetes Cluster Deployment Tool",
-		Long:  `Bloom - A tool for generating bloom.yaml configurations and deploying Kubernetes clusters using Ansible.`,
+		Long:  `Bloom - A tool for generating bloom.yaml configurations and deploying Kubernetes clusters.`,
 		Run: func(cmd *cobra.Command, args []string) {
 			// Default action: start webui
 			runWebUI(cmd)
@@ -111,20 +111,6 @@ func newRootCmd() *cobra.Command {
 		Long:  `Launch a web-based interface for generating bloom.yaml configuration files.`,
 		Run: func(cmd *cobra.Command, args []string) {
 			runWebUI(cmd)
-		},
-	}
-
-	ansibleCmd := &cobra.Command{
-		Use:   "ansible <config-file>",
-		Short: "Deploy cluster using Ansible",
-		Long: `Deploy a Kubernetes cluster using Ansible playbooks.
-
-Requires a configuration file (typically bloom.yaml). Use --playbook to specify which playbook to run.`,
-		Args:   cobra.ExactArgs(1),
-		Hidden: true, // Hide from help but keep functional for backward compatibility
-		Run: func(cmd *cobra.Command, args []string) {
-			checkRootPrivileges("ansible")
-			runAnsible(args[0])
 		},
 	}
 
@@ -162,7 +148,8 @@ By default, this command requires confirmation before proceeding. Use --force to
 			} else {
 				fmt.Println("🚀 Force cleanup requested - bypassing confirmation")
 			}
-			runClusterCleanup()
+			// For standalone cleanup command, we don't have a config, so pass nil
+			runClusterCleanup(nil)
 		},
 	}
 
@@ -171,7 +158,7 @@ By default, this command requires confirmation before proceeding. Use --force to
 		Short: "Deploy cluster using configuration file",
 		Long: `Deploy a Kubernetes cluster using the specified configuration file.
 
-Requires a configuration file (typically bloom.yaml). Use --playbook to specify which playbook to run.`,
+Requires a configuration file (typically bloom.yaml).`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			checkRootPrivileges("cli")
@@ -181,12 +168,8 @@ Requires a configuration file (typically bloom.yaml). Use --playbook to specify 
 
 	// Add flags
 	rootCmd.PersistentFlags().IntVarP(&port, "port", "p", 62078, "Port for web UI (fails if in use)")
-	ansibleCmd.Flags().StringVar(&playbookName, "playbook", "cluster-bloom.yaml", "Playbook to run (default: cluster-bloom.yaml)")
-	ansibleCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Run in check mode without making changes")
-	ansibleCmd.Flags().StringVar(&tags, "tags", "", "Run only tasks with specific tags (e.g., cleanup, validate, storage)")
-	ansibleCmd.Flags().BoolVar(&destroyData, "destroy-data", false, "⚠️  DANGER: Permanently destroys ALL cluster data, storage, and disks. Requires interactive confirmation.")
 
-	// Add CLI command flags (identical to ansible)
+	// Add CLI command flags
 	cliCmd.Flags().StringVar(&playbookName, "playbook", "cluster-bloom.yaml", "Playbook to run (default: cluster-bloom.yaml)")
 	cliCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Run in check mode without making changes")
 	cliCmd.Flags().StringVar(&tags, "tags", "", "Run only tasks with specific tags (e.g., cleanup, validate, storage)")
@@ -198,7 +181,6 @@ Requires a configuration file (typically bloom.yaml). Use --playbook to specify 
 	// Add subcommands
 	rootCmd.AddCommand(webuiCmd)
 	rootCmd.AddCommand(cliCmd)
-	rootCmd.AddCommand(ansibleCmd)
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(cleanupCmd)
 
@@ -239,11 +221,14 @@ func runAnsible(configFile string) {
 			fmt.Println("\n❌ Operation aborted by user. No data was harmed.")
 			os.Exit(0)
 		}
-		runClusterCleanup()
+		runClusterCleanup(cfg)
 	}
 
+	// Use clean (terse/emoji) output mode by default
+	mode := runtime.OutputClean
+
 	// Run the playbook
-	exitCode, err := runtime.RunPlaybook(cfg, playbookName, dryRun, tags)
+	exitCode, err := runtime.RunPlaybook(cfg, playbookName, dryRun, tags, mode)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -340,29 +325,40 @@ func checkRootPrivileges(commandName string) {
 	}
 }
 
-func runClusterCleanup() {
+func runClusterCleanup(cfg config.Config) {
 	fmt.Println("🧹 Starting Bloom cluster cleanup...")
 
-	var errors []string
+	var errors []error
+
+	// Extract CLUSTER_DISKS from config
+	clusterDisks := ""
+	if disks, exists := cfg["CLUSTER_DISKS"]; exists && disks != nil {
+		if disksStr, ok := disks.(string); ok {
+			clusterDisks = disksStr
+		}
+	}
 
 	// Step 1: Clean Longhorn Mounts (equivalent to CleanLonghornMountsStep)
 	if err := runtime.CleanupLonghornMounts(); err != nil {
-		errors = append(errors, fmt.Sprintf("Longhorn cleanup: %v", err))
+		errors = append(errors, fmt.Errorf("Longhorn cleanup: %w", err))
 	}
 
 	// Step 2: Uninstall RKE2 (equivalent to UninstallRKE2Step)
 	if err := runtime.UninstallRKE2(); err != nil {
-		errors = append(errors, fmt.Sprintf("RKE2 uninstall: %v", err))
+		errors = append(errors, fmt.Errorf("RKE2 uninstall: %w", err))
 	}
 
 	// Step 3: Clean Disks (equivalent to CleanDisksStep)
-	if err := runtime.CleanupBloomDisks(); err != nil {
-		errors = append(errors, fmt.Sprintf("Disk cleanup: %v", err))
+	if err := runtime.CleanupBloomDisks(clusterDisks); err != nil {
+		errors = append(errors, fmt.Errorf("Disk cleanup: %w", err))
 	}
 
 	// Report results
 	if len(errors) > 0 {
-		fmt.Printf("⚠️  Cleanup completed with warnings: %s\n", strings.Join(errors, "; "))
+		fmt.Printf("⚠️  Cleanup completed with warnings:\n")
+		for _, err := range errors {
+			fmt.Printf("  - %v\n", err)
+		}
 		os.Exit(1)
 	} else {
 		fmt.Println("✅ Bloom cluster cleanup completed successfully")
