@@ -43,7 +43,7 @@ func backupLogFile(workDir string) error {
 	return nil
 }
 
-func RunPlaybook(config map[string]any, playbookName string, dryRun bool, tags string) (int, error) {
+func RunPlaybook(config map[string]any, playbookName string, dryRun bool, tags string, outputMode OutputMode) (int, error) {
 	workDir, err := getWorkDir()
 	if err != nil {
 		return 1, err
@@ -87,7 +87,7 @@ func RunPlaybook(config map[string]any, playbookName string, dryRun bool, tags s
 	}
 	extraArgs = append(extraArgs, "-e", fmt.Sprintf(`{"BLOOM_DIR": "%s"}`, cwd))
 
-	exitCode := RunContainer(rootfs, playbookDir, playbookName, extraArgs, dryRun, tags)
+	exitCode := RunContainer(rootfs, playbookDir, playbookName, extraArgs, dryRun, tags, outputMode)
 	return exitCode, nil
 }
 

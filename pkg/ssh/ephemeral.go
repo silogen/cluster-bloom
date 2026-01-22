@@ -71,11 +71,13 @@ func NewEphemeralSSHManager(workDir, username string) (*EphemeralSSHManager, err
 	}, nil
 }
 func getUserSSHDir(username string) (string, error) {
-	homeDir := os.Getenv("HOME")
-	if homeDir == "" {
-		return "", fmt.Errorf("HOME environment variable not set")
+	// Look up the actual user to get their home directory
+	// Don't rely on HOME env var as it may point to /root when using sudo
+	userInfo, err := user.Lookup(username)
+	if err != nil {
+		return "", fmt.Errorf("failed to lookup user %s: %w", username, err)
 	}
-	return filepath.Join(homeDir, ".ssh"), nil
+	return filepath.Join(userInfo.HomeDir, ".ssh"), nil
 }
 
 // Setup generates ephemeral SSH keys and installs the public key for localhost access

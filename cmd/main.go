@@ -20,6 +20,7 @@ var (
 	tags         string
 	destroyData  bool
 	forceCleanup bool
+	outputMode   string
 )
 
 func init() {
@@ -185,12 +186,14 @@ Requires a configuration file (typically bloom.yaml). Use --playbook to specify 
 	ansibleCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Run in check mode without making changes")
 	ansibleCmd.Flags().StringVar(&tags, "tags", "", "Run only tasks with specific tags (e.g., cleanup, validate, storage)")
 	ansibleCmd.Flags().BoolVar(&destroyData, "destroy-data", false, "⚠️  DANGER: Permanently destroys ALL cluster data, storage, and disks. Requires interactive confirmation.")
+	ansibleCmd.Flags().StringVar(&outputMode, "output", "verbose", "Output mode: verbose (full ansible output), clean (emoji summary)")
 
 	// Add CLI command flags (identical to ansible)
 	cliCmd.Flags().StringVar(&playbookName, "playbook", "cluster-bloom.yaml", "Playbook to run (default: cluster-bloom.yaml)")
 	cliCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Run in check mode without making changes")
 	cliCmd.Flags().StringVar(&tags, "tags", "", "Run only tasks with specific tags (e.g., cleanup, validate, storage)")
 	cliCmd.Flags().BoolVar(&destroyData, "destroy-data", false, "⚠️  DANGER: Permanently destroys ALL cluster data, storage, and disks. Requires interactive confirmation.")
+	cliCmd.Flags().StringVar(&outputMode, "output", "verbose", "Output mode: verbose (full ansible output), clean (emoji summary)")
 
 	// Add cleanup-specific flags
 	cleanupCmd.Flags().BoolVarP(&forceCleanup, "force", "f", false, "Skip confirmation prompt and force immediate cleanup (USE WITH CAUTION)")
@@ -242,8 +245,15 @@ func runAnsible(configFile string) {
 		runClusterCleanup()
 	}
 
+	// Parse and validate output mode
+	mode := runtime.OutputMode(outputMode)
+	if mode != runtime.OutputVerbose && mode != runtime.OutputClean {
+		fmt.Fprintf(os.Stderr, "Invalid output mode: %s (valid options: verbose, clean)\n", outputMode)
+		os.Exit(1)
+	}
+
 	// Run the playbook
-	exitCode, err := runtime.RunPlaybook(cfg, playbookName, dryRun, tags)
+	exitCode, err := runtime.RunPlaybook(cfg, playbookName, dryRun, tags, mode)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
