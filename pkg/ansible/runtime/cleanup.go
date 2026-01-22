@@ -84,12 +84,17 @@ func UninstallRKE2() error {
 }
 
 // CleanupBloomDisks removes bloom-managed disks and cleans up disk state
-func CleanupBloomDisks() error {
+func CleanupBloomDisks(clusterDisks string) error {
 	fmt.Println("💽 Cleaning bloom-managed disks...")
 
 	// First unmount prior Longhorn disks (equivalent to UnmountPriorLonghornDisks)
 	if err := unmountPriorLonghornDisks(); err != nil {
 		fmt.Printf("   Warning: Failed to unmount prior Longhorn disks: %v\n", err)
+	}
+
+	// Directly unmount all CLUSTER_DISKS devices if they're mounted
+	if err := unmountClusterDisks(clusterDisks); err != nil {
+		fmt.Printf("   Warning: Failed to unmount CLUSTER_DISKS: %v\n", err)
 	}
 
 	// Parse mount output to find and unmount CSI driver mounts
@@ -163,7 +168,45 @@ func CleanupBloomDisks() error {
 		}
 	}
 
+	// Sync filesystem to ensure all writes are flushed
+	fmt.Println("   Syncing filesystems...")
+	exec.Command("sync").Run()
+
+	// Brief delay to allow kernel to fully release mounts
+	time.Sleep(500 * time.Millisecond)
+
 	fmt.Println("   Disk cleanup completed")
+	return nil
+}
+
+// unmountClusterDisks directly unmounts all devices found in CLUSTER_DISKS
+func unmountClusterDisks(clusterDisks string) error {
+	if clusterDisks == "" {
+		return nil
+	}
+
+	fmt.Println("   Unmounting CLUSTER_DISKS devices...")
+	devices := strings.Split(clusterDisks, ",")
+	for _, device := range devices {
+		device = strings.TrimSpace(device)
+		if device == "" {
+			continue
+		}
+
+		// Force unmount the device
+		fmt.Printf("   Unmounting %s...\n", device)
+		cmd := exec.Command("sudo", "umount", "-lf", device)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			fmt.Printf("   Warning: Failed to unmount %s: %v (output: %s)\n", device, err, string(output))
+		} else {
+			fmt.Printf("   Successfully unmounted %s\n", device)
+		}
+
+		// Also try to unmount any mount points using this device
+		cmd = exec.Command("bash", "-c", fmt.Sprintf("mount | grep '^%s' | awk '{print $3}' | xargs -r sudo umount -lf 2>/dev/null || true", device))
+		cmd.Run()
+	}
+
 	return nil
 }
 

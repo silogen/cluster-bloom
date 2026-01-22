@@ -148,7 +148,8 @@ By default, this command requires confirmation before proceeding. Use --force to
 			} else {
 				fmt.Println("🚀 Force cleanup requested - bypassing confirmation")
 			}
-			runClusterCleanup()
+			// For standalone cleanup command, we don't have a config, so pass nil
+			runClusterCleanup(nil)
 		},
 	}
 
@@ -220,7 +221,7 @@ func runAnsible(configFile string) {
 			fmt.Println("\n❌ Operation aborted by user. No data was harmed.")
 			os.Exit(0)
 		}
-		runClusterCleanup()
+		runClusterCleanup(cfg)
 	}
 
 	// Use clean (terse/emoji) output mode by default
@@ -324,29 +325,40 @@ func checkRootPrivileges(commandName string) {
 	}
 }
 
-func runClusterCleanup() {
+func runClusterCleanup(cfg config.Config) {
 	fmt.Println("🧹 Starting Bloom cluster cleanup...")
 
-	var errors []string
+	var errors []error
+
+	// Extract CLUSTER_DISKS from config
+	clusterDisks := ""
+	if disks, exists := cfg["CLUSTER_DISKS"]; exists && disks != nil {
+		if disksStr, ok := disks.(string); ok {
+			clusterDisks = disksStr
+		}
+	}
 
 	// Step 1: Clean Longhorn Mounts (equivalent to CleanLonghornMountsStep)
 	if err := runtime.CleanupLonghornMounts(); err != nil {
-		errors = append(errors, fmt.Sprintf("Longhorn cleanup: %v", err))
+		errors = append(errors, fmt.Errorf("Longhorn cleanup: %w", err))
 	}
 
 	// Step 2: Uninstall RKE2 (equivalent to UninstallRKE2Step)
 	if err := runtime.UninstallRKE2(); err != nil {
-		errors = append(errors, fmt.Sprintf("RKE2 uninstall: %v", err))
+		errors = append(errors, fmt.Errorf("RKE2 uninstall: %w", err))
 	}
 
 	// Step 3: Clean Disks (equivalent to CleanDisksStep)
-	if err := runtime.CleanupBloomDisks(); err != nil {
-		errors = append(errors, fmt.Sprintf("Disk cleanup: %v", err))
+	if err := runtime.CleanupBloomDisks(clusterDisks); err != nil {
+		errors = append(errors, fmt.Errorf("Disk cleanup: %w", err))
 	}
 
 	// Report results
 	if len(errors) > 0 {
-		fmt.Printf("⚠️  Cleanup completed with warnings: %s\n", strings.Join(errors, "; "))
+		fmt.Printf("⚠️  Cleanup completed with warnings:\n")
+		for _, err := range errors {
+			fmt.Printf("  - %v\n", err)
+		}
 		os.Exit(1)
 	} else {
 		fmt.Println("✅ Bloom cluster cleanup completed successfully")
