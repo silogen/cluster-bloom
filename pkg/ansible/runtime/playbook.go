@@ -57,7 +57,7 @@ func RunPlaybook(config map[string]any, playbookName string, dryRun bool, tags s
 	playbookDir := filepath.Join(workDir, "playbooks")
 
 	if !ImageCached(rootfs) {
-		fmt.Println("Downloading Ansible image (this may take a few minutes)...")
+		fmt.Println("Downloading cluster deployment image (this may take a few minutes)...")
 		if err := os.MkdirAll(rootfs, 0755); err != nil {
 			return 1, fmt.Errorf("create rootfs dir: %w", err)
 		}
@@ -66,7 +66,7 @@ func RunPlaybook(config map[string]any, playbookName string, dryRun bool, tags s
 		}
 		fmt.Println("Image ready.")
 	} else {
-		fmt.Println("Using cached Ansible image.")
+		fmt.Println("Using cached deployment image.")
 	}
 
 	os.RemoveAll(playbookDir)

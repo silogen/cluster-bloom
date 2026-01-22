@@ -7,12 +7,12 @@ import (
 	"os"
 )
 
-func RunContainer(rootfs, playbookDir, playbook string, extraArgs []string, dryRun bool, tags string) int {
-	fmt.Fprintln(os.Stderr, "Error: Ansible deployment is only supported on Linux")
+func RunContainer(rootfs, playbookDir, playbook string, extraArgs []string, dryRun bool, tags string, outputMode OutputMode) int {
+	fmt.Fprintln(os.Stderr, "Error: Cluster deployment is only supported on Linux")
 	return 1
 }
 
 func RunChild() {
-	fmt.Fprintln(os.Stderr, "Error: Ansible deployment is only supported on Linux")
+	fmt.Fprintln(os.Stderr, "Error: Cluster deployment is only supported on Linux")
 	os.Exit(1)
 }

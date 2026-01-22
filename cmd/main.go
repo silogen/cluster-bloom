@@ -20,7 +20,6 @@ var (
 	tags         string
 	destroyData  bool
 	forceCleanup bool
-	outputMode   string
 )
 
 func init() {
@@ -96,7 +95,7 @@ func newRootCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:   "bloom",
 		Short: "Kubernetes Cluster Deployment Tool",
-		Long:  `Bloom - A tool for generating bloom.yaml configurations and deploying Kubernetes clusters using Ansible.`,
+		Long:  `Bloom - A tool for generating bloom.yaml configurations and deploying Kubernetes clusters.`,
 		Run: func(cmd *cobra.Command, args []string) {
 			// Default action: start webui
 			runWebUI(cmd)
@@ -112,20 +111,6 @@ func newRootCmd() *cobra.Command {
 		Long:  `Launch a web-based interface for generating bloom.yaml configuration files.`,
 		Run: func(cmd *cobra.Command, args []string) {
 			runWebUI(cmd)
-		},
-	}
-
-	ansibleCmd := &cobra.Command{
-		Use:   "ansible <config-file>",
-		Short: "Deploy cluster using Ansible",
-		Long: `Deploy a Kubernetes cluster using Ansible playbooks.
-
-Requires a configuration file (typically bloom.yaml). Use --playbook to specify which playbook to run.`,
-		Args:   cobra.ExactArgs(1),
-		Hidden: true, // Hide from help but keep functional for backward compatibility
-		Run: func(cmd *cobra.Command, args []string) {
-			checkRootPrivileges("ansible")
-			runAnsible(args[0])
 		},
 	}
 
@@ -172,7 +157,7 @@ By default, this command requires confirmation before proceeding. Use --force to
 		Short: "Deploy cluster using configuration file",
 		Long: `Deploy a Kubernetes cluster using the specified configuration file.
 
-Requires a configuration file (typically bloom.yaml). Use --playbook to specify which playbook to run.`,
+Requires a configuration file (typically bloom.yaml).`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			checkRootPrivileges("cli")
@@ -182,18 +167,12 @@ Requires a configuration file (typically bloom.yaml). Use --playbook to specify 
 
 	// Add flags
 	rootCmd.PersistentFlags().IntVarP(&port, "port", "p", 62078, "Port for web UI (fails if in use)")
-	ansibleCmd.Flags().StringVar(&playbookName, "playbook", "cluster-bloom.yaml", "Playbook to run (default: cluster-bloom.yaml)")
-	ansibleCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Run in check mode without making changes")
-	ansibleCmd.Flags().StringVar(&tags, "tags", "", "Run only tasks with specific tags (e.g., cleanup, validate, storage)")
-	ansibleCmd.Flags().BoolVar(&destroyData, "destroy-data", false, "⚠️  DANGER: Permanently destroys ALL cluster data, storage, and disks. Requires interactive confirmation.")
-	ansibleCmd.Flags().StringVar(&outputMode, "output", "verbose", "Output mode: verbose (full ansible output), clean (emoji summary)")
 
-	// Add CLI command flags (identical to ansible)
+	// Add CLI command flags
 	cliCmd.Flags().StringVar(&playbookName, "playbook", "cluster-bloom.yaml", "Playbook to run (default: cluster-bloom.yaml)")
 	cliCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Run in check mode without making changes")
 	cliCmd.Flags().StringVar(&tags, "tags", "", "Run only tasks with specific tags (e.g., cleanup, validate, storage)")
 	cliCmd.Flags().BoolVar(&destroyData, "destroy-data", false, "⚠️  DANGER: Permanently destroys ALL cluster data, storage, and disks. Requires interactive confirmation.")
-	cliCmd.Flags().StringVar(&outputMode, "output", "verbose", "Output mode: verbose (full ansible output), clean (emoji summary)")
 
 	// Add cleanup-specific flags
 	cleanupCmd.Flags().BoolVarP(&forceCleanup, "force", "f", false, "Skip confirmation prompt and force immediate cleanup (USE WITH CAUTION)")
@@ -201,7 +180,6 @@ Requires a configuration file (typically bloom.yaml). Use --playbook to specify 
 	// Add subcommands
 	rootCmd.AddCommand(webuiCmd)
 	rootCmd.AddCommand(cliCmd)
-	rootCmd.AddCommand(ansibleCmd)
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(cleanupCmd)
 
@@ -245,12 +223,8 @@ func runAnsible(configFile string) {
 		runClusterCleanup()
 	}
 
-	// Parse and validate output mode
-	mode := runtime.OutputMode(outputMode)
-	if mode != runtime.OutputVerbose && mode != runtime.OutputClean {
-		fmt.Fprintf(os.Stderr, "Invalid output mode: %s (valid options: verbose, clean)\n", outputMode)
-		os.Exit(1)
-	}
+	// Use clean (terse/emoji) output mode by default
+	mode := runtime.OutputClean
 
 	// Run the playbook
 	exitCode, err := runtime.RunPlaybook(cfg, playbookName, dryRun, tags, mode)

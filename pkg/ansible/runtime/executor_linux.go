@@ -32,7 +32,7 @@ func RunContainer(rootfs, playbookDir, playbook string, extraArgs []string, dryR
 	}
 
 	// Setup ephemeral SSH key on HOST before starting container
-	fmt.Printf("🔑 Setting up ephemeral SSH key for Ansible connections...\n")
+	fmt.Printf("🔑 Setting up ephemeral SSH key...\n")
 	sshManager, err := ssh.NewEphemeralSSHManager(cwd, actualUser)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create SSH manager: %v\n", err)
@@ -131,20 +131,20 @@ func RunChild() {
 	// Mount ephemeral SSH directory for container
 	ephemeralSSHDir := filepath.Join(workDir, "ssh")
 	containerSSHDir := filepath.Join(rootfs, "root", ".ssh")
-	
+
 	// Verify ephemeral SSH directory exists
 	if _, err := os.Stat(ephemeralSSHDir); os.IsNotExist(err) {
 		fmt.Fprintf(os.Stderr, "Ephemeral SSH directory does not exist: %s\n", ephemeralSSHDir)
 		os.Exit(1)
 	}
-	
+
 	// Verify private key exists
 	privKeyPath := filepath.Join(ephemeralSSHDir, "id_ephemeral")
 	if _, err := os.Stat(privKeyPath); os.IsNotExist(err) {
 		fmt.Fprintf(os.Stderr, "Ephemeral private key does not exist: %s\n", privKeyPath)
 		os.Exit(1)
 	}
-	
+
 	os.MkdirAll(containerSSHDir, 0700)
 	if err := syscall.Mount(ephemeralSSHDir, containerSSHDir, "", syscall.MS_BIND, ""); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to mount ephemeral SSH directory: %v\n", err)
@@ -238,7 +238,7 @@ func RunChild() {
 
 	// Start the command
 	if err := cmd.Start(); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to start ansible-playbook: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Failed to start cluster deployment: %v\n", err)
 		os.Exit(1)
 	}
 
