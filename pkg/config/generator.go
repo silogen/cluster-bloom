@@ -41,6 +41,14 @@ func GenerateYAML(cfg Config) string {
 }
 
 func isDefaultValue(arg Argument, value any) bool {
+	// Special case: If value is explicitly empty string and default is non-empty,
+	// this is NOT a default value (user intentionally cleared it)
+	if strVal, ok := value.(string); ok && strVal == "" {
+		if defaultStr, ok := arg.Default.(string); ok && defaultStr != "" {
+			return false // Empty string overriding non-empty default
+		}
+	}
+
 	// Compare with default value
 	switch defaultVal := arg.Default.(type) {
 	case bool:
@@ -70,8 +78,8 @@ func formatYAMLLine(key string, value any) string {
 	case bool:
 		return fmt.Sprintf("%s: %t", key, v)
 	case string:
-		// Quote strings if they contain special characters or are empty
-		if needsQuotes(v) {
+		// Quote strings if they contain special characters OR are empty
+		if needsQuotes(v) || v == "" {
 			return fmt.Sprintf("%s: \"%s\"", key, escapeString(v))
 		}
 		return fmt.Sprintf("%s: %s", key, v)
