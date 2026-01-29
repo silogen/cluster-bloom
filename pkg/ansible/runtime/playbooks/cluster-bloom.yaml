@@ -879,7 +879,12 @@
       when: FIRST_NODE
       block:
         - name: Install RKE2 server
-          shell: curl -sfL {{ rke2_installation_url }} | sh -
+          shell: |
+            {% if RKE2_VERSION is defined and RKE2_VERSION != "" %}
+            curl -sfL {{ rke2_installation_url }} | INSTALL_RKE2_VERSION="{{ RKE2_VERSION }}" sh -
+            {% else %}
+            curl -sfL {{ rke2_installation_url }} | sh -
+            {% endif %}
           args:
             creates: /usr/local/bin/rke2
 
@@ -913,7 +918,12 @@
             marker: "# {mark} ANSIBLE MANAGED BLOCK - join config"
 
         - name: Install RKE2 agent
-          shell: curl -sfL {{ rke2_installation_url }} | INSTALL_RKE2_TYPE=agent sh -
+          shell: |
+            {% if RKE2_VERSION is defined and RKE2_VERSION != "" %}
+            curl -sfL {{ rke2_installation_url }} | INSTALL_RKE2_TYPE=agent INSTALL_RKE2_VERSION="{{ RKE2_VERSION }}" sh -
+            {% else %}
+            curl -sfL {{ rke2_installation_url }} | INSTALL_RKE2_TYPE=agent sh -
+            {% endif %}
           args:
             creates: /usr/local/bin/rke2
 
@@ -940,7 +950,12 @@
             marker: "# {mark} ANSIBLE MANAGED BLOCK - join config"
 
         - name: Install RKE2 server (control plane)
-          shell: curl -sfL {{ rke2_installation_url }} | INSTALL_RKE2_TYPE=server sh -
+          shell: |
+            {% if RKE2_VERSION is defined and RKE2_VERSION != "" %}
+            curl -sfL {{ rke2_installation_url }} | INSTALL_RKE2_TYPE=server INSTALL_RKE2_VERSION="{{ RKE2_VERSION }}" sh -
+            {% else %}
+            curl -sfL {{ rke2_installation_url }} | INSTALL_RKE2_TYPE=server sh -
+            {% endif %}
           args:
             creates: /usr/local/bin/rke2
 
