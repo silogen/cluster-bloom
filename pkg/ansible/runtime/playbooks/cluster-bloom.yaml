@@ -24,7 +24,7 @@
     OIDC_URL: ""
     RKE2_EXTRA_CONFIG: ""
     CLUSTERFORGE_RELEASE: "none"
-
+    DNSMASQ: true
     rocm_base_url: "https://repo.radeon.com/amdgpu-install/6.3.3/ubuntu/"
     rocm_deb_package: "amdgpu-install_6.3.60303-1_all.deb"
     rke2_installation_url: "https://get.rke2.io"
@@ -517,6 +517,66 @@
           set_fact:
             node_ip: "{{ node_ip_result.stdout if node_ip_result.stdout != '' else ansible_default_ipv4.address }}"
 
+        - name: Install and configure dnsmasq
+          when: DNSMASQ and FIRST_NODE and DOMAIN != ""
+          block:
+            - name: Disable systemd-resolve 
+              shell: systemctl disable --now systemd-resolved
+              register: systemd_stopped
+              failed_when: false
+              changed_when: systemd_stopped.rc == 0
+            - name: Install dnsmasq
+              apt:
+                name:
+                  - dnsmasq
+                state: present
+              environment:
+                DEBIAN_FRONTEND: noninteractive
+                NEEDRESTART_MODE: a
+                NEEDRESTART_SUSPEND: "1"
+            - name: Create dnsmasq directory for keycloak
+              file:
+                path: /etc/dnsmasq.d/keycloak.conf
+                state: directory
+                mode: '0755'
+            - name: Create dnsmasq configuration file
+              copy: 
+                content: |
+                  address=/{{ DOMAIN }}/{{ node_ip }} # Keycloak Internal Resolution
+                  server=/cluster.local/10.243.0.10 # Forward cluster.local to CoreDNS
+                  server=8.8.8.8 # External DNS fallback
+                  server=1.1.1.1 # External DNS fallback
+                  listen-address=127.0.0.1
+                  bind-interfaces
+                  cache-size=1000
+                  no-resolv
+                dest: /etc/dnsmasq.d/keycloak.conf
+                mode: "0644"
+            - name: Make resolv file mutable
+              file:
+                path: /etc/resolv.conf
+                attributes: -i
+            - name: Write resolv configuration file
+              copy: 
+                content: |
+                  nameserver 127.0.0.1
+                  search cluster.local svc.cluster.local
+                dest: /etc/resolv.conf
+                mode: "0644"
+            - name: Make resolv file immutable
+              file:
+                path: /etc/resolv.conf
+                attributes: +i
+            - name: Enable dnsmasq service
+              shell: systemctl enable --now dnsmasq
+              register: dnsmasq_started
+              failed_when: false
+              changed_when: dnsmasq_started.rc == 0
+            - name: Restart dnsmasq service 
+              shell: systemctl restart dnsmasq
+              register: dnsmasq_started
+              failed_when: false
+              changed_when: dnsmasq_restarted.rc == 0
         - name: Create RKE2 config.yaml
           copy:
             content: |
