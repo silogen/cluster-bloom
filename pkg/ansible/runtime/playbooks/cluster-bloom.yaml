@@ -25,8 +25,8 @@
     RKE2_EXTRA_CONFIG: ""
     CLUSTERFORGE_RELEASE: "none"
 
-    rocm_base_url: "https://repo.radeon.com/amdgpu-install/6.3.3/ubuntu/"
-    rocm_deb_package: "amdgpu-install_6.3.60303-1_all.deb"
+    rocm_base_url: "https://repo.radeon.com/amdgpu-install/7.2/ubuntu/"
+    rocm_deb_package: "amdgpu-install_7.2.70200-1_all.deb"
     rke2_installation_url: "https://get.rke2.io"
 
     supported_ubuntu_versions:
