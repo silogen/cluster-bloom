@@ -536,7 +536,7 @@
                 NEEDRESTART_SUSPEND: "1"
             - name: Create dnsmasq directory for keycloak
               file:
-                path: /etc/dnsmasq.d/keycloak.conf
+                path: /etc/dnsmasq.d/
                 state: directory
                 mode: '0755'
             - name: Create dnsmasq configuration file
@@ -574,7 +574,7 @@
               changed_when: dnsmasq_started.rc == 0
             - name: Restart dnsmasq service 
               shell: systemctl restart dnsmasq
-              register: dnsmasq_started
+              register: dnsmasq_restarted
               failed_when: false
               changed_when: dnsmasq_restarted.rc == 0
         - name: Create RKE2 config.yaml
