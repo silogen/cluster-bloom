@@ -358,14 +358,14 @@
 
         - name: Download amdgpu-install package
           get_url:
-            url: "{{ ROCM_BASE_URL }}/{{ ubuntu_codename.stdout }}/{{ ROCM_DEB_PACKAGE }}"
-            dest: "/tmp/{{ ROCM_DEB_PACKAGE }}"
+            url: "{{ rocm_base_url }}/{{ ubuntu_codename.stdout }}/{{ rocm_deb_package }}"
+            dest: "/tmp/{{ rocm_deb_package }}"
             mode: "0644"
           when: not rocm_smi_check.stat.exists
 
         - name: Install amdgpu-install package
           apt:
-            deb: "/tmp/{{ ROCM_DEB_PACKAGE }}"
+            deb: "/tmp/{{ rocm_deb_package }}"
             state: present
           when: not rocm_smi_check.stat.exists
           environment:
