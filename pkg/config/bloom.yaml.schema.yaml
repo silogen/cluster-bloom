@@ -137,7 +137,7 @@ schema:
 
     CLUSTERFORGE_RELEASE:
       type: str
-      default: https://github.com/silogen/cluster-forge/releases/download/v1.5.2/release-enterprise-ai-v1.5.2.tar.gz
+      default: https://github.com/silogen/cluster-forge/releases/download/v1.8.0/release-enterprise-ai-v1.8.0.tar.gz
       desc: ClusterForge version URL or 'none'
       section: "⚙️ Advanced Configuration"
 
