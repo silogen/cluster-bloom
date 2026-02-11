@@ -24,6 +24,7 @@
   shell: df -BG /var/lib/rancher | awk 'NR==2 {print $2}' | sed 's/G//'
   register: rancher_partition_size
   changed_when: false
+  check_mode: false
 
 - name: Warn if partition less than 500GB
   debug:
@@ -33,4 +34,9 @@
 - name: Fail if partition less than 500GB
   fail:
     msg: "/var/lib/rancher partition size ({{ rancher_partition_size.stdout }}GB) is less than recommended 500GB"
-  when: rancher_partition_size.stdout | int < 500
+  when: rancher_partition_size.stdout | int < 500 and not ansible_check_mode
+
+- name: Check mode warning for insufficient partition size
+  debug:
+    msg: "CHECK MODE: Would fail due to insufficient /var/lib/rancher partition size ({{ rancher_partition_size.stdout }}GB < 500GB recommended)"
+  when: rancher_partition_size.stdout | int < 500 and ansible_check_mode

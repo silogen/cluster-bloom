@@ -10,6 +10,12 @@
         src: "manifests/longhorn/node-annotator.yaml"
         dest: "/var/lib/rancher/rke2/server/manifests/node-annotator.yaml"
         mode: "0644"
+      when: not ansible_check_mode
+
+    - name: Debug Node Annotator deployment (check mode)
+      debug:
+        msg: "Would copy Node Annotator manifest to /var/lib/rancher/rke2/server/manifests/node-annotator.yaml"
+      when: ansible_check_mode
 
     - name: Wait for node annotator cronjob
       shell: |
@@ -19,6 +25,12 @@
       retries: 3
       delay: 10
       failed_when: false
+      when: not ansible_check_mode
+
+    - name: Debug kubectl wait for cronjob (check mode)
+      debug:
+        msg: "Would wait for node annotator cronjob/label-and-annotate-nodes to be created"
+      when: ansible_check_mode
 
     - name: Trigger initial node annotation
       shell: |
@@ -27,6 +39,12 @@
           label-and-annotate-nodes-initial -n default
       register: initial_job
       failed_when: false
+      when: not ansible_check_mode
+
+    - name: Debug kubectl create job (check mode)
+      debug:
+        msg: "Would create initial node annotation job from cronjob/label-and-annotate-nodes"
+      when: ansible_check_mode
 
     - name: Wait for initial node annotation to complete
       shell: |
@@ -37,14 +55,24 @@
       retries: 3
       delay: 10
       failed_when: false
-      when: initial_job.rc == 0
+      when: not ansible_check_mode and initial_job is defined and initial_job.rc == 0
+
+    - name: Debug kubectl wait for job completion (check mode)
+      debug:
+        msg: "Would wait for initial node annotation job to complete"
+      when: ansible_check_mode
       
     - name: Log Node Annotator success
       debug:
         msg: "Node annotator deployed and initial annotation completed for all cluster nodes"
-      when: annotation_wait.rc == 0
+      when: not ansible_check_mode and annotation_wait is defined and annotation_wait.rc == 0
 
     - name: Log Node Annotator warning
       debug:
         msg: "Node annotator deployed but initial annotation had issues - CronJob will retry every 5 minutes"
-      when: annotation_wait.rc != 0
+      when: not ansible_check_mode and annotation_wait is defined and annotation_wait.rc != 0
+
+    - name: Debug Node Annotator completion (check mode)
+      debug:
+        msg: "Would complete Node Annotator deployment and trigger initial annotation for all cluster nodes"
+      when: ansible_check_mode

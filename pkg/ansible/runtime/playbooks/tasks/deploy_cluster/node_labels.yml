@@ -1,0 +1,41 @@
+---
+# Node Labels Configuration
+# 
+# Generates and configures node labels for RKE2 cluster nodes including
+# disk labels for storage integration and GPU node identification.
+# 
+# This task configures:
+# - Dynamic disk labels based on cluster_disks_list
+# - Longhorn storage integration labels
+# - GPU node identification labels
+#
+# Tags: rke2, deploy_cluster
+
+- name: Build disk labels list
+  set_fact:
+    disk_labels: "{{ disk_labels | default([]) + ['bloom.disk___mnt___disk' + item.0|string + '=disk' + item.1|replace('/', '___')] }}"
+  loop: "{{ range(cluster_disks_list | default([]) | length) | list | zip(cluster_disks_list | default([])) | list }}"
+  when: not NO_DISKS_FOR_CLUSTER | bool and cluster_disks_list is defined and cluster_disks_list | length > 0
+
+- name: Write node labels to config
+  blockinfile:
+    path: /etc/rancher/rke2/config.yaml
+    block: |
+      node-label:
+      {% if not NO_DISKS_FOR_CLUSTER %}
+        - node.longhorn.io/create-default-disk=config
+        - node.longhorn.io/instance-manager=true
+      {% endif %}
+        - cluster-bloom/gpu-node={{ GPU_NODE | lower }}
+      {% for label in disk_labels | default([]) %}
+        - {{ label }}
+      {% endfor %}
+    marker: "# {mark} ANSIBLE MANAGED BLOCK - node labels"
+    create: yes
+    mode: "0644"
+  when: not ansible_check_mode
+
+- name: Debug node labels configuration (check mode)
+  debug:
+    msg: "Would write node labels to /etc/rancher/rke2/config.yaml including GPU node={{ GPU_NODE | lower }} and {{ (disk_labels | default([])) | length }} disk labels"
+  when: ansible_check_mode

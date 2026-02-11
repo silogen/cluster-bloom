@@ -1,0 +1,62 @@
+---
+# RKE2 Worker Node Setup
+# 
+# Installs and configures RKE2 agent on worker nodes that join an existing cluster.
+# Worker nodes provide compute resources but do not participate in control plane operations.
+#
+# Prerequisites:
+# - Existing RKE2 cluster with first node initialized
+# - JOIN_TOKEN and SERVER_IP variables must be set
+# - RKE2 configuration file must be present
+#
+# Conditional: not FIRST_NODE and not CONTROL_PLANE
+# Tags: rke2, deploy_cluster
+
+- name: Add server and token to RKE2 config
+  blockinfile:
+    path: /etc/rancher/rke2/config.yaml
+    block: |
+      server: https://{{ SERVER_IP }}:9345
+      token: {{ JOIN_TOKEN }}
+    marker: "# {mark} ANSIBLE MANAGED BLOCK - join config"
+    create: yes
+    mode: "0644"
+  when: not ansible_check_mode
+
+- name: Debug RKE2 worker join config (check mode)
+  debug:
+    msg: "Would configure RKE2 worker to join cluster at https://{{ SERVER_IP }}:9345"
+  when: ansible_check_mode
+
+- name: Install RKE2 agent
+  shell: curl -sfL {{ rke2_installation_url }} | INSTALL_RKE2_TYPE=agent sh -
+  args:
+    creates: /usr/local/bin/rke2
+  when: not ansible_check_mode
+
+- name: Debug RKE2 agent installation (check mode)
+  debug:
+    msg: "Would install RKE2 agent from {{ rke2_installation_url }}"
+  when: ansible_check_mode
+
+- name: Enable RKE2 agent service
+  service:
+    name: rke2-agent
+    enabled: yes
+  when: not ansible_check_mode
+
+- name: Debug RKE2 agent enable (check mode)
+  debug:
+    msg: "Would enable rke2-agent service"
+  when: ansible_check_mode
+
+- name: Start RKE2 agent service
+  service:
+    name: rke2-agent
+    state: started
+  when: not ansible_check_mode
+
+- name: Debug RKE2 agent start (check mode)
+  debug:
+    msg: "Would start rke2-agent service"
+  when: ansible_check_mode

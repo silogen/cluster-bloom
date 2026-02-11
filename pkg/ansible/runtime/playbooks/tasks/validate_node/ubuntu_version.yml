@@ -15,6 +15,7 @@
   shell: grep VERSION_ID /etc/os-release | cut -d= -f2 | tr -d '"'
   register: ubuntu_version
   changed_when: false
+  check_mode: false
 
 - name: Check if Ubuntu version is supported
   assert:
@@ -22,3 +23,9 @@
       - ubuntu_version.stdout in supported_ubuntu_versions
     fail_msg: "Ubuntu {{ ubuntu_version.stdout }} is not supported. Supported versions: {{ supported_ubuntu_versions | join(', ') }}"
     success_msg: "Running on supported Ubuntu {{ ubuntu_version.stdout }}"
+  when: not ansible_check_mode
+
+- name: Check mode warning for Ubuntu version
+  debug:
+    msg: "CHECK MODE: {% if ubuntu_version.stdout not in supported_ubuntu_versions %}Would fail - Ubuntu {{ ubuntu_version.stdout }} is not supported. Supported versions: {{ supported_ubuntu_versions | join(', ') }}{% else %}Ubuntu version OK ({{ ubuntu_version.stdout }}){% endif %}"
+  when: ansible_check_mode

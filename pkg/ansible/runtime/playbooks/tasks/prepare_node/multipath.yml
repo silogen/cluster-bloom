@@ -1,0 +1,45 @@
+---
+# Multipath Configuration Tasks
+# 
+# Purpose: Configures multipath blacklist to prevent conflicts with storage
+# Scope: Creates or updates /etc/multipath.conf with device blacklist
+#
+# Parameters: None (uses global variables)
+#
+# Returns: Succeeds when multipath configuration is set
+#
+# Usage:
+#   include_tasks: tasks/prepare_node/multipath.yml
+
+- name: Check if multipath.conf exists
+  stat:
+    path: /etc/multipath.conf
+  register: multipath_conf
+
+- name: Create multipath.conf if not exists
+  copy:
+    content: |
+      blacklist {
+          devnode "^sd[a-z0-9]+"
+      }
+    dest: /etc/multipath.conf
+    mode: "0644"
+  when: not multipath_conf.stat.exists
+
+- name: Ensure blacklist entry in multipath.conf
+  blockinfile:
+    path: /etc/multipath.conf
+    block: |
+      blacklist {
+          devnode "^sd[a-z0-9]+"
+      }
+    marker: "# {mark} ANSIBLE MANAGED BLOCK - cluster-bloom"
+    create: yes
+    mode: "0644"
+  when: multipath_conf.stat.exists and not ansible_check_mode
+  notify: Restart multipathd
+
+- name: Debug multipath blacklist update (check mode)
+  debug:
+    msg: "Would update multipath.conf with device blacklist and restart multipathd service"
+  when: multipath_conf.stat.exists and ansible_check_mode

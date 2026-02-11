@@ -15,31 +15,53 @@
   shell: df -BG / | awk 'NR==2 {print $4}' | sed 's/G//'
   register: root_disk_space
   changed_when: false
+  check_mode: false
 
 - name: Validate root partition has at least 20GB
   assert:
     that: root_disk_space.stdout | int >= 20
     fail_msg: "Root partition requires at least 20GB free space (found {{ root_disk_space.stdout }}GB)"
+  when: not ansible_check_mode
+
+- name: Check mode warning for root partition space
+  debug:
+    msg: "CHECK MODE: {% if root_disk_space.stdout | int < 20 %}Would fail - root partition requires at least 20GB free space (found {{ root_disk_space.stdout }}GB){% else %}Root partition space OK ({{ root_disk_space.stdout }}GB available){% endif %}"
+  when: ansible_check_mode
 
 - name: Check total memory
   shell: grep MemTotal /proc/meminfo | awk '{print int($2/1024/1024)}'
   register: total_memory
   changed_when: false
+  check_mode: false
+
 
 - name: Validate minimum 4GB RAM
   assert:
     that: total_memory.stdout | int >= 4
     fail_msg: "System requires at least 4GB RAM (found {{ total_memory.stdout }}GB)"
+  when: not ansible_check_mode
+
+- name: Check mode warning for RAM
+  debug:
+    msg: "CHECK MODE: {% if total_memory.stdout | int < 4 %}Would fail - system requires at least 4GB RAM (found {{ total_memory.stdout }}GB){% else %}RAM OK ({{ total_memory.stdout }}GB available){% endif %}"
+  when: ansible_check_mode
 
 - name: Check CPU cores
   shell: grep -c ^processor /proc/cpuinfo
   register: cpu_cores
   changed_when: false
+  check_mode: false
 
 - name: Validate minimum 2 CPU cores
   assert:
     that: cpu_cores.stdout | int >= 2
     fail_msg: "System requires at least 2 CPU cores (found {{ cpu_cores.stdout }})"
+  when: not ansible_check_mode
+
+- name: Check mode warning for CPU cores
+  debug:
+    msg: "CHECK MODE: {% if cpu_cores.stdout | int < 2 %}Would fail - system requires at least 2 CPU cores (found {{ cpu_cores.stdout }}){% else %}CPU cores OK ({{ cpu_cores.stdout }} cores available){% endif %}"
+  when: ansible_check_mode
 
 - name: Check required kernel modules
   shell: |

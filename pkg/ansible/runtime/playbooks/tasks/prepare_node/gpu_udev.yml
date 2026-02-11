@@ -1,0 +1,28 @@
+---
+# GPU Udev Rules Configuration Tasks
+# 
+# Purpose: Configures udev rules for AMD GPU device permissions
+# Scope: Creates udev rules for kfd and renderD devices
+#
+# Parameters:
+#   GPU_NODE: Boolean indicating if this is a GPU node
+#
+# Returns: Succeeds when GPU udev rules are configured
+#
+# Usage:
+#   include_tasks: tasks/prepare_node/gpu_udev.yml
+#   when: GPU_NODE
+
+- name: Create AMD GPU udev rules
+  copy:
+    content: |
+      KERNEL=="kfd", MODE="0666"
+      SUBSYSTEM=="drm", KERNEL=="renderD*", MODE="0666"
+    dest: /etc/udev/rules.d/70-amdgpu.rules
+    mode: "0644"
+  notify: Reload udev
+
+- name: Reload udev rules immediately
+  shell: |
+    udevadm control --reload-rules
+    udevadm trigger

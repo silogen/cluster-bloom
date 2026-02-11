@@ -21,4 +21,4 @@
 
 - name: Check /var/lib/rancher partition size
   include_tasks: rancher_partition.yml
-  when: GPU_NODE and not SKIP_RANCHER_PARTITION_CHECK
+  when: GPU_NODE | bool and not SKIP_RANCHER_PARTITION_CHECK | bool

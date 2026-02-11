@@ -1,0 +1,35 @@
+---
+# Logging Configuration Tasks
+# 
+# Purpose: Configures rsyslog rate limiting for storage operations
+# Scope: Creates rsyslog filter to prevent log flooding
+#
+# Parameters: None (uses global variables)
+#
+# Returns: Succeeds when rsyslog configuration is set
+#
+# Usage:
+#   include_tasks: tasks/prepare_node/logging.yml
+
+- name: Create rsyslog iSCSI filter
+  copy:
+    content: |
+      # /etc/rsyslog.d/01-iscsi-filter.conf
+      module(load="imuxsock" SysSockRateLimit.Interval="0")
+
+      ruleset(name="iscsi_ratelimit") {
+          if ($msg contains "detected conn error") or
+          ($msg contains "session recovery timed out") or
+          ($msg contains "longhorn") then {
+              action(type="omfile"
+                  file="/var/log/syslog"
+                  dynaFile="default"
+                  action.execOnlyEveryNthTime="500"
+                  action.execOnlyEveryNthTimeTimeout="1200"
+              )
+              stop
+          }
+      }
+    dest: /etc/rsyslog.d/01-iscsi-filter.conf
+    mode: "0644"
+  notify: Restart rsyslog
