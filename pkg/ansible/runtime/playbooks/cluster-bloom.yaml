@@ -57,14 +57,15 @@
 
   tasks:
     - name: Pre-deployment Data Safety Validation
+      tags: [pre_deployment]
       include_tasks: tasks/data_safety_check.yml
       vars:
         validate_no_disks_for_cluster: "{{ NO_DISKS_FOR_CLUSTER | default(false) }}"
         validate_cluster_disks: "{{ CLUSTER_DISKS | default('') }}"
         validate_config_file: "{{ ansible_config_file | default('bloom.yaml') }}"
-      tags: [pre_deployment]
 
     - name: Validate Ubuntu Version
+      tags: [validate_node]
       block:
         - name: Get Ubuntu version
           shell: grep VERSION_ID /etc/os-release | cut -d= -f2 | tr -d '"'
@@ -77,9 +78,9 @@
               - ubuntu_version.stdout in supported_ubuntu_versions
             fail_msg: "Ubuntu {{ ubuntu_version.stdout }} is not supported. Supported versions: {{ supported_ubuntu_versions | join(', ') }}"
             success_msg: "Running on supported Ubuntu {{ ubuntu_version.stdout }}"
-      tags: [validate_node]
 
     - name: Validate System Requirements
+      tags: [validate_node]
       block:
         - name: Check disk space on root partition
           shell: df -BG / | awk 'NR==2 {print $4}' | sed 's/G//'
@@ -125,9 +126,8 @@
           failed_when: kernel_modules_check.rc != 0
           changed_when: false
 
-      tags: [validate_node]
-
     - name: Check /var/lib/rancher partition size
+      tags: [validate_node]
       when: GPU_NODE and not SKIP_RANCHER_PARTITION_CHECK
       block:
         - name: Create /var/lib/rancher directory
@@ -150,9 +150,9 @@
           fail:
             msg: "/var/lib/rancher partition size ({{ rancher_partition_size.stdout }}GB) is less than recommended 500GB"
           when: rancher_partition_size.stdout | int < 500
-      tags: [validate_node]
 
     - name: Install Dependent Packages
+      tags: [packages, prep_node]
       block:
         - name: Update apt cache
           apt:
@@ -175,9 +175,9 @@
             DEBIAN_FRONTEND: noninteractive
             NEEDRESTART_MODE: a
             NEEDRESTART_SUSPEND: "1"
-      tags: [packages, prep_node]
 
     - name: Setup Multipath
+      tags: [setup_multipath, prep_node]
       block:
         - name: Check if multipath.conf exists
           stat:
@@ -204,9 +204,9 @@
             marker: "# {mark} ANSIBLE MANAGED BLOCK - cluster-bloom"
           when: multipath_conf.stat.exists
           notify: Restart multipathd
-      tags: [setup_multipath, prep_node]
 
     - name: Setup and Check ROCm
+      tags: [gpu, rocm, prep_node]
       when: GPU_NODE
       block:
         - name: Check if rocm-smi exists
@@ -287,9 +287,8 @@
           debug:
             msg: "ROCm version: {{ rocm_version_file.content | b64decode | trim }}"
 
-      tags: [gpu, rocm, prep_node]
-
     - name: Update Modprobe (GPU nodes)
+      tags: [gpu, prep_node]
       when: GPU_NODE
       block:
         - name: Un-blacklist amdgpu module
@@ -301,9 +300,9 @@
             name: amdgpu
             state: present
           ignore_errors: yes
-      tags: [gpu, prep_node]
 
     - name: Prepare Longhorn Disks
+      tags: [prepare_disks, prep_node]
       when: not NO_DISKS_FOR_CLUSTER and CLUSTER_PREMOUNTED_DISKS == ""
       block:
         - name: Convert CLUSTER_DISKS from comma-separated string to list
@@ -350,9 +349,9 @@
           when: cluster_disks_list | length > 0 and not item.skipped | default(false)
           register: mount_results
           failed_when: mount_results.rc != 0
-      tags: [prepare_disks, prep_node]
 
     - name: Prepare RKE2
+      tags: [rke2, deploy_cluster]
       block:
         - name: Load required kernel modules
           modprobe:
@@ -555,9 +554,8 @@
             dest: /var/lib/rancher/rke2/server/manifests/rke2-cilium-config.yaml
             mode: "0644"
 
-      tags: [rke2, deploy_cluster]
-
     - name: Generate Node Labels
+      tags: [rke2, deploy_cluster]
       block:
         - name: Build disk labels list
           set_fact:
@@ -579,9 +577,9 @@
                 - {{ label }}
               {% endfor %}
             marker: "# {mark} ANSIBLE MANAGED BLOCK - node labels"
-      tags: [rke2, deploy_cluster]
 
     - name: Install Kubernetes Tools
+      tags: [tools, deploy_cluster]
       block:
         - name: Install k9s via snap
           snap:
@@ -608,9 +606,9 @@
             rm /tmp/get-helm-4.sh
           args:
             creates: /usr/local/bin/helm
-      tags: [tools, deploy_cluster]
 
     - name: Configure inotify instances
+      tags: [system, prep_node]
       block:
         - name: Get current inotify value
           shell: sysctl -n fs.inotify.max_user_instances
@@ -625,9 +623,9 @@
             sysctl_file: /etc/sysctl.conf
             reload: yes
           when: current_inotify.stdout | int < inotify_target_value
-      tags: [system, prep_node]
 
     - name: Open Firewall Ports
+      tags: [firewall, prep_node]
       block:
         - name: Open TCP ports
           iptables:
@@ -648,9 +646,9 @@
             jump: ACCEPT
           loop: "{{ rke2_ports_udp }}"
           notify: Save iptables
-      tags: [firewall, prep_node]
 
     - name: Update Udev Rules (GPU nodes)
+      tags: [gpu, prep_node]
       when: GPU_NODE
       block:
         - name: Create AMD GPU udev rules
@@ -666,9 +664,9 @@
           shell: |
             udevadm control --reload-rules
             udevadm trigger
-      tags: [gpu, prep_node]
 
     - name: Configure logrotate
+      tags: [logging, prep_node]
       block:
         - name: Create iSCSI aggressive logrotate config
           copy:
@@ -729,9 +727,9 @@
             name: cron
             state: started
             enabled: yes
-      tags: [logging, prep_node]
 
     - name: Configure rsyslog rate limiting
+      tags: [logging, prep_node]
       block:
         - name: Create rsyslog iSCSI filter
           copy:
@@ -755,9 +753,9 @@
             dest: /etc/rsyslog.d/01-iscsi-filter.conf
             mode: "0644"
           notify: Restart rsyslog
-      tags: [logging, prep_node]
 
     - name: Setup RKE2 (First Node)
+      tags: [rke2, deploy_cluster]
       when: FIRST_NODE
       block:
         - name: Install RKE2 server
@@ -781,9 +779,9 @@
             path: /var/lib/rancher/rke2/server/node-token
             state: present
             timeout: 300
-      tags: [rke2, deploy_cluster]
 
     - name: Setup RKE2 (Additional Node - Worker)
+      tags: [rke2, deploy_cluster]
       when: not FIRST_NODE and not CONTROL_PLANE
       block:
         - name: Add server and token to RKE2 config
@@ -808,9 +806,9 @@
           service:
             name: rke2-agent
             state: started
-      tags: [rke2, deploy_cluster]
 
     - name: Setup RKE2 (Additional Node - Control Plane)
+      tags: [rke2, deploy_cluster]
       when: not FIRST_NODE and CONTROL_PLANE
       block:
         - name: Add server and token to RKE2 config
@@ -835,9 +833,9 @@
           service:
             name: rke2-server
             state: started
-      tags: [rke2, deploy_cluster]
 
     - name: Setup KubeConfig (Control Plane Nodes)
+      tags: [kubeconfig, deploy_cluster]
       when: FIRST_NODE or CONTROL_PLANE
       block:
         - name: Wait for RKE2 kubeconfig to be available
@@ -944,9 +942,9 @@
             owner: "{{ ansible_env.SUDO_USER }}"
             group: "{{ ansible_env.SUDO_USER }}"
           when: ansible_env.SUDO_USER is defined and ansible_env.SUDO_USER != ""
-      tags: [kubeconfig, deploy_cluster]
 
     - name: Create Chrony Config (First Node)
+      tags: [ntp, prep_node]
       when: FIRST_NODE
       block:
         - name: Backup original chrony.conf
@@ -969,9 +967,9 @@
             dest: /etc/chrony/chrony.conf
             mode: "0644"
           notify: Restart chronyd
-      tags: [ntp, prep_node]
 
     - name: Create Chrony Config (Additional Node)
+      tags: [ntp, prep_node]
       when: not FIRST_NODE and SERVER_IP != ""
       block:
         - name: Backup original chrony.conf
@@ -994,14 +992,14 @@
             dest: /etc/chrony/chrony.conf
             mode: "0644"
           notify: Restart chronyd
-      tags: [ntp, prep_node]
 
     - name: Setup Node Annotator
+      tags: [deploy_storage_classes, node-annotator, deploy_k8s_apps]
       when: FIRST_NODE
       include_tasks: tasks/setup_node_annotator.yml
-      tags: [deploy_storage_classes, node-annotator, deploy_k8s_apps]
 
     - name: Setup MetalLB (First Node)
+      tags: [metallb, deploy_k8s_apps]
       when: FIRST_NODE
       block:
         - name: Get default IP for MetalLB
@@ -1028,9 +1026,9 @@
                 namespace: metallb-system
             dest: /var/lib/rancher/rke2/server/manifests/metallb-address.yaml
             mode: "0644"
-      tags: [metallb, deploy_k8s_apps]
 
     - name: Create Domain Configuration (First Node)
+      tags: [domain, deploy_k8s_apps]
       when: FIRST_NODE and DOMAIN != ""
       block:
         - name: Wait for cluster to be ready
@@ -1076,9 +1074,9 @@
                   -n kgateway-system \
                   --dry-run=client -o yaml | \
                 /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml apply -f -
-      tags: [domain, deploy_k8s_apps]
 
     - name: Preload Container Images
+      tags: [images, deploy_k8s_apps]
       when: FIRST_NODE and PRELOAD_IMAGES is defined and PRELOAD_IMAGES != ""
       block:
         - name: Check for RKE2 containerd socket
@@ -1156,20 +1154,19 @@
                 3. Test manual image pull: /var/lib/rancher/rke2/bin/ctr --address={{ containerd_socket_path }} --namespace k8s.io image pull docker.io/library/alpine:latest
                 4. Check network connectivity and DNS resolution
                 5. Verify PRELOAD_IMAGES variable contains valid image references
-      
-      tags: [images, deploy_k8s_apps]
 
     - name: Setup Storage Provisioner (Small/Medium Clusters - Local-Path)
+      tags: [deploy_storage_classes, local-path, deploy_k8s_apps]
       when: FIRST_NODE and not NO_DISKS_FOR_CLUSTER and CLUSTER_SIZE in ["small", "medium"]
       include_tasks: tasks/setup_local_path.yml
-      tags: [deploy_storage_classes, local-path, deploy_k8s_apps]
 
     - name: Setup Storage Provisioner (Large Clusters - Longhorn)  
+      tags: [deploy_storage_classes, longhorn, deploy_k8s_apps]
       when: FIRST_NODE and not NO_DISKS_FOR_CLUSTER and CLUSTER_SIZE == "large"
       include_tasks: tasks/setup_longhorn.yml
-      tags: [deploy_storage_classes, longhorn, deploy_k8s_apps]
 
     - name: Create Bloom ConfigMap
+      tags: [config, deploy_k8s_apps]
       when: FIRST_NODE
       block:
         - name: Get bloom version
@@ -1192,9 +1189,8 @@
               rke2_version: "{{ RKE2_VERSION }}"
             EOF
 
-      tags: [config, deploy_k8s_apps]
-
     - name: Setup ClusterForge
+      tags: [clusterforge, deploy_clusterforge]
       when: FIRST_NODE and CLUSTERFORGE_RELEASE != "none"
       block:
         - name: Create ClusterForge directory in .bloom
@@ -1232,9 +1228,8 @@
           debug:
             msg: "{{ cf_bootstrap.stdout }}"
 
-      tags: [clusterforge, deploy_clusterforge]
-
     - name: Generate Join Command (First Node)
+      tags: [output, deploy_cluster]
       when: FIRST_NODE
       block:
         - name: Get join token
@@ -1262,7 +1257,6 @@
               To add additional nodes, use:
               ansible-playbook cluster-bloom.yaml -e "FIRST_NODE=false SERVER_IP={{ node_ip }} JOIN_TOKEN={{ JOIN_TOKEN_content.content | b64decode | trim }}"
               ============================================
-      tags: [output, deploy_cluster]
 
   handlers:
     - name: Restart multipathd
