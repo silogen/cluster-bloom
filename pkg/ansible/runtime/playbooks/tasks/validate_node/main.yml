@@ -1,0 +1,24 @@
+---
+# Node Validation Main Orchestrator
+# 
+# Purpose: Orchestrates all node validation tasks in proper sequence
+# Scope: Runs Ubuntu version, system requirements, and conditional partition checks
+#
+# Parameters:
+#   GPU_NODE: Boolean indicating if this is a GPU node (default: false)  
+#   SKIP_RANCHER_PARTITION_CHECK: Boolean to bypass partition validation (default: false)
+#
+# Returns: Fails if any validation check fails, succeeds if all pass
+#
+# Usage:
+#   include_tasks: tasks/validate_node/main.yml
+
+- name: Validate Ubuntu Version
+  include_tasks: ubuntu_version.yml
+
+- name: Validate System Requirements  
+  include_tasks: system_requirements.yml
+
+- name: Check /var/lib/rancher partition size
+  include_tasks: rancher_partition.yml
+  when: GPU_NODE and not SKIP_RANCHER_PARTITION_CHECK

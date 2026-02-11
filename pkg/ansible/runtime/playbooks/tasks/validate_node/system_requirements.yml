@@ -1,0 +1,56 @@
+---
+# System Requirements Validation Tasks
+# 
+# Purpose: Validates node meets minimum system requirements for cluster deployment
+# Scope: Checks disk space, memory, CPU cores, and required kernel modules
+#
+# Parameters: None (uses global variables)
+#
+# Returns: Fails if any requirement is not met, succeeds if all checks pass
+#
+# Usage:
+#   include_tasks: tasks/validate_node/system_requirements.yml
+
+- name: Check disk space on root partition
+  shell: df -BG / | awk 'NR==2 {print $4}' | sed 's/G//'
+  register: root_disk_space
+  changed_when: false
+
+- name: Validate root partition has at least 20GB
+  assert:
+    that: root_disk_space.stdout | int >= 20
+    fail_msg: "Root partition requires at least 20GB free space (found {{ root_disk_space.stdout }}GB)"
+
+- name: Check total memory
+  shell: grep MemTotal /proc/meminfo | awk '{print int($2/1024/1024)}'
+  register: total_memory
+  changed_when: false
+
+- name: Validate minimum 4GB RAM
+  assert:
+    that: total_memory.stdout | int >= 4
+    fail_msg: "System requires at least 4GB RAM (found {{ total_memory.stdout }}GB)"
+
+- name: Check CPU cores
+  shell: grep -c ^processor /proc/cpuinfo
+  register: cpu_cores
+  changed_when: false
+
+- name: Validate minimum 2 CPU cores
+  assert:
+    that: cpu_cores.stdout | int >= 2
+    fail_msg: "System requires at least 2 CPU cores (found {{ cpu_cores.stdout }})"
+
+- name: Check required kernel modules
+  shell: |
+    for mod in overlay br_netfilter; do
+      if ! lsmod | grep -q "^$mod"; then
+        if ! modinfo $mod >/dev/null 2>&1; then
+          echo "MISSING:$mod"
+          exit 1
+        fi
+      fi
+    done
+  register: kernel_modules_check
+  failed_when: kernel_modules_check.rc != 0
+  changed_when: false
