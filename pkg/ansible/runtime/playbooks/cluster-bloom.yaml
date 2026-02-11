@@ -915,8 +915,13 @@
     - name: Setup RKE2 (First Node)
       when: FIRST_NODE
       block:
-        - name: Install RKE2 server
-          shell: curl -sfL {{ rke2_installation_url }} | sh -
+        - name: "Install RKE2 server{% if RKE2_VERSION is defined and RKE2_VERSION != '' %} ({{ RKE2_VERSION }}){% else %} (latest){% endif %}"
+          shell: |
+            {% if RKE2_VERSION is defined and RKE2_VERSION != "" %}
+            curl -sfL {{ rke2_installation_url }} | INSTALL_RKE2_VERSION="{{ RKE2_VERSION }}" sh -
+            {% else %}
+            curl -sfL {{ rke2_installation_url }} | sh -
+            {% endif %}
           args:
             creates: /usr/local/bin/rke2
 
@@ -949,8 +954,13 @@
               token: {{ JOIN_TOKEN }}
             marker: "# {mark} ANSIBLE MANAGED BLOCK - join config"
 
-        - name: Install RKE2 agent
-          shell: curl -sfL {{ rke2_installation_url }} | INSTALL_RKE2_TYPE=agent sh -
+        - name: "Install RKE2 agent{% if RKE2_VERSION is defined and RKE2_VERSION != '' %} ({{ RKE2_VERSION }}){% else %} (latest){% endif %}"
+          shell: |
+            {% if RKE2_VERSION is defined and RKE2_VERSION != "" %}
+            curl -sfL {{ rke2_installation_url }} | INSTALL_RKE2_TYPE=agent INSTALL_RKE2_VERSION="{{ RKE2_VERSION }}" sh -
+            {% else %}
+            curl -sfL {{ rke2_installation_url }} | INSTALL_RKE2_TYPE=agent sh -
+            {% endif %}
           args:
             creates: /usr/local/bin/rke2
 
@@ -976,8 +986,13 @@
               token: {{ JOIN_TOKEN }}
             marker: "# {mark} ANSIBLE MANAGED BLOCK - join config"
 
-        - name: Install RKE2 server (control plane)
-          shell: curl -sfL {{ rke2_installation_url }} | INSTALL_RKE2_TYPE=server sh -
+        - name: "Install RKE2 server (control plane){% if RKE2_VERSION is defined and RKE2_VERSION != '' %} ({{ RKE2_VERSION }}){% else %} (latest){% endif %}"
+          shell: |
+            {% if RKE2_VERSION is defined and RKE2_VERSION != "" %}
+            curl -sfL {{ rke2_installation_url }} | INSTALL_RKE2_TYPE=server INSTALL_RKE2_VERSION="{{ RKE2_VERSION }}" sh -
+            {% else %}
+            curl -sfL {{ rke2_installation_url }} | INSTALL_RKE2_TYPE=server sh -
+            {% endif %}
           args:
             creates: /usr/local/bin/rke2
 
@@ -1001,42 +1016,104 @@
             state: present
             timeout: 300
 
-        - name: Update RKE2 kubeconfig with actual IP
+        # Get home directories using getent
+        - name: Get root home directory
+          shell: "getent passwd root | cut -d: -f6"
+          register: root_home
+          changed_when: false
+
+        - name: Get sudo user home directory
+          shell: "getent passwd '{{ ansible_env.SUDO_USER }}' | cut -d: -f6"
+          register: sudo_user_home
+          changed_when: false
+          when: ansible_env.SUDO_USER is defined and ansible_env.SUDO_USER != ""
+
+        # Create kubeconfig for root user
+        - name: Create .kube directory for root
+          file:
+            path: "{{ root_home.stdout }}/.kube"
+            state: directory
+            mode: "0755"
+            owner: root
+            group: root
+
+        - name: Copy kubeconfig for root user
+          copy:
+            src: /etc/rancher/rke2/rke2.yaml
+            dest: "{{ root_home.stdout }}/.kube/config"
+            remote_src: yes
+            mode: "0600"
+            owner: root
+            group: root
+
+        - name: Update server IP in root kubeconfig
           replace:
-            path: /etc/rancher/rke2/rke2.yaml
+            path: "{{ root_home.stdout }}/.kube/config"
             regexp: '127\.0\.0\.1'
             replace: "{{ node_ip }}"
 
-        - name: Create .kube directory for user
+        # Create kubeconfig for sudo user (if exists)
+        - name: Create .kube directory for sudo user
           file:
-            path: "{{ ansible_env.HOME }}/.kube"
+            path: "{{ sudo_user_home.stdout }}/.kube"
             state: directory
             mode: "0755"
-            owner: "{{ ansible_user }}"
-            group: "{{ ansible_user }}"
+            owner: "{{ ansible_env.SUDO_USER }}"
+            group: "{{ ansible_env.SUDO_USER }}"
+          when: ansible_env.SUDO_USER is defined and ansible_env.SUDO_USER != ""
 
-        - name: Copy kubeconfig to user directory
+        - name: Copy kubeconfig for sudo user
           copy:
             src: /etc/rancher/rke2/rke2.yaml
-            dest: "{{ ansible_env.HOME }}/.kube/config"
+            dest: "{{ sudo_user_home.stdout }}/.kube/config"
             remote_src: yes
             mode: "0600"
-            owner: "{{ ansible_user }}"
-            group: "{{ ansible_user }}"
+            owner: "{{ ansible_env.SUDO_USER }}"
+            group: "{{ ansible_env.SUDO_USER }}"
+          when: ansible_env.SUDO_USER is defined and ansible_env.SUDO_USER != ""
 
-        - name: Update PATH in bash_profile for k9s
+        - name: Update server IP in sudo user kubeconfig
+          replace:
+            path: "{{ sudo_user_home.stdout }}/.kube/config"
+            regexp: '127\.0\.0\.1'
+            replace: "{{ node_ip }}"
+          when: ansible_env.SUDO_USER is defined and ansible_env.SUDO_USER != ""
+
+        # Update PATH for k9s - root user
+        - name: Update PATH in bash_profile for k9s (root)
           lineinfile:
-            path: "{{ ansible_env.HOME }}/.bash_profile"
+            path: "{{ root_home.stdout }}/.bash_profile"
             line: "export PATH=$PATH:/snap/k9s/current/bin"
             create: yes
-            owner: "{{ ansible_user }}"
+            owner: root
+            group: root
 
-        - name: Update PATH in bashrc for k9s
+        - name: Update PATH in bashrc for k9s (root)
           lineinfile:
-            path: "{{ ansible_env.HOME }}/.bashrc"
+            path: "{{ root_home.stdout }}/.bashrc"
             line: "export PATH=$PATH:/snap/k9s/current/bin"
             create: yes
-            owner: "{{ ansible_user }}"
+            owner: root
+            group: root
+
+        # Update PATH for k9s - sudo user
+        - name: Update PATH in bash_profile for k9s (sudo user)
+          lineinfile:
+            path: "{{ sudo_user_home.stdout }}/.bash_profile"
+            line: "export PATH=$PATH:/snap/k9s/current/bin"
+            create: yes
+            owner: "{{ ansible_env.SUDO_USER }}"
+            group: "{{ ansible_env.SUDO_USER }}"
+          when: ansible_env.SUDO_USER is defined and ansible_env.SUDO_USER != ""
+
+        - name: Update PATH in bashrc for k9s (sudo user)
+          lineinfile:
+            path: "{{ sudo_user_home.stdout }}/.bashrc"
+            line: "export PATH=$PATH:/snap/k9s/current/bin"
+            create: yes
+            owner: "{{ ansible_env.SUDO_USER }}"
+            group: "{{ ansible_env.SUDO_USER }}"
+          when: ansible_env.SUDO_USER is defined and ansible_env.SUDO_USER != ""
       tags: [kubeconfig, deploy_cluster]
 
     - name: Create Chrony Config (First Node)
