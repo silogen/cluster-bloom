@@ -57,130 +57,12 @@
 
   tasks:
     - name: Pre-deployment Data Safety Validation
-      block:
-        # Initialize validation issues list
-        - name: Initialize validation issues list
-          set_fact:
-            validation_issues: []
-
-        # RKE2 Installation Checks
-        - name: Check if RKE2 server service exists and is running
-          systemd:
-            name: rke2-server
-          register: rke2_server_service
-          failed_when: false
-          changed_when: false
-
-        - name: Check if RKE2 agent service exists and is running
-          systemd:
-            name: rke2-agent
-          register: rke2_agent_service
-          failed_when: false
-          changed_when: false
-
-        - name: Check if RKE2 data directory exists
-          stat:
-            path: /var/lib/rancher/rke2
-          register: rke2_data_dir
-
-        - name: Check if RKE2 data directory is empty (if it exists)
-          find:
-            paths: /var/lib/rancher/rke2
-            file_type: any
-          register: rke2_data_contents
-          when: rke2_data_dir.stat.exists
-
-        - name: Check if RKE2 config directory exists
-          stat:
-            path: /etc/rancher/rke2
-          register: rke2_config_dir
-
-        - name: Check if RKE2 config directory is empty (if it exists)
-          find:
-            paths: /etc/rancher/rke2
-            file_type: any
-          register: rke2_config_contents
-          when: rke2_config_dir.stat.exists
-
-        # Collect RKE2 issues without failing
-        - name: Collect RKE2 server service issue
-          set_fact:
-            validation_issues: "{{ validation_issues + ['RKE2 server service is running (' + rke2_server_service.status.ActiveState + ')'] }}"
-          when: 
-            - rke2_server_service.status is defined
-            - rke2_server_service.status.ActiveState == "active"
-
-        - name: Collect RKE2 agent service issue
-          set_fact:
-            validation_issues: "{{ validation_issues + ['RKE2 agent service is running (' + rke2_agent_service.status.ActiveState + ')'] }}"
-          when:
-            - rke2_agent_service.status is defined
-            - rke2_agent_service.status.ActiveState == "active"
-
-        - name: Collect RKE2 data directory issue
-          set_fact:
-            validation_issues: "{{ validation_issues + ['/var/lib/rancher/rke2 directory exists and contains ' + (rke2_data_contents.matched | string) + ' items'] }}"
-          when:
-            - rke2_data_dir.stat.exists
-            - rke2_data_contents.matched > 0
-
-        - name: Collect RKE2 config directory issue
-          set_fact:
-            validation_issues: "{{ validation_issues + ['/etc/rancher/rke2 directory exists and contains ' + (rke2_config_contents.matched | string) + ' items'] }}"
-          when:
-            - rke2_config_dir.stat.exists
-            - rke2_config_contents.matched > 0
-
-        # CLUSTER_DISKS Mount Checks (conditional)
-        - name: Convert CLUSTER_DISKS from comma-separated string to list for validation
-          set_fact:
-            cluster_disks_validation_list: "{{ CLUSTER_DISKS.split(',') if CLUSTER_DISKS is string and CLUSTER_DISKS != '' else (CLUSTER_DISKS if CLUSTER_DISKS is sequence else []) }}"
-          when: not NO_DISKS_FOR_CLUSTER and CLUSTER_DISKS != ""
-
-        - name: Check mount status for each disk in CLUSTER_DISKS
-          shell: "mount | grep -q '^{{ item }}' && echo 'mounted' || echo 'unmounted'"
-          register: disk_mount_status
-          loop: "{{ cluster_disks_validation_list | default([]) }}"
-          when: not NO_DISKS_FOR_CLUSTER and CLUSTER_DISKS != "" and cluster_disks_validation_list | length > 0
-          changed_when: false
-          failed_when: false
-
-        - name: Collect information about mounted disks
-          set_fact:
-            mounted_cluster_disks: "{{ mounted_cluster_disks | default([]) + [item.item] }}"
-          loop: "{{ disk_mount_status.results | default([]) }}"
-          when: not NO_DISKS_FOR_CLUSTER and CLUSTER_DISKS != "" and item.stdout is defined and item.stdout == 'mounted'
-
-        - name: Collect CLUSTER_DISKS mount issue
-          set_fact:
-            validation_issues: "{{ validation_issues + ['CLUSTER_DISKS are mounted: ' + (mounted_cluster_disks | join(', '))] }}"
-          when: not NO_DISKS_FOR_CLUSTER and CLUSTER_DISKS != "" and mounted_cluster_disks is defined and mounted_cluster_disks | length > 0
-
-        # Report all issues at once
-        - name: Fail deployment if any data safety issues found
-          fail:
-            msg: |
-              ❌ Pre-deployment Data Safety Validation Failed
-              
-              The following issues were detected:
-              {% for issue in validation_issues %}
-              • {{ issue }}
-              {% endfor %}
-              
-              These issues prevent safe deployment and could lead to data loss.
-              
-              Resolution:
-              Use the --destroy-data flag to clean up all existing data:
-              sudo ./bloom cli {{ ansible_config_file | default('bloom.yaml') }} --destroy-data
-              
-              WARNING: This will destroy ALL existing cluster and disk data!
-          when: validation_issues | length > 0
-
-        # Success message
-        - name: Pre-deployment data safety validation completed
-          debug:
-            msg: "✓ Pre-deployment data safety validation completed successfully"
-      tags: [validate_node, pre_deployment]
+      include_tasks: tasks/data_safety_check.yml
+      vars:
+        validate_no_disks_for_cluster: "{{ NO_DISKS_FOR_CLUSTER | default(false) }}"
+        validate_cluster_disks: "{{ CLUSTER_DISKS | default('') }}"
+        validate_config_file: "{{ ansible_config_file | default('bloom.yaml') }}"
+      tags: [pre_deployment]
 
     - name: Validate Ubuntu Version
       block:
@@ -322,7 +204,7 @@
             marker: "# {mark} ANSIBLE MANAGED BLOCK - cluster-bloom"
           when: multipath_conf.stat.exists
           notify: Restart multipathd
-      tags: [storage, prep_node]
+      tags: [setup_multipath, prep_node]
 
     - name: Setup and Check ROCm
       when: GPU_NODE
@@ -468,7 +350,7 @@
           when: cluster_disks_list | length > 0 and not item.skipped | default(false)
           register: mount_results
           failed_when: mount_results.rc != 0
-      tags: [storage, prep_node]
+      tags: [prepare_disks, prep_node]
 
     - name: Prepare RKE2
       block:
@@ -1114,18 +996,10 @@
           notify: Restart chronyd
       tags: [ntp, prep_node]
 
-    - name: Wait for kubectl to be available
-      when: FIRST_NODE and not NO_DISKS_FOR_CLUSTER
-      wait_for:
-        path: /var/lib/rancher/rke2/bin/kubectl
-        state: present
-        timeout: 300
-      tags: [storage, deploy_k8s_apps]
-
     - name: Setup Node Annotator
       when: FIRST_NODE
       include_tasks: tasks/setup_node_annotator.yml
-      tags: [node-annotator, deploy_k8s_apps]
+      tags: [deploy_storage_classes, node-annotator, deploy_k8s_apps]
 
     - name: Setup MetalLB (First Node)
       when: FIRST_NODE
@@ -1162,21 +1036,6 @@
         - name: Wait for cluster to be ready
           pause:
             seconds: 5
-
-        - name: Create DOMAIN ConfigMap
-          shell: |
-            cat <<EOF | /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml apply -f -
-            apiVersion: v1
-            kind: ConfigMap
-            metadata:
-              name: cluster-domain
-              namespace: default
-            data:
-              DOMAIN: "{{ DOMAIN }}"
-              use-cert-manager: "{{ USE_CERT_MANAGER | lower }}"
-            EOF
-          args:
-            executable: /bin/bash
 
         - name: Use generated certificates for ingress
           when: not USE_CERT_MANAGER and CERT_OPTION == "generate"
@@ -1217,7 +1076,7 @@
                   -n kgateway-system \
                   --dry-run=client -o yaml | \
                 /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml apply -f -
-      tags: [DOMAIN, deploy_k8s_apps]
+      tags: [domain, deploy_k8s_apps]
 
     - name: Preload Container Images
       when: FIRST_NODE and PRELOAD_IMAGES is defined and PRELOAD_IMAGES != ""
@@ -1303,12 +1162,12 @@
     - name: Setup Storage Provisioner (Small/Medium Clusters - Local-Path)
       when: FIRST_NODE and not NO_DISKS_FOR_CLUSTER and CLUSTER_SIZE in ["small", "medium"]
       include_tasks: tasks/setup_local_path.yml
-      tags: [storage, local-path, deploy_k8s_apps]
+      tags: [deploy_storage_classes, local-path, deploy_k8s_apps]
 
     - name: Setup Storage Provisioner (Large Clusters - Longhorn)  
       when: FIRST_NODE and not NO_DISKS_FOR_CLUSTER and CLUSTER_SIZE == "large"
       include_tasks: tasks/setup_longhorn.yml
-      tags: [storage, longhorn, deploy_k8s_apps]
+      tags: [deploy_storage_classes, longhorn, deploy_k8s_apps]
 
     - name: Create Bloom ConfigMap
       when: FIRST_NODE

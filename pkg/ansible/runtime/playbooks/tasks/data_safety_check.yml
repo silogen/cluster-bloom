@@ -1,0 +1,148 @@
+---
+# Pre-deployment Data Safety Validation Tasks
+# 
+# Purpose: Validates system state to prevent data loss during cluster deployment
+# Scope: Checks for existing RKE2 installations and mounted storage that could be overwritten
+#
+# Parameters:
+#   validate_no_disks_for_cluster: Skip disk validation if true (default: false)
+#   validate_cluster_disks: Comma-separated disk list or array (default: "")
+#   validate_config_file: Config filename for error messages (default: "bloom.yaml")
+#
+# Returns: Fails with detailed error if issues found, succeeds with confirmation if clean
+#
+# Usage:
+#   include_tasks: tasks/data_safety_check.yml
+#   vars:
+#     validate_no_disks_for_cluster: "{{ NO_DISKS_FOR_CLUSTER | default(false) }}"
+#     validate_cluster_disks: "{{ CLUSTER_DISKS | default('') }}"
+#     validate_config_file: "{{ ansible_config_file | default('bloom.yaml') }}"
+
+# Set parameter defaults for standalone usage
+- name: Set validation parameter defaults
+  set_fact:
+    _validate_no_disks_for_cluster: "{{ validate_no_disks_for_cluster | default(false) }}"
+    _validate_cluster_disks: "{{ validate_cluster_disks | default('') }}"
+    _validate_config_file: "{{ validate_config_file | default('bloom.yaml') }}"
+
+# Initialize validation issues list
+- name: Initialize validation issues list
+  set_fact:
+    validation_issues: []
+
+# RKE2 Installation Checks
+- name: Check if RKE2 server service exists and is running
+  systemd:
+    name: rke2-server
+  register: rke2_server_service
+  failed_when: false
+  changed_when: false
+
+- name: Check if RKE2 agent service exists and is running
+  systemd:
+    name: rke2-agent
+  register: rke2_agent_service
+  failed_when: false
+  changed_when: false
+
+- name: Check if RKE2 data directory exists
+  stat:
+    path: /var/lib/rancher/rke2
+  register: rke2_data_dir
+
+- name: Check if RKE2 data directory is empty (if it exists)
+  find:
+    paths: /var/lib/rancher/rke2
+    file_type: any
+  register: rke2_data_contents
+  when: rke2_data_dir.stat.exists
+
+- name: Check if RKE2 config directory exists
+  stat:
+    path: /etc/rancher/rke2
+  register: rke2_config_dir
+
+- name: Check if RKE2 config directory is empty (if it exists)
+  find:
+    paths: /etc/rancher/rke2
+    file_type: any
+  register: rke2_config_contents
+  when: rke2_config_dir.stat.exists
+
+# Collect RKE2 issues without failing
+- name: Collect RKE2 server service issue
+  set_fact:
+    validation_issues: "{{ validation_issues + ['RKE2 server service is running (' + rke2_server_service.status.ActiveState + ')'] }}"
+  when: 
+    - rke2_server_service.status is defined
+    - rke2_server_service.status.ActiveState == "active"
+
+- name: Collect RKE2 agent service issue
+  set_fact:
+    validation_issues: "{{ validation_issues + ['RKE2 agent service is running (' + rke2_agent_service.status.ActiveState + ')'] }}"
+  when:
+    - rke2_agent_service.status is defined
+    - rke2_agent_service.status.ActiveState == "active"
+
+- name: Collect RKE2 data directory issue
+  set_fact:
+    validation_issues: "{{ validation_issues + ['/var/lib/rancher/rke2 directory exists and contains ' + (rke2_data_contents.matched | string) + ' items'] }}"
+  when:
+    - rke2_data_dir.stat.exists
+    - rke2_data_contents.matched > 0
+
+- name: Collect RKE2 config directory issue
+  set_fact:
+    validation_issues: "{{ validation_issues + ['/etc/rancher/rke2 directory exists and contains ' + (rke2_config_contents.matched | string) + ' items'] }}"
+  when:
+    - rke2_config_dir.stat.exists
+    - rke2_config_contents.matched > 0
+
+- name: Convert CLUSTER_DISKS from comma-separated string to list for validation
+  set_fact:
+    cluster_disks_validation_list: "{{ _validate_cluster_disks.split(',') if _validate_cluster_disks is string and _validate_cluster_disks != '' else (_validate_cluster_disks if _validate_cluster_disks is sequence else []) }}"
+  when: not _validate_no_disks_for_cluster and _validate_cluster_disks != ""
+
+- name: Check mount status for each disk in CLUSTER_DISKS
+  shell: "mount | grep -q '^{{ item }}' && echo 'mounted' || echo 'unmounted'"
+  register: disk_mount_status
+  loop: "{{ cluster_disks_validation_list | default([]) }}"
+  when: not _validate_no_disks_for_cluster and _validate_cluster_disks != "" and cluster_disks_validation_list | length > 0
+  changed_when: false
+  failed_when: false
+
+- name: Collect information about mounted disks
+  set_fact:
+    mounted_cluster_disks: "{{ mounted_cluster_disks | default([]) + [item.item] }}"
+  loop: "{{ disk_mount_status.results | default([]) }}"
+  when: not _validate_no_disks_for_cluster and _validate_cluster_disks != "" and item.stdout is defined and item.stdout == 'mounted'
+
+- name: Collect CLUSTER_DISKS mount issue
+  set_fact:
+    validation_issues: "{{ validation_issues + ['CLUSTER_DISKS are mounted: ' + (mounted_cluster_disks | join(', '))] }}"
+  when: not _validate_no_disks_for_cluster and _validate_cluster_disks != "" and mounted_cluster_disks is defined and mounted_cluster_disks | length > 0
+
+# Report all issues at once
+- name: Fail deployment if any data safety issues found
+  fail:
+    msg: |
+      ❌ Pre-deployment Data Safety Validation Failed
+      
+      The following issues were detected:
+      {% for issue in validation_issues %}
+      • {{ issue }}
+      {% endfor %}
+      
+      These issues prevent safe deployment and could lead to data loss.
+      
+      Resolution:
+      Use the --destroy-data flag to clean up all existing data:
+      sudo ./bloom cli {{ _validate_config_file }} --destroy-data
+      
+      WARNING: This will destroy ALL existing cluster and disk data!
+  when: validation_issues | length > 0
+
+# Success message
+- name: Pre-deployment data safety validation completed
+  debug:
+    msg: "✓ Pre-deployment data safety validation completed successfully"
