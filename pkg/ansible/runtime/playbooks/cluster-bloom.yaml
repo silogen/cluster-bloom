@@ -272,12 +272,49 @@
 
     - name: Install Dependent Packages
       block:
-        - name: Update apt cache
-          apt:
-            update_cache: yes
+        - name: Stop services that may lock apt
+          shell: |
+            systemctl stop unattended-upgrades.service || true
+            systemctl stop apt-daily.timer || true
+            systemctl stop apt-daily-upgrade.timer || true
+            systemctl kill --kill-who=all apt-daily.service || true
+            systemctl kill --kill-who=all apt-daily-upgrade.service || true
+          ignore_errors: yes
+
+        - name: Wait for apt locks to be released
+          shell: |
+            timeout 300 bash -c 'while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do sleep 1; done' || true
+            timeout 300 bash -c 'while fuser /var/lib/apt/lists/lock >/dev/null 2>&1; do sleep 1; done' || true
+          ignore_errors: yes
+
+        - name: Clean apt lists and locks
+          shell: |
+            killall apt apt-get dpkg 2>/dev/null || true
+            rm -f /var/lib/apt/lists/lock
+            rm -f /var/cache/apt/archives/lock
+            rm -f /var/lib/dpkg/lock*
+            dpkg --configure -a || true
+            rm -rf /var/lib/apt/lists/*
+            mkdir -p /var/lib/apt/lists/partial
+          ignore_errors: yes
+
+        - name: Disable problematic apt repositories
+          shell: |
+            if [ -f /etc/apt/sources.list.d/kitware.list ]; then
+              mv /etc/apt/sources.list.d/kitware.list /etc/apt/sources.list.d/kitware.list.disabled || true
+            fi
+          ignore_errors: yes
+
+        - name: Update apt cache with timeout
+          shell: timeout 300 apt-get update --allow-insecure-repositories
           environment:
             DEBIAN_FRONTEND: noninteractive
-          ignore_errors: yes
+            APT_KEY_DONT_WARN_ON_DANGEROUS_USAGE: "1"
+          register: apt_update_result
+          until: apt_update_result.rc == 0
+          retries: 3
+          delay: 10
+          ignore_errors: no
 
         - name: Install required packages
           apt:
@@ -358,14 +395,14 @@
 
         - name: Download amdgpu-install package
           get_url:
-            url: "{{ ROCM_BASE_URL }}/{{ ubuntu_codename.stdout }}/{{ ROCM_DEB_PACKAGE }}"
-            dest: "/tmp/{{ ROCM_DEB_PACKAGE }}"
+            url: "{{ rocm_base_url }}/{{ ubuntu_codename.stdout }}/{{ rocm_deb_package }}"
+            dest: "/tmp/{{ rocm_deb_package }}"
             mode: "0644"
           when: not rocm_smi_check.stat.exists
 
         - name: Install amdgpu-install package
           apt:
-            deb: "/tmp/{{ ROCM_DEB_PACKAGE }}"
+            deb: "/tmp/{{ rocm_deb_package }}"
             state: present
           when: not rocm_smi_check.stat.exists
           environment:
@@ -383,7 +420,7 @@
             state: present
 
         - name: Verify GPUs with rocm-smi
-          shell: rocm-smi -i --json | jq -r '.[] | .["Device Name"]' | sort | uniq -c
+          shell: /opt/rocm/bin/rocm-smi -i --json | jq -r '.[] | .["Device Name"]' | sort | uniq -c
           register: rocm_smi_output
           changed_when: false
 
