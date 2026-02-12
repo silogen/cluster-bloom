@@ -681,38 +681,21 @@
                 mode: '0755'
               when: oidc_providers_list | length > 0
 
-            - name: Create RKE2 cert directory for OIDC certificates
-              file:
-                path: /etc/rancher/rke2/cert
-                state: directory
-                mode: '0755'
-              when: oidc_providers_list | length > 0
-
-            - name: Check if existing TLS certificate file exists
-              stat:
-                path: "{{ TLS_CERT }}"
-              register: existing_cert_stat
-              when: 
-                - oidc_providers_list | length > 0
-                - CERT_OPTION == "existing"
-                - TLS_CERT != ""
-
-            - name: Copy existing TLS certificate to RKE2 cert directory
+            - name: Copy existing TLS certificate to RKE2 certs directory
               copy:
                 src: "{{ TLS_CERT }}"
-                dest: /etc/rancher/rke2/cert/tls.crt
+                dest: /etc/rancher/rke2/certs/tls.crt
                 mode: "0644"
                 remote_src: yes
               when: 
                 - oidc_providers_list | length > 0
                 - CERT_OPTION == "existing"
                 - TLS_CERT != ""
-                - existing_cert_stat.stat.exists
 
-            - name: Copy existing TLS private key to RKE2 cert directory
+            - name: Copy existing TLS private key to RKE2 certs directory
               copy:
                 src: "{{ TLS_KEY }}"
-                dest: /etc/rancher/rke2/cert/tls.key
+                dest: /etc/rancher/rke2/certs/tls.key
                 mode: "0600"
                 remote_src: yes
               when: 
@@ -720,43 +703,13 @@
                 - CERT_OPTION == "existing"
                 - TLS_KEY != ""
 
-            - name: Check if generated TLS certificate exists
-              stat:
-                path: /etc/rancher/rke2/certs/tls.crt
-              register: generated_cert_stat
-              when: 
-                - oidc_providers_list | length > 0
-                - CERT_OPTION == "generate"
-
-            - name: Copy generated TLS certificate to RKE2 cert directory
-              copy:
-                src: /etc/rancher/rke2/certs/tls.crt
-                dest: /etc/rancher/rke2/cert/tls.crt
-                mode: "0644"
-                remote_src: yes
-              when: 
-                - oidc_providers_list | length > 0
-                - CERT_OPTION == "generate"
-                - generated_cert_stat.stat.exists
-
-            - name: Copy generated TLS private key to RKE2 cert directory
-              copy:
-                src: /etc/rancher/rke2/certs/tls.key
-                dest: /etc/rancher/rke2/cert/tls.key
-                mode: "0600"
-                remote_src: yes
-              when: 
-                - oidc_providers_list | length > 0
-                - CERT_OPTION == "generate"
-                - generated_cert_stat.stat.exists
-
-            - name: Read certificate content for inline inclusion
+            - name: Read certificate content for inline inclusion in OIDC config
               slurp:
-                src: /etc/rancher/rke2/cert/tls.crt
+                src: /etc/rancher/rke2/certs/tls.crt
               register: cert_content_b64
               when: 
                 - oidc_providers_list | length > 0
-                - (CERT_OPTION == "existing" and TLS_CERT != "") or CERT_OPTION == "generate"
+                - CERT_OPTION in ["existing", "generate"]
 
             - name: Build OIDC config parts
               set_fact:
