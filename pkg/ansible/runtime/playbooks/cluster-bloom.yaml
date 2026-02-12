@@ -708,23 +708,15 @@
                 - oidc_providers_list | length > 0
                 - oidc_certs.results | selectattr('stdout', 'defined') | selectattr('stdout', '!=', '') | list | length > 0
 
-            - name: Generate Kubernetes Authentication Configuration
-              copy:
-                content: |
+            - name: Create OIDC authentication config content
+              set_fact:
+                auth_config_content: |
                   apiVersion: apiserver.config.k8s.io/v1
                   kind: AuthenticationConfiguration
                   jwt:
                   {% for provider in oidc_providers_list %}
                   - issuer:
                       url: {{ provider.url }}
-                      {% if oidc_certs.results %}
-                      {% for cert_result in oidc_certs.results %}
-                      {% if cert_result.provider.url == provider.url and cert_result.stdout and cert_result.stdout != '' %}
-                      certificateAuthority: |
-                        {{ cert_result.stdout | indent(8, True) }}
-                      {% endif %}
-                      {% endfor %}
-                      {% endif %}
                       audiences:
                       {% for audience in provider.audiences %}
                       - {{ audience }}
@@ -737,6 +729,11 @@
                         claim: groups
                         prefix: "oidc:"
                   {% endfor %}
+              when: oidc_providers_list | length > 0
+
+            - name: Write Kubernetes Authentication Configuration
+              copy:
+                content: "{{ auth_config_content }}"
                 dest: /etc/rancher/rke2/auth/auth-config.yaml
                 mode: "0644"
               when: oidc_providers_list | length > 0
