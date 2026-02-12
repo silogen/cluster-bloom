@@ -591,7 +591,7 @@
           when: DOMAIN != ""
 
         - name: Handle TLS SAN configuration
-          when: DOMAIN != "" or ADDITIONAL_TLS_SAN_URLS != ""
+          when: DOMAIN != "" or (ADDITIONAL_TLS_SAN_URLS is defined and ADDITIONAL_TLS_SAN_URLS | length > 0)
           block:
             - name: Add auto-generated k8s SAN
               set_fact:
@@ -600,11 +600,12 @@
 
             - name: Process additional TLS SANs
               set_fact:
-                tls_san_list: "{{ tls_san_list + [item | trim] }}"
-              loop: "{{ ADDITIONAL_TLS_SAN_URLS.split(',') }}"
+                tls_san_list: "{{ tls_san_list + [item] }}"
+              loop: "{{ ADDITIONAL_TLS_SAN_URLS }}"
               when: 
-                - ADDITIONAL_TLS_SAN_URLS != ""
-                - item | trim != ""
+                - ADDITIONAL_TLS_SAN_URLS is defined
+                - ADDITIONAL_TLS_SAN_URLS | length > 0
+                - item != ""
 
             - name: Generate TLS SAN block content
               set_fact:
