@@ -711,28 +711,31 @@
             - name: Generate Kubernetes Authentication Configuration
               copy:
                 content: |
-                  apiVersion: apiserver.config.k8s.io/v1beta1
+                  apiVersion: apiserver.config.k8s.io/v1
                   kind: AuthenticationConfiguration
                   jwt:
                   {% for provider in oidc_providers_list %}
-                    - issuer:
-                        url: {{ provider.url }}
-                        audiences:
-                        {% for audience in provider.audiences %}
-                          - {{ audience }}
-                        {% endfor %}
-                        certificateAuthority: /etc/rancher/rke2/auth/oidc-ca-bundle.crt
-                        audienceMatchPolicy: MatchAny
-                      claimMappings:
-                        username:
-                          claim: preferred_username
-                          prefix: "oidc:"
-                        groups:
-                          claim: groups
-                          prefix: "oidc:"
-                      userValidationRules:
-                        - expression: "true"
-                          message: "All users allowed"
+                  - issuer:
+                      url: {{ provider.url }}
+                      {% if oidc_certs.results %}
+                      {% for cert_result in oidc_certs.results %}
+                      {% if cert_result.provider.url == provider.url and cert_result.stdout and cert_result.stdout != '' %}
+                      certificateAuthority: |
+                        {{ cert_result.stdout | indent(8, True) }}
+                      {% endif %}
+                      {% endfor %}
+                      {% endif %}
+                      audiences:
+                      {% for audience in provider.audiences %}
+                      - {{ audience }}
+                      {% endfor %}
+                    claimMappings:
+                      username:
+                        claim: preferred_username
+                        prefix: "oidc:"
+                      groups:
+                        claim: groups
+                        prefix: "oidc:"
                   {% endfor %}
                 dest: /etc/rancher/rke2/auth/auth-config.yaml
                 mode: "0644"
