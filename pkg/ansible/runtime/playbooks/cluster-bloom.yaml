@@ -668,6 +668,10 @@
               set_fact:
                 oidc_providers_list: "{{ unique_providers | default([]) }}"
 
+            - name: Create list of additional OIDC providers (excluding default domain-based provider)
+              set_fact:
+                additional_providers_list: "{{ oidc_providers_list | selectattr('url', 'ne', 'https://kc.' + DOMAIN + '/realms/airm') | list }}"
+
             - name: Create OIDC authentication directory
               file:
                 path: /etc/rancher/rke2/auth
@@ -704,12 +708,12 @@
                 timeout 10 openssl s_client -showcerts -connect "$hostname:443" -servername "$hostname" </dev/null 2>&1 | \
                 sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p'
               register: oidc_provider_certs
-              loop: "{{ oidc_providers_list }}"
+              loop: "{{ additional_providers_list }}"
               loop_control:
                 loop_var: provider
                 index_var: provider_index
               failed_when: false
-              when: oidc_providers_list | length > 0
+              when: additional_providers_list | length > 0
 
             - name: Debug certificate fetching results
               debug:
@@ -730,11 +734,11 @@
             - name: Save OIDC provider certificates to individual files
               copy:
                 content: "{{ item.stdout }}"
-                dest: "/etc/rancher/rke2/certs/oidc-provider-{{ item.provider_index }}.crt"
+                dest: "/etc/rancher/rke2/certs/oidc-provider-add-{{ item.provider_index + 1 }}.crt"
                 mode: "0644"
               loop: "{{ oidc_provider_certs.results }}"
               when: 
-                - oidc_providers_list | length > 0
+                - additional_providers_list | length > 0
                 - item.stdout is defined
                 - item.stdout != ""
 
@@ -748,13 +752,14 @@
 
             - name: Read individual OIDC provider certificates
               slurp:
-                src: "/etc/rancher/rke2/certs/oidc-provider-{{ provider_index }}.crt"
+                src: "/etc/rancher/rke2/certs/oidc-provider-add-{{ provider_index + 1 }}.crt"
               register: provider_cert_contents
-              loop: "{{ oidc_providers_list }}"
+              loop: "{{ additional_providers_list }}"
               loop_control:
                 index_var: provider_index
+                loop_var: provider
               failed_when: false
-              when: oidc_providers_list | length > 0
+              when: additional_providers_list | length > 0
 
             - name: Create OIDC authentication config with provider-specific certificates
               copy:
@@ -773,11 +778,14 @@
                   {% for line in (domain_cert_content_b64.content | b64decode).splitlines() %}
                         {{ line }}
                   {% endfor %}
-                  {% elif provider_cert_contents.results[provider_index] is defined and provider_cert_contents.results[provider_index].content is defined %}
+                  {% else %}
+                  {% set additional_provider_index = additional_providers_list | map(attribute='url') | list | index(provider.url) %}
+                  {% if provider_cert_contents.results[additional_provider_index] is defined and provider_cert_contents.results[additional_provider_index].content is defined %}
                       certificateAuthority: |
-                  {% for line in (provider_cert_contents.results[provider_index].content | b64decode).splitlines() %}
+                  {% for line in (provider_cert_contents.results[additional_provider_index].content | b64decode).splitlines() %}
                         {{ line }}
                   {% endfor %}
+                  {% endif %}
                   {% endif %}
                       audiences:
                   {% for audience in provider.audiences %}
