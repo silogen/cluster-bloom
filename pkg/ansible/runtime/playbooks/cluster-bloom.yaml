@@ -785,6 +785,9 @@
                   {% for audience in provider.audiences %}
                       - {{ audience }}
                   {% endfor %}
+                  {% if provider.audiences | length > 1 %}
+                  audienceMatchPolicy: MatchAny
+                  {% endif %}
                     claimMappings:
                       username:
                         claim: preferred_username
