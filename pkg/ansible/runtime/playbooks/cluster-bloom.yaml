@@ -681,6 +681,22 @@
                 mode: '0755'
               when: oidc_providers_list | length > 0
 
+            - name: Create RKE2 cert directory for OIDC certificates
+              file:
+                path: /etc/rancher/rke2/cert
+                state: directory
+                mode: '0755'
+              when: oidc_providers_list | length > 0
+
+            - name: Check if existing TLS certificate file exists
+              stat:
+                path: "{{ TLS_CERT }}"
+              register: existing_cert_stat
+              when: 
+                - oidc_providers_list | length > 0
+                - CERT_OPTION == "existing"
+                - TLS_CERT != ""
+
             - name: Copy existing TLS certificate to RKE2 cert directory
               copy:
                 src: "{{ TLS_CERT }}"
@@ -691,6 +707,7 @@
                 - oidc_providers_list | length > 0
                 - CERT_OPTION == "existing"
                 - TLS_CERT != ""
+                - existing_cert_stat.stat.exists
 
             - name: Copy existing TLS private key to RKE2 cert directory
               copy:
@@ -703,6 +720,14 @@
                 - CERT_OPTION == "existing"
                 - TLS_KEY != ""
 
+            - name: Check if generated TLS certificate exists
+              stat:
+                path: /etc/rancher/rke2/certs/tls.crt
+              register: generated_cert_stat
+              when: 
+                - oidc_providers_list | length > 0
+                - CERT_OPTION == "generate"
+
             - name: Copy generated TLS certificate to RKE2 cert directory
               copy:
                 src: /etc/rancher/rke2/certs/tls.crt
@@ -712,6 +737,7 @@
               when: 
                 - oidc_providers_list | length > 0
                 - CERT_OPTION == "generate"
+                - generated_cert_stat.stat.exists
 
             - name: Copy generated TLS private key to RKE2 cert directory
               copy:
@@ -722,6 +748,7 @@
               when: 
                 - oidc_providers_list | length > 0
                 - CERT_OPTION == "generate"
+                - generated_cert_stat.stat.exists
 
             - name: Read certificate content for inline inclusion
               slurp:
