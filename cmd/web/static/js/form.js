@@ -277,6 +277,16 @@ function getFormData(schema) {
     const config = {};
 
     schema.forEach(argument => {
+        // Handle array fields differently since they don't have a single input element
+        if (argument.type === 'array') {
+            // Check if array field group exists and is visible
+            const group = document.querySelector(`[data-key="${argument.key}"]`);
+            if (group && !group.classList.contains('hidden')) {
+                config[argument.key] = collectArrayData(argument.key);
+            }
+            return;
+        }
+        
         const field = document.getElementById(argument.key);
         if (!field) return;
 
@@ -288,9 +298,6 @@ function getFormData(schema) {
 
         if (argument.type === 'bool') {
             config[argument.key] = field.checked;
-        } else if (argument.type === 'array') {
-            // Collect array data from array field containers
-            config[argument.key] = collectArrayData(argument.key);
         } else {
             const value = field.value.trim();
             if (value !== '') {
@@ -521,10 +528,14 @@ function reindexArrayItems(container) {
 
 // Collect data from array fields
 function collectArrayData(key) {
+    console.log('Collecting array data for:', key);
     const container = document.querySelector(`[data-key="${key}"] .array-items-container`);
     if (!container) {
+        console.log('No container found for:', key);
         return [];
     }
+    
+    console.log('Container children count:', container.children.length);
     
     const items = [];
     
