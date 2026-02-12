@@ -22,6 +22,9 @@
     TLS_CERT: ""
     TLS_KEY: ""
     OIDC_URL: ""
+    ADDITIONAL_OIDC_PROVIDERS: []
+    ADDITIONAL_TLS_SAN_URLS: ""
+    RKE2_VERSION: ""
     RKE2_EXTRA_CONFIG: ""
     CLUSTERFORGE_RELEASE: "none"
 
@@ -632,34 +635,219 @@
               register: cert_generation_result
               failed_when: cert_generation_result.rc != 0
 
-        - name: Handle OIDC configuration
-          when: OIDC_URL != ""
+        - name: Handle OIDC authentication configuration
+          when: DOMAIN != "" or ADDITIONAL_OIDC_PROVIDERS | length > 0 or OIDC_URL != ""
           block:
-            - name: Fetch OIDC certificate
+            - name: Initialize OIDC providers list
+              set_fact:
+                oidc_providers_list: []
+
+            - name: Add default OIDC provider (auto-configured from DOMAIN)
+              set_fact:
+                oidc_providers_list: "{{ oidc_providers_list + [{'url': 'https://kc.' + DOMAIN + '/realms/airm', 'audiences': ['k8s']}] }}"
+              when: DOMAIN != ""
+
+            - name: Add additional OIDC providers
+              set_fact:
+                oidc_providers_list: "{{ oidc_providers_list + [provider] }}"
+              loop: "{{ ADDITIONAL_OIDC_PROVIDERS }}"
+              loop_control:
+                loop_var: provider
+              when: 
+                - ADDITIONAL_OIDC_PROVIDERS is defined
+                - ADDITIONAL_OIDC_PROVIDERS | length > 0
+
+            - name: Add legacy OIDC_URL provider (for backward compatibility)
+              set_fact:
+                oidc_providers_list: "{{ oidc_providers_list + [{'url': OIDC_URL, 'audiences': ['k8s']}] }}"
+              when: OIDC_URL != ""
+
+            - name: Remove duplicate OIDC providers
+              set_fact:
+                unique_providers: "{{ unique_providers | default([]) + [provider] }}"
+              loop: "{{ oidc_providers_list }}"
+              loop_control:
+                loop_var: provider
+              when: provider.url not in (unique_providers | default([]) | map(attribute='url') | list)
+
+            - name: Set final OIDC providers list
+              set_fact:
+                oidc_providers_list: "{{ unique_providers | default([]) }}"
+
+            - name: Create OIDC authentication directory
+              file:
+                path: /etc/rancher/rke2/auth
+                state: directory
+                mode: '0755'
+              when: oidc_providers_list | length > 0
+
+            - name: Fetch OIDC certificates for all providers
               shell: |
-                openssl s_client -showcerts -connect {{ OIDC_URL | regex_replace('^https?://', '') }}:443 </dev/null | \
+                timeout 10 openssl s_client -showcerts -connect {{ provider.url | regex_replace('^https?://', '') }}:443 </dev/null 2>/dev/null | \
                 sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p'
-              register: oidc_cert
+              register: oidc_certs
+              loop: "{{ oidc_providers_list }}"
+              loop_control:
+                loop_var: provider
+                index_var: provider_index
+              failed_when: false
+              when: oidc_providers_list | length > 0
 
-            - name: Write OIDC certificate
+            - name: Create combined OIDC certificate bundle
               copy:
-                content: "{{ oidc_cert.stdout }}"
-                dest: /etc/rancher/rke2/oidc-ca.crt
+                content: |
+                  {% for cert in oidc_certs.results %}
+                  {% if cert.stdout and cert.stdout != '' %}
+                  # Certificate for {{ cert.provider.url }}
+                  {{ cert.stdout }}
+                  {% endif %}
+                  {% endfor %}
+                dest: /etc/rancher/rke2/auth/oidc-ca-bundle.crt
                 mode: "0644"
+              when: 
+                - oidc_providers_list | length > 0
+                - oidc_certs.results | selectattr('stdout', 'defined') | selectattr('stdout', '!=', '') | list | length > 0
 
-            - name: Append OIDC config to RKE2
+            - name: Generate Kubernetes Authentication Configuration
+              copy:
+                content: |
+                  apiVersion: apiserver.config.k8s.io/v1beta1
+                  kind: AuthenticationConfiguration
+                  jwt:
+                  {% for provider in oidc_providers_list %}
+                    - issuer:
+                        url: {{ provider.url }}
+                        audiences:
+                        {% for audience in provider.audiences %}
+                          - {{ audience }}
+                        {% endfor %}
+                        certificateAuthority: /etc/rancher/rke2/auth/oidc-ca-bundle.crt
+                        audienceMatchPolicy: MatchAny
+                      claimMappings:
+                        username:
+                          claim: preferred_username
+                          prefix: "oidc:"
+                        groups:
+                          claim: groups
+                          prefix: "oidc:"
+                      userValidationRules:
+                        - expression: "true"
+                          message: "All users allowed"
+                  {% endfor %}
+                dest: /etc/rancher/rke2/auth/auth-config.yaml
+                mode: "0644"
+              when: oidc_providers_list | length > 0
+
+            - name: Configure RKE2 to use Authentication Configuration
               blockinfile:
                 path: /etc/rancher/rke2/config.yaml
                 block: |
                   kube-apiserver-arg:
-                    - "--oidc-issuer-url={{ OIDC_URL }}"
-                    - "--oidc-client-id=k8s"
-                    - "--oidc-username-claim=preferred_username"
-                    - "--oidc-groups-claim=groups"
-                    - "--oidc-ca-file=/etc/rancher/rke2/oidc-ca.crt"
-                    - "--oidc-username-prefix=oidc"
-                    - "--oidc-groups-prefix=oidc"
-                marker: "# {mark} ANSIBLE MANAGED BLOCK - OIDC"
+                    - "--authentication-config=/etc/rancher/rke2/auth/auth-config.yaml"
+                marker: "# {mark} ANSIBLE MANAGED BLOCK - OIDC Authentication"
+              when: oidc_providers_list | length > 0
+
+            - name: Generate OIDC kubeconfig template
+              copy:
+                content: |
+                  apiVersion: v1
+                  kind: Config
+                  clusters:
+                  - name: {{ DOMAIN | default('cluster') }}
+                    cluster:
+                      server: https://k8s.{{ DOMAIN }}:6443
+                      {% if 'generate' in CERT_OPTION | default('') %}
+                      insecure-skip-tls-verify: true
+                      {% endif %}
+                  contexts:
+                  - name: oidc@{{ DOMAIN | default('cluster') }}
+                    context:
+                      cluster: {{ DOMAIN | default('cluster') }}
+                      user: oidc
+                  current-context: oidc@{{ DOMAIN | default('cluster') }}
+                  users:
+                  - name: oidc
+                    user:
+                      exec:
+                        apiVersion: client.authentication.k8s.io/v1beta1
+                        command: kubectl
+                        args:
+                        - oidc-login
+                        - get-token
+                        - --oidc-issuer-url={{ (oidc_providers_list | first).url }}
+                        - --oidc-client-id={{ (oidc_providers_list | first).audiences | first }}
+                        - --oidc-extra-scope=email,profile,groups
+                        - --oidc-username-claim=preferred_username
+                        - --oidc-groups-claim=groups
+                        env: null
+                        provideClusterInfo: false
+                dest: /root/kubeconfig-oidc-template.yaml
+                mode: "0644"
+              when: 
+                - oidc_providers_list | length > 0
+                - DOMAIN != ""
+
+            - name: Create standard OIDC ClusterRoleBindings
+              copy:
+                content: |
+                  ---
+                  apiVersion: rbac.authorization.k8s.io/v1
+                  kind: ClusterRoleBinding
+                  metadata:
+                    name: oidc-admin-binding
+                  subjects:
+                  - kind: Group
+                    name: oidc:admin
+                    apiGroup: rbac.authorization.k8s.io
+                  roleRef:
+                    kind: ClusterRole
+                    name: cluster-admin
+                    apiGroup: rbac.authorization.k8s.io
+                  ---
+                  apiVersion: rbac.authorization.k8s.io/v1
+                  kind: ClusterRoleBinding
+                  metadata:
+                    name: oidc-developer-binding
+                  subjects:
+                  - kind: Group
+                    name: oidc:developer
+                    apiGroup: rbac.authorization.k8s.io
+                  roleRef:
+                    kind: ClusterRole
+                    name: edit
+                    apiGroup: rbac.authorization.k8s.io
+                  ---
+                  apiVersion: rbac.authorization.k8s.io/v1
+                  kind: ClusterRoleBinding
+                  metadata:
+                    name: oidc-viewer-binding
+                  subjects:
+                  - kind: Group
+                    name: oidc:viewer
+                    apiGroup: rbac.authorization.k8s.io
+                  roleRef:
+                    kind: ClusterRole
+                    name: view
+                    apiGroup: rbac.authorization.k8s.io
+                dest: /var/lib/rancher/rke2/server/manifests/oidc-rbac.yaml
+                mode: "0644"
+              when: oidc_providers_list | length > 0
+
+            - name: Display OIDC configuration summary
+              debug:
+                msg:
+                  - "=== OIDC Configuration Summary ==="
+                  - "Configured {{ oidc_providers_list | length }} OIDC provider(s):"
+                  - "{% for provider in oidc_providers_list %}"
+                  - "  - {{ provider.url }} (audiences: {{ provider.audiences | join(', ') }})"
+                  - "{% endfor %}"
+                  - ""
+                  - "Post-installation setup:"
+                  - "1. OIDC kubeconfig template: /root/kubeconfig-oidc-template.yaml"
+                  - "2. Install kubectl oidc-login plugin for OIDC authentication"
+                  - "3. Configure OIDC provider groups (admin, developer, viewer)"
+                  - "4. Standard RBAC bindings created for oidc:admin, oidc:developer, oidc:viewer groups"
+              when: oidc_providers_list | length > 0
 
         - name: Create RKE2 manifests directory
           file:
