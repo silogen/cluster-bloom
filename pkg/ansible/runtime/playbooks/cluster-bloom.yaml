@@ -787,52 +787,6 @@
                 - oidc_providers_list | length > 0
                 - DOMAIN != ""
 
-            - name: Create standard OIDC ClusterRoleBindings
-              copy:
-                content: |
-                  ---
-                  apiVersion: rbac.authorization.k8s.io/v1
-                  kind: ClusterRoleBinding
-                  metadata:
-                    name: oidc-admin-binding
-                  subjects:
-                  - kind: Group
-                    name: oidc:admin
-                    apiGroup: rbac.authorization.k8s.io
-                  roleRef:
-                    kind: ClusterRole
-                    name: cluster-admin
-                    apiGroup: rbac.authorization.k8s.io
-                  ---
-                  apiVersion: rbac.authorization.k8s.io/v1
-                  kind: ClusterRoleBinding
-                  metadata:
-                    name: oidc-developer-binding
-                  subjects:
-                  - kind: Group
-                    name: oidc:developer
-                    apiGroup: rbac.authorization.k8s.io
-                  roleRef:
-                    kind: ClusterRole
-                    name: edit
-                    apiGroup: rbac.authorization.k8s.io
-                  ---
-                  apiVersion: rbac.authorization.k8s.io/v1
-                  kind: ClusterRoleBinding
-                  metadata:
-                    name: oidc-viewer-binding
-                  subjects:
-                  - kind: Group
-                    name: oidc:viewer
-                    apiGroup: rbac.authorization.k8s.io
-                  roleRef:
-                    kind: ClusterRole
-                    name: view
-                    apiGroup: rbac.authorization.k8s.io
-                dest: /var/lib/rancher/rke2/server/manifests/oidc-rbac.yaml
-                mode: "0644"
-              when: oidc_providers_list | length > 0
-
             - name: Display OIDC configuration summary
               debug:
                 msg:
@@ -845,8 +799,7 @@
                   - "Post-installation setup:"
                   - "1. OIDC kubeconfig template: /root/kubeconfig-oidc-template.yaml"
                   - "2. Install kubectl oidc-login plugin for OIDC authentication"
-                  - "3. Configure OIDC provider groups (admin, developer, viewer)"
-                  - "4. Standard RBAC bindings created for oidc:admin, oidc:developer, oidc:viewer groups"
+                  - "3. Configure OIDC provider groups as needed for your RBAC system"
               when: oidc_providers_list | length > 0
 
         - name: Create RKE2 manifests directory
