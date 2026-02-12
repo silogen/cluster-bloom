@@ -224,3 +224,106 @@ footer {
     color: #7f8c8d;
     font-size: 0.9em;
 }
+
+/* Array Field Styling */
+.array-field-container {
+    margin: 10px 0;
+}
+
+.array-items-container {
+    margin-bottom: 15px;
+}
+
+.array-item {
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    margin-bottom: 12px;
+    background: #fafafa;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.array-item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #f8f9fa;
+    padding: 12px 15px;
+    border-bottom: 1px solid #e0e0e0;
+    border-radius: 6px 6px 0 0;
+}
+
+.array-item-title {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: #495057;
+}
+
+.array-item-content {
+    padding: 15px;
+}
+
+.array-item-content .form-group {
+    margin-bottom: 15px;
+}
+
+.array-item-content .form-group:last-child {
+    margin-bottom: 0;
+}
+
+.array-add-btn {
+    background: #28a745;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.2s;
+}
+
+.array-add-btn:hover {
+    background: #218838;
+}
+
+.array-remove-btn {
+    background: #dc3545;
+    color: white;
+    border: none;
+    padding: 4px 8px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s;
+}
+
+.array-remove-btn:hover {
+    background: #c82333;
+}
+
+/* OIDC Provider specific styling */
+.array-item[data-index] .array-item-title::before {
+    content: "🔐 ";
+    margin-right: 5px;
+}
+
+/* Responsive design for array items */
+@media (max-width: 768px) {
+    .array-item-header {
+        padding: 10px 12px;
+    }
+    
+    .array-item-content {
+        padding: 12px;
+    }
+    
+    .array-item-title {
+        font-size: 13px;
+    }
+}
