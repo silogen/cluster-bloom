@@ -701,17 +701,22 @@
                 - CERT_OPTION == "existing"
                 - TLS_KEY != ""
 
-            - name: "Fetch certificates from additional OIDC providers ({{ additional_providers_list | map(attribute='url') | map('regex_replace', '^https?://([^/]+).*$', '\\1') | join(', ') }})"
+            - name: "Fetch certificates from additional OIDC providers ({{ additional_providers_list | map(attribute='url') | map('regex_replace', '^https?://([^/]+).*$', '\\1') | join(', ') }}) - deployment will fail if any provider is unreachable"
               shell: |
                 hostname=$(echo "{{ provider.url }}" | sed 's|^https\?://\([^/]\+\).*$|\1|')
-                timeout 10 openssl s_client -showcerts -connect "$hostname:443" -servername "$hostname" </dev/null 2>&1 | \
-                sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p'
+                cert_content=$(timeout 10 openssl s_client -showcerts -connect "$hostname:443" -servername "$hostname" </dev/null 2>&1 | \
+                sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p')
+                if [ -z "$cert_content" ]; then
+                  echo "ERROR: Failed to fetch certificate from OIDC provider: {{ provider.url }}" >&2
+                  echo "Provider $hostname is not reachable or does not have a valid certificate" >&2
+                  exit 1
+                fi
+                echo "$cert_content"
               register: oidc_provider_certs
               loop: "{{ additional_providers_list }}"
               loop_control:
                 loop_var: provider
                 index_var: provider_index
-              failed_when: false
               when: additional_providers_list | length > 0
 
             - name: Debug certificate fetching results
