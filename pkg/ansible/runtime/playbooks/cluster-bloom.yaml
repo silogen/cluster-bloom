@@ -730,11 +730,9 @@
             - name: Save OIDC provider certificates to individual files
               copy:
                 content: "{{ item.stdout }}"
-                dest: "/etc/rancher/rke2/certs/oidc-provider-{{ cert_index }}.crt"
+                dest: "/etc/rancher/rke2/certs/oidc-provider-{{ item.provider_index }}.crt"
                 mode: "0644"
               loop: "{{ oidc_provider_certs.results }}"
-              loop_control:
-                index_var: cert_index
               when: 
                 - oidc_providers_list | length > 0
                 - item.stdout is defined
@@ -786,7 +784,7 @@
                       - {{ audience }}
                   {% endfor %}
                   {% if provider.audiences | length > 1 %}
-                  audienceMatchPolicy: MatchAny
+                      audienceMatchPolicy: MatchAny
                   {% endif %}
                     claimMappings:
                       username:
