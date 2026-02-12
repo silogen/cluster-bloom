@@ -580,13 +580,19 @@
             marker: "# {mark} ANSIBLE MANAGED BLOCK - extra config"
           when: RKE2_EXTRA_CONFIG != ""
 
+        # Initialize TLS SAN list for certificate generation
+        - name: Initialize TLS SAN list
+          set_fact:
+            tls_san_list: []
+
+        - name: Add DOMAIN to TLS SAN list
+          set_fact:
+            tls_san_list: "{{ tls_san_list + [DOMAIN, '*.' + DOMAIN] }}"
+          when: DOMAIN != ""
+
         - name: Handle TLS SAN configuration
           when: DOMAIN != "" or ADDITIONAL_TLS_SAN_URLS != ""
           block:
-            - name: Initialize TLS SAN list
-              set_fact:
-                tls_san_list: []
-
             - name: Add auto-generated k8s SAN
               set_fact:
                 tls_san_list: "{{ tls_san_list + ['k8s.' + DOMAIN] }}"
@@ -624,13 +630,20 @@
                 state: directory
                 mode: '0755'
 
+            - name: Debug TLS SAN list for certificate generation
+              debug:
+                msg: 
+                  - "TLS SAN list: {{ tls_san_list }}"
+                  - "Certificate SANs will be: {{ tls_san_list | map('regex_replace', '^(.*)$', 'DNS:\\1') | join(',') }}"
+              when: tls_san_list | length > 0
+
             - name: Generate API server TLS certificate
               shell: |
                 openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
                   -keyout /etc/rancher/rke2/certs/tls.key \
                   -out /etc/rancher/rke2/certs/tls.crt \
                   -subj "/CN={{ DOMAIN }}" \
-                  -addext "subjectAltName=DNS:{{ DOMAIN }},DNS:*.{{ DOMAIN }}"
+                  -addext "subjectAltName={{ tls_san_list | map('regex_replace', '^(.*)$', 'DNS:\\1') | join(',') }}"
               register: cert_generation_result
               failed_when: cert_generation_result.rc != 0
 
