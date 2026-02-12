@@ -9,7 +9,7 @@
 # Returns: Succeeds when rsyslog configuration is set
 #
 # Usage:
-#   include_tasks: tasks/prepare_node/logging.yml
+#   include_tasks: tasks/prepare_node/logging.yaml
 
 - name: Create rsyslog iSCSI filter
   copy:

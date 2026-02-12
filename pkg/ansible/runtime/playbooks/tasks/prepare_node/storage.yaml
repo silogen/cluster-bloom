@@ -13,7 +13,7 @@
 # Returns: Succeeds when all disks are formatted and mounted
 #
 # Usage:
-#   include_tasks: tasks/prepare_node/storage.yml
+#   include_tasks: tasks/prepare_node/storage.yaml
 #   when: not NO_DISKS_FOR_CLUSTER and CLUSTER_PREMOUNTED_DISKS == ""
 
 - name: Convert CLUSTER_DISKS from comma-separated string to list

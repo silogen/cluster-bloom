@@ -11,7 +11,7 @@
 # Returns: Warns and fails if partition is less than 500GB on GPU nodes
 #
 # Usage:
-#   include_tasks: tasks/validate_node/rancher_partition.yml
+#   include_tasks: tasks/validate_node/rancher_partition.yaml
 #   when: GPU_NODE and not SKIP_RANCHER_PARTITION_CHECK
 
 - name: Create /var/lib/rancher directory

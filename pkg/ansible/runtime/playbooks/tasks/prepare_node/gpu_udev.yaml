@@ -10,7 +10,7 @@
 # Returns: Succeeds when GPU udev rules are configured
 #
 # Usage:
-#   include_tasks: tasks/prepare_node/gpu_udev.yml
+#   include_tasks: tasks/prepare_node/gpu_udev.yaml
 #   when: GPU_NODE
 
 - name: Create AMD GPU udev rules

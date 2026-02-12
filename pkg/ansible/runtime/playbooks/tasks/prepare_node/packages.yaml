@@ -9,7 +9,7 @@
 # Returns: Succeeds when all packages are installed
 #
 # Usage:
-#   include_tasks: tasks/prepare_node/packages.yml
+#   include_tasks: tasks/prepare_node/packages.yaml
 
 - name: Update apt cache
   apt:

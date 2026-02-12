@@ -11,7 +11,7 @@
 # Returns: Succeeds when NTP is configured
 #
 # Usage:
-#   include_tasks: tasks/prepare_node/ntp.yml
+#   include_tasks: tasks/prepare_node/ntp.yaml
 
 - name: Backup original chrony.conf
   copy:

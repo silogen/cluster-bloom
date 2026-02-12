@@ -65,7 +65,7 @@
   tasks:
     - name: Pre-deployment Data Safety Validation
       tags: [pre_deployment]
-      include_tasks: tasks/data_safety_check.yml
+      include_tasks: tasks/data_safety_check.yaml
       vars:
         validate_no_disks_for_cluster: "{{ NO_DISKS_FOR_CLUSTER | default(false) }}"
         validate_cluster_disks: "{{ CLUSTER_DISKS | default('') }}"
@@ -73,58 +73,23 @@
 
     - name: Node Validation
       tags: [validate_node]
-      import_tasks: tasks/validate_node/main.yml
+      import_tasks: tasks/validate_node/main.yaml
 
     - name: Node Preparation
       tags: [prepare_node]
-      import_tasks: tasks/prepare_node/main.yml
+      import_tasks: tasks/prepare_node/main.yaml
 
     - name: Deploy Cluster Tasks
       tags: [deploy_cluster]
-      import_tasks: tasks/deploy_cluster/main.yml
+      import_tasks: tasks/deploy_cluster/main.yaml
 
     - name: Deploy Kubernetes Applications
       tags: [deploy_k8s_apps]
-      import_tasks: tasks/deploy_k8s_apps/main.yml
+      import_tasks: tasks/deploy_k8s_apps/main.yaml
 
-    - name: Setup ClusterForge
-      tags: [clusterforge, deploy_clusterforge]
-      when: FIRST_NODE and CLUSTERFORGE_RELEASE != "none"
-      block:
-        - name: Create ClusterForge directory in .bloom
-          file:
-            path: "{{ BLOOM_DIR }}/clusterforge"
-            state: directory
-            mode: "0755"
-
-        - name: Download ClusterForge release
-          get_url:
-            url: "{{ CLUSTERFORGE_RELEASE }}"
-            dest: "{{ BLOOM_DIR }}/clusterforge/clusterforge.tar.gz"
-            mode: "0644"
-
-        - name: Extract ClusterForge release
-          unarchive:
-            src: "{{ BLOOM_DIR }}/clusterforge/clusterforge.tar.gz"
-            dest: "{{ BLOOM_DIR }}/clusterforge"
-            remote_src: yes
-            extra_opts: [--no-same-owner]
-
-        - name: Run ClusterForge bootstrap script
-          shell: |
-            cd {{ BLOOM_DIR }}/clusterforge/cluster-forge/scripts
-            {% if CF_VALUES != "" %}
-            bash ./bootstrap.sh {{ DOMAIN }} {{ CF_VALUES }}
-            {% else %}
-            bash ./bootstrap.sh {{ DOMAIN }}
-            {% endif %}
-          register: cf_bootstrap
-          environment:
-            KUBECONFIG: /etc/rancher/rke2/rke2.yaml
-
-        - name: Display ClusterForge deployment output
-          debug:
-            msg: "{{ cf_bootstrap.stdout }}"
+    - name: Deploy ClusterForge Platform
+      tags: [deploy_clusterforge]
+      import_tasks: tasks/deploy_clusterforge/main.yaml
 
 
 

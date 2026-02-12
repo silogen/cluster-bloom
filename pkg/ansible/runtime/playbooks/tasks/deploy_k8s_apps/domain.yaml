@@ -3,7 +3,7 @@
 #
 # Purpose: Configure domain-specific settings and TLS certificates for ingress
 # Scope: Sets up TLS secrets and namespace configuration for domain access
-# Usage: include_tasks: domain.yml
+# Usage: include_tasks: domain.yaml
 #
 # This task handles:
 # - TLS certificate configuration (generated or existing)
