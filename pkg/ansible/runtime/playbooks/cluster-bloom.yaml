@@ -769,7 +769,7 @@
                       url: {{ provider.url }}
                       {% if cert_content_b64 is defined %}
                       certificateAuthority: |
-                  {{ cert_content_b64.content | b64decode | indent(8, True) }}
+                  {{ cert_content_b64.content | b64decode | indent(6, first=false) }}
                       {% endif %}
                       audiences:
                       {% for audience in provider.audiences %}
