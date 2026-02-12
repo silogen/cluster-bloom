@@ -9,7 +9,7 @@
 # Returns: Fails if any requirement is not met, succeeds if all checks pass
 #
 # Usage:
-#   include_tasks: tasks/validate_node/system_requirements.yml
+#   include_tasks: tasks/validate_node/system_requirements.yaml
 
 - name: Check disk space on root partition
   shell: df -BG / | awk 'NR==2 {print $4}' | sed 's/G//'

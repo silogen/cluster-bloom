@@ -9,7 +9,7 @@
 # Returns: Fails if Ubuntu version is not supported, succeeds if version is valid
 #
 # Usage:
-#   include_tasks: tasks/validate_node/ubuntu_version.yml
+#   include_tasks: tasks/validate_node/ubuntu_version.yaml
 
 - name: Get Ubuntu version
   shell: grep VERSION_ID /etc/os-release | cut -d= -f2 | tr -d '"'

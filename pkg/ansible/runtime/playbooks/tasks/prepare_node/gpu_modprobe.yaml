@@ -10,7 +10,7 @@
 # Returns: Succeeds when amdgpu module is configured and loaded
 #
 # Usage:
-#   include_tasks: tasks/prepare_node/gpu_modprobe.yml
+#   include_tasks: tasks/prepare_node/gpu_modprobe.yaml
 #   when: GPU_NODE
 
 - name: Un-blacklist amdgpu module

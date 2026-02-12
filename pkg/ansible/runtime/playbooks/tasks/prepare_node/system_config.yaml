@@ -12,7 +12,7 @@
 # Returns: Succeeds when system is configured
 #
 # Usage:
-#   include_tasks: tasks/prepare_node/system_config.yml
+#   include_tasks: tasks/prepare_node/system_config.yaml
 
 - name: Get current inotify value
   shell: sysctl -n fs.inotify.max_user_instances

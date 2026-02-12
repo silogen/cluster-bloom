@@ -14,35 +14,44 @@
 # Returns: Succeeds when all node preparation is complete
 #
 # Usage:
-#   include_tasks: tasks/prepare_node/main.yml
+#   include_tasks: tasks/prepare_node/main.yaml
 
 - name: Install Dependencies
-  include_tasks: packages.yml
+  tags: packages
+  import_tasks: packages.yaml
 
 - name: Setup Multipath
-  include_tasks: multipath.yml
+  tags: multipath
+  import_tasks: multipath.yaml
 
 - name: Setup and Check ROCm
-  include_tasks: gpu_rocm.yml
+  tags: gpu_rocm
+  import_tasks: gpu_rocm.yaml
   when: GPU_NODE | bool
 
 - name: Update Modprobe (GPU nodes)
-  include_tasks: gpu_modprobe.yml
+  tags: gpu_modprobe
+  import_tasks: gpu_modprobe.yaml
   when: GPU_NODE | bool
 
 - name: Prepare Longhorn Disks
-  include_tasks: storage.yml
+  tags: storage
+  import_tasks: storage.yaml
   when: not NO_DISKS_FOR_CLUSTER | bool and CLUSTER_PREMOUNTED_DISKS == ""
 
 - name: Configure System Settings
-  include_tasks: system_config.yml
+  tags: system_config
+  import_tasks: system_config.yaml
 
 - name: Update Udev Rules (GPU nodes)
-  include_tasks: gpu_udev.yml
+  tags: gpu_udev
+  import_tasks: gpu_udev.yaml
   when: GPU_NODE | bool
 
 - name: Configure Logging
-  include_tasks: logging.yml
+  tags: logging
+  import_tasks: logging.yaml
 
 - name: Configure NTP
-  include_tasks: ntp.yml
+  tags: ntp
+  import_tasks: ntp.yaml

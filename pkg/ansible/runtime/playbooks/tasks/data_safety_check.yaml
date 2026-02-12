@@ -12,7 +12,7 @@
 # Returns: Fails with detailed error if issues found, succeeds with confirmation if clean
 #
 # Usage:
-#   include_tasks: tasks/data_safety_check.yml
+#   include_tasks: tasks/data_safety_check.yaml
 #   vars:
 #     validate_no_disks_for_cluster: "{{ NO_DISKS_FOR_CLUSTER | default(false) }}"
 #     validate_cluster_disks: "{{ CLUSTER_DISKS | default('') }}"

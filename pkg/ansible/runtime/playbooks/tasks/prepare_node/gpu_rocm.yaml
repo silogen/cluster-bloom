@@ -12,7 +12,7 @@
 # Returns: Succeeds when ROCm is installed and GPUs are detected
 #
 # Usage:
-#   include_tasks: tasks/prepare_node/gpu_rocm.yml
+#   include_tasks: tasks/prepare_node/gpu_rocm.yaml
 #   when: GPU_NODE
 
 - name: Check if rocm-smi exists

@@ -16,7 +16,7 @@
 # Returns: Succeeds when RKE2 is prepared for deployment
 #
 # Usage:
-#   include_tasks: tasks/deploy_cluster/prepare_rke2.yml
+#   include_tasks: tasks/deploy_cluster/prepare_rke2.yaml
 
 - name: Load required kernel modules
   modprobe:

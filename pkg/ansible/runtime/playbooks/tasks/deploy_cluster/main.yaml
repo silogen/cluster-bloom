@@ -1,0 +1,55 @@
+---
+# Deploy Cluster Tasks - Main Orchestrator
+# 
+# This file orchestrates all cluster deployment tasks including:
+# 1. Node label configuration
+# 2. Kubernetes tools installation  
+# 3. Log rotation setup
+# 4. RKE2 installation and configuration
+# 5. KubeConfig setup
+# 6. Join command generation
+#
+# All tasks use filename-based tags for granular control.
+#
+# Stage: deploy_cluster
+
+- name: Prepare RKE2
+  tags: prepare_rke2
+  import_tasks: prepare_rke2.yaml
+
+- name: Generate Node Labels
+  tags: node_labels
+  import_tasks: node_labels.yaml
+
+- name: Install Kubernetes Tools
+  tags: k8s_tools
+  import_tasks: k8s_tools.yaml
+
+- name: Configure logrotate
+  tags: logrotate
+  import_tasks: logrotate.yaml
+
+- name: Setup RKE2 (First Node)
+  tags: rke2_first_node
+  import_tasks: rke2_first_node.yaml
+  when: FIRST_NODE | bool
+
+- name: Setup RKE2 (Additional Node - Worker)
+  tags: rke2_worker
+  import_tasks: rke2_worker.yaml
+  when: not FIRST_NODE | bool and not CONTROL_PLANE | bool
+
+- name: Setup RKE2 (Additional Node - Control Plane)
+  tags: rke2_control_plane
+  import_tasks: rke2_control_plane.yaml
+  when: not FIRST_NODE | bool and CONTROL_PLANE | bool
+
+- name: Setup KubeConfig (Control Plane Nodes)
+  tags: kubeconfig
+  import_tasks: kubeconfig.yaml
+  when: FIRST_NODE | bool or CONTROL_PLANE | bool
+
+- name: Generate Join Command (First Node)
+  tags: join_command
+  import_tasks: join_command.yaml
+  when: FIRST_NODE | bool

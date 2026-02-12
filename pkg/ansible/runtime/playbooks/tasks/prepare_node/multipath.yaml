@@ -9,7 +9,7 @@
 # Returns: Succeeds when multipath configuration is set
 #
 # Usage:
-#   include_tasks: tasks/prepare_node/multipath.yml
+#   include_tasks: tasks/prepare_node/multipath.yaml
 
 - name: Check if multipath.conf exists
   stat:

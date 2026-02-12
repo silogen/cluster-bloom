@@ -1,0 +1,42 @@
+---
+# ClusterForge Platform Setup
+# This task handles ClusterForge download, extraction, and bootstrap execution.
+# ClusterForge provides a comprehensive application management platform for Kubernetes clusters.
+
+- name: Setup ClusterForge
+  when: FIRST_NODE and CLUSTERFORGE_RELEASE != "none"
+  block:
+    - name: Create ClusterForge directory in .bloom
+      file:
+        path: "{{ BLOOM_DIR }}/clusterforge"
+        state: directory
+        mode: "0755"
+
+    - name: Download ClusterForge release
+      get_url:
+        url: "{{ CLUSTERFORGE_RELEASE }}"
+        dest: "{{ BLOOM_DIR }}/clusterforge/clusterforge.tar.gz"
+        mode: "0644"
+
+    - name: Extract ClusterForge release
+      unarchive:
+        src: "{{ BLOOM_DIR }}/clusterforge/clusterforge.tar.gz"
+        dest: "{{ BLOOM_DIR }}/clusterforge"
+        remote_src: yes
+        extra_opts: [--no-same-owner]
+
+    - name: Run ClusterForge bootstrap script
+      shell: |
+        cd {{ BLOOM_DIR }}/clusterforge/cluster-forge/scripts
+        {% if CF_VALUES != "" %}
+        bash ./bootstrap.sh {{ DOMAIN }} {{ CF_VALUES }}
+        {% else %}
+        bash ./bootstrap.sh {{ DOMAIN }}
+        {% endif %}
+      register: cf_bootstrap
+      environment:
+        KUBECONFIG: /etc/rancher/rke2/rke2.yaml
+
+    - name: Display ClusterForge deployment output
+      debug:
+        msg: "{{ cf_bootstrap.stdout }}"

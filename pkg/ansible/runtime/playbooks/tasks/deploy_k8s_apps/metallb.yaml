@@ -3,7 +3,7 @@
 #
 # Purpose: Configure MetalLB load balancer for bare-metal Kubernetes clusters
 # Scope: Creates IP address pool and L2 advertisement configuration
-# Usage: include_tasks: metallb.yml
+# Usage: include_tasks: metallb.yaml
 #
 # This task sets up MetalLB with:
 # - Automatic IP detection from the default route
