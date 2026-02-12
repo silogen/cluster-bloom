@@ -4,10 +4,11 @@
 # Handles GPU labeling and dynamic disk configuration for all nodes
 
 - name: Deploy Node Annotator Manifests
+  when: FIRST_NODE
   block:
     - name: Copy Node Annotator manifest
       copy:
-        src: "manifests/longhorn/node-annotator.yaml"
+        src: "../../manifests/longhorn/node-annotator.yaml"
         dest: "/var/lib/rancher/rke2/server/manifests/node-annotator.yaml"
         mode: "0644"
       when: not ansible_check_mode
