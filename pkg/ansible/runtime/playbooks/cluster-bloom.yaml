@@ -789,17 +789,17 @@
 
             - name: Display OIDC configuration summary
               debug:
-                msg:
-                  - "=== OIDC Configuration Summary ==="
-                  - "Configured {{ oidc_providers_list | length }} OIDC provider(s):"
-                  - "{% for provider in oidc_providers_list %}"
-                  - "  - {{ provider.url }} (audiences: {{ provider.audiences | join(', ') }})"
-                  - "{% endfor %}"
-                  - ""
-                  - "Post-installation setup:"
-                  - "1. OIDC kubeconfig template: /root/kubeconfig-oidc-template.yaml"
-                  - "2. Install kubectl oidc-login plugin for OIDC authentication"
-                  - "3. Configure OIDC provider groups as needed for your RBAC system"
+                msg: |
+                  === OIDC Configuration Summary ===
+                  Configured {{ oidc_providers_list | length }} OIDC provider(s):
+                  {% for provider in oidc_providers_list %}
+                    - {{ provider.url }} (audiences: {{ provider.audiences | join(', ') }})
+                  {% endfor %}
+                  
+                  Post-installation setup:
+                  1. OIDC kubeconfig template: /root/kubeconfig-oidc-template.yaml
+                  2. Install kubectl oidc-login plugin for OIDC authentication
+                  3. Configure OIDC provider groups as needed for your RBAC system
               when: oidc_providers_list | length > 0
 
         - name: Create RKE2 manifests directory
