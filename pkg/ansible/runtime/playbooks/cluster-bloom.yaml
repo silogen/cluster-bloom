@@ -701,7 +701,7 @@
                 - CERT_OPTION == "existing"
                 - TLS_KEY != ""
 
-            - name: Fetch certificates from additional OIDC providers
+            - name: "Fetch certificates from additional OIDC providers ({{ additional_providers_list | map(attribute='url') | map('regex_replace', '^https?://([^/]+).*$', '\\1') | join(', ') }})"
               shell: |
                 hostname=$(echo "{{ provider.url }}" | sed 's|^https\?://\([^/]\+\).*$|\1|')
                 echo "Fetching certificate from additional OIDC provider: $hostname" >&2
@@ -731,7 +731,7 @@
                 index_var: cert_index
               when: oidc_providers_list | length > 0
 
-            - name: Save additional OIDC provider certificates (oidc-provider-add-N.crt)
+            - name: "Save additional OIDC provider certificates ({{ additional_providers_list | map(attribute='url') | map('regex_replace', '^https?://([^/]+).*$', '\\1') | join(', ') }}) → oidc-provider-add-N.crt"
               copy:
                 content: "{{ item.stdout }}"
                 dest: "/etc/rancher/rke2/certs/oidc-provider-add-{{ item.provider_index + 1 }}.crt"
@@ -750,7 +750,7 @@
                 - oidc_providers_list | length > 0
                 - CERT_OPTION in ["existing", "generate"]
 
-            - name: Read additional OIDC provider certificates (oidc-provider-add-N.crt)
+            - name: "Read additional OIDC provider certificates → oidc-provider-add-N.crt ({{ additional_providers_list | length }} files)"
               slurp:
                 src: "/etc/rancher/rke2/certs/oidc-provider-add-{{ provider_index + 1 }}.crt"
               register: provider_cert_contents
@@ -761,7 +761,7 @@
               failed_when: false
               when: additional_providers_list | length > 0
 
-            - name: Create multi-provider OIDC authentication config (auth-config.yaml)
+            - name: "Create multi-provider OIDC authentication config ({{ oidc_providers_list | length }} providers) → auth-config.yaml"
               copy:
                 dest: /etc/rancher/rke2/auth/auth-config.yaml
                 mode: "0644"
