@@ -1,0 +1,38 @@
+---
+# MetalLB Load Balancer Setup
+#
+# Purpose: Configure MetalLB load balancer for bare-metal Kubernetes clusters
+# Scope: Creates IP address pool and L2 advertisement configuration
+# Usage: include_tasks: metallb.yml
+#
+# This task sets up MetalLB with:
+# - Automatic IP detection from the default route
+# - Single IP address pool configuration
+# - L2 advertisement for the detected IP
+
+- name: Get default IP for MetalLB
+  shell: ip route get 1 | awk '{print $7; exit}'
+  register: metallb_ip
+  changed_when: false
+  when: FIRST_NODE
+
+- name: Create MetalLB address pool config
+  copy:
+    content: |
+      apiVersion: metallb.io/v1beta1
+      kind: IPAddressPool
+      metadata:
+        name: cluster-bloom-ip-pool
+        namespace: metallb-system
+      spec:
+        addresses:
+        - {{ metallb_ip.stdout }}/32
+      ---
+      apiVersion: metallb.io/v1beta1
+      kind: L2Advertisement
+      metadata:
+        name: cluster-bloom-l2-advertisement
+        namespace: metallb-system
+    dest: /var/lib/rancher/rke2/server/manifests/metallb-address.yaml
+    mode: "0644"
+  when: FIRST_NODE

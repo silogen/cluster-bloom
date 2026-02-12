@@ -14,6 +14,7 @@
 #   include_tasks: tasks/validate_node/main.yml
 
 - name: Validate Ubuntu Version
+  tags: ubuntu_version
   include_tasks: ubuntu_version.yml
 
 - name: Validate System Requirements  

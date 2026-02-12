@@ -1,0 +1,42 @@
+---
+# Kubernetes Applications Deployment Orchestration
+#
+# Purpose: Coordinates deployment of all Kubernetes applications and services
+# Scope: Manages networking, storage, and application configuration post-cluster
+# Usage: include_tasks: tasks/deploy_k8s_apps/main.yml
+#
+# This file orchestrates deployment of:
+# - Node annotation services for hardware labeling
+# - Load balancer configuration (MetalLB)
+# - Domain and TLS certificate setup
+# - Container image preloading
+# - Storage provisioners (local-path, longhorn)
+# - Cluster configuration (ConfigMaps)
+
+- name: Setup Node Annotator
+  tags: node_annotator
+  include_tasks: node_annotator.yml
+
+- name: Setup MetalLB Load Balancer
+  tags: metallb
+  include_tasks: metallb.yml
+
+- name: Configure Domain and TLS
+  tags: domain
+  include_tasks: domain.yml
+
+- name: Preload Container Images
+  tags: preload_images
+  include_tasks: preload_images.yml
+
+- name: Setup Storage Provisioner (Local-Path)
+  tags: local_path
+  include_tasks: local_path.yml
+
+- name: Setup Storage Provisioner (Longhorn)
+  tags: longhorn
+  include_tasks: longhorn.yml
+
+- name: Create Bloom ConfigMap
+  tags: bloom_config
+  include_tasks: bloom_config.yml
