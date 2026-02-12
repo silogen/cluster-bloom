@@ -681,32 +681,23 @@
                 mode: '0755'
               when: oidc_providers_list | length > 0
 
-            - name: Fetch OIDC certificates for all providers
-              shell: |
-                timeout 10 openssl s_client -showcerts -connect {{ provider.url | regex_replace('^https?://', '') }}:443 </dev/null 2>/dev/null | \
-                sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p'
-              register: oidc_certs
-              loop: "{{ oidc_providers_list }}"
-              loop_control:
-                loop_var: provider
-                index_var: provider_index
-              failed_when: false
-              when: oidc_providers_list | length > 0
-
-            - name: Create combined OIDC certificate bundle
+            - name: Copy TLS certificate for OIDC validation
               copy:
-                content: |
-                  {% for cert in oidc_certs.results %}
-                  {% if cert.stdout and cert.stdout != '' %}
-                  # Certificate for {{ cert.provider.url }}
-                  {{ cert.stdout }}
-                  {% endif %}
-                  {% endfor %}
-                dest: /etc/rancher/rke2/auth/oidc-ca-bundle.crt
+                src: "{{ TLS_CERT }}"
+                dest: /etc/rancher/rke2/auth/oidc-ca.crt
                 mode: "0644"
+                remote_src: yes
               when: 
                 - oidc_providers_list | length > 0
-                - oidc_certs.results | selectattr('stdout', 'defined') | selectattr('stdout', '!=', '') | list | length > 0
+                - TLS_CERT != ""
+
+            - name: Read certificate content for authentication config
+              slurp:
+                src: "{{ TLS_CERT }}"
+              register: cert_content_b64
+              when: 
+                - oidc_providers_list | length > 0
+                - TLS_CERT != ""
 
             - name: Create OIDC authentication config content
               set_fact:
@@ -717,6 +708,10 @@
                   {% for provider in oidc_providers_list %}
                   - issuer:
                       url: {{ provider.url }}
+                      {% if TLS_CERT != "" and cert_content_b64 is defined %}
+                      certificateAuthority: |
+                  {{ cert_content_b64.content | b64decode | indent(8, True) }}
+                      {% endif %}
                       audiences:
                       {% for audience in provider.audiences %}
                       - {{ audience }}
