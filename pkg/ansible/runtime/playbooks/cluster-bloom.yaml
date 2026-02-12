@@ -21,7 +21,6 @@
     CERT_OPTION: ""
     TLS_CERT: ""
     TLS_KEY: ""
-    OIDC_URL: ""
     ADDITIONAL_OIDC_PROVIDERS: []
     ADDITIONAL_TLS_SAN_URLS: ""
     RKE2_VERSION: ""
@@ -636,7 +635,7 @@
               failed_when: cert_generation_result.rc != 0
 
         - name: Handle OIDC authentication configuration
-          when: DOMAIN != "" or ADDITIONAL_OIDC_PROVIDERS | length > 0 or OIDC_URL != ""
+          when: DOMAIN != "" or ADDITIONAL_OIDC_PROVIDERS | length > 0
           block:
             - name: Initialize OIDC providers list
               set_fact:
@@ -656,11 +655,6 @@
               when: 
                 - ADDITIONAL_OIDC_PROVIDERS is defined
                 - ADDITIONAL_OIDC_PROVIDERS | length > 0
-
-            - name: Add legacy OIDC_URL provider (for backward compatibility)
-              set_fact:
-                oidc_providers_list: "{{ oidc_providers_list + [{'url': OIDC_URL, 'audiences': ['k8s']}] }}"
-              when: OIDC_URL != ""
 
             - name: Remove duplicate OIDC providers
               set_fact:
