@@ -779,13 +779,14 @@
                         {{ line }}
                   {% endfor %}
                   {% else %}
-                  {% set additional_provider_index = additional_providers_list | map(attribute='url') | list | index(provider.url) %}
-                  {% if provider_cert_contents.results[additional_provider_index] is defined and provider_cert_contents.results[additional_provider_index].content is defined %}
+                  {% for add_provider in additional_providers_list %}
+                  {% if add_provider.url == provider.url and provider_cert_contents.results[loop.index0] is defined and provider_cert_contents.results[loop.index0].content is defined %}
                       certificateAuthority: |
-                  {% for line in (provider_cert_contents.results[additional_provider_index].content | b64decode).splitlines() %}
+                  {% for line in (provider_cert_contents.results[loop.index0].content | b64decode).splitlines() %}
                         {{ line }}
                   {% endfor %}
                   {% endif %}
+                  {% endfor %}
                   {% endif %}
                       audiences:
                   {% for audience in provider.audiences %}
