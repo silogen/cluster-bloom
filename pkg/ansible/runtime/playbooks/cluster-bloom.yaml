@@ -699,7 +699,8 @@
 
             - name: Fetch certificates from OIDC provider URLs
               shell: |
-                timeout 10 openssl s_client -showcerts -connect {{ provider.url | regex_replace('^https?://', '') }}:443 </dev/null 2>/dev/null | \
+                echo "Attempting to fetch certificate from: {{ provider.url }}"
+                timeout 10 openssl s_client -showcerts -connect {{ provider.url | regex_replace('^https?://', '') }}:443 </dev/null 2>&1 | \
                 sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p'
               register: oidc_provider_certs
               loop: "{{ oidc_providers_list }}"
@@ -707,6 +708,14 @@
                 loop_var: provider
                 index_var: provider_index
               failed_when: false
+              when: oidc_providers_list | length > 0
+
+            - name: Debug certificate fetching results
+              debug:
+                msg: "Certificate fetch result for {{ oidc_providers_list[cert_index].url }}: {{ 'SUCCESS' if item.stdout else 'FAILED - ' + (item.stderr | default('No error info')) }}"
+              loop: "{{ oidc_provider_certs.results }}"
+              loop_control:
+                index_var: cert_index
               when: oidc_providers_list | length > 0
 
             - name: Save OIDC provider certificates to individual files
