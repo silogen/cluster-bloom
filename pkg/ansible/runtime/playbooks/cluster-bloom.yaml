@@ -699,7 +699,7 @@
 
             - name: Fetch certificates from OIDC provider URLs
               shell: |
-                hostname="{{ provider.url | regex_replace('^https?://([^/]+).*$', '\\1') }}"
+                hostname=$(echo "{{ provider.url }}" | sed 's|^https\?://\([^/]\+\).*$|\1|')
                 echo "Connecting to: $hostname" >&2
                 timeout 10 openssl s_client -showcerts -connect "$hostname:443" -servername "$hostname" </dev/null 2>&1 | \
                 sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p'
