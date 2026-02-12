@@ -703,20 +703,50 @@
                 - CERT_OPTION == "existing"
                 - TLS_KEY != ""
 
-            - name: Read certificate content for inline inclusion in OIDC config
+            - name: Fetch certificates from OIDC provider URLs
+              shell: |
+                timeout 10 openssl s_client -showcerts -connect {{ provider.url | regex_replace('^https?://', '') }}:443 </dev/null 2>/dev/null | \
+                sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p'
+              register: oidc_provider_certs
+              loop: "{{ oidc_providers_list }}"
+              loop_control:
+                loop_var: provider
+                index_var: provider_index
+              failed_when: false
+              when: oidc_providers_list | length > 0
+
+            - name: Save OIDC provider certificates to individual files
+              copy:
+                content: "{{ item.stdout }}"
+                dest: "/etc/rancher/rke2/certs/oidc-provider-{{ item.provider_index }}.crt"
+                mode: "0644"
+              loop: "{{ oidc_provider_certs.results }}"
+              loop_control:
+                index_var: cert_index
+              when: 
+                - oidc_providers_list | length > 0
+                - item.stdout is defined
+                - item.stdout != ""
+
+            - name: Read TLS certificate content for domain-based OIDC providers
               slurp:
                 src: /etc/rancher/rke2/certs/tls.crt
-              register: cert_content_b64
+              register: domain_cert_content_b64
               when: 
                 - oidc_providers_list | length > 0
                 - CERT_OPTION in ["existing", "generate"]
 
-            - name: Build OIDC config parts
-              set_fact:
-                cert_content_indented: "{{ cert_content_b64.content | b64decode | regex_replace('(^|\n)', '\\1      ') if cert_content_b64 is defined else '' }}"
+            - name: Read individual OIDC provider certificates
+              slurp:
+                src: "/etc/rancher/rke2/certs/oidc-provider-{{ provider_index }}.crt"
+              register: provider_cert_contents
+              loop: "{{ oidc_providers_list }}"
+              loop_control:
+                index_var: provider_index
+              failed_when: false
               when: oidc_providers_list | length > 0
 
-            - name: Create OIDC authentication config with fixed indentation
+            - name: Create OIDC authentication config with provider-specific certificates
               copy:
                 dest: /etc/rancher/rke2/auth/auth-config.yaml
                 mode: "0644"
@@ -725,11 +755,15 @@
                   kind: AuthenticationConfiguration
                   jwt:
                   {% for provider in oidc_providers_list %}
+                  {% set provider_index = loop.index0 %}
                   - issuer:
                       url: {{ provider.url }}
-                  {% if cert_content_b64 is defined %}
+                  {% if provider.url == 'https://kc.' + DOMAIN + '/realms/airm' and domain_cert_content_b64 is defined %}
                       certificateAuthority: |
-                  {{ cert_content_indented }}
+                  {{ domain_cert_content_b64.content | b64decode | regex_replace('(^|\n)', '\\1        ') }}
+                  {% elif provider_cert_contents.results[provider_index] is defined and provider_cert_contents.results[provider_index].content is defined %}
+                      certificateAuthority: |
+                  {{ provider_cert_contents.results[provider_index].content | b64decode | regex_replace('(^|\n)', '\\1        ') }}
                   {% endif %}
                       audiences:
                   {% for audience in provider.audiences %}
