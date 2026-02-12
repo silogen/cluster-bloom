@@ -758,8 +758,15 @@
                 - oidc_providers_list | length > 0
                 - (CERT_OPTION == "existing" and TLS_CERT != "") or CERT_OPTION == "generate"
 
-            - name: Create OIDC authentication config content with proper indentation
+            - name: Build OIDC config parts
+              set_fact:
+                cert_content_indented: "{{ cert_content_b64.content | b64decode | regex_replace('(^|\n)', '\\1      ') if cert_content_b64 is defined else '' }}"
+              when: oidc_providers_list | length > 0
+
+            - name: Create OIDC authentication config with fixed indentation
               copy:
+                dest: /etc/rancher/rke2/auth/auth-config.yaml
+                mode: "0644"
                 content: |
                   apiVersion: apiserver.config.k8s.io/v1
                   kind: AuthenticationConfiguration
@@ -767,16 +774,14 @@
                   {% for provider in oidc_providers_list %}
                   - issuer:
                       url: {{ provider.url }}
-                      {% if cert_content_b64 is defined %}
+                  {% if cert_content_b64 is defined %}
                       certificateAuthority: |
-                  {% for line in (cert_content_b64.content | b64decode).splitlines() %}
-                        {{ line }}
-                  {% endfor %}
-                      {% endif %}
+                  {{ cert_content_indented }}
+                  {% endif %}
                       audiences:
-                      {% for audience in provider.audiences %}
+                  {% for audience in provider.audiences %}
                       - {{ audience }}
-                      {% endfor %}
+                  {% endfor %}
                     claimMappings:
                       username:
                         claim: preferred_username
@@ -785,8 +790,6 @@
                         claim: groups
                         prefix: "oidc:"
                   {% endfor %}
-                dest: /etc/rancher/rke2/auth/auth-config.yaml
-                mode: "0644"
               when: oidc_providers_list | length > 0
 
 
