@@ -712,7 +712,7 @@
             - name: Save OIDC provider certificates to individual files
               copy:
                 content: "{{ item.stdout }}"
-                dest: "/etc/rancher/rke2/certs/oidc-provider-{{ item.provider_index }}.crt"
+                dest: "/etc/rancher/rke2/certs/oidc-provider-{{ cert_index }}.crt"
                 mode: "0644"
               loop: "{{ oidc_provider_certs.results }}"
               loop_control:
