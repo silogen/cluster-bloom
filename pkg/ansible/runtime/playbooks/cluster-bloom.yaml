@@ -699,7 +699,9 @@
 
             - name: Fetch certificates from OIDC provider URLs
               shell: |
-                timeout 10 openssl s_client -showcerts -connect {{ provider.url | regex_replace('^https?://([^/]+).*$', '\\1') }}:443 </dev/null | \
+                hostname="{{ provider.url | regex_replace('^https?://([^/]+).*$', '\\1') }}"
+                echo "Connecting to: $hostname" >&2
+                timeout 10 openssl s_client -showcerts -connect "$hostname:443" -servername "$hostname" </dev/null 2>&1 | \
                 sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p'
               register: oidc_provider_certs
               loop: "{{ oidc_providers_list }}"
@@ -713,9 +715,13 @@
               debug:
                 msg: 
                   - "Provider: {{ oidc_providers_list[cert_index].url }}"
+                  - "Hostname extracted: {{ oidc_providers_list[cert_index].url | regex_replace('^https?://([^/]+).*$', '\\1') }}"
+                  - "Command executed: {{ item.cmd }}"
                   - "Status: {{ 'SUCCESS' if item.stdout else 'FAILED' }}"
                   - "Certificate length: {{ item.stdout | length if item.stdout else 0 }}"
-                  - "Error: {{ item.stderr if item.stderr else 'None' }}"
+                  - "Stdout preview: {{ (item.stdout[:100] + '...') if item.stdout else 'EMPTY' }}"
+                  - "Stderr: {{ item.stderr if item.stderr else 'None' }}"
+                  - "Return code: {{ item.rc }}"
               loop: "{{ oidc_provider_certs.results }}"
               loop_control:
                 index_var: cert_index
