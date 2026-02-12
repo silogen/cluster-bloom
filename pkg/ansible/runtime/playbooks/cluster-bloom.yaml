@@ -759,8 +759,8 @@
                 - (CERT_OPTION == "existing" and TLS_CERT != "") or CERT_OPTION == "generate"
 
             - name: Create OIDC authentication config content with proper indentation
-              set_fact:
-                auth_config_content: |
+              copy:
+                content: |
                   apiVersion: apiserver.config.k8s.io/v1
                   kind: AuthenticationConfiguration
                   jwt:
@@ -769,13 +769,15 @@
                       url: {{ provider.url }}
                       {% if cert_content_b64 is defined %}
                       certificateAuthority: |
-                  {{ cert_content_b64.content | b64decode | indent(6, first=false) }}
+                  {% for line in (cert_content_b64.content | b64decode).splitlines() %}
+                        {{ line }}
+                  {% endfor %}
                       {% endif %}
                       audiences:
                       {% for audience in provider.audiences %}
                       - {{ audience }}
                       {% endfor %}
-                      claimMappings:
+                    claimMappings:
                       username:
                         claim: preferred_username
                         prefix: "oidc:"
@@ -783,14 +785,11 @@
                         claim: groups
                         prefix: "oidc:"
                   {% endfor %}
-              when: oidc_providers_list | length > 0
-
-            - name: Write Kubernetes Authentication Configuration
-              copy:
-                content: "{{ auth_config_content }}"
                 dest: /etc/rancher/rke2/auth/auth-config.yaml
                 mode: "0644"
               when: oidc_providers_list | length > 0
+
+
 
             - name: Configure RKE2 to use Authentication Configuration
               blockinfile:
