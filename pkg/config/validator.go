@@ -123,6 +123,27 @@ func Validate(cfg Config) []string {
 							}
 						}
 					}
+				} else {
+					// Handle legacy comma-separated string format for ADDITIONAL_TLS_SAN_URLS
+					if strVal, isString := value.(string); isString && arg.Key == "ADDITIONAL_TLS_SAN_URLS" && strVal != "" {
+						items := strings.Split(strVal, ",")
+						if len(arg.Sequence) > 0 {
+							seqDef := arg.Sequence[0]
+							if seqDef.Pattern != "" {
+								pattern := regexp.MustCompile(seqDef.Pattern)
+								for i, item := range items {
+									itemStr := strings.TrimSpace(item)
+									if itemStr != "" && !pattern.MatchString(itemStr) {
+										patternTitle := seqDef.PatternTitle
+										if patternTitle == "" {
+											patternTitle = fmt.Sprintf("invalid format: %s", itemStr)
+										}
+										errors = append(errors, fmt.Sprintf("%s[%d]: %s", arg.Key, i, patternTitle))
+									}
+								}
+							}
+						}
+					}
 				}
 			default:
 				// Check if this type has a pattern
@@ -133,6 +154,33 @@ func Validate(cfg Config) []string {
 						}
 					}
 				}
+			}
+		}
+	}
+
+	// Special validation for ADDITIONAL_TLS_SAN_URLS (critical security check)
+	if tlsSans, exists := cfg["ADDITIONAL_TLS_SAN_URLS"]; exists && tlsSans != nil {
+		var domains []string
+		
+		// Handle array format
+		if sequence, ok := tlsSans.([]interface{}); ok {
+			for _, item := range sequence {
+				if itemStr, ok := item.(string); ok {
+					domains = append(domains, itemStr)
+				}
+			}
+		}
+		// Handle legacy string format
+		if strVal, ok := tlsSans.(string); ok && strVal != "" {
+			for _, item := range strings.Split(strVal, ",") {
+				domains = append(domains, strings.TrimSpace(item))
+			}
+		}
+		
+		// Check for wildcards in any domain
+		for i, domain := range domains {
+			if strings.Contains(domain, "*") {
+				errors = append(errors, fmt.Sprintf("ADDITIONAL_TLS_SAN_URLS[%d]: Wildcard domains (*.domain.com) are not supported by RKE2. Found: %s", i, domain))
 			}
 		}
 	}

@@ -75,6 +75,16 @@ async function validateForm(schema, config) {
         }
     });
 
+    // Special validation for ADDITIONAL_TLS_SAN_URLS
+    if (config.ADDITIONAL_TLS_SAN_URLS && Array.isArray(config.ADDITIONAL_TLS_SAN_URLS)) {
+        config.ADDITIONAL_TLS_SAN_URLS.forEach((domain, index) => {
+            if (domain && domain.includes('*')) {
+                errors.push(`ADDITIONAL_TLS_SAN_URLS[${index}]: Wildcard domains (*.domain.com) are not supported by RKE2`);
+                showValidationError('ADDITIONAL_TLS_SAN_URLS', `Domain ${index + 1}: Wildcard domains are not supported`);
+            }
+        });
+    }
+
     // Validate constraints (mutually exclusive, one-of, etc.)
     const constraintErrors = await validateConstraints(config);
     errors.push(...constraintErrors);

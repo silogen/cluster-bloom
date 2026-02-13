@@ -349,6 +349,13 @@ function createArrayField(argument) {
     return container;
 }
 
+// Simple domain validation function
+function isValidDomain(domain) {
+    // Basic domain validation: should have at least one dot and valid characters
+    const domainPattern = /^([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
+    return domainPattern.test(domain);
+}
+
 // Get appropriate button text based on array type
 function getAddButtonText(key) {
     if (key === 'ADDITIONAL_OIDC_PROVIDERS') {
@@ -496,27 +503,76 @@ function createGenericArrayItem(container, itemData, index, argument) {
         input.placeholder = `${argument.key} item`;
     }
     
-    // Apply validation pattern from schema sequence definition
-    if (argument.sequence && argument.sequence[0] && argument.sequence[0].pattern) {
-        input.pattern = argument.sequence[0].pattern;
-        input.title = argument.sequence[0]['pattern-title'] || 'Invalid format';
+    // Add specific validation for ADDITIONAL_TLS_SAN_URLS
+    if (argument.key === 'ADDITIONAL_TLS_SAN_URLS') {
+        // Create error display element
+        const errorSpan = document.createElement('span');
+        errorSpan.className = 'validation-error';
+        errorSpan.style.color = '#dc3545';
+        errorSpan.style.fontSize = '0.875em';
+        errorSpan.style.display = 'block';
+        errorSpan.style.marginTop = '4px';
         
-        // Add real-time validation
-        const validateInput = () => {
-            if (input.value && !input.checkValidity()) {
-                input.setCustomValidity(input.title);
-                input.style.borderColor = '#dc3545'; // Red border for invalid
-            } else {
+        // Real-time wildcard validation (like domain required validation)
+        const validateTlsSan = () => {
+            const value = input.value.trim();
+            
+            if (value === '') {
+                // Clear validation for empty values
+                errorSpan.textContent = '';
+                input.style.borderColor = '';
                 input.setCustomValidity('');
-                input.style.borderColor = ''; // Reset border
+            } else if (value.includes('*')) {
+                // Show error for wildcards
+                errorSpan.textContent = '⚠️ Wildcard domains (*.domain.com) are not supported by RKE2';
+                input.style.borderColor = '#dc3545';
+                input.setCustomValidity('Wildcard domains are not supported');
+            } else if (!isValidDomain(value)) {
+                // Show error for invalid domain format
+                errorSpan.textContent = '⚠️ Please enter a valid domain name (e.g., api.example.com)';
+                input.style.borderColor = '#dc3545';
+                input.setCustomValidity('Invalid domain format');
+            } else {
+                // Clear validation for valid domains
+                errorSpan.textContent = '';
+                input.style.borderColor = '#28a745'; // Green border for valid
+                input.setCustomValidity('');
             }
         };
         
-        input.addEventListener('input', validateInput);
-        input.addEventListener('blur', validateInput);
+        input.addEventListener('input', validateTlsSan);
+        input.addEventListener('blur', validateTlsSan);
+        
+        container.appendChild(input);
+        container.appendChild(errorSpan);
+        
+        // Validate initial value if present
+        if (input.value) {
+            validateTlsSan();
+        }
+    } else {
+        // Apply generic validation pattern from schema sequence definition
+        if (argument.sequence && argument.sequence[0] && argument.sequence[0].pattern) {
+            input.pattern = argument.sequence[0].pattern;
+            input.title = argument.sequence[0]['pattern-title'] || 'Invalid format';
+            
+            // Add real-time validation
+            const validateInput = () => {
+                if (input.value && !input.checkValidity()) {
+                    input.setCustomValidity(input.title);
+                    input.style.borderColor = '#dc3545'; // Red border for invalid
+                } else {
+                    input.setCustomValidity('');
+                    input.style.borderColor = ''; // Reset border
+                }
+            };
+            
+            input.addEventListener('input', validateInput);
+            input.addEventListener('blur', validateInput);
+        }
+        
+        container.appendChild(input);
     }
-    
-    container.appendChild(input);
 }
 
 // Reindex array items after removal
