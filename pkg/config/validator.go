@@ -102,6 +102,28 @@ func Validate(cfg Config) []string {
 				// Bool conversion is handled by YAML parser
 			case "str":
 				// Plain string, no pattern validation
+			case "seq":
+				// Validate sequence/array fields
+				if sequence, ok := value.([]interface{}); ok {
+					// Check if sequence has validation rules
+					if len(arg.Sequence) > 0 {
+						seqDef := arg.Sequence[0]
+						if seqDef.Pattern != "" {
+							pattern := regexp.MustCompile(seqDef.Pattern)
+							for i, item := range sequence {
+								if itemStr, ok := item.(string); ok {
+									if itemStr != "" && !pattern.MatchString(itemStr) {
+										patternTitle := seqDef.PatternTitle
+										if patternTitle == "" {
+											patternTitle = fmt.Sprintf("invalid format: %s", itemStr)
+										}
+										errors = append(errors, fmt.Sprintf("%s[%d]: %s", arg.Key, i, patternTitle))
+									}
+								}
+							}
+						}
+					}
+				}
 			default:
 				// Check if this type has a pattern
 				if isString && strVal != "" {
