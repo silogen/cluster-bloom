@@ -83,19 +83,6 @@ Certificate SANs:
 - kubectl.cluster.example.com      # Your additional domains
 ```
 
-## Testing Connectivity
-
-Verify your TLS SAN configuration works:
-
-```bash
-# Test auto-generated domain
-curl -k https://k8s.cluster.example.com:6443/version
-
-# Test your additional domains
-curl -k https://api.cluster.example.com:6443/version
-curl -k https://kubectl.cluster.example.com:6443/version
-```
-
 ## Migration from String Format
 
 **Old format (still supported):**
@@ -109,24 +96,3 @@ ADDITIONAL_TLS_SAN_URLS:
   - "api.example.com"
   - "kubectl.example.com"
 ```
-
-## Troubleshooting
-
-### Problem: UI allows wildcard but cluster fails
-**Solution**: Update to latest Bloom version with enhanced validation
-
-### Problem: Domain not in certificate
-**Cause**: Domain contains wildcards or invalid characters
-**Solution**: Use specific subdomain names (e.g., `api.example.com` instead of `*.example.com`)
-
-### Problem: Certificate validation errors
-**Cause**: DNS not pointing to cluster IP
-**Solution**: Ensure all TLS SAN domains resolve to your cluster's IP address
-
-## Best Practices
-
-1. **Use specific subdomains** instead of wildcards
-2. **Plan your domains** before deployment
-3. **Configure DNS** to point all domains to cluster IP
-4. **Test connectivity** after deployment
-5. **Keep domains short** and memorable
