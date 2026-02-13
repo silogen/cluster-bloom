@@ -88,13 +88,13 @@ schema:
     ADDITIONAL_TLS_SAN_URLS:
       type: seq
       default: []
-      desc: Additional TLS Subject Alternative Name URLs for API server certificate
+      desc: Additional TLS Subject Alternative Name URLs for API server certificate (wildcards not supported by RKE2)
       applicable: when(FIRST_NODE == true)
       section: "🔒 SSL/TLS Configuration"
       sequence:
         - type: str
-          pattern: "^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.([a-z0-9]([a-z0-9-]*[a-z0-9])?))*$"
-          pattern-title: "Enter a valid domain name (lowercase alphanumeric with dots/hyphens)"
+          pattern: "^(?!.*\\*)([a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.([a-z0-9]([a-z0-9-]*[a-z0-9])?))*|\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})$"
+          pattern-title: "Enter a valid domain name or IP address (no wildcards allowed)"
 
     USE_CERT_MANAGER:
       type: bool
