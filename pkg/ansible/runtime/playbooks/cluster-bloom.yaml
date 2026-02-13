@@ -588,11 +588,6 @@
         - name: Handle TLS SAN configuration
           when: DOMAIN != "" or (ADDITIONAL_TLS_SAN_URLS is defined and ADDITIONAL_TLS_SAN_URLS | length > 0)
           block:
-            - name: Add DOMAIN to TLS SAN list
-              set_fact:
-                tls_san_list: "{{ tls_san_list + [DOMAIN, '*.' + DOMAIN] }}"
-              when: DOMAIN != ""
-
             - name: Add auto-generated k8s SAN
               set_fact:
                 tls_san_list: "{{ tls_san_list + ['k8s.' + DOMAIN] }}"
@@ -635,7 +630,7 @@
             # Initialize certificate SAN list for cert generation
             - name: Initialize certificate SAN list
               set_fact:
-                cert_san_list: ["{{ DOMAIN }}", "*.{{ DOMAIN }}", "k8s.{{ DOMAIN }}"]
+                cert_san_list: ["k8s.{{ DOMAIN }}"]
 
             - name: Add additional TLS SANs to certificate
               set_fact:
