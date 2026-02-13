@@ -41,6 +41,21 @@ function validateField(argument, value, config) {
                     return `${argument.key} must be one of: ${argument.options.join(', ')}`;
                 }
                 break;
+            case 'seq':
+                // Validate array/sequence fields
+                if (Array.isArray(value) && argument.sequence && argument.sequence[0]) {
+                    const itemSchema = argument.sequence[0];
+                    if (itemSchema.pattern) {
+                        const pattern = new RegExp(itemSchema.pattern);
+                        for (let i = 0; i < value.length; i++) {
+                            const item = value[i];
+                            if (item && !pattern.test(item)) {
+                                return itemSchema['pattern-title'] || `${argument.key} item "${item}" is invalid`;
+                            }
+                        }
+                    }
+                }
+                break;
         }
     }
 

@@ -353,6 +353,8 @@ function createArrayField(argument) {
 function getAddButtonText(key) {
     if (key === 'ADDITIONAL_OIDC_PROVIDERS') {
         return '+ Add OIDC Provider';
+    } else if (key === 'ADDITIONAL_TLS_SAN_URLS') {
+        return '+ Add Domain';
     }
     return '+ Add Item';
 }
@@ -406,6 +408,8 @@ function addArrayItem(argument, container, itemData, index) {
 function getItemTitle(key, index) {
     if (key === 'ADDITIONAL_OIDC_PROVIDERS') {
         return `OIDC Provider ${index + 1}`;
+    } else if (key === 'ADDITIONAL_TLS_SAN_URLS') {
+        return `Domain ${index + 1}`;
     }
     return `Item ${index + 1}`;
 }
@@ -484,7 +488,34 @@ function createGenericArrayItem(container, itemData, index, argument) {
     input.type = 'text';
     input.name = `${argument.key}_${index}`;
     input.value = itemData || '';
-    input.placeholder = `${argument.key} item`;
+    
+    // Set appropriate placeholder based on field type
+    if (argument.key === 'ADDITIONAL_TLS_SAN_URLS') {
+        input.placeholder = 'e.g., api.example.com (no wildcards)';
+    } else {
+        input.placeholder = `${argument.key} item`;
+    }
+    
+    // Apply validation pattern from schema sequence definition
+    if (argument.sequence && argument.sequence[0] && argument.sequence[0].pattern) {
+        input.pattern = argument.sequence[0].pattern;
+        input.title = argument.sequence[0]['pattern-title'] || 'Invalid format';
+        
+        // Add real-time validation
+        const validateInput = () => {
+            if (input.value && !input.checkValidity()) {
+                input.setCustomValidity(input.title);
+                input.style.borderColor = '#dc3545'; // Red border for invalid
+            } else {
+                input.setCustomValidity('');
+                input.style.borderColor = ''; // Reset border
+            }
+        };
+        
+        input.addEventListener('input', validateInput);
+        input.addEventListener('blur', validateInput);
+    }
+    
     container.appendChild(input);
 }
 
