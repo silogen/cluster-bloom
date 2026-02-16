@@ -11,7 +11,7 @@
     GPU_NODE: true
     CONTROL_PLANE: false
     DOMAIN: ""
-    CLUSTER_SIZE: small
+    CLUSTER_SIZE: medium
     SERVER_IP: ""
     JOIN_TOKEN: ""
     NO_DISKS_FOR_CLUSTER: false
@@ -25,8 +25,8 @@
     RKE2_EXTRA_CONFIG: ""
     INSTALL_ARGOCD: true
     ARGOCD_VERSION: "v2.14.11"
-    CLUSTERFORGE_REPO: "https://github.com/silogen/cluster-forge.git"
-    CLUSTERFORGE_BRANCH: "creating_small_configuration"
+    CLUSTERFORGE_REPO: ""
+    CLUSTERFORGE_BRANCH: ""
     CLUSTERFORGE_RELEASE: "none"
 
     rocm_base_url: "https://repo.radeon.com/amdgpu-install/6.3.3/ubuntu/"
