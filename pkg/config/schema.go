@@ -12,4 +12,12 @@ type Argument struct {
 	Section      string   `json:"section,omitempty"`
 	Pattern      string   `json:"pattern,omitempty"`      // HTML5 validation pattern
 	PatternTitle string   `json:"patternTitle,omitempty"` // Custom validation error message
+	Sequence     []SequenceItem `json:"sequence,omitempty"` // Sequence validation rules
+}
+
+// SequenceItem represents validation rules for sequence items
+type SequenceItem struct {
+	Type         string `json:"type"`
+	Pattern      string `json:"pattern"`
+	PatternTitle string `json:"patternTitle"`
 }

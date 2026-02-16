@@ -88,11 +88,77 @@ func formatYAMLLine(key string, value any) string {
 		if len(v) == 0 {
 			return fmt.Sprintf("%s: []", key)
 		}
-		// For now, output as empty array or JSON-like format
-		return fmt.Sprintf("%s: []", key)
+		// Generate proper YAML array format
+		return formatYAMLArray(key, v)
 	default:
 		return fmt.Sprintf("%s: %v", key, v)
 	}
+}
+
+func formatYAMLArray(key string, arr []any) string {
+	var lines []string
+	lines = append(lines, fmt.Sprintf("%s:", key))
+	for _, item := range arr {
+		if itemMap, ok := item.(map[string]any); ok {
+			// Handle complex array elements like OIDC providers
+			lines = append(lines, formatMapAsYAMLItem(itemMap))
+		} else {
+			// Handle simple array elements
+			if needsQuotes(fmt.Sprintf("%v", item)) {
+				lines = append(lines, fmt.Sprintf("  - \"%v\"", item))
+			} else {
+				lines = append(lines, fmt.Sprintf("  - %v", item))
+			}
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func formatMapAsYAMLItem(itemMap map[string]any) string {
+	var lines []string
+	first := true
+	for key, value := range itemMap {
+		switch v := value.(type) {
+		case string:
+			if first {
+				if needsQuotes(v) || v == "" {
+					lines = append(lines, fmt.Sprintf("  - %s: \"%s\"", key, escapeString(v)))
+				} else {
+					lines = append(lines, fmt.Sprintf("  - %s: %s", key, v))
+				}
+				first = false
+			} else {
+				if needsQuotes(v) || v == "" {
+					lines = append(lines, fmt.Sprintf("    %s: \"%s\"", key, escapeString(v)))
+				} else {
+					lines = append(lines, fmt.Sprintf("    %s: %s", key, v))
+				}
+			}
+		case []any:
+			// Handle nested arrays (like audiences)
+			if first {
+				lines = append(lines, fmt.Sprintf("  - %s:", key))
+				first = false
+			} else {
+				lines = append(lines, fmt.Sprintf("    %s:", key))
+			}
+			for _, arrItem := range v {
+				if needsQuotes(fmt.Sprintf("%v", arrItem)) {
+					lines = append(lines, fmt.Sprintf("      - \"%v\"", arrItem))
+				} else {
+					lines = append(lines, fmt.Sprintf("      - %v", arrItem))
+				}
+			}
+		default:
+			if first {
+				lines = append(lines, fmt.Sprintf("  - %s: %v", key, value))
+				first = false
+			} else {
+				lines = append(lines, fmt.Sprintf("    %s: %v", key, value))
+			}
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func needsQuotes(s string) bool {

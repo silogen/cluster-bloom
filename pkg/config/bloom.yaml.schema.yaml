@@ -84,13 +84,17 @@ schema:
       desc: Skip /var/lib/rancher partition size check
       section: "💾 Storage Configuration"
 
-    # 🔒 SSL/TLS Configuration
+     # 🔒 SSL/TLS Configuration
     ADDITIONAL_TLS_SAN_URLS:
-      type: domainList
-      default: ""
-      desc: Additional TLS SAN URLs (comma-separated)
+      type: seq
+      default: []
+      desc: Additional TLS Subject Alternative Name URLs for API server certificate (wildcards not supported by RKE2)
       applicable: when(FIRST_NODE == true)
       section: "🔒 SSL/TLS Configuration"
+      sequence:
+        - type: str
+          pattern: "^(?!.*\\*)([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\\.)+[a-zA-Z]{2,}$"
+          pattern-title: "Enter a valid domain name (e.g., api.example.com) - wildcards (*.domain.com) are not supported by RKE2"
 
     USE_CERT_MANAGER:
       type: bool
@@ -135,9 +139,33 @@ schema:
       applicable: when(GPU_NODE == true)
       section: "⚙️ Advanced Configuration"
 
+    INSTALL_ARGOCD:
+      type: bool
+      default: true
+      desc: Install ArgoCD core for GitOps (small clusters only)
+      section: "⚙️ Advanced Configuration"
+
+    ARGOCD_VERSION:
+      type: str
+      default: v2.14.11
+      desc: ArgoCD version to install
+      section: "⚙️ Advanced Configuration"
+
+    CLUSTERFORGE_REPO:
+      type: str
+      default: https://github.com/silogen/cluster-forge.git
+      desc: ClusterForge git repository URL for ArgoCD-based deployment
+      section: "⚙️ Advanced Configuration"
+
+    CLUSTERFORGE_BRANCH:
+      type: str
+      default: creating_small_configuration
+      desc: ClusterForge git branch for ArgoCD-based deployment
+      section: "⚙️ Advanced Configuration"
+
     CLUSTERFORGE_RELEASE:
       type: str
-      default: https://github.com/silogen/cluster-forge/releases/download/v1.5.2/release-enterprise-ai-v1.5.2.tar.gz
+      default: https://github.com/silogen/cluster-forge/releases/download/v1.8.0/release-enterprise-ai-v1.8.0.tar.gz
       desc: ClusterForge version URL or 'none'
       section: "⚙️ Advanced Configuration"
 

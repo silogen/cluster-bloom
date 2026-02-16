@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"embed"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -49,25 +50,7 @@ func RunPlaybook(config map[string]any, playbookName string, dryRun bool, tags s
 		return 1, err
 	}
 
-	if err := backupLogFile(workDir); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
-	}
-
-	rootfs := filepath.Join(workDir, "rootfs")
 	playbookDir := filepath.Join(workDir, "playbooks")
-
-	if !ImageCached(rootfs) {
-		fmt.Println("Downloading cluster deployment image (this may take a few minutes)...")
-		if err := os.MkdirAll(rootfs, 0755); err != nil {
-			return 1, fmt.Errorf("create rootfs dir: %w", err)
-		}
-		if err := PullAndExtractImage(ImageRef, rootfs, true); err != nil {
-			return 1, fmt.Errorf("pull image: %w", err)
-		}
-		fmt.Println("Image ready.")
-	} else {
-		fmt.Println("Using cached deployment image.")
-	}
 
 	os.RemoveAll(playbookDir)
 	if err := extractEmbeddedPlaybooks(playbookDir); err != nil {
@@ -78,17 +61,10 @@ func RunPlaybook(config map[string]any, playbookName string, dryRun bool, tags s
 		return 1, fmt.Errorf("extract manifests: %w", err)
 	}
 
-	extraArgs := configToAnsibleVars(config)
+	extraVars := ConfigToAnsibleVars(config)
+	playbookPath := filepath.Join(playbookDir, playbookName)
 
-	// Add BLOOM_DIR to Ansible variables (current working directory, not .bloom subdir)
-	cwd, err := os.Getwd()
-	if err != nil {
-		return 1, fmt.Errorf("get current directory: %w", err)
-	}
-	extraArgs = append(extraArgs, "-e", fmt.Sprintf(`{"BLOOM_DIR": "%s"}`, cwd))
-
-	exitCode := RunContainer(rootfs, playbookDir, playbookName, extraArgs, dryRun, tags, outputMode)
-	return exitCode, nil
+	return RunPlaybookDirect(playbookPath, dryRun, tags, extraVars, outputMode)
 }
 
 func extractEmbeddedPlaybooks(destDir string) error {
@@ -117,31 +93,81 @@ func extractEmbeddedPlaybooks(destDir string) error {
 	})
 }
 
-func configToAnsibleVars(config map[string]any) []string {
-	var args []string
+func RunPlaybookDirect(playbookPath string, dryRun bool, tags string, extraVars []string, outputMode OutputMode) (int, error) {
+	absPath, err := filepath.Abs(playbookPath)
+	if err != nil {
+		return 1, fmt.Errorf("resolve playbook path: %w", err)
+	}
+
+	if _, err := os.Stat(absPath); os.IsNotExist(err) {
+		return 1, fmt.Errorf("playbook not found: %s", absPath)
+	}
+
+	playbookDir := filepath.Dir(absPath)
+	playbookName := filepath.Base(absPath)
+
+	workDir, err := getWorkDir()
+	if err != nil {
+		return 1, err
+	}
+
+	if err := backupLogFile(workDir); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
+	}
+
+	rootfs := filepath.Join(workDir, "rootfs")
+
+	if !ImageCached(rootfs) {
+		fmt.Println("Downloading Ansible runtime image (this may take a few minutes)...")
+		if err := os.MkdirAll(rootfs, 0755); err != nil {
+			return 1, fmt.Errorf("create rootfs dir: %w", err)
+		}
+		if err := PullAndExtractImage(ImageRef, rootfs, true); err != nil {
+			return 1, fmt.Errorf("pull image: %w", err)
+		}
+		fmt.Println("Image ready.")
+	} else {
+		fmt.Println("Using cached Ansible runtime image.")
+	}
+
+	var extraArgs []string
+	for _, v := range extraVars {
+		extraArgs = append(extraArgs, "-e", v)
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return 1, fmt.Errorf("get current directory: %w", err)
+	}
+	extraArgs = append(extraArgs, "-e", fmt.Sprintf(`{"BLOOM_DIR": "%s"}`, cwd))
+
+	exitCode := RunContainer(rootfs, playbookDir, playbookName, extraArgs, dryRun, tags, outputMode)
+	return exitCode, nil
+}
+
+func ConfigToAnsibleVars(config map[string]any) []string {
+	var vars []string
 	for key, value := range config {
-		// Use @file syntax to pass values as JSON to preserve types
-		// This ensures booleans stay as booleans, not strings
-		var valueStr string
 		switch v := value.(type) {
 		case bool:
-			// Pass as JSON boolean
 			if v {
-				valueStr = "true"
+				vars = append(vars, fmt.Sprintf(`{"%s": true}`, key))
 			} else {
-				valueStr = "false"
+				vars = append(vars, fmt.Sprintf(`{"%s": false}`, key))
 			}
-			// Use JSON format to preserve boolean type
-			args = append(args, "-e", fmt.Sprintf(`{"`+key+`": `+valueStr+`}`))
 		case string:
-			// Quote strings in JSON
-			valueStr = fmt.Sprintf(`"%s"`, v)
-			args = append(args, "-e", fmt.Sprintf(`{"`+key+`": `+valueStr+`}`))
+			vars = append(vars, fmt.Sprintf(`{"%s": "%s"}`, key, v))
 		default:
-			// Numbers and other types
-			valueStr = fmt.Sprintf("%v", v)
-			args = append(args, "-e", fmt.Sprintf(`{"`+key+`": `+valueStr+`}`))
+			// Handle complex types (arrays, maps) with proper JSON marshaling
+			var valueStr string
+			if jsonBytes, err := json.Marshal(v); err == nil {
+				valueStr = string(jsonBytes)
+			} else {
+				// Fallback to string representation for simple types
+				valueStr = fmt.Sprintf("%v", v)
+			}
+			vars = append(vars, fmt.Sprintf(`{"%s": %s}`, key, valueStr))
 		}
 	}
-	return args
+	return vars
 }

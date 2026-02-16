@@ -146,13 +146,40 @@ Configuration sources in priority order (highest to lowest):
 - **Example**: `TLS_KEY: "/path/to/tls.key"`
 - **Required When**: `CERT_OPTION: "existing"`
 
+### ArgoCD Configuration (Small Clusters)
+
+#### INSTALL_ARGOCD
+- **Type**: Boolean
+- **Default**: `true`
+- **Description**: Install ArgoCD core (headless/CLI-only mode) for GitOps-based app deployment. Only applies to `CLUSTER_SIZE: small`.
+- **Values**: `true` | `false`
+- **Example**: `INSTALL_ARGOCD: false`
+
+#### ARGOCD_VERSION
+- **Type**: String (version tag)
+- **Default**: `v2.14.11`
+- **Description**: ArgoCD version to install
+- **Example**: `ARGOCD_VERSION: "v2.14.11"`
+
+#### CLUSTERFORGE_REPO
+- **Type**: String (git URL)
+- **Default**: `https://github.com/silogen/cluster-forge.git`
+- **Description**: Git repository URL for the ClusterForge Helm chart used in ArgoCD-based deployment
+- **Example**: `CLUSTERFORGE_REPO: "https://github.com/myorg/cluster-forge.git"`
+
+#### CLUSTERFORGE_BRANCH
+- **Type**: String (branch name)
+- **Default**: `creating_small_configuration`
+- **Description**: Git branch of the ClusterForge repository to use
+- **Example**: `CLUSTERFORGE_BRANCH: "main"`
+
 ### Integration Configuration
 
 #### CLUSTERFORGE_RELEASE
 - **Type**: String (version or URL)
 - **Default**: None
-- **Description**: ClusterForge version or release URL to deploy
-- **Example**: `CLUSTERFORGE_RELEASE: "v1.2.3"`
+- **Description**: ClusterForge release tarball URL for non-ArgoCD deployment (medium/large clusters). Set to `none` to skip.
+- **Example**: `CLUSTERFORGE_RELEASE: "https://github.com/silogen/cluster-forge/releases/download/v1.8.0/release.tar.gz"`
 
 #### CF_VALUES
 - **Type**: String (file path)
@@ -196,9 +223,14 @@ Configuration sources in priority order (highest to lowest):
 - **Type**: Array of strings (domain names)
 - **Default**: `[]`
 - **Description**: Additional TLS Subject Alternative Name URLs for Kubernetes API server certificate
-- **Example**: `ADDITIONAL_TLS_SAN_URLS: ["api.example.com", "kubernetes.example.com"]`
+- **Example**: `ADDITIONAL_TLS_SAN_URLS: ["api.example.com", "management.example.com"]`
 - **Auto-generated**: Always includes `k8s.{DOMAIN}` - do not duplicate
-- **Validation**: Each entry must be a valid domain name format
+- **Validation**: 
+  - Each entry must be a valid domain name format
+  - Wildcard domains (*.example.com) are blocked by UI and server validation
+  - Real-time validation provides immediate feedback
+- **Migration**: Legacy comma-separated string format still supported
+- **Documentation**: See [TLS SAN Configuration](tls-san-configuration.md) for detailed guide
 
 #### ONEPASSWORD_CONNECT_TOKEN
 - **Type**: String
@@ -369,6 +401,29 @@ NO_DISKS_FOR_CLUSTER: true
 SKIP_RANCHER_PARTITION_CHECK: true
 SERVER_IP: "192.168.1.100"
 JOIN_TOKEN: "K10..."
+```
+
+### Small Cluster with ArgoCD (GitOps)
+```yaml
+FIRST_NODE: true
+GPU_NODE: true
+DOMAIN: "165.245.128.225.nip.io"
+CERT_OPTION: generate
+CLUSTER_SIZE: small
+CLUSTER_DISKS: /dev/vdc1
+CLUSTERFORGE_RELEASE: none
+```
+
+### Small Cluster without ArgoCD
+```yaml
+FIRST_NODE: true
+GPU_NODE: true
+DOMAIN: "165.245.128.225.nip.io"
+CERT_OPTION: generate
+CLUSTER_SIZE: small
+CLUSTER_DISKS: /dev/vdc1
+INSTALL_ARGOCD: false
+CLUSTERFORGE_RELEASE: none
 ```
 
 ### Testing/Development Configuration

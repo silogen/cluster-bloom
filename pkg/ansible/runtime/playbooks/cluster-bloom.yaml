@@ -11,7 +11,7 @@
     GPU_NODE: true
     CONTROL_PLANE: false
     DOMAIN: ""
-    CLUSTER_SIZE: small
+    CLUSTER_SIZE: medium
     SERVER_IP: ""
     JOIN_TOKEN: ""
     NO_DISKS_FOR_CLUSTER: false
@@ -21,12 +21,18 @@
     CERT_OPTION: ""
     TLS_CERT: ""
     TLS_KEY: ""
-    OIDC_URL: ""
+    ADDITIONAL_OIDC_PROVIDERS: []
+    ADDITIONAL_TLS_SAN_URLS: []
+    RKE2_VERSION: ""
     RKE2_EXTRA_CONFIG: ""
-    CLUSTERFORGE_RELEASE: "none"
     DNSMASQ: true
-    rocm_base_url: "https://repo.radeon.com/amdgpu-install/6.3.3/ubuntu/"
-    rocm_deb_package: "amdgpu-install_6.3.60303-1_all.deb"
+    INSTALL_ARGOCD: true
+    ARGOCD_VERSION: "v2.14.11"
+    CLUSTERFORGE_REPO: ""
+    CLUSTERFORGE_BRANCH: ""
+    CLUSTERFORGE_RELEASE: "https://github.com/silogen/cluster-forge/releases/download/v1.8.0/release-enterprise-ai-v1.8.0.tar.gz"
+    rocm_base_url: "https://repo.radeon.com/amdgpu-install/7.1.1/ubuntu/"
+    rocm_deb_package: "amdgpu-install_7.1.1.70101-1_all.deb"
     rke2_installation_url: "https://get.rke2.io"
 
     supported_ubuntu_versions:
@@ -272,12 +278,49 @@
 
     - name: Install Dependent Packages
       block:
-        - name: Update apt cache
-          apt:
-            update_cache: yes
+        - name: Stop services that may lock apt
+          shell: |
+            systemctl stop unattended-upgrades.service || true
+            systemctl stop apt-daily.timer || true
+            systemctl stop apt-daily-upgrade.timer || true
+            systemctl kill --kill-who=all apt-daily.service || true
+            systemctl kill --kill-who=all apt-daily-upgrade.service || true
+          ignore_errors: yes
+
+        - name: Wait for apt locks to be released
+          shell: |
+            timeout 300 bash -c 'while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do sleep 1; done' || true
+            timeout 300 bash -c 'while fuser /var/lib/apt/lists/lock >/dev/null 2>&1; do sleep 1; done' || true
+          ignore_errors: yes
+
+        - name: Clean apt lists and locks
+          shell: |
+            killall apt apt-get dpkg 2>/dev/null || true
+            rm -f /var/lib/apt/lists/lock
+            rm -f /var/cache/apt/archives/lock
+            rm -f /var/lib/dpkg/lock*
+            dpkg --configure -a || true
+            rm -rf /var/lib/apt/lists/*
+            mkdir -p /var/lib/apt/lists/partial
+          ignore_errors: yes
+
+        - name: Disable problematic apt repositories
+          shell: |
+            if [ -f /etc/apt/sources.list.d/kitware.list ]; then
+              mv /etc/apt/sources.list.d/kitware.list /etc/apt/sources.list.d/kitware.list.disabled || true
+            fi
+          ignore_errors: yes
+
+        - name: Update apt cache with timeout
+          shell: timeout 300 apt-get update --allow-insecure-repositories
           environment:
             DEBIAN_FRONTEND: noninteractive
-          ignore_errors: yes
+            APT_KEY_DONT_WARN_ON_DANGEROUS_USAGE: "1"
+          register: apt_update_result
+          until: apt_update_result.rc == 0
+          retries: 3
+          delay: 10
+          ignore_errors: no
 
         - name: Install required packages
           apt:
@@ -358,14 +401,14 @@
 
         - name: Download amdgpu-install package
           get_url:
-            url: "{{ ROCM_BASE_URL }}/{{ ubuntu_codename.stdout }}/{{ ROCM_DEB_PACKAGE }}"
-            dest: "/tmp/{{ ROCM_DEB_PACKAGE }}"
+            url: "{{ rocm_base_url }}/{{ ubuntu_codename.stdout }}/{{ rocm_deb_package }}"
+            dest: "/tmp/{{ rocm_deb_package }}"
             mode: "0644"
           when: not rocm_smi_check.stat.exists
 
         - name: Install amdgpu-install package
           apt:
-            deb: "/tmp/{{ ROCM_DEB_PACKAGE }}"
+            deb: "/tmp/{{ rocm_deb_package }}"
             state: present
           when: not rocm_smi_check.stat.exists
           environment:
@@ -383,7 +426,7 @@
             state: present
 
         - name: Verify GPUs with rocm-smi
-          shell: rocm-smi -i --json | jq -r '.[] | .["Device Name"]' | sort | uniq -c
+          shell: /opt/rocm/bin/rocm-smi -i --json | jq -r '.[] | .["Device Name"]' | sort | uniq -c
           register: rocm_smi_output
           changed_when: false
 
@@ -601,25 +644,39 @@
             marker: "# {mark} ANSIBLE MANAGED BLOCK - extra config"
           when: RKE2_EXTRA_CONFIG != ""
 
-        - name: Handle TLS SAN configuration
-          when: DOMAIN != "" or ADDITIONAL_TLS_SAN_URLS != ""
-          block:
-            - name: Initialize TLS SAN list
-              set_fact:
-                tls_san_list: []
+        # Initialize TLS SAN list for certificate generation (always initialize)
+        - name: Initialize TLS SAN list
+          set_fact:
+            tls_san_list: []
 
+        - name: Handle TLS SAN configuration
+          when: DOMAIN != "" or (ADDITIONAL_TLS_SAN_URLS is defined and ADDITIONAL_TLS_SAN_URLS | length > 0)
+          block:
             - name: Add auto-generated k8s SAN
               set_fact:
                 tls_san_list: "{{ tls_san_list + ['k8s.' + DOMAIN] }}"
               when: DOMAIN != ""
 
+            - name: Warn about wildcard TLS SANs (not supported)
+              debug:
+                msg: "WARNING: Skipping wildcard TLS SAN '{{ item }}' - wildcards are not supported by RKE2"
+              loop: "{{ ADDITIONAL_TLS_SAN_URLS if ADDITIONAL_TLS_SAN_URLS is sequence else ADDITIONAL_TLS_SAN_URLS.split(',') if ADDITIONAL_TLS_SAN_URLS else [] }}"
+              when: 
+                - ADDITIONAL_TLS_SAN_URLS is defined
+                - ADDITIONAL_TLS_SAN_URLS | length > 0
+                - item != ""
+                - "'*' in item"
+
             - name: Process additional TLS SANs
               set_fact:
-                tls_san_list: "{{ tls_san_list + [item | trim] }}"
-              loop: "{{ ADDITIONAL_TLS_SAN_URLS.split(',') }}"
+                tls_san_list: "{{ tls_san_list + [item] }}"
+              loop: "{{ ADDITIONAL_TLS_SAN_URLS if ADDITIONAL_TLS_SAN_URLS is sequence else ADDITIONAL_TLS_SAN_URLS.split(',') if ADDITIONAL_TLS_SAN_URLS else [] }}"
               when: 
+                - ADDITIONAL_TLS_SAN_URLS is defined
                 - ADDITIONAL_TLS_SAN_URLS != ""
-                - item | trim != ""
+                - ADDITIONAL_TLS_SAN_URLS != []
+                - item != ""
+                - "'*' not in item"
 
             - name: Generate TLS SAN block content
               set_fact:
@@ -645,44 +702,278 @@
                 state: directory
                 mode: '0755'
 
+            # Initialize certificate SAN list for cert generation
+            - name: Initialize certificate SAN list
+              set_fact:
+                cert_san_list: ["k8s.{{ DOMAIN }}"]
+
+            - name: Add additional TLS SANs to certificate
+              set_fact:
+                cert_san_list: "{{ cert_san_list + [item] }}"
+              loop: "{{ ADDITIONAL_TLS_SAN_URLS if ADDITIONAL_TLS_SAN_URLS is sequence else ADDITIONAL_TLS_SAN_URLS.split(',') if ADDITIONAL_TLS_SAN_URLS else [] }}"
+              when: 
+                - ADDITIONAL_TLS_SAN_URLS is defined
+                - ADDITIONAL_TLS_SAN_URLS != ""
+                - ADDITIONAL_TLS_SAN_URLS != []
+                - item != ""
+                - "'*' not in item"
+
+            - name: Debug certificate SAN list
+              debug:
+                msg: 
+                  - "Certificate SAN list: {{ cert_san_list }}"
+                  - "Certificate SANs will be: {{ cert_san_list | map('regex_replace', '^(.*)$', 'DNS:\\1') | join(',') }}"
+
             - name: Generate API server TLS certificate
               shell: |
                 openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
                   -keyout /etc/rancher/rke2/certs/tls.key \
                   -out /etc/rancher/rke2/certs/tls.crt \
                   -subj "/CN={{ DOMAIN }}" \
-                  -addext "subjectAltName=DNS:{{ DOMAIN }},DNS:*.{{ DOMAIN }}"
+                  -addext "subjectAltName={{ cert_san_list | map('regex_replace', '^(.*)$', 'DNS:\\1') | join(',') }}"
               register: cert_generation_result
               failed_when: cert_generation_result.rc != 0
 
-        - name: Handle OIDC configuration
-          when: OIDC_URL != ""
+        - name: Handle OIDC authentication configuration
+          when: DOMAIN != "" or ADDITIONAL_OIDC_PROVIDERS | length > 0
           block:
-            - name: Fetch OIDC certificate
-              shell: |
-                openssl s_client -showcerts -connect {{ OIDC_URL | regex_replace('^https?://', '') }}:443 </dev/null | \
-                sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p'
-              register: oidc_cert
+            - name: Initialize OIDC providers list
+              set_fact:
+                oidc_providers_list: []
 
-            - name: Write OIDC certificate
+            - name: Add default OIDC provider (auto-configured from DOMAIN)
+              set_fact:
+                oidc_providers_list: "{{ oidc_providers_list + [{'url': 'https://kc.' + DOMAIN + '/realms/airm', 'audiences': ['k8s']}] }}"
+              when: DOMAIN != ""
+
+            - name: Add additional OIDC providers
+              set_fact:
+                oidc_providers_list: "{{ oidc_providers_list + [provider] }}"
+              loop: "{{ ADDITIONAL_OIDC_PROVIDERS }}"
+              loop_control:
+                loop_var: provider
+              when: 
+                - ADDITIONAL_OIDC_PROVIDERS is defined
+                - ADDITIONAL_OIDC_PROVIDERS | length > 0
+
+            - name: Remove duplicate OIDC providers
+              set_fact:
+                unique_providers: "{{ unique_providers | default([]) + [provider] }}"
+              loop: "{{ oidc_providers_list }}"
+              loop_control:
+                loop_var: provider
+              when: provider.url not in (unique_providers | default([]) | map(attribute='url') | list)
+
+            - name: Set final OIDC providers list
+              set_fact:
+                oidc_providers_list: "{{ unique_providers | default([]) }}"
+
+            - name: Create list of additional OIDC providers (excluding default domain-based provider)
+              set_fact:
+                additional_providers_list: "{{ oidc_providers_list | selectattr('url', 'ne', 'https://kc.' + DOMAIN + '/realms/airm') | list }}"
+
+            - name: Create OIDC authentication directory
+              file:
+                path: /etc/rancher/rke2/auth
+                state: directory
+                mode: '0755'
+              when: oidc_providers_list | length > 0
+
+            - name: Copy existing TLS certificate to RKE2 certs directory
               copy:
-                content: "{{ oidc_cert.stdout }}"
-                dest: /etc/rancher/rke2/oidc-ca.crt
+                src: "{{ TLS_CERT }}"
+                dest: /etc/rancher/rke2/certs/tls.crt
                 mode: "0644"
+                remote_src: yes
+              when: 
+                - oidc_providers_list | length > 0
+                - CERT_OPTION == "existing"
+                - TLS_CERT != ""
 
-            - name: Append OIDC config to RKE2
+            - name: Copy existing TLS private key to RKE2 certs directory
+              copy:
+                src: "{{ TLS_KEY }}"
+                dest: /etc/rancher/rke2/certs/tls.key
+                mode: "0600"
+                remote_src: yes
+              when: 
+                - oidc_providers_list | length > 0
+                - CERT_OPTION == "existing"
+                - TLS_KEY != ""
+
+            - name: "Fetch certificates from additional OIDC providers ({{ additional_providers_list | map(attribute='url') | map('regex_replace', '^https?://([^/]+).*$', '\\1') | join(', ') }}) - deployment will fail if any provider is unreachable"
+              shell: |
+                hostname=$(echo "{{ provider.url }}" | sed 's|^https\?://\([^/]\+\).*$|\1|')
+                cert_content=$(timeout 10 openssl s_client -showcerts -connect "$hostname:443" -servername "$hostname" </dev/null 2>&1 | \
+                sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p')
+                if [ -z "$cert_content" ]; then
+                  echo "ERROR: Failed to fetch certificate from OIDC provider: {{ provider.url }}" >&2
+                  echo "Provider $hostname is not reachable or does not have a valid certificate" >&2
+                  exit 1
+                fi
+                echo "$cert_content"
+              register: oidc_provider_certs
+              loop: "{{ additional_providers_list }}"
+              loop_control:
+                loop_var: provider
+                index_var: provider_index
+              when: additional_providers_list | length > 0
+
+            - name: Debug certificate fetching results
+              debug:
+                msg: 
+                  - "Provider: {{ oidc_providers_list[cert_index].url }}"
+                  - "Hostname extracted: {{ oidc_providers_list[cert_index].url | regex_replace('^https?://([^/]+).*$', '\\1') }}"
+                  - "Command executed: {{ item.cmd }}"
+                  - "Status: {{ 'SUCCESS' if item.stdout else 'FAILED' }}"
+                  - "Certificate length: {{ item.stdout | length if item.stdout else 0 }}"
+                  - "Stdout preview: {{ (item.stdout[:100] + '...') if item.stdout else 'EMPTY' }}"
+                  - "Stderr: {{ item.stderr if item.stderr else 'None' }}"
+                  - "Return code: {{ item.rc }}"
+              loop: "{{ oidc_provider_certs.results }}"
+              loop_control:
+                index_var: cert_index
+              when: oidc_providers_list | length > 0
+
+            - name: "Save additional OIDC provider certificates ({{ additional_providers_list | map(attribute='url') | map('regex_replace', '^https?://([^/]+).*$', '\\1') | join(', ') }}) → oidc-provider-add-N.crt"
+              copy:
+                content: "{{ item.stdout }}"
+                dest: "/etc/rancher/rke2/certs/oidc-provider-add-{{ item.provider_index + 1 }}.crt"
+                mode: "0644"
+              loop: "{{ oidc_provider_certs.results }}"
+              when: 
+                - additional_providers_list | length > 0
+                - item.stdout is defined
+                - item.stdout != ""
+
+            - name: Read TLS certificate content for domain-based OIDC providers
+              slurp:
+                src: /etc/rancher/rke2/certs/tls.crt
+              register: domain_cert_content_b64
+              when: 
+                - oidc_providers_list | length > 0
+                - CERT_OPTION in ["existing", "generate"]
+
+            - name: "Read additional OIDC provider certificates → oidc-provider-add-N.crt ({{ additional_providers_list | length }} files)"
+              slurp:
+                src: "/etc/rancher/rke2/certs/oidc-provider-add-{{ provider_index + 1 }}.crt"
+              register: provider_cert_contents
+              loop: "{{ additional_providers_list }}"
+              loop_control:
+                index_var: provider_index
+                loop_var: provider
+              failed_when: false
+              when: additional_providers_list | length > 0
+
+            - name: "Create multi-provider OIDC authentication config ({{ oidc_providers_list | length }} providers) → auth-config.yaml"
+              copy:
+                dest: /etc/rancher/rke2/auth/auth-config.yaml
+                mode: "0644"
+                content: |
+                  apiVersion: apiserver.config.k8s.io/v1
+                  kind: AuthenticationConfiguration
+                  jwt:
+                  {% for provider in oidc_providers_list %}
+                  {% set provider_index = loop.index0 %}
+                  - issuer:
+                      url: {{ provider.url }}
+                  {% if provider.url == 'https://kc.' + DOMAIN + '/realms/airm' and domain_cert_content_b64 is defined %}
+                      certificateAuthority: |
+                  {% for line in (domain_cert_content_b64.content | b64decode).splitlines() %}
+                        {{ line }}
+                  {% endfor %}
+                  {% else %}
+                  {% for add_provider in additional_providers_list %}
+                  {% if add_provider.url == provider.url and provider_cert_contents.results[loop.index0] is defined and provider_cert_contents.results[loop.index0].content is defined %}
+                      certificateAuthority: |
+                  {% for line in (provider_cert_contents.results[loop.index0].content | b64decode).splitlines() %}
+                        {{ line }}
+                  {% endfor %}
+                  {% endif %}
+                  {% endfor %}
+                  {% endif %}
+                      audiences:
+                  {% for audience in provider.audiences %}
+                      - {{ audience }}
+                  {% endfor %}
+                  {% if provider.audiences | length > 1 %}
+                      audienceMatchPolicy: MatchAny
+                  {% endif %}
+                    claimMappings:
+                      username:
+                        claim: preferred_username
+                        prefix: "oidc:"
+                      groups:
+                        claim: groups
+                        prefix: "oidc:"
+                  {% endfor %}
+              when: oidc_providers_list | length > 0
+
+
+
+            - name: Configure RKE2 to use Authentication Configuration
               blockinfile:
                 path: /etc/rancher/rke2/config.yaml
                 block: |
                   kube-apiserver-arg:
-                    - "--oidc-issuer-url={{ OIDC_URL }}"
-                    - "--oidc-client-id=k8s"
-                    - "--oidc-username-claim=preferred_username"
-                    - "--oidc-groups-claim=groups"
-                    - "--oidc-ca-file=/etc/rancher/rke2/oidc-ca.crt"
-                    - "--oidc-username-prefix=oidc"
-                    - "--oidc-groups-prefix=oidc"
-                marker: "# {mark} ANSIBLE MANAGED BLOCK - OIDC"
+                    - "--authentication-config=/etc/rancher/rke2/auth/auth-config.yaml"
+                marker: "# {mark} ANSIBLE MANAGED BLOCK - OIDC Authentication"
+              when: oidc_providers_list | length > 0
+
+            - name: Generate OIDC kubeconfig template
+              copy:
+                content: |
+                  apiVersion: v1
+                  kind: Config
+                  clusters:
+                  - name: {{ DOMAIN | default('cluster') }}
+                    cluster:
+                      server: https://k8s.{{ DOMAIN }}:6443
+                      {% if 'generate' in CERT_OPTION | default('') %}
+                      insecure-skip-tls-verify: true
+                      {% endif %}
+                  contexts:
+                  - name: oidc@{{ DOMAIN | default('cluster') }}
+                    context:
+                      cluster: {{ DOMAIN | default('cluster') }}
+                      user: oidc
+                  current-context: oidc@{{ DOMAIN | default('cluster') }}
+                  users:
+                  - name: oidc
+                    user:
+                      exec:
+                        apiVersion: client.authentication.k8s.io/v1beta1
+                        command: kubectl
+                        args:
+                        - oidc-login
+                        - get-token
+                        - --oidc-issuer-url={{ (oidc_providers_list | first).url }}
+                        - --oidc-client-id={{ (oidc_providers_list | first).audiences | first }}
+                        - --oidc-extra-scope=email,profile,groups
+                        - --oidc-username-claim=preferred_username
+                        - --oidc-groups-claim=groups
+                        env: null
+                        provideClusterInfo: false
+                dest: /root/kubeconfig-oidc-template.yaml
+                mode: "0644"
+              when: 
+                - oidc_providers_list | length > 0
+                - DOMAIN != ""
+
+            - name: Display OIDC configuration summary
+              debug:
+                msg: |
+                  === OIDC Configuration Summary ===
+                  Configured {{ oidc_providers_list | length }} OIDC provider(s):
+                  {% for provider in oidc_providers_list %}
+                    - {{ provider.url }} (audiences: {{ provider.audiences | join(', ') }})
+                  {% endfor %}
+                  
+                  Post-installation setup:
+                  1. OIDC kubeconfig template: /root/kubeconfig-oidc-template.yaml
+                  2. Install kubectl oidc-login plugin for OIDC authentication
+                  3. Configure OIDC provider groups as needed for your RBAC system
+              when: oidc_providers_list | length > 0
 
         - name: Create RKE2 manifests directory
           file:
@@ -1385,6 +1676,94 @@
       include_tasks: tasks/setup_longhorn.yml
       tags: [storage, longhorn, deploy_k8s_apps]
 
+    - name: Setup ArgoCD Core (Small Clusters)
+      when: FIRST_NODE and CLUSTER_SIZE == "small" and INSTALL_ARGOCD
+      block:
+        - name: Create argocd namespace
+          shell: |
+            /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+              create namespace argocd --dry-run=client -o yaml | \
+            /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml apply -f -
+
+        - name: Install ArgoCD core
+          shell: |
+            /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+              apply -n argocd --server-side --force-conflicts \
+              -f https://raw.githubusercontent.com/argoproj/argo-cd/{{ ARGOCD_VERSION }}/manifests/core-install.yaml
+
+        - name: Wait for ArgoCD application controller
+          shell: |
+            /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+              wait --for=condition=Available --timeout=300s \
+              deployment/argocd-applicationset-controller -n argocd
+          retries: 3
+          delay: 10
+
+        - name: Wait for ArgoCD Redis
+          shell: |
+            /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+              wait --for=condition=Available --timeout=300s \
+              deployment/argocd-redis -n argocd
+          retries: 3
+          delay: 10
+
+        - name: Wait for ArgoCD repo server
+          shell: |
+            /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+              wait --for=condition=Available --timeout=300s \
+              deployment/argocd-repo-server -n argocd
+          retries: 3
+          delay: 10
+
+        - name: Initialize ArgoCD server secret key
+          shell: |
+            /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+              patch secret argocd-secret -n argocd --type merge \
+              -p "{\"stringData\":{\"server.secretkey\":\"$(head -c 32 /dev/urandom | base64 | tr -d '\n')\"}}"
+
+        - name: Create ArgoCD default AppProject
+          shell: |
+            cat <<'EOF' | /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml apply -f -
+            apiVersion: argoproj.io/v1alpha1
+            kind: AppProject
+            metadata:
+              name: default
+              namespace: argocd
+            spec:
+              sourceRepos:
+                - '*'
+              destinations:
+                - namespace: '*'
+                  server: '*'
+              clusterResourceWhitelist:
+                - group: '*'
+                  kind: '*'
+            EOF
+      tags: [argocd, deploy_k8s_apps]
+
+    - name: Deploy ClusterForge via ArgoCD (Small Clusters)
+      when: FIRST_NODE and CLUSTER_SIZE == "small" and INSTALL_ARGOCD
+      block:
+        - name: Clone ClusterForge chart
+          shell: |
+            rm -rf /tmp/cluster-forge
+            git clone --branch {{ CLUSTERFORGE_BRANCH }} --depth 1 {{ CLUSTERFORGE_REPO }} /tmp/cluster-forge
+
+        - name: Template and apply ClusterForge
+          shell: |
+            /usr/local/bin/helm template cluster-forge /tmp/cluster-forge/root \
+              -f /tmp/cluster-forge/root/values.yaml \
+              -f /tmp/cluster-forge/root/values_s.yaml \
+              --set global.domain={{ DOMAIN }} | \
+            /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+              apply --server-side --force-conflicts -f -
+
+        - name: Clean up ClusterForge checkout
+          file:
+            path: /tmp/cluster-forge
+            state: absent
+      tags: [clusterforge, argocd, deploy_k8s_apps]
+
     - name: Create Bloom ConfigMap
       when: FIRST_NODE
       block:
@@ -1398,12 +1777,12 @@
             apiVersion: v1
             kind: ConfigMap
             metadata:
-              name: bloom-config
+              name: bloom
               namespace: default
             data:
               version: "{{ bloom_version }}"
               gpu_node: "{{ GPU_NODE | lower }}"
-              domain: "{{ DOMAIN }}"
+              DOMAIN: "{{ DOMAIN }}"
               cluster_size: "{{ CLUSTER_SIZE }}"
               rke2_version: "{{ RKE2_VERSION }}"
             EOF

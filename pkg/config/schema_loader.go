@@ -69,6 +69,25 @@ func LoadSchema() ([]Argument, error) {
 			arg.PatternTitle = typeDef.ErrorMessage
 		}
 
+		// Handle sequence validation for array types
+		if field.Type == "seq" && len(field.Sequence) > 0 {
+			for _, seqItem := range field.Sequence {
+				if seqMap, ok := seqItem.(map[string]interface{}); ok {
+					item := SequenceItem{}
+					if itemType, ok := seqMap["type"].(string); ok {
+						item.Type = itemType
+					}
+					if pattern, ok := seqMap["pattern"].(string); ok {
+						item.Pattern = pattern
+					}
+					if patternTitle, ok := seqMap["pattern-title"].(string); ok {
+						item.PatternTitle = patternTitle
+					}
+					arg.Sequence = append(arg.Sequence, item)
+				}
+			}
+		}
+
 		arguments = append(arguments, arg)
 	}
 
