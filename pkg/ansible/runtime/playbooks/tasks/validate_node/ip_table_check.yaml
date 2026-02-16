@@ -1,0 +1,26 @@
+---
+# Rancher IpTable Validation Tasks
+# 
+# Purpose: Validates ip tables has a valid configuration
+# Scope: Remove a common ip tables blocking rule. Then IP tables are saved, so restart action won't revert changes
+#
+# Returns: N/A
+#
+# Usage:
+#   include_tasks: tasks/validate_node/ip_table_check.yaml
+
+# This always runs. rc==0 means rule exists, rc!=0 means it does not.
+- name: Check if there is an iptables rule blocking traffic
+  command:
+    cmd: iptables -C INPUT -j REJECT --reject-with icmp-host-prohibited
+  register: ip_table_rule_check
+  failed_when: false
+  changed_when: false
+
+- name: Remove iptables rule if it exists
+  command:
+    cmd: iptables -D INPUT -j REJECT --reject-with icmp-host-prohibited
+  register: ip_table_rule_deleted
+  when: ip_table_rule_check.rc == 0
+  notify:
+    - Save iptables
