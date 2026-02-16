@@ -10,6 +10,7 @@ import (
 	"github.com/silogen/cluster-bloom/pkg/config"
 	"github.com/silogen/cluster-bloom/pkg/webui"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 var (
@@ -20,6 +21,9 @@ var (
 	tags         string
 	destroyData  bool
 	forceCleanup bool
+	extraVars  []string
+	verbose    bool
+	configFile string
 )
 
 func init() {
@@ -166,6 +170,21 @@ Requires a configuration file (typically bloom.yaml).`,
 		},
 	}
 
+	runCmd := &cobra.Command{
+		Use:   "run <playbook>",
+		Short: "Run an Ansible playbook using Bloom's containerized runtime",
+		Long: `Execute an external Ansible playbook on localhost using Bloom's containerized
+Ansible runtime. No Ansible or Python installation required on the host.
+
+The playbook's parent directory is mounted into the container, so relative
+imports (roles, tasks, vars) within that directory tree work as expected.`,
+		Args: cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			checkRootPrivileges("run")
+			runPlaybookDirect(args[0])
+		},
+	}
+
 	// Add flags
 	rootCmd.PersistentFlags().IntVarP(&port, "port", "p", 62078, "Port for web UI (fails if in use)")
 
@@ -175,12 +194,20 @@ Requires a configuration file (typically bloom.yaml).`,
 	cliCmd.Flags().StringVar(&tags, "tags", "", "Run only tasks with specific tags (e.g., cleanup, validate, storage)")
 	cliCmd.Flags().BoolVar(&destroyData, "destroy-data", false, "⚠️  DANGER: Permanently destroys ALL cluster data, storage, and disks. Requires interactive confirmation.")
 
+	// Add run command flags
+	runCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Run in check mode without making changes")
+	runCmd.Flags().StringVar(&tags, "tags", "", "Run only tasks with specific tags")
+	runCmd.Flags().StringArrayVarP(&extraVars, "extra-vars", "e", nil, "Extra variables passed to ansible-playbook (repeatable)")
+	runCmd.Flags().StringVarP(&configFile, "config", "c", "", "YAML config file whose keys become ansible extra vars")
+	runCmd.Flags().BoolVar(&verbose, "verbose", false, "Show full Ansible output instead of clean summary")
+
 	// Add cleanup-specific flags
 	cleanupCmd.Flags().BoolVarP(&forceCleanup, "force", "f", false, "Skip confirmation prompt and force immediate cleanup (USE WITH CAUTION)")
 
 	// Add subcommands
 	rootCmd.AddCommand(webuiCmd)
 	rootCmd.AddCommand(cliCmd)
+	rootCmd.AddCommand(runCmd)
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(cleanupCmd)
 
@@ -229,6 +256,39 @@ func runAnsible(configFile string) {
 
 	// Run the playbook
 	exitCode, err := runtime.RunPlaybook(cfg, playbookName, dryRun, tags, mode)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	os.Exit(exitCode)
+}
+
+func runPlaybookDirect(playbookPath string) {
+	mode := runtime.OutputClean
+	if verbose {
+		mode = runtime.OutputVerbose
+	}
+
+	var allVars []string
+
+	if configFile != "" {
+		data, err := os.ReadFile(configFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading config: %v\n", err)
+			os.Exit(1)
+		}
+		var cfg map[string]any
+		if err := yaml.Unmarshal(data, &cfg); err != nil {
+			fmt.Fprintf(os.Stderr, "Error parsing config: %v\n", err)
+			os.Exit(1)
+		}
+		allVars = append(allVars, runtime.ConfigToAnsibleVars(cfg)...)
+	}
+
+	allVars = append(allVars, extraVars...)
+
+	exitCode, err := runtime.RunPlaybookDirect(playbookPath, dryRun, tags, allVars, mode)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
