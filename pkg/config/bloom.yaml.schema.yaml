@@ -139,6 +139,30 @@ schema:
       applicable: when(GPU_NODE == true)
       section: "⚙️ Advanced Configuration"
 
+    INSTALL_ARGOCD:
+      type: bool
+      default: true
+      desc: Install ArgoCD core for GitOps (small clusters only)
+      section: "⚙️ Advanced Configuration"
+
+    ARGOCD_VERSION:
+      type: str
+      default: v2.14.11
+      desc: ArgoCD version to install
+      section: "⚙️ Advanced Configuration"
+
+    CLUSTERFORGE_REPO:
+      type: str
+      default: https://github.com/silogen/cluster-forge.git
+      desc: ClusterForge git repository URL for ArgoCD-based deployment
+      section: "⚙️ Advanced Configuration"
+
+    CLUSTERFORGE_BRANCH:
+      type: str
+      default: creating_small_configuration
+      desc: ClusterForge git branch for ArgoCD-based deployment
+      section: "⚙️ Advanced Configuration"
+
     CLUSTERFORGE_RELEASE:
       type: str
       default: https://github.com/silogen/cluster-forge/releases/download/v1.8.0/release-enterprise-ai-v1.8.0.tar.gz

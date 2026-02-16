@@ -25,6 +25,10 @@
     ADDITIONAL_TLS_SAN_URLS: []
     RKE2_VERSION: ""
     RKE2_EXTRA_CONFIG: ""
+    INSTALL_ARGOCD: true
+    ARGOCD_VERSION: "v2.14.11"
+    CLUSTERFORGE_REPO: "https://github.com/silogen/cluster-forge.git"
+    CLUSTERFORGE_BRANCH: "creating_small_configuration"
     CLUSTERFORGE_RELEASE: "none"
 
     rocm_base_url: "https://repo.radeon.com/amdgpu-install/6.3.3/ubuntu/"
@@ -1612,6 +1616,94 @@
       include_tasks: tasks/setup_longhorn.yml
       tags: [storage, longhorn, deploy_k8s_apps]
 
+    - name: Setup ArgoCD Core (Small Clusters)
+      when: FIRST_NODE and CLUSTER_SIZE == "small" and INSTALL_ARGOCD
+      block:
+        - name: Create argocd namespace
+          shell: |
+            /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+              create namespace argocd --dry-run=client -o yaml | \
+            /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml apply -f -
+
+        - name: Install ArgoCD core
+          shell: |
+            /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+              apply -n argocd --server-side --force-conflicts \
+              -f https://raw.githubusercontent.com/argoproj/argo-cd/{{ ARGOCD_VERSION }}/manifests/core-install.yaml
+
+        - name: Wait for ArgoCD application controller
+          shell: |
+            /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+              wait --for=condition=Available --timeout=300s \
+              deployment/argocd-applicationset-controller -n argocd
+          retries: 3
+          delay: 10
+
+        - name: Wait for ArgoCD Redis
+          shell: |
+            /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+              wait --for=condition=Available --timeout=300s \
+              deployment/argocd-redis -n argocd
+          retries: 3
+          delay: 10
+
+        - name: Wait for ArgoCD repo server
+          shell: |
+            /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+              wait --for=condition=Available --timeout=300s \
+              deployment/argocd-repo-server -n argocd
+          retries: 3
+          delay: 10
+
+        - name: Initialize ArgoCD server secret key
+          shell: |
+            /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+              patch secret argocd-secret -n argocd --type merge \
+              -p "{\"stringData\":{\"server.secretkey\":\"$(head -c 32 /dev/urandom | base64 | tr -d '\n')\"}}"
+
+        - name: Create ArgoCD default AppProject
+          shell: |
+            cat <<'EOF' | /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml apply -f -
+            apiVersion: argoproj.io/v1alpha1
+            kind: AppProject
+            metadata:
+              name: default
+              namespace: argocd
+            spec:
+              sourceRepos:
+                - '*'
+              destinations:
+                - namespace: '*'
+                  server: '*'
+              clusterResourceWhitelist:
+                - group: '*'
+                  kind: '*'
+            EOF
+      tags: [argocd, deploy_k8s_apps]
+
+    - name: Deploy ClusterForge via ArgoCD (Small Clusters)
+      when: FIRST_NODE and CLUSTER_SIZE == "small" and INSTALL_ARGOCD
+      block:
+        - name: Clone ClusterForge chart
+          shell: |
+            rm -rf /tmp/cluster-forge
+            git clone --branch {{ CLUSTERFORGE_BRANCH }} --depth 1 {{ CLUSTERFORGE_REPO }} /tmp/cluster-forge
+
+        - name: Template and apply ClusterForge
+          shell: |
+            /usr/local/bin/helm template cluster-forge /tmp/cluster-forge/root \
+              -f /tmp/cluster-forge/root/values.yaml \
+              -f /tmp/cluster-forge/root/values_s.yaml \
+              --set global.domain={{ DOMAIN }} | \
+            /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+              apply --server-side --force-conflicts -f -
+
+        - name: Clean up ClusterForge checkout
+          file:
+            path: /tmp/cluster-forge
+            state: absent
+      tags: [clusterforge, argocd, deploy_k8s_apps]
+
     - name: Create Bloom ConfigMap
       when: FIRST_NODE
       block:
@@ -1625,12 +1717,12 @@
             apiVersion: v1
             kind: ConfigMap
             metadata:
-              name: bloom-config
+              name: bloom
               namespace: default
             data:
               version: "{{ bloom_version }}"
               gpu_node: "{{ GPU_NODE | lower }}"
-              domain: "{{ DOMAIN }}"
+              DOMAIN: "{{ DOMAIN }}"
               cluster_size: "{{ CLUSTER_SIZE }}"
               rke2_version: "{{ RKE2_VERSION }}"
             EOF
