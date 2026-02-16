@@ -11,7 +11,7 @@
     GPU_NODE: true
     CONTROL_PLANE: false
     DOMAIN: ""
-    CLUSTER_SIZE: small
+    CLUSTER_SIZE: medium
     SERVER_IP: ""
     JOIN_TOKEN: ""
     NO_DISKS_FOR_CLUSTER: false
@@ -27,12 +27,12 @@
     RKE2_EXTRA_CONFIG: ""
     INSTALL_ARGOCD: true
     ARGOCD_VERSION: "v2.14.11"
-    CLUSTERFORGE_REPO: "https://github.com/silogen/cluster-forge.git"
-    CLUSTERFORGE_BRANCH: "creating_small_configuration"
-    CLUSTERFORGE_RELEASE: "none"
+    CLUSTERFORGE_REPO: ""
+    CLUSTERFORGE_BRANCH: ""
+    CLUSTERFORGE_RELEASE: "https://github.com/silogen/cluster-forge/releases/download/v1.8.0/release-enterprise-ai-v1.8.0.tar.gz"
 
-    rocm_base_url: "https://repo.radeon.com/amdgpu-install/6.3.3/ubuntu/"
-    rocm_deb_package: "amdgpu-install_6.3.60303-1_all.deb"
+    rocm_base_url: "https://repo.radeon.com/amdgpu-install/7.1.1/ubuntu/"
+    rocm_deb_package: "amdgpu-install_7.1.1.70101-1_all.deb"
     rke2_installation_url: "https://get.rke2.io"
 
     supported_ubuntu_versions:
