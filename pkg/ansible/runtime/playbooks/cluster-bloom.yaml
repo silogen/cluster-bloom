@@ -1375,12 +1375,12 @@
             apiVersion: v1
             kind: ConfigMap
             metadata:
-              name: bloom-config
+              name: bloom
               namespace: default
             data:
               version: "{{ bloom_version }}"
               gpu_node: "{{ GPU_NODE | lower }}"
-              domain: "{{ DOMAIN }}"
+              DOMAIN: "{{ DOMAIN }}"
               cluster_size: "{{ CLUSTER_SIZE }}"
               rke2_version: "{{ RKE2_VERSION }}"
             EOF
