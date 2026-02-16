@@ -55,3 +55,7 @@
 - name: Configure NTP
   tags: ntp
   import_tasks: ntp.yaml
+
+- name: Disable Numa Balancing
+  tags: numa
+  import_tasks: disable_numa_balancing.yaml

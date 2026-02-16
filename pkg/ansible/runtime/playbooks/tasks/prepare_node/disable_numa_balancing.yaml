@@ -1,0 +1,15 @@
+---
+# Disable NUMA balancing (prepare_node)
+#
+# Purpose: Ensures NUMA balancing is disabled at boot via crontab @reboot.
+# Scope: Adds a crontab entry that runs "echo 0 > /proc/sys/kernel/numa_balancing" at reboot.
+#
+# Usage:
+#   import_tasks: tasks/prepare_node/disable_numa_balancing.yaml  (via prepare_node/main.yaml)
+
+- name: Add crontab entry to disable NUMA balancing at reboot
+  cron:
+    name: Disable NUMA balancing at boot
+    special_time: reboot
+    job: echo 0 > /proc/sys/kernel/numa_balancing
+    user: root

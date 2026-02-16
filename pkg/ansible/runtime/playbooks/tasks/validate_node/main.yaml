@@ -25,3 +25,7 @@
   tags: rancher_partition
   import_tasks: rancher_partition.yaml
   when: GPU_NODE | bool and not SKIP_RANCHER_PARTITION_CHECK | bool
+
+- name: Validate IPTables non blocking traffic
+  tags: ip_table_check
+  import_tasks: ip_table_check.yaml
