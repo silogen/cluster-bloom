@@ -21,6 +21,7 @@ This documentation provides complete guidance for deploying, configuring, and ma
 ### Infrastructure Configuration  
 - [**Network Configuration**](network-configuration.md) - Networking setup, load balancing, and connectivity
 - [**Certificate Management**](certificate-management.md) - TLS/SSL certificate handling and automation
+- [**TLS SAN Configuration**](tls-san-configuration.md) - Additional domain names for API server certificates
 - [**Terminal UI**](terminal-ui.md) - Interactive command-line interface and user experience
 - [**Technical Architecture**](technical-architecture.md) - System design, component interactions, and architectural decisions
 

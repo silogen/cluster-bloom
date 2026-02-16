@@ -223,9 +223,14 @@ Configuration sources in priority order (highest to lowest):
 - **Type**: Array of strings (domain names)
 - **Default**: `[]`
 - **Description**: Additional TLS Subject Alternative Name URLs for Kubernetes API server certificate
-- **Example**: `ADDITIONAL_TLS_SAN_URLS: ["api.example.com", "kubernetes.example.com"]`
+- **Example**: `ADDITIONAL_TLS_SAN_URLS: ["api.example.com", "management.example.com"]`
 - **Auto-generated**: Always includes `k8s.{DOMAIN}` - do not duplicate
-- **Validation**: Each entry must be a valid domain name format
+- **Validation**: 
+  - Each entry must be a valid domain name format
+  - Wildcard domains (*.example.com) are blocked by UI and server validation
+  - Real-time validation provides immediate feedback
+- **Migration**: Legacy comma-separated string format still supported
+- **Documentation**: See [TLS SAN Configuration](tls-san-configuration.md) for detailed guide
 
 #### ONEPASSWORD_CONNECT_TOKEN
 - **Type**: String

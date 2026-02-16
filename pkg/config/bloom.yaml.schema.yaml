@@ -84,13 +84,17 @@ schema:
       desc: Skip /var/lib/rancher partition size check
       section: "💾 Storage Configuration"
 
-    # 🔒 SSL/TLS Configuration
+     # 🔒 SSL/TLS Configuration
     ADDITIONAL_TLS_SAN_URLS:
-      type: domainList
-      default: ""
-      desc: Additional TLS SAN URLs (comma-separated)
+      type: seq
+      default: []
+      desc: Additional TLS Subject Alternative Name URLs for API server certificate (wildcards not supported by RKE2)
       applicable: when(FIRST_NODE == true)
       section: "🔒 SSL/TLS Configuration"
+      sequence:
+        - type: str
+          pattern: "^(?!.*\\*)([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\\.)+[a-zA-Z]{2,}$"
+          pattern-title: "Enter a valid domain name (e.g., api.example.com) - wildcards (*.domain.com) are not supported by RKE2"
 
     USE_CERT_MANAGER:
       type: bool

@@ -6,6 +6,20 @@ This document describes how TLS certificates are managed and handled in the Clus
 
 Cluster-Bloom provides flexible certificate management options to secure HTTPS traffic for your Kubernetes cluster. The system supports both automated certificate management through cert-manager and manual certificate provisioning.
 
+## TLS Subject Alternative Names (SAN)
+
+Configure additional domain names for your Kubernetes API server certificate using `ADDITIONAL_TLS_SAN_URLS`. This allows secure access via multiple domains beyond the default `k8s.<DOMAIN>`.
+
+**Quick Example:**
+```yaml
+DOMAIN: cluster.example.com
+ADDITIONAL_TLS_SAN_URLS:
+  - "api.cluster.example.com"
+  - "kubectl.cluster.example.com"
+```
+
+For complete TLS SAN configuration details, see [TLS SAN Configuration](tls-san-configuration.md).
+
 ## Certificate Management Options
 
 ### 1. Automatic Certificate Management (Recommended)

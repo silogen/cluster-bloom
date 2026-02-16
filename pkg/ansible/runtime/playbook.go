@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"embed"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -157,7 +158,15 @@ func ConfigToAnsibleVars(config map[string]any) []string {
 		case string:
 			vars = append(vars, fmt.Sprintf(`{"%s": "%s"}`, key, v))
 		default:
-			vars = append(vars, fmt.Sprintf(`{"%s": %v}`, key, v))
+			// Handle complex types (arrays, maps) with proper JSON marshaling
+			var valueStr string
+			if jsonBytes, err := json.Marshal(v); err == nil {
+				valueStr = string(jsonBytes)
+			} else {
+				// Fallback to string representation for simple types
+				valueStr = fmt.Sprintf("%v", v)
+			}
+			vars = append(vars, fmt.Sprintf(`{"%s": %s}`, key, valueStr))
 		}
 	}
 	return vars

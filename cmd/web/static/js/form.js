@@ -86,6 +86,13 @@ function createFormField(argument, config) {
         input.addEventListener('change', validateSelect);
 
         group.appendChild(input);
+    } else if (argument.type === 'array') {
+        // Handle array fields (like ADDITIONAL_OIDC_PROVIDERS)
+        const arrayContainer = createArrayField(argument);
+        group.appendChild(arrayContainer);
+        
+        // Arrays don't have a traditional input element
+        input = null;
     } else {
         input = document.createElement('input');
         input.id = argument.key;
@@ -270,6 +277,16 @@ function getFormData(schema) {
     const config = {};
 
     schema.forEach(argument => {
+        // Handle array fields differently since they don't have a single input element
+        if (argument.type === 'array') {
+            // Check if array field group exists and is visible
+            const group = document.querySelector(`[data-key="${argument.key}"]`);
+            if (group && !group.classList.contains('hidden')) {
+                config[argument.key] = collectArrayData(argument.key);
+            }
+            return;
+        }
+        
         const field = document.getElementById(argument.key);
         if (!field) return;
 
@@ -281,9 +298,6 @@ function getFormData(schema) {
 
         if (argument.type === 'bool') {
             config[argument.key] = field.checked;
-        } else if (argument.type === 'array') {
-            // For now, arrays are stored as empty arrays or parsed from JSON
-            config[argument.key] = argument.default || [];
         } else {
             const value = field.value.trim();
             if (value !== '') {
@@ -300,4 +314,351 @@ function getFormData(schema) {
     });
 
     return config;
+}
+
+// Create array field component for dynamic lists (like OIDC providers)
+function createArrayField(argument) {
+    const container = document.createElement('div');
+    container.className = 'array-field-container';
+    container.dataset.key = argument.key;
+    
+    // Create items container
+    const itemsContainer = document.createElement('div');
+    itemsContainer.className = 'array-items-container';
+    container.appendChild(itemsContainer);
+    
+    // Create "Add Item" button
+    const addButton = document.createElement('button');
+    addButton.type = 'button';
+    addButton.className = 'btn btn-secondary btn-sm array-add-btn';
+    addButton.textContent = getAddButtonText(argument.key);
+    container.appendChild(addButton);
+    
+    // Initialize with default items if any
+    const defaultItems = argument.default || [];
+    defaultItems.forEach((item, index) => {
+        addArrayItem(argument, itemsContainer, item, index);
+    });
+    
+    // Add click handler for the "Add" button
+    addButton.addEventListener('click', () => {
+        const newIndex = itemsContainer.children.length;
+        addArrayItem(argument, itemsContainer, null, newIndex);
+    });
+    
+    return container;
+}
+
+// Simple domain validation function
+function isValidDomain(domain) {
+    // Basic domain validation: should have at least one dot and valid characters
+    const domainPattern = /^([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
+    return domainPattern.test(domain);
+}
+
+// Get appropriate button text based on array type
+function getAddButtonText(key) {
+    if (key === 'ADDITIONAL_OIDC_PROVIDERS') {
+        return '+ Add OIDC Provider';
+    } else if (key === 'ADDITIONAL_TLS_SAN_URLS') {
+        return '+ Add Domain';
+    }
+    return '+ Add Item';
+}
+
+// Add a single array item
+function addArrayItem(argument, container, itemData, index) {
+    const item = document.createElement('div');
+    item.className = 'array-item';
+    item.dataset.index = index;
+    
+    // Create item header with remove button
+    const itemHeader = document.createElement('div');
+    itemHeader.className = 'array-item-header';
+    
+    const itemTitle = document.createElement('h4');
+    itemTitle.className = 'array-item-title';
+    itemTitle.textContent = getItemTitle(argument.key, index);
+    itemHeader.appendChild(itemTitle);
+    
+    const removeButton = document.createElement('button');
+    removeButton.type = 'button';
+    removeButton.className = 'btn btn-danger btn-sm array-remove-btn';
+    removeButton.textContent = '×';
+    removeButton.title = 'Remove';
+    itemHeader.appendChild(removeButton);
+    
+    item.appendChild(itemHeader);
+    
+    // Create item content based on schema
+    const itemContent = document.createElement('div');
+    itemContent.className = 'array-item-content';
+    
+    if (argument.key === 'ADDITIONAL_OIDC_PROVIDERS') {
+        createOIDCProviderFields(itemContent, itemData, index);
+    } else {
+        // Generic array item (for future array fields)
+        createGenericArrayItem(itemContent, itemData, index, argument);
+    }
+    
+    item.appendChild(itemContent);
+    container.appendChild(item);
+    
+    // Add remove button handler
+    removeButton.addEventListener('click', () => {
+        container.removeChild(item);
+        reindexArrayItems(container);
+    });
+}
+
+// Get appropriate title for array items
+function getItemTitle(key, index) {
+    if (key === 'ADDITIONAL_OIDC_PROVIDERS') {
+        return `OIDC Provider ${index + 1}`;
+    } else if (key === 'ADDITIONAL_TLS_SAN_URLS') {
+        return `Domain ${index + 1}`;
+    }
+    return `Item ${index + 1}`;
+}
+
+// Create OIDC provider specific fields
+function createOIDCProviderFields(container, providerData, index) {
+    const urlGroup = document.createElement('div');
+    urlGroup.className = 'form-group';
+    
+    const urlLabel = document.createElement('label');
+    urlLabel.textContent = 'Provider URL *';
+    urlLabel.setAttribute('for', `oidc_url_${index}`);
+    urlGroup.appendChild(urlLabel);
+    
+    const urlInput = document.createElement('input');
+    urlInput.type = 'url';
+    urlInput.id = `oidc_url_${index}`;
+    urlInput.name = `oidc_url_${index}`;
+    urlInput.required = true;
+    urlInput.placeholder = 'https://kc.example.com/realms/k8s';
+    urlInput.value = providerData ? providerData.url || '' : '';
+    urlGroup.appendChild(urlInput);
+    
+    const urlError = document.createElement('div');
+    urlError.id = `error-oidc_url_${index}`;
+    urlError.className = 'error-message';
+    urlGroup.appendChild(urlError);
+    
+    container.appendChild(urlGroup);
+    
+    // Audiences field (simple comma-separated for now, can enhance later)
+    const audiencesGroup = document.createElement('div');
+    audiencesGroup.className = 'form-group';
+    
+    const audiencesLabel = document.createElement('label');
+    audiencesLabel.textContent = 'Audiences';
+    audiencesLabel.setAttribute('for', `oidc_audiences_${index}`);
+    audiencesGroup.appendChild(audiencesLabel);
+    
+    const audiencesInput = document.createElement('input');
+    audiencesInput.type = 'text';
+    audiencesInput.id = `oidc_audiences_${index}`;
+    audiencesInput.name = `oidc_audiences_${index}`;
+    audiencesInput.placeholder = 'k8s, api (comma-separated)';
+    
+    // Convert audiences array to comma-separated string for editing
+    if (providerData && providerData.audiences) {
+        audiencesInput.value = providerData.audiences.join(', ');
+    } else {
+        audiencesInput.value = 'k8s'; // Default audience
+    }
+    
+    audiencesGroup.appendChild(audiencesInput);
+    
+    const audiencesDesc = document.createElement('div');
+    audiencesDesc.className = 'description';
+    audiencesDesc.textContent = 'Comma-separated list of accepted audiences for this provider';
+    audiencesGroup.appendChild(audiencesDesc);
+    
+    container.appendChild(audiencesGroup);
+    
+    // Add validation
+    urlInput.addEventListener('blur', () => {
+        const errorDiv = document.getElementById(`error-oidc_url_${index}`);
+        if (!urlInput.validity.valid) {
+            errorDiv.textContent = urlInput.validationMessage || 'Please enter a valid OIDC provider URL';
+        } else {
+            errorDiv.textContent = '';
+        }
+    });
+}
+
+// Create generic array item (for future use)
+function createGenericArrayItem(container, itemData, index, argument) {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.name = `${argument.key}_${index}`;
+    input.value = itemData || '';
+    
+    // Set appropriate placeholder based on field type
+    if (argument.key === 'ADDITIONAL_TLS_SAN_URLS') {
+        input.placeholder = 'e.g., api.example.com (no wildcards)';
+    } else {
+        input.placeholder = `${argument.key} item`;
+    }
+    
+    // Add specific validation for ADDITIONAL_TLS_SAN_URLS
+    if (argument.key === 'ADDITIONAL_TLS_SAN_URLS') {
+        // Create error display element
+        const errorSpan = document.createElement('span');
+        errorSpan.className = 'validation-error';
+        errorSpan.style.color = '#dc3545';
+        errorSpan.style.fontSize = '0.875em';
+        errorSpan.style.display = 'block';
+        errorSpan.style.marginTop = '4px';
+        
+        // Real-time wildcard validation (like domain required validation)
+        const validateTlsSan = () => {
+            const value = input.value.trim();
+            
+            if (value === '') {
+                // Clear validation for empty values
+                errorSpan.textContent = '';
+                input.style.borderColor = '';
+                input.setCustomValidity('');
+            } else if (value.includes('*')) {
+                // Show error for wildcards
+                errorSpan.textContent = '⚠️ Wildcard domains (*.domain.com) are not supported by RKE2';
+                input.style.borderColor = '#dc3545';
+                input.setCustomValidity('Wildcard domains are not supported');
+            } else if (!isValidDomain(value)) {
+                // Show error for invalid domain format
+                errorSpan.textContent = '⚠️ Please enter a valid domain name (e.g., api.example.com)';
+                input.style.borderColor = '#dc3545';
+                input.setCustomValidity('Invalid domain format');
+            } else {
+                // Clear validation for valid domains
+                errorSpan.textContent = '';
+                input.style.borderColor = '#28a745'; // Green border for valid
+                input.setCustomValidity('');
+            }
+        };
+        
+        input.addEventListener('input', validateTlsSan);
+        input.addEventListener('blur', validateTlsSan);
+        
+        container.appendChild(input);
+        container.appendChild(errorSpan);
+        
+        // Validate initial value if present
+        if (input.value) {
+            validateTlsSan();
+        }
+    } else {
+        // Apply generic validation pattern from schema sequence definition
+        if (argument.sequence && argument.sequence[0] && argument.sequence[0].pattern) {
+            input.pattern = argument.sequence[0].pattern;
+            input.title = argument.sequence[0]['pattern-title'] || 'Invalid format';
+            
+            // Add real-time validation
+            const validateInput = () => {
+                if (input.value && !input.checkValidity()) {
+                    input.setCustomValidity(input.title);
+                    input.style.borderColor = '#dc3545'; // Red border for invalid
+                } else {
+                    input.setCustomValidity('');
+                    input.style.borderColor = ''; // Reset border
+                }
+            };
+            
+            input.addEventListener('input', validateInput);
+            input.addEventListener('blur', validateInput);
+        }
+        
+        container.appendChild(input);
+    }
+}
+
+// Reindex array items after removal
+function reindexArrayItems(container) {
+    Array.from(container.children).forEach((item, newIndex) => {
+        item.dataset.index = newIndex;
+        
+        // Update title
+        const title = item.querySelector('.array-item-title');
+        if (title) {
+            const key = container.parentElement.dataset.key;
+            title.textContent = getItemTitle(key, newIndex);
+        }
+        
+        // Update field names and IDs
+        const inputs = item.querySelectorAll('input');
+        inputs.forEach(input => {
+            const oldName = input.name;
+            const baseName = oldName.replace(/_\d+$/, '');
+            input.name = `${baseName}_${newIndex}`;
+            input.id = input.id.replace(/_\d+$/, `_${newIndex}`);
+        });
+        
+        // Update labels
+        const labels = item.querySelectorAll('label');
+        labels.forEach(label => {
+            const forAttr = label.getAttribute('for');
+            if (forAttr) {
+                label.setAttribute('for', forAttr.replace(/_\d+$/, `_${newIndex}`));
+            }
+        });
+        
+        // Update error divs
+        const errorDivs = item.querySelectorAll('.error-message');
+        errorDivs.forEach(errorDiv => {
+            errorDiv.id = errorDiv.id.replace(/_\d+$/, `_${newIndex}`);
+        });
+    });
+}
+
+// Collect data from array fields
+function collectArrayData(key) {
+    console.log('Collecting array data for:', key);
+    const container = document.querySelector(`[data-key="${key}"] .array-items-container`);
+    if (!container) {
+        console.log('No container found for:', key);
+        return [];
+    }
+    
+    console.log('Container children count:', container.children.length);
+    
+    const items = [];
+    
+    if (key === 'ADDITIONAL_OIDC_PROVIDERS') {
+        // Collect OIDC provider data
+        Array.from(container.children).forEach((item, index) => {
+            const urlInput = item.querySelector(`#oidc_url_${index}`);
+            const audiencesInput = item.querySelector(`#oidc_audiences_${index}`);
+            
+            if (urlInput && urlInput.value.trim()) {
+                const provider = {
+                    url: urlInput.value.trim()
+                };
+                
+                // Parse audiences from comma-separated string
+                if (audiencesInput && audiencesInput.value.trim()) {
+                    provider.audiences = audiencesInput.value
+                        .split(',')
+                        .map(aud => aud.trim())
+                        .filter(aud => aud.length > 0);
+                } else {
+                    provider.audiences = ['k8s']; // Default audience
+                }
+                
+                items.push(provider);
+            }
+        });
+    } else {
+        // Generic array collection (for future array fields)
+        Array.from(container.children).forEach((item, index) => {
+            const input = item.querySelector(`[name="${key}_${index}"]`);
+            if (input && input.value.trim()) {
+                items.push(input.value.trim());
+            }
+        });
+    }
+    
+    return items;
 }
