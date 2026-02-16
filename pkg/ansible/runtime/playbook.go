@@ -159,13 +159,14 @@ func ConfigToAnsibleVars(config map[string]any) []string {
 			vars = append(vars, fmt.Sprintf(`{"%s": "%s"}`, key, v))
 		default:
 			// Handle complex types (arrays, maps) with proper JSON marshaling
+			var valueStr string
 			if jsonBytes, err := json.Marshal(v); err == nil {
 				valueStr = string(jsonBytes)
 			} else {
 				// Fallback to string representation for simple types
 				valueStr = fmt.Sprintf("%v", v)
 			}
-			args = append(args, "-e", fmt.Sprintf(`{"`+key+`": `+valueStr+`}`))
+			vars = append(vars, fmt.Sprintf(`{"%s": %s}`, key, valueStr))
 		}
 	}
 	return vars
