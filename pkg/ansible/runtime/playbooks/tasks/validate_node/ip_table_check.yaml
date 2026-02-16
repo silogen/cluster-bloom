@@ -22,5 +22,4 @@
     cmd: iptables -D INPUT -j REJECT --reject-with icmp-host-prohibited
   register: ip_table_rule_deleted
   when: ip_table_rule_check.rc == 0
-  notify:
-    - Save iptables
+  notify: Save iptables
