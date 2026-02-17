@@ -18,6 +18,20 @@
 - ROCm-compatible AMD GPUs (for GPU nodes)
 - Root/sudo access
 
+## Getting Started
+
+### Download and Setup
+
+1. Download the latest bloom binary:
+```sh
+wget https://github.com/silogen/cluster-bloom/releases/download/<version>/bloom
+```
+
+2. Make the binary executable:
+```sh
+chmod +x bloom
+```
+
 ## Usage
 
 ### Configuration Generation
