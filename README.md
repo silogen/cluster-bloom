@@ -72,8 +72,8 @@ Show all available commands and complete configuration reference:
 Get help for specific commands:
 
 ```sh
-./bloom cleanup --help
-./bloom cli --help
+./bloom cleanup --help  # Remove existing cluster installation
+./bloom cli --help      # Deploy cluster using configuration file
 ```
 
 ## Configuration
@@ -137,6 +137,8 @@ For advanced configuration, multiple providers, and troubleshooting, see [docs/o
 
 TLS Subject Alternative Names (SANs) allow your Kubernetes API server to be accessed via multiple domain names. Cluster-Bloom automatically configures TLS-SANs for secure remote access to your cluster.
 
+**Note:** Wildcard domains (*.example.com) are not supported by RKE2.
+
 **Basic Configuration:**
 ```yaml
 DOMAIN: "example.com"
@@ -158,9 +160,13 @@ For detailed examples, testing instructions, and common use cases, see [docs/tls
 Create a YAML configuration file (e.g., `bloom.yaml`):
 
 ```yaml
+DOMAIN: "your-domain.example.com"  # Required: Your cluster domain
 FIRST_NODE: true
-DOMAIN: "cluster.example.com"
-NO_DISKS_FOR_CLUSTER: true
+GPU_NODE: true                     # Set to false if no GPUs
+CLUSTER_DISKS: "/dev/nvme1n1"     # Disk device path for storage
+CERT_OPTION: "generate"           # Options: "generate" or "existing"
+CLUSTERFORGE_RELEASE: "https://github.com/silogen/cluster-forge/releases/download/v1.8.0/release-enterprise-ai-v1.8.0.tar.gz"  # ClusterForge release URL or "none" to skip
+PRELOAD_IMAGES: ""                # Optional: comma-separated container images
 ```
 
 Then run with:
