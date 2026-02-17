@@ -104,104 +104,40 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 
 ### OIDC Configuration Examples
 
-**Single OIDC Provider:**
+**Basic OIDC Provider:**
 ```yaml
-RKE2_VERSION: v1.34.1+rke2r1
 ADDITIONAL_OIDC_PROVIDERS:
   - url: "https://keycloak.example.com/realms/main"
     audiences: ["k8s"]
 ```
 
-**Multiple OIDC Providers:**
-```yaml
-RKE2_VERSION: v1.34.1+rke2r1
-ADDITIONAL_OIDC_PROVIDERS:
-  - url: "https://kc.plat-dev-3.silogen.ai/realms/airm"
-    audiences: ["k8s"]
-  - url: "https://kc.plat-dev-4.silogen.ai/realms/k8s"
-    audiences: ["kubernetes", "api"]
-```
-
 **Notes:**
+- ClaimMappings use `username` and `groups` with prefix `"oidc:"`
 - `url`: HTTPS URL of your OIDC provider (Keycloak, Auth0, etc.)
 - `audiences`: List of client IDs from your OIDC provider
-- `RKE2_VERSION`: Specify exact RKE2 version, or leave empty for latest
-- OIDC providers are optional - leave `ADDITIONAL_OIDC_PROVIDERS` empty to skip
 - **Default behavior**: If `ADDITIONAL_OIDC_PROVIDERS` is skipped, a default OIDC provider will be configured pointing to the internal Keycloak `airm` realm at `https://kc.{DOMAIN}/realms/airm`
+
+For advanced configuration, multiple providers, and troubleshooting, see [docs/oidc-authentication.md](docs/oidc-authentication.md).
 
 ### TLS-SAN Configuration
 
 TLS Subject Alternative Names (SANs) allow your Kubernetes API server to be accessed via multiple domain names. Cluster-Bloom automatically configures TLS-SANs for secure remote access to your cluster.
 
-**Automatic TLS-SAN Generation:**
+**Basic Configuration:**
+```yaml
+DOMAIN: "example.com"
+ADDITIONAL_TLS_SAN_URLS:
+  - "api.example.com"
+  - "kubernetes.example.com"
+```
+
+**Key Points:**
 - Cluster-Bloom automatically generates `k8s.{DOMAIN}` as a default TLS-SAN
-- This enables remote kubectl access via `k8s.yourdomain.com`
+- Do not duplicate the auto-generated SAN in `ADDITIONAL_TLS_SAN_URLS`
+- Valid domain names only (no wildcards)
+- The configuration wizard provides real-time validation
 
-**Additional TLS-SANs:**
-```yaml
-DOMAIN: "example.com"
-ADDITIONAL_TLS_SAN_URLS:
-  - "api.example.com"
-  - "kubernetes.example.com"
-```
-
-**Complete Example:**
-```yaml
-DOMAIN: "example.com"
-ADDITIONAL_TLS_SAN_URLS:
-  - "api.example.com"
-  - "kubernetes.example.com"
-```
-
-**Result:** The Kubernetes API server certificate will include:
-- `k8s.example.com` (auto-generated)
-- `api.example.com` (additional)
-- `kubernetes.example.com` (additional)
-
-**Important Notes:**
-- **Auto-generated SAN**: Always includes `k8s.{DOMAIN}` - do not duplicate in `ADDITIONAL_TLS_SAN_URLS`
-- **Valid domains only**: Each SAN must be a valid domain name format
-- **Duplicate handling**: The system automatically handles duplicates (though clean configuration is recommended)
-- **UI validation**: The configuration wizard provides real-time validation and preview of final TLS-SAN list
-
-**Testing TLS-SANs:**
-```bash
-# 1. Check RKE2 configuration file contains TLS-SANs
-sudo cat /etc/rancher/rke2/config.yaml | grep -A 10 "tls-san:"
-
-# 2. Verify certificate contains your TLS-SANs
-openssl s_client -connect your-server:6443 -servername k8s.example.com </dev/null 2>/dev/null | \
-  openssl x509 -noout -text | grep -A 10 "Subject Alternative Name"
-
-# 3. Test remote kubectl access
-# First, copy kubeconfig and modify server URL
-scp ubuntu@your-server:/etc/rancher/rke2/rke2.yaml ./kubeconfig
-sed -i 's/127.0.0.1:6443/k8s.example.com:6443/g' kubeconfig
-export KUBECONFIG=./kubeconfig
-kubectl get nodes
-```
-
-**Common TLS-SAN Use Cases:**
-```yaml
-# Basic setup - only auto-generated SAN
-DOMAIN: "example.com"
-# Result: k8s.example.com
-
-# Load balancer setup
-DOMAIN: "example.com" 
-ADDITIONAL_TLS_SAN_URLS:
-  - "api.example.com"
-  - "lb.example.com"
-# Result: k8s.example.com, api.example.com, lb.example.com
-
-# Multiple access points
-DOMAIN: "example.com"
-ADDITIONAL_TLS_SAN_URLS: 
-  - "kubernetes.example.com"
-  - "cluster.example.com" 
-  - "api.example.com"
-# Result: k8s.example.com, kubernetes.example.com, cluster.example.com, api.example.com
-```
+For detailed examples, testing instructions, and common use cases, see [docs/tls-san-configuration.md](docs/tls-san-configuration.md).
 
 ### Using a Configuration File
 
