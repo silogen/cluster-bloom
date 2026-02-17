@@ -20,13 +20,15 @@
 
 ## Usage
 
-### First Node Setup
+### Configuration Generation
 
-To set up the first node in your cluster:
+Launch the web UI to generate your bloom.yaml configuration:
 
 ```sh
-sudo ./bloom
+./bloom
 ```
+
+Access the configuration wizard at http://127.0.0.1:62078
 
 ### Additional Node Setup
 
@@ -34,31 +36,8 @@ After setting up the first node, it will generate a command in `additional_node_
 
 ```sh
 # Example (actual command will be different)
-echo -e 'FIRST_NODE: false\nJOIN_TOKEN: your-token-here\nSERVER_IP: your-server-ip' > bloom.yaml && sudo ./bloom --config bloom.yaml
+echo -e 'FIRST_NODE: false\nJOIN_TOKEN: your-token-here\nSERVER_IP: your-server-ip' > bloom.yaml && sudo ./bloom cli bloom.yaml
 ```
-
-### Configuration Wizard UI
-
-Launch the interactive configuration wizard:
-
-```sh
-sudo ./bloom demo-ui
-```
-
-The configuration wizard includes advanced TLS-SAN validation features:
-
-**TLS-SAN UI Features:**
-- **Auto-generated Preview**: Shows `k8s.{domain}` as you type the domain
-- **Real-time Validation**: Warns about duplicate entries before submission
-- **Smart Suggestions**: Explains why duplicates occur and recommends removal
-- **Live Preview**: Shows final TLS-SAN list as you configure additional domains
-- **Visual Feedback**: Color-coded warnings and validation messages
-
-**UI Validation Behavior:**
-- ✅ **Green**: Auto-generated TLS-SAN (always included)
-- ⚠️ **Orange Warning**: Duplicate detected (will be handled automatically)
-- ❌ **Red Error**: Invalid format or configuration issue
-- 📋 **Preview**: Shows exactly what will be in your certificate
 
 ### Version Information
 
@@ -66,10 +45,21 @@ The configuration wizard includes advanced TLS-SAN validation features:
 ./bloom version
 ```
 
-### Help
+### Command Help
+
+Show all available commands and complete configuration reference:
 
 ```sh
 ./bloom help
+```
+
+*Note: Help includes auto-generated documentation for all configuration fields.*
+
+Get help for specific commands:
+
+```sh
+./bloom cleanup --help
+./bloom cli --help
 ```
 
 ## Configuration
@@ -85,8 +75,9 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | CERT_OPTION | Certificate option when USE_CERT_MANAGER is false. Choose 'existing' or 'generate' | "" |
 | CF_VALUES | Path to ClusterForge values file (optional). Example: "values_cf.yaml" | "" |
 | CLUSTER_DISKS | Comma-separated list of disk devices. Example "/dev/sdb,/dev/sdc". Also skips NVME drive checks. | "" |
+| CLUSTER_SIZE | Size category for cluster deployment planning. Options: small, medium, large | medium |
 | CLUSTER_PREMOUNTED_DISKS | Comma-separated list of absolute disk paths to use for Longhorn | "" |
-| CLUSTERFORGE_RELEASE | The version of Cluster-Forge to install. Pass the URL for a specific release, or 'none' to not install ClusterForge. | "https://github.com/silogen/cluster-forge/releases/download/deploy/deploy-release.tar.gz" |
+| CLUSTERFORGE_RELEASE | The version of Cluster-Forge to install. Pass the URL for a specific release, or 'none' to not install ClusterForge. | "https://github.com/silogen/cluster-forge/releases/download/v1.8.0/release-enterprise-ai-v1.8.0.tar.gz" |
 | CONTROL_PLANE | Set to true if this node should be a control plane node | false, only applies when FIRST_NODE is false |
 | DISABLED_STEPS | Comma-separated list of steps to skip. Example "SetupLonghornStep,SetupMetallbStep" | "" |
 | DOMAIN | The domain name for the cluster (e.g., "cluster.example.com") (required). | "" |
@@ -95,13 +86,21 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | GPU_NODE | Set to true if this node has GPUs | true |
 | JOIN_TOKEN | The token used to join additional nodes to the cluster | |
 | NO_DISKS_FOR_CLUSTER | Set to true to skip disk-related operations | false |
-| OIDC_URL | The URL of the OIDC provider | "" |
 | RKE2_VERSION | Specific RKE2 version to install (e.g., "v1.34.1+rke2r1") | "" |
 | SERVER_IP | The IP address of the RKE2 server (required for additional nodes) | |
 | SKIP_RANCHER_PARTITION_CHECK | Set to true to skip /var/lib/rancher partition size check | false |
 | TLS_CERT | Path to TLS certificate file for ingress (required if CERT_OPTION is 'existing') | "" |
 | TLS_KEY | Path to TLS private key file for ingress (required if CERT_OPTION is 'existing') | "" |
 | USE_CERT_MANAGER | Use cert-manager with Let's Encrypt for automatic TLS certificates | false |
+| ARGOCD_VERSION | ArgoCD version to install | v2.14.11 |
+| CLUSTERFORGE_BRANCH | ClusterForge git branch for ArgoCD-based deployment | creating_small_configuration |
+| CLUSTERFORGE_REPO | ClusterForge git repository URL for ArgoCD-based deployment | https://github.com/silogen/cluster-forge.git |
+| INSTALL_ARGOCD | Install ArgoCD core for GitOps (small clusters only) | true |
+| PRELOAD_IMAGES | Comma-separated list of container images to preload | docker.io/rocm/pytorch:rocm6.4_ubuntu24.04_py3.12_pytorch_release_2.6.0,docker.io/rocm/vllm:rocm6.4.1_vllm_0.9.0.1_20250605 |
+| RKE2_EXTRA_CONFIG | Additional RKE2 configuration in YAML format | "" |
+| RKE2_INSTALLATION_URL | RKE2 installation script URL | https://get.rke2.io |
+| ROCM_BASE_URL | ROCm base repository URL | https://repo.radeon.com/amdgpu-install/7.0.2/ubuntu/ |
+| ROCM_DEB_PACKAGE | ROCm DEB package name | amdgpu-install_7.0.2.70002-1_all.deb |
 
 ### OIDC Configuration Examples
 
@@ -210,15 +209,14 @@ Create a YAML configuration file (e.g., `bloom.yaml`):
 
 ```yaml
 FIRST_NODE: true
-GPU_NODE: true
-RKE2_VERSION: v1.34.1+rke2r1
+DOMAIN: "cluster.example.com"
 NO_DISKS_FOR_CLUSTER: true
 ```
 
 Then run with:
 
 ```sh
-sudo ./bloom --config bloom.yaml
+sudo ./bloom cli bloom.yaml
 ```
 
 ## Installation Process
@@ -230,7 +228,7 @@ Cluster-Bloom performs the following steps during installation:
 3. Configures firewall and networking
 4. Sets up ROCm for GPU nodes
 5. Prepares and installs RKE2
-6. Configures storage with Longhorn
+6. Configures storage (local-path for small/medium clusters, Longhorn for large clusters)
 7. Sets up Kubernetes tools and configuration
 8. Installs ClusterForge
 
