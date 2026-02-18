@@ -123,14 +123,14 @@ schema:
     # ⚙️ Advanced Configuration
     ROCM_BASE_URL:
       type: url
-      default: https://repo.radeon.com/amdgpu-install/7.0.2/ubuntu/
+      default: https://repo.radeon.com/amdgpu-install/30.30/ubuntu/
       desc: ROCm base repository URL
       applicable: when(GPU_NODE == true)
       section: "⚙️ Advanced Configuration"
 
     ROCM_DEB_PACKAGE:
       type: str
-      default: amdgpu-install_7.0.2.70002-1_all.deb
+      default: amdgpu-install_7.2.70200-1_all.deb
       desc: ROCm DEB package name
       applicable: when(GPU_NODE == true)
       section: "⚙️ Advanced Configuration"

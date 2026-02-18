@@ -809,9 +809,9 @@ gpu:
   # ROCm configuration (AMD GPUs - ClusterBloom)
   rocm:
     enabled: false
-    version: "6.3.2"
-    baseUrl: "https://repo.radeon.com/amdgpu-install/6.3.2/ubuntu/"
-    debPackage: "amdgpu-install_6.3.60302-1_all.deb"
+    version: "7.2"
+    baseUrl: "https://repo.radeon.com/amdgpu-install/30.30/ubuntu/"
+    debPackage: "amdgpu-install_7.2.70200-1_all.deb"
   
   # Node selection for GPU workloads
   nodeSelector:

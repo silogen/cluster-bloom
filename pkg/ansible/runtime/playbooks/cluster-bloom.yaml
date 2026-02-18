@@ -32,8 +32,8 @@
     BLOOM_VERSION: "2.0.0"
     RKE2_VERSION: "v1.31.4+rke2r1"
 
-    ROCM_BASE_URL: "https://repo.radeon.com/amdgpu-install/6.3.3/ubuntu/"
-    ROCM_DEB_PACKAGE: "amdgpu-install_6.3.60303-1_all.deb"
+    ROCM_BASE_URL: "https://repo.radeon.com/amdgpu-install/30.30/ubuntu/"
+    ROCM_DEB_PACKAGE: "amdgpu-install_7.2.70200-1_all.deb"
     rke2_installation_url: "https://get.rke2.io"
 
     supported_ubuntu_versions:
@@ -90,8 +90,6 @@
     - name: Deploy ClusterForge Platform
       tags: [deploy_clusterforge]
       import_tasks: tasks/deploy_clusterforge/main.yaml
-
-
 
   handlers:
     - name: Restart multipathd
