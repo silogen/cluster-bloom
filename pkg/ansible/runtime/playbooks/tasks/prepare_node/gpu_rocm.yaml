@@ -16,8 +16,7 @@
 #   when: GPU_NODE
 
 - name: Check if rocm-smi exists
-  stat:
-    path: /opt/rocm/bin/rocm-smi
+  shell: which amd-smi 
   register: rocm_smi_check
 
 - name: Get Ubuntu codename
@@ -63,6 +62,7 @@
   when: not rocm_smi_check.stat.exists and not ansible_check_mode
   environment:
     DEBIAN_FRONTEND: noninteractive
+    DPKG_FRONTEND: noninteractive
 
 - name: Debug amdgpu package installation (check mode)
   debug:
@@ -91,8 +91,8 @@
     msg: "Would load amdgpu kernel module"
   when: ansible_check_mode
 
-- name: Verify GPUs with rocm-smi
-  shell: rocm-smi -i --json | jq -r '.[] | .["Device Name"]' | sort | uniq -c
+- name: Verify all GPUs with rocm-smi
+  shell: amd-smi | sed -n "$(amd-smi | grep -n '^+' | head -1 | cut -d: -f1),$(amd-smi | grep -n '^+' | tail -3 | head -1 | cut -d: -f1)p"
   register: rocm_smi_output
   when: GPU_NODE | bool and not ansible_check_mode
   changed_when: false
