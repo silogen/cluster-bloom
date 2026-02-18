@@ -723,6 +723,15 @@
                 mode: '0755'
               when: oidc_providers_list | length > 0
 
+            - name: Create RKE2 certificate directory for existing certificates
+              file:
+                path: /etc/rancher/rke2/certs
+                state: directory
+                mode: '0755'
+              when: 
+                - oidc_providers_list | length > 0
+                - CERT_OPTION == "existing"
+
             - name: Copy existing TLS certificate to RKE2 certs directory
               copy:
                 src: "{{ TLS_CERT }}"
