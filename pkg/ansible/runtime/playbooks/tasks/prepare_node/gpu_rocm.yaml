@@ -16,7 +16,7 @@
 #   when: GPU_NODE
 
 - name: Check if rocm-smi exists
-  shell: which amd-smi 
+  shell: amd-smi
   register: rocm_smi_check
 
 - name: Get Ubuntu codename
