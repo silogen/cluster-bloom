@@ -169,12 +169,12 @@ func (p *OutputProcessor) PrintSummary() {
 			fmt.Printf("🔐 AIRM DevUser Login:\n")
 			fmt.Printf("   URL:      https://airmui.%s\n", domain)
 			fmt.Printf("   Username: devuser@%s\n", domain)
-			fmt.Printf("   Password: kubectl -n keycloak get secret airm-devuser-credentials -o jsonpath='{.data.KEYCLOAK_INITIAL_DEVUSER_PASSWORD}' | base64 --decode\n")
+			fmt.Printf("   Password: kubectl -n keycloak get secret airm-realm-credentials -o jsonpath='{.data.KEYCLOAK_INITIAL_DEVUSER_PASSWORD}' | base64 --decode && echo\n")
 			fmt.Println()
 			fmt.Printf("🔑 Keycloak Admin Login:\n")
 			fmt.Printf("   URL:      https://kc.%s\n", domain)
 			fmt.Printf("   Username: silogen-admin\n")
-			fmt.Printf("   Password: kubectl -n keycloak get secret keycloak-credentials -o jsonpath='{.data.KEYCLOAK_INITIAL_ADMIN_PASSWORD}' | base64 --decode\n")
+			fmt.Printf("   Password: kubectl -n keycloak get secret keycloak-credentials -o jsonpath='{.data.KEYCLOAK_INITIAL_ADMIN_PASSWORD}' | base64 --decode && echo\n")
 			fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		}
 	}
