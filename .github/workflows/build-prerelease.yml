@@ -4,7 +4,7 @@ on:
     types: [opened, synchronize, reopened]
     branches: [main]
   release:
-    types: [published, created, edited, prereleased]
+    types: [published]
   workflow_dispatch:
     inputs:
       is_prerelease:
