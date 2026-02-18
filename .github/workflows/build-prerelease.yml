@@ -38,19 +38,21 @@ jobs:
             echo "Found feature or documentation commits:"
             echo "$FEAT_COMMITS"
             
-            # Check if PRD.md was modified in the same range
+            # Check if docs/ directory was modified anywhere in the PR/range
             PRD_MODIFIED=$(git diff --name-only "${BASE_SHA}..HEAD" | grep -E "^docs/" || echo "")
             
             if [[ -z "$PRD_MODIFIED" ]]; then
-              echo "❌ ERROR: Found feat:/docs: commits but PRD.md was not updated"
+              echo "❌ ERROR: Found feat:/docs: commits but documentation was not updated"
               echo ""
-              echo "Commits requiring PRD update:"
+              echo "Commits requiring documentation update:"
               echo "$FEAT_COMMITS"
               echo ""
-              echo "Please update PRD.md to reflect these changes."
+              echo "Please update documentation in the docs/ directory to reflect these changes."
               exit 1
             else
-              echo "✅ PRD.md was updated alongside feat:/docs: commits"
+              echo "✅ Documentation was updated in this PR/range"
+              echo "Modified documentation files:"
+              echo "$PRD_MODIFIED"
             fi
           else
             echo "✅ No feat:/docs: commits found, PRD sync check not required"
