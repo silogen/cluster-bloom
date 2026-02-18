@@ -3,6 +3,7 @@
 package runtime
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -217,8 +218,11 @@ func RunChild() {
 		}
 	}()
 
+	// Parse config values from extraArgs for post-deployment messaging
+	configMap := parseConfigFromExtraArgs(extraArgs)
+
 	// Create output processor
-	processor := NewOutputProcessor(outputMode, logFile)
+	processor := NewOutputProcessor(outputMode, logFile, configMap)
 
 	cmd := exec.Command("ansible-playbook", ansibleArgs...)
 	cmd.Stdin = os.Stdin
@@ -326,4 +330,29 @@ func setupHostSSHSignalHandling(sshManager *ssh.EphemeralSSHManager) {
 			os.Exit(1)
 		}
 	}()
+}
+
+// parseConfigFromExtraArgs extracts configuration values from Ansible extra vars
+// Extra vars are in the format: -e {"KEY": "value"}
+func parseConfigFromExtraArgs(extraArgs []string) map[string]string {
+	config := make(map[string]string)
+
+	for i := 0; i < len(extraArgs); i++ {
+		if extraArgs[i] == "-e" && i+1 < len(extraArgs) {
+			// Parse JSON extra var
+			var varMap map[string]interface{}
+			if err := json.Unmarshal([]byte(extraArgs[i+1]), &varMap); err == nil {
+				// Extract values we care about
+				if val, ok := varMap["CLUSTERFORGE_RELEASE"].(string); ok {
+					config["CLUSTERFORGE_RELEASE"] = val
+				}
+				if val, ok := varMap["DOMAIN"].(string); ok {
+					config["DOMAIN"] = val
+				}
+			}
+			i++ // Skip the next argument as we've already processed it
+		}
+	}
+
+	return config
 }

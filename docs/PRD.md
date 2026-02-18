@@ -112,6 +112,9 @@ Pre-flight validation system checks all configuration, resources, and system req
 
 **[📄 Configuration Reference](./configuration-reference.md)**
 
+### Post-Deployment Credential Display
+Automatic display of access credentials for deployed ClusterForge components including AIRM DevUser and Keycloak admin credentials with ready-to-use kubectl commands for password retrieval.
+
 ## Technical Architecture
 
 ClusterBloom uses a modular architecture with command-based interfaces, sequential installation pipelines, and multiple interaction modes (CLI, TUI, Web UI). The system executes in three phases: pre-Kubernetes system preparation, Kubernetes cluster setup, and post-Kubernetes add-on deployment.
@@ -159,6 +162,23 @@ Demonstrates UI capabilities without system modifications for testing and famili
 ./bloom test [config-file...]
 ```
 Runs multiple configuration files in sequence for integration testing with mocked commands and structured YAML results.
+
+### Post-Deployment Credential Information
+
+After successful cluster deployment, ClusterBloom automatically displays credential information for ClusterForge components when `CLUSTERFORGE_RELEASE` is configured (not set to "none"). This eliminates the need to manually search for credentials and provides immediate access to deployed applications.
+
+**Displayed Information:**
+- **AIRM DevUser Login**: URL, username, and kubectl command to retrieve password
+  - URL: `https://airmui.<domain>`
+  - Username: `devuser@<domain>`
+  - Password retrieval: `kubectl -n keycloak get secret airm-devuser-credentials -o jsonpath='{.data.KEYCLOAK_INITIAL_DEVUSER_PASSWORD}' | base64 --decode`
+
+- **Keycloak Admin Login**: URL, username, and kubectl command to retrieve password
+  - URL: `https://kc.<domain>`
+  - Username: `silogen-admin`
+  - Password retrieval: `kubectl -n keycloak get secret keycloak-credentials -o jsonpath='{.data.KEYCLOAK_INITIAL_ADMIN_PASSWORD}' | base64 --decode`
+
+This information appears at the end of the deployment summary when using clean output mode (default), providing operators with immediate access to critical system credentials.
 
 ### Web UI Installation Workflow
 
