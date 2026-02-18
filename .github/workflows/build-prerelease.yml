@@ -4,7 +4,7 @@ on:
     types: [opened, synchronize, reopened]
     branches: [main]
   release:
-    types: [created, edited]
+    types: [published, created, edited]
   workflow_dispatch:
     inputs:
       is_prerelease:
@@ -84,6 +84,15 @@ jobs:
           # For pull requests, use a test version
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             NEW_VERSION="pr-${{ github.head_ref }}"
+          elif [[ "${{ github.event_name }}" == "release" ]]; then
+            # Use the tag from the release event
+            NEW_VERSION="${{ github.event.release.tag_name }}"
+            # Determine if it's a prerelease based on the release settings
+            if [[ "${{ github.event.release.prerelease }}" == "true" ]]; then
+              EXTRA_ARGS="--latest=false --prerelease"
+            else
+              EXTRA_ARGS="--latest=false"
+            fi
           elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             if [[ "${{ github.event.inputs.is_prerelease }}" == "true" ]]; then
               EXTRA_ARGS="--latest=false --prerelease"
@@ -98,6 +107,7 @@ jobs:
           echo "extra_args=${EXTRA_ARGS}" >> $GITHUB_OUTPUT
 
       - name: Create GitHub Release
+        if: github.event_name != 'release'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.version.outputs.new_version }}
