@@ -72,6 +72,7 @@ jobs:
       - name: Get Next Version
         if: github.event_name == 'workflow_dispatch'
         id: semver
+        continue-on-error: true
         uses: ietf-tools/semver-action@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -101,7 +102,24 @@ jobs:
             else
               EXTRA_ARGS="--latest=false"
             fi
-            NEW_VERSION="${{ steps.semver.outputs.next }}"
+            
+            # Try to use semver action output, fallback to manual increment
+            if [[ -n "${{ steps.semver.outputs.next }}" ]]; then
+              NEW_VERSION="${{ steps.semver.outputs.next }}"
+            else
+              # No conventional commits found - increment patch version
+              LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+              echo "Latest tag: $LATEST_TAG"
+              
+              # Extract version numbers (remove 'v' prefix and any suffix like +rke2r1)
+              VERSION_PART=$(echo "$LATEST_TAG" | sed 's/^v//' | sed 's/+.*//')
+              IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION_PART"
+              
+              # Increment patch version
+              PATCH=$((PATCH + 1))
+              NEW_VERSION="v${MAJOR}.${MINOR}.${PATCH}"
+              echo "No conventional commits found, incrementing patch version to: $NEW_VERSION"
+            fi
           fi
           echo "Args: ${EXTRA_ARGS}"
           echo "New version: $NEW_VERSION"
