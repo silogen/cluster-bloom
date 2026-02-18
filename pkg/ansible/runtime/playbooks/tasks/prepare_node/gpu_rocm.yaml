@@ -92,7 +92,7 @@
   when: ansible_check_mode
 
 - name: Verify all GPUs with rocm-smi
-  shell: amd-smi | sed -n "$(amd-smi | grep -n '^+' | head -1 | cut -d: -f1),$(amd-smi | grep -n '^+' | tail -3 | head -1 | cut -d: -f1)p"
+  shell: amd-smi | sed -n "$(amd-smi | grep -n '^+' | head -1 | grep -oE '^[0-9]+'),$(amd-smi | grep -n '^+' | tail -3 | head -1 | grep -oE '^[0-9]+')p"
   register: rocm_smi_output
   when: GPU_NODE | bool and not ansible_check_mode
   changed_when: false
