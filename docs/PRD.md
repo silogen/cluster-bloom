@@ -199,10 +199,24 @@ See [VALIDATION.md](VALIDATION.md) for complete validation documentation.
 - **K9s Integration**: Terminal-based Kubernetes management
 
 ### CI/CD Pipeline
-- **GitHub Actions**: Automated build and release workflow
-- **Devbox Build System**: Consistent development environment
-- **Release Automation**: Automatic binary creation on releases
-- **Version Injection**: Build-time version injection from Git tags
+
+**Automated Release Workflow**
+- **GitHub Release Trigger**: Workflow automatically runs when a release is published
+- **Tag-based Versioning**: Release tag (e.g., `v1.0.0`) is used for binary version injection
+- **Artifact Upload**: Built binaries automatically attach to the GitHub release
+- **Prerelease Detection**: Automatically detects and respects prerelease status from GitHub release settings
+
+**Build Process**
+- **Devbox Build System**: Consistent, reproducible development environment
+- **Version Injection**: Build-time version injection from Git tags using `-ldflags`
+- **Automated Testing**: PRD sync validation ensures documentation updates accompany feature commits
+
+**Release Creation**
+1. Draft a new release in GitHub with desired tag (e.g., `v1.0.0-beta` or `v1.0.0`)
+2. Optionally mark as prerelease for non-production versions
+3. Publish the release
+4. Build workflow automatically triggers, builds binaries, and uploads artifacts
+5. Release is ready with downloadable binaries within minutes
 
 ## Testing and Quality Assurance
 
