@@ -27,14 +27,16 @@ type OutputProcessor struct {
 	startTime    time.Time
 	taskSeen     bool
 	suppressNext bool
+	config       map[string]string // Configuration values (e.g., CLUSTERFORGE_RELEASE, DOMAIN)
 }
 
 // NewOutputProcessor creates a new output processor
-func NewOutputProcessor(mode OutputMode, logFile *os.File) *OutputProcessor {
+func NewOutputProcessor(mode OutputMode, logFile *os.File, config map[string]string) *OutputProcessor {
 	return &OutputProcessor{
 		mode:      mode,
 		logFile:   logFile,
 		stats:     &PlaybookStats{},
+		config:    config,
 		startTime: time.Now(),
 	}
 }
@@ -154,6 +156,28 @@ func (p *OutputProcessor) PrintSummary() {
 	fmt.Println()
 	fmt.Printf("Playbook complete: %s\n", p.stats.Summary())
 	fmt.Printf("Total time: %s\n", formatDuration(duration))
+
+	// Print credential information if CLUSTERFORGE_RELEASE is configured
+	if p.config != nil {
+		clusterforgeRelease := p.config["CLUSTERFORGE_RELEASE"]
+		domain := p.config["DOMAIN"]
+
+		if clusterforgeRelease != "" && clusterforgeRelease != "none" && domain != "" {
+			fmt.Println()
+			fmt.Println("📋 Credential Information:")
+			fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+			fmt.Printf("🔐 AIRM DevUser Login:\n")
+			fmt.Printf("   URL:      https://airmui.%s\n", domain)
+			fmt.Printf("   Username: devuser@%s\n", domain)
+			fmt.Printf("   Password: kubectl -n keycloak get secret airm-realm-credentials -o jsonpath='{.data.KEYCLOAK_INITIAL_DEVUSER_PASSWORD}' | base64 --decode && echo\n")
+			fmt.Println()
+			fmt.Printf("🔑 Keycloak Admin Login:\n")
+			fmt.Printf("   URL:      https://kc.%s\n", domain)
+			fmt.Printf("   Username: silogen-admin\n")
+			fmt.Printf("   Password: kubectl -n keycloak get secret keycloak-credentials -o jsonpath='{.data.KEYCLOAK_INITIAL_ADMIN_PASSWORD}' | base64 --decode && echo\n")
+			fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		}
+	}
 }
 
 // formatDuration formats a duration into a human-readable string

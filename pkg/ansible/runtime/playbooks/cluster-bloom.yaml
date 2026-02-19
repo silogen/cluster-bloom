@@ -645,7 +645,7 @@
             # Initialize certificate SAN list for cert generation
             - name: Initialize certificate SAN list
               set_fact:
-                cert_san_list: ["k8s.{{ DOMAIN }}"]
+                cert_san_list: ["k8s.{{ DOMAIN }}","kc.{{ DOMAIN }}","*.{{ DOMAIN }}",]
 
             - name: Add additional TLS SANs to certificate
               set_fact:
@@ -658,11 +658,15 @@
                 - item != ""
                 - "'*' not in item"
 
+            - name: Prepare certificate SAN string
+              set_fact:
+                cert_san_string: "{{ cert_san_list | map('regex_replace', '^(.*)$', 'DNS:\\1') | join(',') }}"
+
             - name: Debug certificate SAN list
               debug:
                 msg: 
                   - "Certificate SAN list: {{ cert_san_list }}"
-                  - "Certificate SANs will be: {{ cert_san_list | map('regex_replace', '^(.*)$', 'DNS:\\1') | join(',') }}"
+                  - "Certificate SANs will be: {{ cert_san_string }}"
 
             - name: Generate API server TLS certificate
               shell: |
@@ -670,7 +674,7 @@
                   -keyout /etc/rancher/rke2/certs/tls.key \
                   -out /etc/rancher/rke2/certs/tls.crt \
                   -subj "/CN={{ DOMAIN }}" \
-                  -addext "subjectAltName={{ cert_san_list | map('regex_replace', '^(.*)$', 'DNS:\\1') | join(',') }}"
+                  -addext "subjectAltName={{ cert_san_string }}"
               register: cert_generation_result
               failed_when: cert_generation_result.rc != 0
 
@@ -718,6 +722,15 @@
                 state: directory
                 mode: '0755'
               when: oidc_providers_list | length > 0
+
+            - name: Create RKE2 certificate directory for existing certificates
+              file:
+                path: /etc/rancher/rke2/certs
+                state: directory
+                mode: '0755'
+              when: 
+                - oidc_providers_list | length > 0
+                - CERT_OPTION == "existing"
 
             - name: Copy existing TLS certificate to RKE2 certs directory
               copy:

@@ -112,6 +112,9 @@ Pre-flight validation system checks all configuration, resources, and system req
 
 **[📄 Configuration Reference](./configuration-reference.md)**
 
+### Post-Deployment Credential Display
+Automatic display of access credentials for deployed ClusterForge components including AIRM DevUser and Keycloak admin credentials with ready-to-use kubectl commands for password retrieval.
+
 ## Technical Architecture
 
 ClusterBloom uses a modular architecture with command-based interfaces, sequential installation pipelines, and multiple interaction modes (CLI, TUI, Web UI). The system executes in three phases: pre-Kubernetes system preparation, Kubernetes cluster setup, and post-Kubernetes add-on deployment.
@@ -160,6 +163,23 @@ Demonstrates UI capabilities without system modifications for testing and famili
 ```
 Runs multiple configuration files in sequence for integration testing with mocked commands and structured YAML results.
 
+### Post-Deployment Credential Information
+
+After successful cluster deployment, ClusterBloom automatically displays credential information for ClusterForge components when `CLUSTERFORGE_RELEASE` is configured (not set to "none"). This eliminates the need to manually search for credentials and provides immediate access to deployed applications.
+
+**Displayed Information:**
+- **AIRM DevUser Login**: URL, username, and kubectl command to retrieve password
+  - URL: `https://airmui.<domain>`
+  - Username: `devuser@<domain>`
+  - Password retrieval: `kubectl -n keycloak get secret airm-devuser-credentials -o jsonpath='{.data.KEYCLOAK_INITIAL_DEVUSER_PASSWORD}' | base64 --decode`
+
+- **Keycloak Admin Login**: URL, username, and kubectl command to retrieve password
+  - URL: `https://kc.<domain>`
+  - Username: `silogen-admin`
+  - Password retrieval: `kubectl -n keycloak get secret keycloak-credentials -o jsonpath='{.data.KEYCLOAK_INITIAL_ADMIN_PASSWORD}' | base64 --decode`
+
+This information appears at the end of the deployment summary when using clean output mode (default), providing operators with immediate access to critical system credentials.
+
 ### Web UI Installation Workflow
 
 1. **Access Web Interface**: Navigate to `http://localhost:62078`
@@ -199,10 +219,24 @@ See [VALIDATION.md](VALIDATION.md) for complete validation documentation.
 - **K9s Integration**: Terminal-based Kubernetes management
 
 ### CI/CD Pipeline
-- **GitHub Actions**: Automated build and release workflow
-- **Devbox Build System**: Consistent development environment
-- **Release Automation**: Automatic binary creation on releases
-- **Version Injection**: Build-time version injection from Git tags
+
+**Automated Release Workflow**
+- **GitHub Release Trigger**: Workflow automatically runs when a release is published
+- **Tag-based Versioning**: Release tag (e.g., `v1.0.0`) is used for binary version injection
+- **Artifact Upload**: Built binaries automatically attach to the GitHub release
+- **Prerelease Detection**: Automatically detects and respects prerelease status from GitHub release settings
+
+**Build Process**
+- **Devbox Build System**: Consistent, reproducible development environment
+- **Version Injection**: Build-time version injection from Git tags using `-ldflags`
+- **Automated Testing**: PRD sync validation ensures documentation updates accompany feature commits
+
+**Release Creation**
+1. Draft a new release in GitHub with desired tag (e.g., `v1.0.0-beta` or `v1.0.0`)
+2. Optionally mark as prerelease for non-production versions
+3. Publish the release
+4. Build workflow automatically triggers, builds binaries, and uploads artifacts
+5. Release is ready with downloadable binaries within minutes
 
 ## Testing and Quality Assurance
 
