@@ -83,6 +83,8 @@
       audit-log-maxbackup: 10
       audit-log-maxsize: 100
       audit-policy-file: "/etc/rancher/rke2/audit-policy.yaml"
+
+      embedded-registry: true
     dest: /etc/rancher/rke2/config.yaml
     mode: "0644"
 
