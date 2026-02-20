@@ -1827,11 +1827,7 @@
         - name: Run ClusterForge bootstrap script
           shell: |
             cd {{ BLOOM_DIR }}/clusterforge/cluster-forge/scripts
-            {% if CF_VALUES != "" %}
-            bash ./bootstrap.sh {{ DOMAIN }} {{ CF_VALUES }}
-            {% else %}
-            bash ./bootstrap.sh {{ DOMAIN }}
-            {% endif %}
+            bash ./bootstrap.sh {{ DOMAIN }} {% if CF_VALUES != "" %}{{ CF_VALUES }}{% endif %}{% if CLUSTERFORGE_BRANCH != "" %} --target-revision {{ CLUSTERFORGE_BRANCH }}{% endif %}
           register: cf_bootstrap
           environment:
             KUBECONFIG: /etc/rancher/rke2/rke2.yaml

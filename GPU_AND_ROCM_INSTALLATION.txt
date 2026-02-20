@@ -1,0 +1,572 @@
+================================================================================
+GPU AND ROCM INSTALLATION INSTRUCTIONS FOR CLUSTERBLOOM
+================================================================================
+
+TABLE OF CONTENTS
+-----------------
+1. Overview
+2. Prerequisites
+3. Configuration Parameters
+4. ROCm Installation Process
+5. GPU Device Access Setup
+6. Kubernetes Integration
+7. Verification Steps
+8. Troubleshooting
+9. Example Configurations
+
+================================================================================
+1. OVERVIEW
+================================================================================
+
+ClusterBloom provides automated AMD GPU support through ROCm driver 
+installation and configuration, enabling GPU-accelerated workloads on 
+Kubernetes clusters.
+
+ROCm Version: 6.3.3 (default, configurable)
+Supported OS: Ubuntu (version-specific kernel headers required)
+
+================================================================================
+2. PREREQUISITES
+================================================================================
+
+Hardware Requirements:
+- AMD GPU device(s) with ROCm support
+- PCI bus-accessible GPU hardware
+
+Software Requirements:
+- Ubuntu Linux (codename detection automated)
+- Linux kernel headers matching your kernel version
+- Python 3 with setuptools and wheel
+- Internet connectivity for package downloads
+
+Network Access Required:
+- AMD repository: https://repo.radeon.com/amdgpu-install/
+- Ubuntu package repositories
+
+================================================================================
+3. CONFIGURATION PARAMETERS
+================================================================================
+
+Primary GPU Configuration:
+--------------------------
+
+GPU_NODE (Boolean)
+  Default: false
+  Description: Enables GPU-specific configurations and ROCm installation
+  Example: GPU_NODE=true
+  
+  When set to true:
+  - Triggers ROCm installation
+  - Configures GPU device access
+  - Sets up Kubernetes node labels
+  - Installs AMD GPU device plugin
+
+ROCm Repository Configuration:
+------------------------------
+
+ROCM_BASE_URL (String)
+  Default: https://repo.radeon.com/amdgpu-install/6.3.3/ubuntu/
+  Description: Base URL for ROCm package repository
+  Format: Full URL path to ROCm packages directory
+  Example: ROCM_BASE_URL="https://repo.radeon.com/amdgpu-install/6.3.3/ubuntu/"
+  
+  Version Override Example:
+  ROCM_BASE_URL="https://repo.radeon.com/amdgpu-install/6.2.0/ubuntu/"
+
+ROCM_DEB_PACKAGE (String)
+  Default: amdgpu-install_6.3.60303-1_all.deb
+  Description: Specific ROCm installer package filename
+  Example: ROCM_DEB_PACKAGE="amdgpu-install_6.3.60303-1_all.deb"
+
+Warning:
+If GPU_NODE=true but ROCM_BASE_URL is empty, ROCm installation may fail.
+
+================================================================================
+4. ROCM INSTALLATION PROCESS
+================================================================================
+
+The automated installation follows these steps:
+
+Step 1: System Detection
+------------------------
+- Detect Ubuntu version and codename
+- Detect kernel version
+- Check if ROCm is already installed (rocm-smi presence)
+
+Step 2: Kernel Headers Installation
+------------------------------------
+Required packages are installed:
+  - linux-headers-$(uname -r)
+  - linux-modules-extra-$(uname -r)
+  - dkms
+  - build-essential
+  - python3-setuptools
+  - python3-wheel
+
+Environment variables used:
+  DEBIAN_FRONTEND=noninteractive
+  NEEDRESTART_MODE=a
+  NEEDRESTART_SUSPEND=1
+
+Step 3: Download amdgpu-install Package
+----------------------------------------
+Package downloaded from:
+  ${ROCM_BASE_URL}/${ubuntu_codename}/${ROCM_DEB_PACKAGE}
+
+Example full URL:
+  https://repo.radeon.com/amdgpu-install/6.3.3/ubuntu/jammy/amdgpu-install_6.3.60303-1_all.deb
+
+Downloaded to: /tmp/${ROCM_DEB_PACKAGE}
+
+Step 4: Install amdgpu-install Package
+---------------------------------------
+Command: apt install /tmp/${ROCM_DEB_PACKAGE}
+
+Step 5: Install ROCm with DKMS Support
+---------------------------------------
+Command: amdgpu-install --usecase=rocm,dkms --yes
+
+This installs:
+  - amdgpu kernel driver (via DKMS for kernel compatibility)
+  - ROCm runtime libraries
+  - ROCm development tools
+  - GPU compute stack
+
+Step 6: Load Kernel Module
+---------------------------
+Command: modprobe amdgpu
+
+This loads the AMD GPU kernel driver into the running kernel.
+
+Step 7: Un-blacklist amdgpu Module
+-----------------------------------
+Removes any blacklist entries for amdgpu in:
+  /etc/modprobe.d/*.conf
+
+Ensures module loads on boot.
+
+================================================================================
+5. GPU DEVICE ACCESS SETUP
+================================================================================
+
+Device Nodes Created:
+---------------------
+- /dev/kfd - Kernel Fusion Driver device
+- /dev/dri/renderD* - DRM render devices
+
+udev Rules Configuration:
+-------------------------
+File: /etc/udev/rules.d/70-amdgpu.rules
+
+Rules applied:
+  KERNEL=="kfd", MODE="0666"
+  SUBSYSTEM=="drm", KERNEL=="renderD*", MODE="0666"
+
+These rules set permissions to 0666 to allow non-root container access.
+
+Apply udev Rules:
+-----------------
+Commands:
+  sudo udevadm control --reload-rules
+  sudo udevadm trigger
+
+Kernel Module Persistence:
+--------------------------
+To ensure amdgpu loads on boot:
+  echo "amdgpu" | sudo tee -a /etc/modules
+
+Module configuration can be added to:
+  /etc/modprobe.d/amdgpu.conf
+
+================================================================================
+6. KUBERNETES INTEGRATION
+================================================================================
+
+Node Labels Applied:
+--------------------
+When GPU_NODE=true, the following labels are set:
+  - gpu=true
+  - amd.com/gpu=true
+
+These labels enable GPU-aware pod scheduling.
+
+AMD GPU Device Plugin:
+----------------------
+The AMD GPU device plugin is deployed to:
+  - Advertise GPU resources to Kubernetes
+  - Enable GPU resource requests/limits in pods
+  - Handle GPU allocation to containers
+
+GPU Resource Scheduling:
+------------------------
+Pods can request GPU resources using:
+  resources:
+    limits:
+      amd.com/gpu: 1
+
+Example GPU Pod Manifest:
+-------------------------
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gpu-workload
+spec:
+  containers:
+  - name: rocm-container
+    image: rocm/pytorch:latest
+    resources:
+      limits:
+        amd.com/gpu: 1
+  nodeSelector:
+    gpu: "true"
+
+Multiple GPU Request Example:
+-----------------------------
+apiVersion: v1
+kind: Pod
+metadata:
+  name: multi-gpu-workload
+spec:
+  containers:
+  - name: training-job
+    image: rocm/tensorflow:latest
+    resources:
+      limits:
+        amd.com/gpu: 4
+  nodeSelector:
+    gpu: "true"
+
+================================================================================
+7. VERIFICATION STEPS
+================================================================================
+
+Step 1: PCI Device Detection
+-----------------------------
+Command: lspci | grep -i 'vga\|display\|3d'
+
+Expected output should show AMD GPU devices.
+
+Step 2: Kernel Module Verification
+-----------------------------------
+Command: lsmod | grep amdgpu
+
+Expected output should show amdgpu module loaded with dependencies.
+
+Step 3: Device Node Verification
+---------------------------------
+Command: ls -l /dev/kfd /dev/dri/renderD*
+
+Expected output:
+  crw-rw-rw- 1 root root ... /dev/kfd
+  crw-rw-rw- 1 root render ... /dev/dri/renderD128
+  (additional renderD devices if multiple GPUs)
+
+Step 4: ROCm Software Validation
+---------------------------------
+Command: rocm-smi
+
+Expected output: GPU listing with temperature, utilization, etc.
+
+Step 5: ROCm Version Check
+---------------------------
+Command: cat /opt/rocm/.info/version
+
+Expected output: Version string (e.g., 6.3.3.60303-113)
+
+Step 6: GPU Device Detection with JSON Output
+----------------------------------------------
+Command: rocm-smi -i --json | jq -r '.[] | .["Device Name"]' | sort | uniq -c
+
+This shows count and model of each GPU type detected.
+
+Automated Verification:
+-----------------------
+ClusterBloom automatically runs:
+  rocm-smi -i --json | jq -r '.[] | .["Device Name"]' | sort | uniq -c
+
+And validates that output is not empty. Installation fails if no GPUs detected.
+
+Step 7: Kubernetes Node Label Verification
+-------------------------------------------
+Command: kubectl get nodes --show-labels | grep gpu
+
+Expected: Nodes with GPU_NODE=true should have gpu=true label
+
+Step 8: GPU Resource Verification
+----------------------------------
+Command: kubectl describe node <node-name> | grep -A 5 Capacity
+
+Expected output should include:
+  amd.com/gpu: <number_of_gpus>
+
+================================================================================
+8. TROUBLESHOOTING
+================================================================================
+
+Issue: ROCm Installation Fails
+-------------------------------
+Symptoms: amdgpu-install command fails or times out
+
+Solutions:
+1. Check ROCM_BASE_URL is accessible:
+   curl -I ${ROCM_BASE_URL}
+
+2. Verify Ubuntu codename matches repository structure:
+   lsb_release -cs
+
+3. Check kernel headers are installed:
+   dpkg -l | grep linux-headers-$(uname -r)
+
+4. Ensure kernel version is supported by ROCm version
+
+5. Check available disk space:
+   df -h /tmp /opt
+
+Issue: amdgpu Module Won't Load
+--------------------------------
+Symptoms: modprobe amdgpu fails or lsmod shows no amdgpu
+
+Solutions:
+1. Check dmesg for kernel errors:
+   dmesg | grep amdgpu
+
+2. Verify GPU is visible on PCI bus:
+   lspci -k | grep -A 3 VGA
+
+3. Check for conflicting drivers:
+   lsmod | grep -E 'nouveau|radeon'
+
+4. Rebuild DKMS modules:
+   sudo dkms autoinstall
+
+5. Check if module is blacklisted:
+   grep amdgpu /etc/modprobe.d/*.conf
+
+Issue: rocm-smi Shows No Devices
+---------------------------------
+Symptoms: rocm-smi runs but shows no GPU devices
+
+Solutions:
+1. Verify /dev/kfd exists:
+   ls -l /dev/kfd
+
+2. Check device permissions:
+   ls -l /dev/dri/renderD*
+
+3. Reload udev rules:
+   sudo udevadm control --reload-rules
+   sudo udevadm trigger
+
+4. Restart after module load:
+   sudo reboot
+
+5. Check GPU is not in use by another process:
+   lsof /dev/kfd
+
+Issue: Pods Can't Access GPU
+-----------------------------
+Symptoms: Pod scheduled but can't use GPU resources
+
+Solutions:
+1. Verify AMD device plugin is running:
+   kubectl get pods -n kube-system | grep amd-gpu
+
+2. Check node has GPU resources advertised:
+   kubectl describe node <node-name> | grep amd.com/gpu
+
+3. Verify pod has correct resource request:
+   kubectl get pod <pod-name> -o yaml | grep -A 3 resources
+
+4. Check pod node selector matches GPU node:
+   kubectl get pod <pod-name> -o yaml | grep -A 2 nodeSelector
+
+5. Verify container has device access:
+   kubectl exec <pod-name> -- ls -l /dev/kfd /dev/dri/
+
+Issue: Different ROCm Version Needed
+-------------------------------------
+Symptoms: Need specific ROCm version for application compatibility
+
+Solutions:
+1. Find desired version at: https://repo.radeon.com/amdgpu-install/
+
+2. Update ROCM_BASE_URL configuration:
+   ROCM_BASE_URL="https://repo.radeon.com/amdgpu-install/<version>/ubuntu/"
+
+3. Update ROCM_DEB_PACKAGE if package name differs:
+   ROCM_DEB_PACKAGE="amdgpu-install_<version>_all.deb"
+
+4. Re-run cluster-bloom with updated configuration
+
+================================================================================
+9. EXAMPLE CONFIGURATIONS
+================================================================================
+
+Example 1: Single GPU Node Cluster (First Node)
+-----------------------------------------------
+Configuration file (bloom.yaml):
+
+FIRST_NODE: true
+GPU_NODE: true
+NODE_IP: "192.168.1.10"
+CLUSTER_TOKEN: "my-secure-token-12345"
+CLUSTER_DISKS: "/dev/sdb"
+
+# ROCm defaults will be used
+# ROCM_BASE_URL: "https://repo.radeon.com/amdgpu-install/6.3.3/ubuntu/"
+# ROCM_DEB_PACKAGE: "amdgpu-install_6.3.60303-1_all.deb"
+
+Example 2: GPU Worker Node Joining Existing Cluster
+---------------------------------------------------
+Configuration file (bloom.yaml):
+
+FIRST_NODE: false
+CONTROL_PLANE: false
+GPU_NODE: true
+NODE_IP: "192.168.1.20"
+SERVER_IP: "192.168.1.10"
+CLUSTER_TOKEN: "my-secure-token-12345"
+CLUSTER_DISKS: "/dev/sdb,/dev/sdc"
+
+Example 3: Custom ROCm Version
+-------------------------------
+Configuration file (bloom.yaml):
+
+FIRST_NODE: true
+GPU_NODE: true
+NODE_IP: "192.168.1.10"
+CLUSTER_TOKEN: "my-secure-token-12345"
+ROCM_BASE_URL: "https://repo.radeon.com/amdgpu-install/6.2.0/ubuntu/"
+ROCM_DEB_PACKAGE: "amdgpu-install_6.2.60200-1_all.deb"
+
+Example 4: Mixed Cluster (GPU and Non-GPU Nodes)
+------------------------------------------------
+First node (GPU-enabled):
+  FIRST_NODE: true
+  GPU_NODE: true
+  NODE_IP: "192.168.1.10"
+  CLUSTER_TOKEN: "my-secure-token-12345"
+
+Worker node (GPU-enabled):
+  FIRST_NODE: false
+  CONTROL_PLANE: false
+  GPU_NODE: true
+  NODE_IP: "192.168.1.20"
+  SERVER_IP: "192.168.1.10"
+  CLUSTER_TOKEN: "my-secure-token-12345"
+
+Worker node (CPU-only):
+  FIRST_NODE: false
+  CONTROL_PLANE: false
+  GPU_NODE: false
+  NODE_IP: "192.168.1.30"
+  SERVER_IP: "192.168.1.10"
+  CLUSTER_TOKEN: "my-secure-token-12345"
+
+Example 5: Environment Variable Configuration
+---------------------------------------------
+Instead of bloom.yaml, you can export environment variables:
+
+export FIRST_NODE=true
+export GPU_NODE=true
+export NODE_IP="192.168.1.10"
+export CLUSTER_TOKEN="my-secure-token-12345"
+export CLUSTER_DISKS="/dev/sdb"
+export ROCM_BASE_URL="https://repo.radeon.com/amdgpu-install/6.3.3/ubuntu/"
+
+Then run: ./bloom deploy
+
+================================================================================
+INSTALLATION ARCHITECTURE FLOW
+================================================================================
+
+[Check GPU Node Flag]
+          |
+    [GPU_NODE=true?]
+          |
+    [Yes] |------[No]----> [Skip GPU Setup]
+          |
+[Detect Ubuntu Version]
+          |
+[Install Kernel Headers]
+          |
+[Download amdgpu-install]
+          |
+[Install ROCm + DKMS]
+          |
+[Load amdgpu Module]
+          |
+[Configure udev Rules]
+          |
+[Verify with rocm-smi]
+          |
+[/dev/kfd & /dev/dri/renderD* Devices]
+          |
+[Container GPU Access]
+          |
+[AMD Device Plugin]
+          |
+[GPU Resource Advertisement]
+          |
+[Node Labels (gpu=true, amd.com/gpu=true)]
+          |
+[GPU Pod Scheduling]
+
+================================================================================
+ADDITIONAL RESOURCES
+================================================================================
+
+AMD ROCm Documentation:
+  https://rocm.docs.amd.com/
+
+ROCm Repository:
+  https://repo.radeon.com/amdgpu-install/
+
+Supported GPUs:
+  https://rocm.docs.amd.com/projects/install-on-linux/en/latest/reference/system-requirements.html
+
+Kubernetes Device Plugin:
+  https://github.com/RadeonOpenCompute/k8s-device-plugin
+
+ClusterBloom Documentation:
+  See docs/rocm-support.md for detailed technical architecture
+  See docs/configuration-reference.md for all configuration options
+
+================================================================================
+QUICK START COMMANDS
+================================================================================
+
+1. Configure for GPU node:
+   echo "GPU_NODE: true" >> bloom.yaml
+
+2. Run ClusterBloom deployment:
+   ./bloom deploy
+
+3. Verify GPUs after deployment:
+   rocm-smi
+   kubectl get nodes --show-labels | grep gpu
+
+4. Deploy test GPU workload:
+   kubectl apply -f - <<EOF
+   apiVersion: v1
+   kind: Pod
+   metadata:
+     name: rocm-test
+   spec:
+     containers:
+     - name: rocm
+       image: rocm/pytorch:latest
+       command: ["sleep", "3600"]
+       resources:
+         limits:
+           amd.com/gpu: 1
+     nodeSelector:
+       gpu: "true"
+   EOF
+
+5. Verify GPU access in pod:
+   kubectl exec rocm-test -- rocm-smi
+
+================================================================================
+END OF DOCUMENT
+================================================================================
