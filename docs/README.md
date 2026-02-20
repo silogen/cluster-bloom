@@ -27,7 +27,6 @@ This documentation provides complete guidance for deploying, configuring, and ma
 
 ### Operations and Maintenance
 - [**Installation Guide**](installation-guide.md) - Complete step-by-step installation procedures
-- [**Cloud Compatibility**](cloud-compatibility.md) - Multi-cloud deployment strategies and platform-specific considerations
 - [**Configuration Reference**](configuration-reference.md) - Comprehensive configuration options and parameters
 - [**OIDC Authentication**](oidc-authentication.md) - Single sign-on integration and identity management
 
