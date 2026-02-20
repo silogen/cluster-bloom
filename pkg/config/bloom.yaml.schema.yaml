@@ -169,6 +169,13 @@ schema:
       desc: ClusterForge version URL or 'none'
       section: "⚙️ Advanced Configuration"
 
+    DNSMASQ:
+      type: bool
+      default: true
+      desc: Install dnsmasq to allow use of local OIDC server
+      applicable: when(FIRST_NODE == true)
+      section: "⚙️ Advanced Configuration"
+
     CF_VALUES:
       type: str
       default: ""
