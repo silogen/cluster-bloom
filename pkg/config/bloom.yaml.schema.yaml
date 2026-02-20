@@ -159,7 +159,7 @@ schema:
 
     CLUSTERFORGE_BRANCH:
       type: str
-      default: creating_small_configuration
+      default: ""
       desc: ClusterForge git branch for ArgoCD-based deployment
       section: "⚙️ Advanced Configuration"
 

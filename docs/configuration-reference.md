@@ -169,7 +169,7 @@ Configuration sources in priority order (highest to lowest):
 
 #### CLUSTERFORGE_BRANCH
 - **Type**: String (branch name)
-- **Default**: `creating_small_configuration`
+- **Default**: None
 - **Description**: Git branch of the ClusterForge repository to use
 - **Example**: `CLUSTERFORGE_BRANCH: "main"`
 
