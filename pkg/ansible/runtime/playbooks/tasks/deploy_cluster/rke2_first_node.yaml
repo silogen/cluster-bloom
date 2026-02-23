@@ -11,15 +11,6 @@
 # Conditional: FIRST_NODE
 # Tags: rke2, deploy_cluster
 
-- name: Create RKE2 registries.yaml
-  copy:
-    content: |
-      docker.io:
-      ghcr.io:
-      quay.io:
-    dest: /etc/rancher/rke2/registries.yaml
-    mode: "0644"
-
 - name: Install RKE2 server
   shell: curl -sfL {{ rke2_installation_url }} | sh -
   args:
@@ -48,6 +39,13 @@
   failed_when: false
   changed_when: rke2_start.rc == 0
   when: not ansible_check_mode
+
+- name: Fail if RKE2 server failed to start
+  fail:
+    msg: >-
+      RKE2 server failed to start. Check with: journalctl -xeu rke2-server.service
+      stderr: {{ rke2_start.stderr | default('') }}
+  when: not ansible_check_mode and rke2_start is defined and rke2_start.rc != 0
 
 - name: Debug RKE2 service start (check mode)
   debug:
