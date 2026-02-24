@@ -1798,6 +1798,7 @@
               DOMAIN: "{{ DOMAIN }}"
               cluster_size: "{{ CLUSTER_SIZE }}"
               rke2_version: "{{ RKE2_VERSION }}"
+              airm_container_registry: "{{ AIRM_CONTAINER_REGISTRY | default('') }}"
             EOF
 
       tags: [config, deploy_k8s_apps]
