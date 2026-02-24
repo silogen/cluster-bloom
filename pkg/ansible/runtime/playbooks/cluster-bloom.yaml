@@ -1861,7 +1861,6 @@
             mode: "0644"
           become: no
 
-
         - name: Display join information
           debug:
             msg: |
