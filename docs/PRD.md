@@ -72,6 +72,21 @@ Rich terminal interface with real-time progress tracking, live log streaming, in
 ### Configuration Management
 Flexible configuration system supporting YAML files, environment variables, and CLI flags with comprehensive validation and an interactive wizard for guided setup.
 
+#### AIRM Container Registry Configuration
+Streamlined container registry override for AIRM components with single-parameter configuration:
+
+- **Simplified Configuration**: Single `AIRM_CONTAINER_REGISTRY` parameter replaces all three AIRM image registries
+- **Target Images**: Automatically configures airm-ui, airm-api, and airm-dispatcher image sources
+- **Use Cases**: Air-gapped deployments, corporate registry mirrors, custom builds, compliance requirements
+- **Default Behavior**: Uses standard `amdenterpriseai/` (implied docker.io/ prefix) registry when not specified
+
+**Configuration Example:**
+```yaml
+# In bloom.yaml
+AIRM_CONTAINER_REGISTRY: "ghcr.io/silogen"
+# Results in: ghcr.io/silogen/airm-ui, ghcr.io/silogen/airm-api, ghcr.io/silogen/airm-dispatcher
+```
+
 **[📄 Configuration Reference](./configuration-reference.md)**
 
 ### Node Validation and Testing
@@ -210,7 +225,7 @@ See [VALIDATION.md](VALIDATION.md) for complete validation documentation.
 
 ### External Integrations
 - **1Password Connect**: Secure secrets management
-- **ClusterForge**: Automated application deployment platform
+- **ClusterForge**: Automated application deployment platform with configurable AIRM container registries for enterprise environments
 - **OIDC Providers**: Authentication provider integration
 
 ### Kubernetes Ecosystem
