@@ -1839,7 +1839,7 @@
       tags: [clusterforge, deploy_clusterforge]
 
     - name: Generate Join Command (First Node)
-      when: FIRST_NODE
+      when: FIRST_NODE and CLUSTER_SIZE == "large"
       block:
         - name: Get join token
           slurp:
@@ -1849,7 +1849,14 @@
         - name: Create additional node command file
           copy:
             content: |
-              echo -e 'FIRST_NODE: false\nJOIN_TOKEN: {{ JOIN_TOKEN_content.content | b64decode | trim }}\nSERVER_IP: {{ node_ip }}' > bloom.yaml && sudo ./bloom --config bloom.yaml
+              cat > bloom.yaml << 'EOF'
+              FIRST_NODE: false
+              JOIN_TOKEN: {{ JOIN_TOKEN_content.content | b64decode | trim }}
+              SERVER_IP: {{ node_ip }
+              ### uncomment one or both of:
+              #CLUSTER_DISKS: /dev/<device_a>[/dev/<device_b>...]
+              #CLUSTER_PREMOUNTED_DISKS: <mount_point_a>[,<mount_point_b>...]
+              EOF
             dest: "{{ BLOOM_DIR }}/additional_node_command.txt"
             mode: "0644"
           become: no
