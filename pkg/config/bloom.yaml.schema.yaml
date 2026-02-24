@@ -221,6 +221,16 @@ schema:
       desc: Additional RKE2 configuration in YAML format
       section: "⚙️ Advanced Configuration"
 
+    AIRM_CONTAINER_REGISTRY:
+      type: str
+      default: ""
+      desc: Container registry for AIRM images (airm-ui, airm-api, airm-dispatcher)
+      section: "⚙️ Advanced Configuration"
+      examples:
+        - "ghcr.io/silogen"
+        - "quay.io/mycompany"
+        - "registry.company.com:5000"
+
     # 💻 Command Line Options
     DISABLED_STEPS:
       type: str
