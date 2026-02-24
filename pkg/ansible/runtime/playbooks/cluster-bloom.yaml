@@ -1854,7 +1854,7 @@
               JOIN_TOKEN: {{ JOIN_TOKEN_content.content | b64decode | trim }}
               SERVER_IP: {{ node_ip }
               ### uncomment one or both of:
-              #CLUSTER_DISKS: /dev/<device>
+              #CLUSTER_DISKS: /dev/<device_a>[/dev/<device_b>...]
               #CLUSTER_PREMOUNTED_DISKS: <mount_point_a>[,<mount_point_b>...]
               EOF
             dest: "{{ BLOOM_DIR }}/additional_node_command.txt"
