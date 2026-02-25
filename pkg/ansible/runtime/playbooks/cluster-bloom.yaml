@@ -1766,8 +1766,9 @@
           shell: |
             /usr/local/bin/helm template cluster-forge /tmp/cluster-forge/root \
               -f /tmp/cluster-forge/root/values.yaml \
-              -f /tmp/cluster-forge/root/values_s.yaml \
-              --set global.domain={{ DOMAIN }} | \
+              -f /tmp/cluster-forge/root/values_{{ CLUSTER_SIZE }}.yaml \
+              --set global.domain={{ DOMAIN }} \
+              --set global.clusterSize=values_{{ CLUSTER_SIZE }}.yaml | \
             /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
               apply --server-side --force-conflicts -f -
 
