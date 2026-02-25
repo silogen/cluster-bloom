@@ -1768,7 +1768,9 @@
               -f /tmp/cluster-forge/root/values.yaml \
               -f /tmp/cluster-forge/root/values_{{ CLUSTER_SIZE }}.yaml \
               --set global.domain={{ DOMAIN }} \
-              --set global.clusterSize=values_{{ CLUSTER_SIZE }}.yaml | \
+              --set global.clusterSize=values_{{ CLUSTER_SIZE }}.yaml \
+              --set clusterForge.repoUrl={{ CLUSTERFORGE_REPO }} \
+              --set clusterForge.targetRevision={{ CLUSTERFORGE_BRANCH }} | \
             /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
               apply --server-side --force-conflicts -f -
 
