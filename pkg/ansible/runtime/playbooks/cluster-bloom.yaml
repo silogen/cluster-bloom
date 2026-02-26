@@ -28,9 +28,8 @@
     DNSMASQ: true
     INSTALL_ARGOCD: true
     ARGOCD_VERSION: "v2.14.11"
-    CLUSTERFORGE_REPO: ""
-    CLUSTERFORGE_BRANCH: ""
-    CLUSTERFORGE_RELEASE: "https://github.com/silogen/cluster-forge/releases/download/v1.8.0/release-enterprise-ai-v1.8.0.tar.gz"
+    CLUSTERFORGE_REPO: "https://github.com/silogen/cluster-forge.git"
+    CLUSTERFORGE_RELEASE: "latest"
     rocm_base_url: "https://repo.radeon.com/amdgpu-install/7.1.1/ubuntu/"
     rocm_deb_package: "amdgpu-install_7.1.1.70101-1_all.deb"
     rke2_installation_url: "https://get.rke2.io"
@@ -1754,13 +1753,45 @@
             EOF
       tags: [argocd, deploy_k8s_apps]
 
+    - name: Parse ClusterForge Version
+      when: FIRST_NODE and ((CLUSTERFORGE_RELEASE != "none") or (CLUSTER_SIZE == "small" and INSTALL_ARGOCD))
+      block:
+        - name: Determine if CLUSTERFORGE_RELEASE is a URL
+          set_fact:
+            cf_is_url: "{{ CLUSTERFORGE_RELEASE.startswith('http') }}"
+
+        - name: Parse version from URL
+          set_fact:
+            clusterforge_version: "{{ CLUSTERFORGE_RELEASE | regex_search('v[0-9]+.[0-9]+.[0-9]+(-[a-zA-Z0-9.]+)?') }}"
+          when: cf_is_url | bool
+
+        - name: Use version string directly
+          set_fact:
+            clusterforge_version: "{{ CLUSTERFORGE_RELEASE }}"
+          when: not (cf_is_url | bool) and CLUSTERFORGE_RELEASE not in ["latest", "none"]
+
+        - name: Use default version for latest/none
+          set_fact:
+            clusterforge_version: "main"
+          when: CLUSTERFORGE_RELEASE in ["latest", "none"]
+
+        - name: Fallback to main if parsing failed
+          set_fact:
+            clusterforge_version: "main"
+          when: clusterforge_version is not defined or clusterforge_version == "" or clusterforge_version == None
+
+        - name: Display parsed ClusterForge version
+          debug:
+            msg: "Using ClusterForge version: {{ clusterforge_version }}"
+      tags: [clusterforge, argocd, deploy_clusterforge, deploy_k8s_apps]
+
     - name: Deploy ClusterForge via ArgoCD (Small Clusters)
       when: FIRST_NODE and CLUSTER_SIZE == "small" and INSTALL_ARGOCD
       block:
         - name: Clone ClusterForge chart
           shell: |
             rm -rf /tmp/cluster-forge
-            git clone --branch {{ CLUSTERFORGE_BRANCH }} --depth 1 {{ CLUSTERFORGE_REPO }} /tmp/cluster-forge
+            git clone --branch {{ clusterforge_version }} --depth 1 {{ CLUSTERFORGE_REPO }} /tmp/cluster-forge
 
         - name: Template and apply ClusterForge
           shell: |
@@ -1811,11 +1842,21 @@
             state: directory
             mode: "0755"
 
+        - name: Check if CLUSTERFORGE_RELEASE is a URL
+          set_fact:
+            is_release_url: "{{ CLUSTERFORGE_RELEASE.startswith('http') }}"
+
+        - name: Validate CLUSTERFORGE_REPO is set for version mode
+          fail:
+            msg: "CLUSTERFORGE_REPO must be set when CLUSTERFORGE_RELEASE is a version string (not a URL)"
+          when: not (is_release_url | bool) and (CLUSTERFORGE_REPO == "" or CLUSTERFORGE_REPO is not defined)
+
         - name: Download ClusterForge release
           get_url:
             url: "{{ CLUSTERFORGE_RELEASE }}"
             dest: "{{ BLOOM_DIR }}/clusterforge/clusterforge.tar.gz"
             mode: "0644"
+          when: is_release_url | bool
 
         - name: Extract ClusterForge release
           unarchive:
@@ -1823,11 +1864,18 @@
             dest: "{{ BLOOM_DIR }}/clusterforge"
             remote_src: yes
             extra_opts: [--no-same-owner]
+          when: is_release_url | bool
+
+        - name: Clone ClusterForge repository (version/branch mode)
+          shell: |
+            rm -rf {{ BLOOM_DIR }}/clusterforge/cluster-forge
+            git clone --branch {{ clusterforge_version }} --depth 1 {{ CLUSTERFORGE_REPO }} {{ BLOOM_DIR }}/clusterforge/cluster-forge
+          when: not (is_release_url | bool)
 
         - name: Run ClusterForge bootstrap script
           shell: |
             cd {{ BLOOM_DIR }}/clusterforge/cluster-forge/scripts
-            bash ./bootstrap.sh {{ DOMAIN }} {% if CF_VALUES != "" %}{{ CF_VALUES }}{% endif %}{% if CLUSTERFORGE_BRANCH != "" %} --target-revision {{ CLUSTERFORGE_BRANCH }}{% endif %}
+            bash ./bootstrap.sh {{ DOMAIN }} {% if CF_VALUES != "" %}{{ CF_VALUES }}{% endif %} --target-revision {{ clusterforge_version }}
           register: cf_bootstrap
           environment:
             KUBECONFIG: /etc/rancher/rke2/rke2.yaml
