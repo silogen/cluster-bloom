@@ -30,6 +30,7 @@
     ARGOCD_VERSION: "v2.14.11"
     CLUSTERFORGE_REPO: "https://github.com/silogen/cluster-forge.git"
     CLUSTERFORGE_RELEASE: "latest"
+    AIRM_IMAGE_REPOSITORY: ""
     rocm_base_url: "https://repo.radeon.com/amdgpu-install/7.1.1/ubuntu/"
     rocm_deb_package: "amdgpu-install_7.1.1.70101-1_all.deb"
     rke2_installation_url: "https://get.rke2.io"
@@ -1925,6 +1926,7 @@
           register: cf_bootstrap
           environment:
             KUBECONFIG: /etc/rancher/rke2/rke2.yaml
+            AIRM_IMAGE_REPOSITORY: "{{ AIRM_IMAGE_REPOSITORY }}"
 
         - name: Display ClusterForge deployment output
           debug:
