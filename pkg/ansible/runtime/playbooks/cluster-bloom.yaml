@@ -562,12 +562,7 @@
         - name: Install and configure dnsmasq
           when: DNSMASQ and FIRST_NODE and DOMAIN != ""
           block:
-            - name: Disable systemd-resolve 
-              shell: systemctl disable --now systemd-resolved
-              register: systemd_stopped
-              failed_when: false
-              changed_when: systemd_stopped.rc == 0
-            - name: Install dnsmasq
+            - name: Install dnsmasq (before disabling systemd-resolved)
               apt:
                 name:
                   - dnsmasq
@@ -576,6 +571,12 @@
                 DEBIAN_FRONTEND: noninteractive
                 NEEDRESTART_MODE: a
                 NEEDRESTART_SUSPEND: "1"
+            
+            - name: Disable systemd-resolve 
+              shell: systemctl disable --now systemd-resolved
+              register: systemd_stopped
+              failed_when: false
+              changed_when: systemd_stopped.rc == 0
             - name: Create dnsmasq directory for keycloak
               file:
                 path: /etc/dnsmasq.d/
