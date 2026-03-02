@@ -112,6 +112,9 @@ Pre-flight validation system checks all configuration, resources, and system req
 
 **[📄 Configuration Reference](./configuration-reference.md)**
 
+### AIRM Image Repository Configuration
+Flexible AIRM image repository configuration through the `AIRM_IMAGE_REPOSITORY` parameter, enabling deployment from custom container registries for private registries, custom builds, air-gapped environments, and development/testing scenarios.
+
 ### Post-Deployment Credential Display
 Automatic display of access credentials for deployed ClusterForge components including AIRM DevUser and Keycloak admin credentials with ready-to-use kubectl commands for password retrieval.
 
