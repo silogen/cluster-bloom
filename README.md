@@ -91,7 +91,7 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | CLUSTER_DISKS | Comma-separated list of disk devices. Example "/dev/sdb,/dev/sdc". Also skips NVME drive checks. | "" |
 | CLUSTER_SIZE | Size category for cluster deployment planning. Options: small, medium, large | medium |
 | CLUSTER_PREMOUNTED_DISKS | Comma-separated list of absolute disk paths to use for Longhorn | "" |
-| CLUSTERFORGE_RELEASE | The version of Cluster-Forge to install. Pass the URL for a specific release, or 'none' to not install ClusterForge. | "https://github.com/silogen/cluster-forge/releases/download/v1.8.0/release-enterprise-ai-v1.8.0.tar.gz" |
+| CLUSTERFORGE_RELEASE | ClusterForge version to deploy. Accepts version tags ('v1.8.0'), full release URLs, 'latest', or 'none' | "latest" |
 | CONTROL_PLANE | Set to true if this node should be a control plane node | false, only applies when FIRST_NODE is false |
 | DISABLED_STEPS | Comma-separated list of steps to skip. Example "SetupLonghornStep,SetupMetallbStep" | "" |
 | DOMAIN | The domain name for the cluster (e.g., "cluster.example.com") (required). | "" |
@@ -107,7 +107,6 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | TLS_KEY | Path to TLS private key file for ingress (required if CERT_OPTION is 'existing') | "" |
 | USE_CERT_MANAGER | Use cert-manager with Let's Encrypt for automatic TLS certificates | false |
 | ARGOCD_VERSION | ArgoCD version to install | v2.14.11 |
-| CLUSTERFORGE_BRANCH | ClusterForge git branch for ArgoCD-based deployment | "" |
 | CLUSTERFORGE_REPO | ClusterForge git repository URL for ArgoCD-based deployment | https://github.com/silogen/cluster-forge.git |
 | INSTALL_ARGOCD | Install ArgoCD core for GitOps (small clusters only) | true |
 | PRELOAD_IMAGES | Comma-separated list of container images to preload | docker.io/rocm/pytorch:rocm6.4_ubuntu24.04_py3.12_pytorch_release_2.6.0,docker.io/rocm/vllm:rocm6.4.1_vllm_0.9.0.1_20250605 |
@@ -165,7 +164,7 @@ FIRST_NODE: true
 GPU_NODE: true                     # Set to false if no GPUs
 CLUSTER_DISKS: "/dev/nvme1n1"     # Disk device path for storage
 CERT_OPTION: "generate"           # Options: "generate" or "existing"
-CLUSTERFORGE_RELEASE: "https://github.com/silogen/cluster-forge/releases/download/v1.8.0/release-enterprise-ai-v1.8.0.tar.gz"  # ClusterForge release URL or "none" to skip
+CLUSTERFORGE_RELEASE: "v1.8.0"    # Version tag, full URL, "latest", or "none" to skip
 PRELOAD_IMAGES: ""                # Optional: comma-separated container images
 ```
 

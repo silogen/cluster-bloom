@@ -157,16 +157,10 @@ schema:
       desc: ClusterForge git repository URL for ArgoCD-based deployment
       section: "⚙️ Advanced Configuration"
 
-    CLUSTERFORGE_BRANCH:
-      type: str
-      default: ""
-      desc: ClusterForge git branch for ArgoCD-based deployment
-      section: "⚙️ Advanced Configuration"
-
     CLUSTERFORGE_RELEASE:
       type: str
-      default: https://github.com/silogen/cluster-forge/releases/download/v1.8.0/release-enterprise-ai-v1.8.0.tar.gz
-      desc: ClusterForge version URL or 'none'
+      default: latest
+      desc: ClusterForge version (URL, version tag, 'latest', or 'none'). Examples - 'latest', 'v1.8.0', 'https://github.com/silogen/cluster-forge/releases/download/v1.8.0/release.tar.gz', 'none'
       section: "⚙️ Advanced Configuration"
 
     DNSMASQ:

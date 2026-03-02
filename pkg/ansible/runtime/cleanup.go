@@ -58,26 +58,45 @@ func CleanupLonghornMounts() error {
 func UninstallRKE2() error {
 	fmt.Println("🔧 Uninstalling RKE2...")
 
-	// Check if uninstall script exists
-	if _, err := os.Stat("/usr/local/bin/rke2-uninstall.sh"); os.IsNotExist(err) {
-		fmt.Println("   RKE2 uninstall script not found, skipping")
-		return nil
-	}
+	// Run uninstall script if it exists
+	if _, err := os.Stat("/usr/local/bin/rke2-uninstall.sh"); err == nil {
+		fmt.Println("   Executing RKE2 uninstall script (may take a couple minutes)...")
+		cmd := exec.Command("/usr/local/bin/rke2-uninstall.sh")
+		output, err := cmd.CombinedOutput()
 
-	fmt.Println("   Executing RKE2 uninstall script (may take a couple minutes)...")
-	cmd := exec.Command("/usr/local/bin/rke2-uninstall.sh")
-	output, err := cmd.CombinedOutput()
+		// Log output regardless of error (matching Bloom v1 behavior)
+		if len(output) > 0 {
+			fmt.Printf("   RKE2 uninstall script output: %s\n", string(output))
+		}
 
-	// Log output regardless of error (matching Bloom v1 behavior)
-	if len(output) > 0 {
-		fmt.Printf("   RKE2 uninstall script output: %s\n", string(output))
-	}
-
-	if err != nil {
-		fmt.Printf("   RKE2 uninstall script encountered warnings: %v\n", err)
-		// Don't return error - Bloom v1 continues on uninstall script errors
+		if err != nil {
+			fmt.Printf("   RKE2 uninstall script encountered warnings: %v\n", err)
+			// Don't return error - Bloom v1 continues on uninstall script errors
+		} else {
+			fmt.Println("   RKE2 uninstall script executed successfully")
+		}
 	} else {
-		fmt.Println("   RKE2 uninstall script executed successfully")
+		fmt.Println("   RKE2 uninstall script not found")
+	}
+
+	// Always force-remove RKE2 directories to ensure clean state
+	// This handles cases where the uninstall script doesn't exist, fails, or leaves remnants
+	fmt.Println("   Removing RKE2 directories and data...")
+	directories := []string{
+		"/etc/rancher/rke2",
+		"/var/lib/rancher/rke2",
+		"/var/lib/kubelet",
+	}
+
+	for _, dir := range directories {
+		if _, err := os.Stat(dir); err == nil {
+			cmd := exec.Command("rm", "-rf", dir)
+			if err := cmd.Run(); err != nil {
+				fmt.Printf("   Warning: Failed to remove %s: %v\n", dir, err)
+			} else {
+				fmt.Printf("   Removed %s\n", dir)
+			}
+		}
 	}
 
 	return nil
