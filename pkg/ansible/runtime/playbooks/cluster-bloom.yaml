@@ -277,6 +277,51 @@
 
     - name: Install Dependent Packages
       block:
+        - name: Fix DNS resolution
+          block:
+            - name: Check current DNS configuration
+              shell: cat /etc/resolv.conf
+              register: current_resolv
+              failed_when: false
+              changed_when: false
+
+            - name: Show current DNS config
+              debug:
+                msg: "Current resolv.conf: {{ current_resolv.stdout_lines }}"
+
+            - name: Test DNS resolution with current config
+              shell: nslookup archive.ubuntu.com || true
+              register: dns_test
+              failed_when: false
+              changed_when: false
+
+            - name: Show DNS test result
+              debug:
+                msg: "DNS test result: {{ dns_test.stdout_lines }}"
+
+            - name: Make resolv.conf mutable (if immutable)
+              shell: chattr -i /etc/resolv.conf 2>/dev/null || true
+              ignore_errors: yes
+
+            - name: Configure working DNS servers
+              copy:
+                content: |
+                  nameserver 8.8.8.8
+                  nameserver 1.1.1.1
+                  nameserver 8.8.4.4
+                dest: /etc/resolv.conf
+                mode: "0644"
+              when: dns_test.rc != 0 or '127.0.0.53' in current_resolv.stdout or 'no servers could be reached' in dns_test.stdout
+
+            - name: Verify DNS is working
+              shell: |
+                nslookup archive.ubuntu.com || exit 1
+                nslookup security.ubuntu.com || exit 1
+              register: dns_verify
+              retries: 3
+              delay: 2
+              until: dns_verify.rc == 0
+
         - name: Stop services that may lock apt
           shell: |
             systemctl stop unattended-upgrades.service || true
@@ -310,6 +355,13 @@
             fi
           ignore_errors: yes
 
+        - name: Ensure universe repository is enabled
+          shell: |
+            add-apt-repository -y universe || true
+          environment:
+            DEBIAN_FRONTEND: noninteractive
+          ignore_errors: yes
+
         - name: Update apt cache with timeout
           shell: timeout 300 apt-get update --allow-insecure-repositories
           environment:
@@ -330,7 +382,10 @@
               - chrony
               - curl
               - wget
+              - dnsmasq
             state: present
+            update_cache: yes
+            cache_valid_time: 3600
           environment:
             DEBIAN_FRONTEND: noninteractive
             NEEDRESTART_MODE: a
@@ -559,19 +614,9 @@
           set_fact:
             node_ip: "{{ node_ip_result.stdout if node_ip_result.stdout != '' else ansible_default_ipv4.address }}"
 
-        - name: Install and configure dnsmasq
+        - name: Configure dnsmasq
           when: DNSMASQ and FIRST_NODE and DOMAIN != ""
           block:
-            - name: Install dnsmasq (before disabling systemd-resolved)
-              apt:
-                name:
-                  - dnsmasq
-                state: present
-              environment:
-                DEBIAN_FRONTEND: noninteractive
-                NEEDRESTART_MODE: a
-                NEEDRESTART_SUSPEND: "1"
-            
             - name: Disable systemd-resolve 
               shell: systemctl disable --now systemd-resolved
               register: systemd_stopped
