@@ -1,0 +1,70 @@
+---
+# ArgoCD Core Installation (Small Clusters Only)
+#
+# Purpose: Deploy ArgoCD for GitOps-based application management
+# Scope: Small clusters only - ArgoCD provides declarative continuous delivery
+# Usage: import_tasks: argocd.yaml
+
+- name: Setup ArgoCD Core (Small Clusters)
+  when: FIRST_NODE and CLUSTER_SIZE == "small" and INSTALL_ARGOCD
+  block:
+    - name: Create argocd namespace
+      shell: |
+        /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+          create namespace argocd --dry-run=client -o yaml | \
+        /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml apply -f -
+
+    - name: Install ArgoCD core
+      shell: |
+        /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+          apply -n argocd --server-side --force-conflicts \
+          -f https://raw.githubusercontent.com/argoproj/argo-cd/{{ ARGOCD_VERSION }}/manifests/core-install.yaml
+
+    - name: Wait for ArgoCD application controller
+      shell: |
+        /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+          wait --for=condition=Available --timeout=300s \
+          deployment/argocd-applicationset-controller -n argocd
+      retries: 3
+      delay: 10
+
+    - name: Wait for ArgoCD Redis
+      shell: |
+        /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+          wait --for=condition=Available --timeout=300s \
+          deployment/argocd-redis -n argocd
+      retries: 3
+      delay: 10
+
+    - name: Wait for ArgoCD repo server
+      shell: |
+        /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+          wait --for=condition=Available --timeout=300s \
+          deployment/argocd-repo-server -n argocd
+      retries: 3
+      delay: 10
+
+    - name: Initialize ArgoCD server secret key
+      shell: |
+        /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+          patch secret argocd-secret -n argocd --type merge \
+          -p "{\"stringData\":{\"server.secretkey\":\"$(head -c 32 /dev/urandom | base64 | tr -d '\n')\"}}"
+
+    - name: Create ArgoCD default AppProject
+      shell: |
+        cat <<'EOF' | /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml apply -f -
+        apiVersion: argoproj.io/v1alpha1
+        kind: AppProject
+        metadata:
+          name: default
+          namespace: argocd
+        spec:
+          sourceRepos:
+            - '*'
+          destinations:
+            - namespace: '*'
+              server: '*'
+          clusterResourceWhitelist:
+            - group: '*'
+              kind: '*'
+        EOF

@@ -1,0 +1,59 @@
+---
+# ClusterForge ArgoCD Deployment (Small Clusters)
+#
+# Purpose: Deploy ClusterForge using ArgoCD for small cluster configurations
+# Scope: Small clusters with ArgoCD enabled - uses Helm template + kubectl apply
+# Usage: import_tasks: clusterforge_argocd.yaml
+
+- name: Parse ClusterForge Version for ArgoCD Deployment
+  when: FIRST_NODE and CLUSTER_SIZE == "small" and INSTALL_ARGOCD
+  block:
+    - name: Determine if CLUSTERFORGE_RELEASE is a URL
+      set_fact:
+        cf_is_url: "{{ CLUSTERFORGE_RELEASE.startswith('http') }}"
+
+    - name: Parse version from URL
+      set_fact:
+        clusterforge_version: "{{ CLUSTERFORGE_RELEASE | regex_search('v[0-9]+.[0-9]+.[0-9]+(-[a-zA-Z0-9.]+)?') }}"
+      when: cf_is_url | bool
+
+    - name: Use version string directly
+      set_fact:
+        clusterforge_version: "{{ CLUSTERFORGE_RELEASE }}"
+      when: not (cf_is_url | bool) and CLUSTERFORGE_RELEASE not in ["latest", "none"]
+
+    - name: Use default version for latest/none
+      set_fact:
+        clusterforge_version: "main"
+      when: CLUSTERFORGE_RELEASE in ["latest", "none"]
+
+    - name: Fallback to main if parsing failed
+      set_fact:
+        clusterforge_version: "main"
+      when: clusterforge_version is not defined or clusterforge_version == "" or clusterforge_version == None
+
+    - name: Display parsed ClusterForge version
+      debug:
+        msg: "Using ClusterForge version for ArgoCD: {{ clusterforge_version }}"
+
+- name: Deploy ClusterForge via ArgoCD (Small Clusters)
+  when: FIRST_NODE and CLUSTER_SIZE == "small" and INSTALL_ARGOCD
+  block:
+    - name: Clone ClusterForge chart
+      shell: |
+        rm -rf /tmp/cluster-forge
+        git clone --branch {{ clusterforge_version }} --depth 1 {{ CLUSTERFORGE_REPO }} /tmp/cluster-forge
+
+    - name: Template and apply ClusterForge
+      shell: |
+        /usr/local/bin/helm template cluster-forge /tmp/cluster-forge/root \
+          -f /tmp/cluster-forge/root/values.yaml \
+          -f /tmp/cluster-forge/root/values_s.yaml \
+          --set global.domain={{ DOMAIN }} | \
+        /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+          apply --server-side --force-conflicts -f -
+
+    - name: Clean up ClusterForge checkout
+      file:
+        path: /tmp/cluster-forge
+        state: absent

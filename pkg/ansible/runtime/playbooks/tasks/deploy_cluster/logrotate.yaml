@@ -1,0 +1,69 @@
+---
+# Log Rotation Configuration
+# 
+# Configures logrotate for cluster-specific log management including:
+# - iSCSI aggressive log rotation for storage-related logs
+# - RKE2 container runtime log rotation
+# - Automated cron job scheduling for log management
+#
+# Tags: logging, deploy_cluster
+
+- name: Create iSCSI aggressive logrotate config
+  copy:
+    content: |
+      # /etc/logrotate.d/iscsi-aggressive.conf
+      /var/log/kern.log
+      /var/log/syslog
+      {
+          size 200M
+          rotate 10
+          compress
+          delaycompress
+          missingok
+          notifempty
+          create 0640 syslog adm
+          dateext
+          postrotate
+              /usr/lib/rsyslog/rsyslog-rotate
+          endscript
+      }
+    dest: /etc/logrotate.d/iscsi-aggressive.conf
+    mode: "0644"
+
+- name: Create RKE2 logrotate config
+  copy:
+    content: |
+      /var/lib/rancher/rke2/agent/containerd/containerd.log
+      {
+          size 100M
+          rotate 10
+          compress
+          delaycompress
+          missingok
+          notifempty
+          create 0640 root root
+          dateext
+      }
+    dest: /etc/logrotate.d/rke2.conf
+    mode: "0644"
+
+- name: Create logrotate cron job
+  copy:
+    content: |
+      # Managed by Ansible - cluster-bloom
+      SHELL=/bin/sh
+      PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+
+      # iSCSI logrotate - runs every 10 minutes
+      */10 * * * * root /usr/sbin/logrotate -f /etc/logrotate.d/iscsi-aggressive.conf >> /var/log/logrotate-bloom.log 2>&1
+
+      # logrotate for RKE2 logs - runs hourly
+      0 * * * * root /usr/sbin/logrotate -f /etc/logrotate.d/rke2.conf >> /var/log/logrotate-bloom.log 2>&1
+    dest: /etc/cron.d/logrotate-bloom
+    mode: "0644"
+
+- name: Ensure cron is running
+  service:
+    name: cron
+    state: started
+    enabled: yes
