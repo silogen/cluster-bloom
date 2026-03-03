@@ -30,7 +30,7 @@
     INSTALL_ARGOCD: true
     ARGOCD_VERSION: "v2.14.11"
     CLUSTERFORGE_REPO: "https://github.com/silogen/cluster-forge.git"
-    CLUSTERFORGE_RELEASE: "latest"
+    CLUSTERFORGE_RELEASE: "v1.8.0"
     SKIP_RANCHER_PARTITION_CHECK: false
     PRELOAD_IMAGES: ""
     CF_VALUES: ""
