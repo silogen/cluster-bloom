@@ -10,6 +10,16 @@
 schema:
   type: map
   mapping:
+# ============================================================  
+# CLUSTERFORGE_RELEASE set to our most recent verified release
+# ============================================================
+
+    CLUSTERFORGE_RELEASE:
+      type: str
+      default: "v1.8.0"
+      desc: ClusterForge version (URL, version tag, 'latest', 'none', or '' to skip). Examples - 'latest', 'v1.8.0', 'https://github.com/silogen/cluster-forge/releases/download/v1.8.0/release.tar.gz', 'none', ''
+      section: "⚙️ Advanced Configuration"
+
     # 📋 Basic Configuration
     FIRST_NODE:
       type: bool
@@ -155,12 +165,6 @@ schema:
       type: str
       default: https://github.com/silogen/cluster-forge.git
       desc: ClusterForge git repository URL for ArgoCD-based deployment
-      section: "⚙️ Advanced Configuration"
-
-    CLUSTERFORGE_RELEASE:
-      type: str
-      default: latest
-      desc: ClusterForge version (URL, version tag, 'latest', 'none', or '' to skip). Examples - 'latest', 'v1.8.0', 'https://github.com/silogen/cluster-forge/releases/download/v1.8.0/release.tar.gz', 'none', ''
       section: "⚙️ Advanced Configuration"
 
     DNSMASQ:
