@@ -1800,7 +1800,7 @@
       tags: [argocd, deploy_k8s_apps]
 
     - name: Parse ClusterForge Version
-      when: FIRST_NODE and ((CLUSTERFORGE_RELEASE != "none") or (CLUSTER_SIZE == "small" and INSTALL_ARGOCD))
+      when: FIRST_NODE and ((CLUSTERFORGE_RELEASE != "none" and CLUSTERFORGE_RELEASE != "") or (CLUSTER_SIZE == "small" and INSTALL_ARGOCD))
       block:
         - name: Determine if CLUSTERFORGE_RELEASE is a URL
           set_fact:
@@ -1880,7 +1880,7 @@
       tags: [config, deploy_k8s_apps]
 
     - name: Setup ClusterForge
-      when: FIRST_NODE and CLUSTERFORGE_RELEASE != "none"
+      when: FIRST_NODE and CLUSTERFORGE_RELEASE != "none" and CLUSTERFORGE_RELEASE != ""
       block:
         - name: Create ClusterForge directory in .bloom
           file:

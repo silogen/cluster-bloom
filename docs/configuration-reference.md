@@ -177,7 +177,7 @@ Configuration sources in priority order (highest to lowest):
   - **Full release URL**: e.g., `https://github.com/silogen/cluster-forge/releases/download/v1.8.0-rc6/release-enterprise-ai-v1.8.0-rc6.tar.gz` - Downloads tarball and auto-extracts version for ArgoCD target
   - **Special values**: 
     - `latest` - Uses the default branch (main)
-    - `none` - Skips ClusterForge installation entirely
+    - `none` or `""` (empty string) - Skips ClusterForge installation entirely
 - **Version Parsing**: When a full URL is provided, the version is automatically extracted (e.g., `v1.8.0-rc6` from the URL) and used as the `--target-revision` for ArgoCD/Gitea
 - **Examples**: 
   - `CLUSTERFORGE_RELEASE: "latest"`
