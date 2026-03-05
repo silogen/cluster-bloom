@@ -347,7 +347,7 @@ func exportPlaybook(cfg config.Config, playbookName string) error {
 		return fmt.Errorf("read playbook: %w", err)
 	}
 
-	// Parse the playbook to inject configuration variables
+	// Parse the playbook to inject configuration variables and inline tasks
 	var playbook any
 	if err := yaml.Unmarshal(playbookContent, &playbook); err != nil {
 		return fmt.Errorf("parse playbook: %w", err)
@@ -356,6 +356,11 @@ func exportPlaybook(cfg config.Config, playbookName string) error {
 	// Apply configuration to playbook variables
 	if err := injectConfigIntoPlaybook(playbook, cfg); err != nil {
 		return fmt.Errorf("inject config: %w", err)
+	}
+
+	// Inline include_tasks references
+	if err := inlineIncludedTasks(playbook, playbookDir); err != nil {
+		return fmt.Errorf("inline tasks: %w", err)
 	}
 
 	// Output the modified playbook to stdout
@@ -394,6 +399,153 @@ func injectConfigIntoPlaybook(playbook any, cfg config.Config) error {
 		}
 	}
 	return nil
+}
+
+// inlineIncludedTasks finds and inlines include_tasks directives with actual task content
+func inlineIncludedTasks(playbook any, playbookDir string) error {
+	// Handle case where playbook is a list of plays
+	if playsList, ok := playbook.([]any); ok && len(playsList) > 0 {
+		for _, play := range playsList {
+			if playMap, ok := play.(map[string]any); ok {
+				if err := inlineTasksInPlay(playMap, playbookDir); err != nil {
+					return err
+				}
+			}
+		}
+	} else if playbookMap, ok := playbook.(map[string]any); ok {
+		// Handle case where playbook is a single play object
+		if plays, ok := playbookMap["plays"].([]any); ok {
+			for _, play := range plays {
+				if playMap, ok := play.(map[string]any); ok {
+					if err := inlineTasksInPlay(playMap, playbookDir); err != nil {
+						return err
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// inlineTasksInPlay processes a single play and inlines include_tasks directives
+func inlineTasksInPlay(play map[string]any, playbookDir string) error {
+	tasks, ok := play["tasks"]
+	if !ok {
+		return nil
+	}
+
+	tasksList, ok := tasks.([]any)
+	if !ok {
+		return nil
+	}
+
+	var newTasks []any
+	
+	for _, task := range tasksList {
+		taskMap, ok := task.(map[string]any)
+		if !ok {
+			newTasks = append(newTasks, task)
+			continue
+		}
+
+		// Check if this is an include_tasks directive
+		if includeTasksPath, exists := taskMap["include_tasks"]; exists {
+			if pathStr, ok := includeTasksPath.(string); ok {
+				// Read the included task file
+				includedTasks, err := readIncludedTaskFile(filepath.Join(playbookDir, pathStr))
+				if err != nil {
+					return fmt.Errorf("read included task file %s: %w", pathStr, err)
+				}
+
+				// Copy metadata from the include_tasks directive to each included task
+				for _, includedTask := range includedTasks {
+					if includedTaskMap, ok := includedTask.(map[string]any); ok {
+						// Copy tags if they exist on the include_tasks directive
+						if tags, exists := taskMap["tags"]; exists {
+							if existingTags, hasExisting := includedTaskMap["tags"]; hasExisting {
+								// Merge tags if the included task already has tags
+								if existingTagsList, ok := existingTags.([]any); ok {
+									if includeTagsList, ok := tags.([]any); ok {
+										mergedTags := append(existingTagsList, includeTagsList...)
+										includedTaskMap["tags"] = mergedTags
+									}
+								}
+							} else {
+								// Add tags if included task doesn't have any
+								includedTaskMap["tags"] = tags
+							}
+						}
+
+						// Copy when condition if it exists on the include_tasks directive
+						if when, exists := taskMap["when"]; exists {
+							if existingWhen, hasExisting := includedTaskMap["when"]; hasExisting {
+								// Combine when conditions with 'and'
+								includedTaskMap["when"] = []any{existingWhen, when}
+							} else {
+								// Add when condition if included task doesn't have one
+								includedTaskMap["when"] = when
+							}
+						}
+					}
+				}
+
+				// Add all included tasks instead of the include_tasks directive
+				newTasks = append(newTasks, includedTasks...)
+			} else {
+				newTasks = append(newTasks, task)
+			}
+		} else {
+			// Check for block structure and inline tasks within blocks
+			if block, exists := taskMap["block"]; exists {
+				if blockTasks, ok := block.([]any); ok {
+					var newBlockTasks []any
+					for _, blockTask := range blockTasks {
+						if blockTaskMap, ok := blockTask.(map[string]any); ok {
+							if includeTasksPath, exists := blockTaskMap["include_tasks"]; exists {
+								if pathStr, ok := includeTasksPath.(string); ok {
+									includedTasks, err := readIncludedTaskFile(filepath.Join(playbookDir, pathStr))
+									if err != nil {
+										return fmt.Errorf("read included task file %s: %w", pathStr, err)
+									}
+									newBlockTasks = append(newBlockTasks, includedTasks...)
+								} else {
+									newBlockTasks = append(newBlockTasks, blockTask)
+								}
+							} else {
+								newBlockTasks = append(newBlockTasks, blockTask)
+							}
+						} else {
+							newBlockTasks = append(newBlockTasks, blockTask)
+						}
+					}
+					taskMap["block"] = newBlockTasks
+				}
+			}
+			newTasks = append(newTasks, task)
+		}
+	}
+
+	play["tasks"] = newTasks
+	return nil
+}
+
+// readIncludedTaskFile reads and parses an included task file
+func readIncludedTaskFile(taskFilePath string) ([]any, error) {
+	if _, err := os.Stat(taskFilePath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("task file not found: %s", taskFilePath)
+	}
+
+	content, err := os.ReadFile(taskFilePath)
+	if err != nil {
+		return nil, fmt.Errorf("read task file: %w", err)
+	}
+
+	var tasks []any
+	if err := yaml.Unmarshal(content, &tasks); err != nil {
+		return nil, fmt.Errorf("parse task file: %w", err)
+	}
+
+	return tasks, nil
 }
 
 // confirmDestructiveOperation prompts the user to confirm the dangerous --destroy-data operation
