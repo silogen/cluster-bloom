@@ -11,11 +11,15 @@
 # Conditional: FIRST_NODE
 # Tags: rke2, deploy_cluster
 
-- name: Install RKE2 server
-  shell: curl -sfL {{ rke2_installation_url }} | sh -
+- name: "Install RKE2 server{% if RKE2_VERSION is defined and RKE2_VERSION != '' %} ({{ RKE2_VERSION }}){% else %} (latest){% endif %}"
+  shell: |
+    {% if RKE2_VERSION is defined and RKE2_VERSION != "" %}
+    curl -sfL {{ rke2_installation_url }} | INSTALL_RKE2_VERSION="{{ RKE2_VERSION }}" sh -
+    {% else %}
+    curl -sfL {{ rke2_installation_url }} | sh -
+    {% endif %}
   args:
     creates: /usr/local/bin/rke2
-  when: not ansible_check_mode
 
 - name: Debug RKE2 installation (check mode)
   debug:

@@ -11,7 +11,7 @@
     GPU_NODE: true
     CONTROL_PLANE: false
     DOMAIN: ""
-    CLUSTER_SIZE: small
+    CLUSTER_SIZE: medium
     SERVER_IP: ""
     JOIN_TOKEN: ""
     NO_DISKS_FOR_CLUSTER: false
@@ -23,9 +23,8 @@
     TLS_KEY: ""
     OIDC_URL: ""
     RKE2_EXTRA_CONFIG: ""
-    CLUSTERFORGE_RELEASE: "none"
     SKIP_RANCHER_PARTITION_CHECK: false
-    ADDITIONAL_TLS_SAN_URLS: ""
+    ADDITIONAL_TLS_SAN_URLS: []
     PRELOAD_IMAGES: ""
     CF_VALUES: ""
     BLOOM_DIR: "~/.bloom"
@@ -34,7 +33,14 @@
 
     ROCM_BASE_URL: "https://repo.radeon.com/amdgpu-install/30.30/ubuntu/"
     ROCM_DEB_PACKAGE: "amdgpu-install_7.2.70200-1_all.deb"
-    rke2_installation_url: "https://get.rke2.io"
+    rke2_installation_url: "https://get.rke2.io" # TODO: Make this working on uppercase mode
+    DNSMASQ: true
+    INSTALL_ARGOCD: true
+    ARGOCD_VERSION: "v2.14.11"
+    CLUSTERFORGE_REPO: "https://github.com/silogen/cluster-forge.git"
+    CLUSTERFORGE_RELEASE: "latest"
+    #rocm_base_url: "https://repo.radeon.com/amdgpu-install/7.1.1/ubuntu/"
+    #rocm_deb_package: "amdgpu-install_7.1.1.70101-1_all.deb"
 
     supported_ubuntu_versions:
       - "20.04"

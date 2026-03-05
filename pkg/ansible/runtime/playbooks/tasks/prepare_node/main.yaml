@@ -16,6 +16,10 @@
 # Usage:
 #   include_tasks: tasks/prepare_node/main.yaml
 
+- name: Setup DNS
+  tags: dns
+  import_tasks: dns.yaml
+
 - name: Install Dependencies
   tags: packages
   import_tasks: packages.yaml

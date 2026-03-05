@@ -11,6 +11,8 @@
 # Usage:
 #   include_tasks: tasks/prepare_node/logging.yaml
 
+# TODO: Maybe this can be put together with logrotate.yaml
+
 - name: Create rsyslog iSCSI filter
   copy:
     content: |

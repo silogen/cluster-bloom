@@ -11,13 +11,16 @@
 # Usage:
 #   include_tasks: tasks/prepare_node/packages.yaml
 
-- name: Update apt cache
-  apt:
-    update_cache: yes
+- name: Update apt cache with timeout
+  shell: timeout 300 apt-get update --allow-insecure-repositories
   environment:
     DEBIAN_FRONTEND: noninteractive
-  ignore_errors: yes
-  when: not ansible_check_mode
+    APT_KEY_DONT_WARN_ON_DANGEROUS_USAGE: "1"
+  register: apt_update_result
+  until: apt_update_result.rc == 0
+  retries: 3
+  delay: 10
+  ignore_errors: no
 
 - name: Debug apt cache update (check mode)
   debug:

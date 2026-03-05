@@ -15,6 +15,21 @@
     seconds: 5
   when: FIRST_NODE and DOMAIN != ""
 
+- name: Create DOMAIN ConfigMap
+  shell: |
+    cat <<EOF | /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml apply -f -
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: cluster-domain
+      namespace: default
+    data:
+      DOMAIN: "{{ DOMAIN }}"
+      use-cert-manager: "{{ USE_CERT_MANAGER | lower }}"
+    EOF
+  args:
+    executable: /bin/bash
+
 - name: Use generated certificates for ingress
   when: FIRST_NODE and DOMAIN != "" and not USE_CERT_MANAGER and CERT_OPTION == "generate"
   block:

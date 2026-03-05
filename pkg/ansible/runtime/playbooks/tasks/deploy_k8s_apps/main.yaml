@@ -37,6 +37,14 @@
   tags: longhorn
   import_tasks: longhorn.yaml
 
+- name: Setup ArgoCD
+  tags: argocd
+  import_tasks: argocd.yaml
+
 - name: Create Bloom ConfigMap
   tags: bloom_config
   import_tasks: bloom_config.yaml
+
+- name: Setup Clusterforge deployment
+  tags: clusterforge
+  import_tasks: clusterforge.yaml
