@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/silogen/cluster-bloom/pkg/ansible/runtime"
@@ -24,6 +25,7 @@ var (
 	extraVars  []string
 	verbose    bool
 	configFile string
+	export     bool
 )
 
 func init() {
@@ -162,10 +164,15 @@ By default, this command requires confirmation before proceeding. Use --force to
 		Short: "Deploy cluster using configuration file",
 		Long: `Deploy a Kubernetes cluster using the specified configuration file.
 
-Requires a configuration file (typically bloom.yaml).`,
+Requires a configuration file (typically bloom.yaml).
+
+Use --export flag to output the generated playbook to stdout instead of executing it.
+Example: sudo ./bloom cli bloom.yaml --export > myPlaybook.yaml`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			checkRootPrivileges("cli")
+			if !export {
+				checkRootPrivileges("cli")
+			}
 			runAnsible(args[0])
 		},
 	}
@@ -193,6 +200,7 @@ imports (roles, tasks, vars) within that directory tree work as expected.`,
 	cliCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Run in check mode without making changes")
 	cliCmd.Flags().StringVar(&tags, "tags", "", "Run only tasks with specific tags (e.g., cleanup, validate, storage)")
 	cliCmd.Flags().BoolVar(&destroyData, "destroy-data", false, "⚠️  DANGER: Permanently destroys ALL cluster data, storage, and disks. Requires interactive confirmation.")
+	cliCmd.Flags().BoolVar(&export, "export", false, "Export generated playbook to stdout instead of executing it")
 
 	// Add run command flags
 	runCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Run in check mode without making changes")
@@ -240,6 +248,15 @@ func runAnsible(configFile string) {
 			fmt.Fprintf(os.Stderr, "  - %s\n", err)
 		}
 		os.Exit(1)
+	}
+
+	// Handle export mode
+	if export {
+		if err := exportPlaybook(cfg, playbookName); err != nil {
+			fmt.Fprintf(os.Stderr, "Error exporting playbook: %v\n", err)
+			os.Exit(1)
+		}
+		return
 	}
 
 	// Handle destructive data cleanup if requested
@@ -295,6 +312,88 @@ func runPlaybookDirect(playbookPath string) {
 	}
 
 	os.Exit(exitCode)
+}
+
+// exportPlaybook extracts and outputs the generated playbook to stdout
+func exportPlaybook(cfg config.Config, playbookName string) error {
+	// Create temporary directory for playbook extraction
+	tempDir, err := os.MkdirTemp("", "bloom-export-*")
+	if err != nil {
+		return fmt.Errorf("create temp directory: %w", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	playbookDir := tempDir
+	
+	// Extract embedded playbooks to temp directory
+	if err := runtime.ExtractEmbeddedPlaybooksToDir(playbookDir); err != nil {
+		return fmt.Errorf("extract playbooks: %w", err)
+	}
+
+	// Extract manifests
+	if err := runtime.ExtractManifests(playbookDir); err != nil {
+		return fmt.Errorf("extract manifests: %w", err)
+	}
+
+	// Get the target playbook path
+	playbookPath := filepath.Join(playbookDir, playbookName)
+	if _, err := os.Stat(playbookPath); os.IsNotExist(err) {
+		return fmt.Errorf("playbook not found: %s", playbookName)
+	}
+
+	// Read the playbook content
+	playbookContent, err := os.ReadFile(playbookPath)
+	if err != nil {
+		return fmt.Errorf("read playbook: %w", err)
+	}
+
+	// Parse the playbook to inject configuration variables
+	var playbook any
+	if err := yaml.Unmarshal(playbookContent, &playbook); err != nil {
+		return fmt.Errorf("parse playbook: %w", err)
+	}
+
+	// Apply configuration to playbook variables
+	if err := injectConfigIntoPlaybook(playbook, cfg); err != nil {
+		return fmt.Errorf("inject config: %w", err)
+	}
+
+	// Output the modified playbook to stdout
+	output, err := yaml.Marshal(playbook)
+	if err != nil {
+		return fmt.Errorf("marshal playbook: %w", err)
+	}
+
+	fmt.Print(string(output))
+	return nil
+}
+
+// injectConfigIntoPlaybook applies configuration values to playbook variables
+func injectConfigIntoPlaybook(playbook any, cfg config.Config) error {
+	// Handle case where playbook is a list of plays (most common format)
+	if playsList, ok := playbook.([]any); ok && len(playsList) > 0 {
+		if firstPlay, ok := playsList[0].(map[string]any); ok {
+			if vars, ok := firstPlay["vars"].(map[string]any); ok {
+				// Apply configuration values to override default vars
+				for key, value := range cfg {
+					vars[key] = value
+				}
+			}
+		}
+	} else if playbookMap, ok := playbook.(map[string]any); ok {
+		// Handle case where playbook is a single play object
+		if plays, ok := playbookMap["plays"].([]any); ok && len(plays) > 0 {
+			if firstPlay, ok := plays[0].(map[string]any); ok {
+				if vars, ok := firstPlay["vars"].(map[string]any); ok {
+					// Apply configuration values to override default vars
+					for key, value := range cfg {
+						vars[key] = value
+					}
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // confirmDestructiveOperation prompts the user to confirm the dangerous --destroy-data operation

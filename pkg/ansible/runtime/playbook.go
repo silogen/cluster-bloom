@@ -145,6 +145,11 @@ func RunPlaybookDirect(playbookPath string, dryRun bool, tags string, extraVars 
 	return exitCode, nil
 }
 
+// ExtractEmbeddedPlaybooksToDir extracts embedded playbooks to the specified directory
+func ExtractEmbeddedPlaybooksToDir(destDir string) error {
+	return extractEmbeddedPlaybooks(destDir)
+}
+
 func ConfigToAnsibleVars(config map[string]any) []string {
 	var vars []string
 	for key, value := range config {
