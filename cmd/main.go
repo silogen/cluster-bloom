@@ -574,40 +574,62 @@ func inlineManifestsInPlay(play map[string]any, playbookDir string) error {
 		return nil
 	}
 
-	if err := processTasksForManifests(tasks, playbookDir); err != nil {
-		return err
-	}
-	return nil
-}
-
-// processTasksForManifests recursively processes tasks to inline manifest files
-func processTasksForManifests(tasks any, playbookDir string) error {
 	tasksList, ok := tasks.([]any)
 	if !ok {
 		return nil
 	}
 
+	newTasks, err := processTasksForManifestInlining(tasksList, playbookDir)
+	if err != nil {
+		return err
+	}
+
+	play["tasks"] = newTasks
+	return nil
+}
+
+// processTasksForManifestInlining recursively processes tasks to inline manifest files and expand loops
+func processTasksForManifestInlining(tasksList []any, playbookDir string) ([]any, error) {
+	var newTasksList []any
+
 	for _, task := range tasksList {
 		taskMap, ok := task.(map[string]any)
 		if !ok {
+			newTasksList = append(newTasksList, task)
 			continue
 		}
 
-		// Process copy tasks
+		// Process copy tasks with loops (e.g., manifests/local-path/{{ item }})
 		if copyTask, exists := taskMap["copy"]; exists {
 			if copyMap, ok := copyTask.(map[string]any); ok {
 				if srcPath, hasSrc := copyMap["src"].(string); hasSrc {
-					if isManifestPath(srcPath) {
-						// Read the manifest file and inline its content
-						manifestPath := filepath.Join(playbookDir, srcPath)
-						content, err := os.ReadFile(manifestPath)
+					if _, hasLoop := taskMap["loop"]; hasLoop && isManifestPathWithVariable(srcPath) {
+						// Expand loop into individual copy tasks
+						expandedTasks, err := expandLoopCopyTask(taskMap, copyMap, playbookDir)
 						if err != nil {
-							return fmt.Errorf("read manifest file %s: %w", manifestPath, err)
+							return nil, fmt.Errorf("expand loop copy task: %w", err)
 						}
+						newTasksList = append(newTasksList, expandedTasks...)
+						continue
+					} else if isManifestPath(srcPath) {
+						// Handle single file copy task
+						if err := inlineManifestContent(copyMap, srcPath, playbookDir); err != nil {
+							return nil, err
+						}
+					}
+				}
+			}
+		}
 
-						// Replace src with content
-						delete(copyMap, "src")
-						copyMap["content"] = string(content)
+		// Process template tasks (e.g., local-path-config.yaml)
+		if templateTask, exists := taskMap["template"]; exists {
+			if templateMap, ok := templateTask.(map[string]any); ok {
+				if srcPath, hasSrc := templateMap["src"].(string); hasSrc {
+					if isManifestPath(srcPath) {
+						// Convert template to copy with inlined content
+						if err := convertTemplateTaskToCopy(taskMap, templateMap, srcPath, playbookDir); err != nil {
+							return nil, fmt.Errorf("convert template task: %w", err)
+						}
 					}
 				}
 			}
@@ -615,31 +637,157 @@ func processTasksForManifests(tasks any, playbookDir string) error {
 
 		// Process block tasks recursively
 		if block, exists := taskMap["block"]; exists {
-			if err := processTasksForManifests(block, playbookDir); err != nil {
-				return err
+			if blockList, ok := block.([]any); ok {
+				newBlock, err := processTasksForManifestInlining(blockList, playbookDir)
+				if err != nil {
+					return nil, err
+				}
+				taskMap["block"] = newBlock
 			}
 		}
 
 		// Process rescue tasks recursively
 		if rescue, exists := taskMap["rescue"]; exists {
-			if err := processTasksForManifests(rescue, playbookDir); err != nil {
-				return err
+			if rescueList, ok := rescue.([]any); ok {
+				newRescue, err := processTasksForManifestInlining(rescueList, playbookDir)
+				if err != nil {
+					return nil, err
+				}
+				taskMap["rescue"] = newRescue
 			}
 		}
 
 		// Process always tasks recursively
 		if always, exists := taskMap["always"]; exists {
-			if err := processTasksForManifests(always, playbookDir); err != nil {
-				return err
+			if alwaysList, ok := always.([]any); ok {
+				newAlways, err := processTasksForManifestInlining(alwaysList, playbookDir)
+				if err != nil {
+					return nil, err
+				}
+				taskMap["always"] = newAlways
 			}
 		}
+
+		newTasksList = append(newTasksList, task)
 	}
-	return nil
+
+	return newTasksList, nil
 }
 
 // isManifestPath checks if a path references a manifest file
 func isManifestPath(path string) bool {
-	return strings.HasPrefix(path, "manifests/") && strings.HasSuffix(path, ".yaml")
+	return strings.HasPrefix(path, "manifests/") && (strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".sh"))
+}
+
+// isManifestPathWithVariable checks if a path references a manifest with Ansible variables
+func isManifestPathWithVariable(path string) bool {
+	return strings.HasPrefix(path, "manifests/") && strings.Contains(path, "{{")
+}
+
+// inlineManifestContent reads manifest content and inlines it into a copy task
+func inlineManifestContent(copyMap map[string]any, srcPath, playbookDir string) error {
+	manifestPath := filepath.Join(playbookDir, srcPath)
+	content, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return fmt.Errorf("read manifest file %s: %w", manifestPath, err)
+	}
+
+	// Replace src with content
+	delete(copyMap, "src")
+	copyMap["content"] = string(content)
+	return nil
+}
+
+// expandLoopCopyTask expands a copy task with loop into individual copy tasks
+func expandLoopCopyTask(taskMap map[string]any, copyMap map[string]any, playbookDir string) ([]any, error) {
+	srcPath := copyMap["src"].(string)
+	destPath, hasDest := copyMap["dest"].(string)
+	if !hasDest {
+		return nil, fmt.Errorf("copy task missing dest")
+	}
+
+	loop, hasLoop := taskMap["loop"]
+	if !hasLoop {
+		return nil, fmt.Errorf("expected loop in task")
+	}
+
+	loopItems, ok := loop.([]any)
+	if !ok {
+		return nil, fmt.Errorf("loop must be a list")
+	}
+
+	var expandedTasks []any
+
+	// Extract task metadata (name, tags, etc.)
+	taskName := "Copy manifest"
+	if name, hasName := taskMap["name"].(string); hasName {
+		taskName = name
+	}
+
+	for _, item := range loopItems {
+		itemStr, ok := item.(string)
+		if !ok {
+			continue
+		}
+
+		// Replace {{ item }} with actual item
+		actualSrcPath := strings.ReplaceAll(srcPath, "{{ item }}", itemStr)
+		actualDestPath := strings.ReplaceAll(destPath, "{{ item }}", itemStr)
+
+		// Read manifest content
+		manifestPath := filepath.Join(playbookDir, actualSrcPath)
+		content, err := os.ReadFile(manifestPath)
+		if err != nil {
+			return nil, fmt.Errorf("read manifest file %s: %w", manifestPath, err)
+		}
+
+		// Create individual copy task
+		newTask := map[string]any{
+			"name": fmt.Sprintf("%s (%s)", taskName, itemStr),
+			"copy": map[string]any{
+				"content": string(content),
+				"dest":    actualDestPath,
+				"mode":    copyMap["mode"], // Preserve mode if present
+			},
+		}
+
+		// Copy other task properties (tags, when, etc.)
+		for key, value := range taskMap {
+			if key != "copy" && key != "loop" && key != "name" {
+				newTask[key] = value
+			}
+		}
+
+		expandedTasks = append(expandedTasks, newTask)
+	}
+
+	return expandedTasks, nil
+}
+
+// convertTemplateTaskToCopy converts a template task to a copy task with inlined content
+func convertTemplateTaskToCopy(taskMap map[string]any, templateMap map[string]any, srcPath, playbookDir string) error {
+	// For now, we'll treat template files as regular files and inline their content
+	// This is a simplification - full template processing would require variable substitution
+	manifestPath := filepath.Join(playbookDir, srcPath)
+	content, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return fmt.Errorf("read template file %s: %w", manifestPath, err)
+	}
+
+	// Convert template to copy
+	delete(taskMap, "template")
+	taskMap["copy"] = map[string]any{
+		"content": string(content),
+		"dest":    templateMap["dest"],
+		"mode":    templateMap["mode"],
+	}
+
+	// Add a warning comment that this was converted from a template
+	if name, hasName := taskMap["name"].(string); hasName {
+		taskMap["name"] = fmt.Sprintf("%s (converted from template)", name)
+	}
+
+	return nil
 }
 
 // readIncludedTaskFile reads and parses an included task file
