@@ -21,22 +21,6 @@ schema:
       section: "⚙️ Advanced Configuration"
 
     # 📋 Basic Configuration
-    CLUSTER_SIZE:
-      type: enum
-      values: [small, medium, large]
-      default: medium
-      desc: Size category for cluster deployment planning
-      section: "📋 Basic Configuration"
-
-    DOMAIN:
-      type: domain
-      desc: The domain name for the cluster (required for first node)
-      required: when(FIRST_NODE == true)
-      section: "📋 Basic Configuration"
-      examples:
-        - "cluster.example.com"
-        - "k8s.internal.company.com"
-
     FIRST_NODE:
       type: bool
       default: true
@@ -49,12 +33,27 @@ schema:
       desc: Set to true if this node has GPUs
       section: "📋 Basic Configuration"
 
+    DOMAIN:
+      type: domain
+      desc: The domain name for the cluster (required for first node)
+      required: when(FIRST_NODE == true)
+      section: "📋 Basic Configuration"
+      examples:
+        - "cluster.example.com"
+        - "k8s.internal.company.com"
+
+    CLUSTER_SIZE:
+      type: enum
+      values: [small, medium, large]
+      default: medium
+      desc: Size category for cluster deployment planning
+      section: "📋 Basic Configuration"
+
     # 🔗 Additional Node Configuration
-    CONTROL_PLANE:
-      type: bool
-      default: false
-      desc: Control plane node (only when FIRST_NODE=false)
-      applicable: when(FIRST_NODE == false)
+    SERVER_IP:
+      type: ipv4
+      desc: IP address of the RKE2 server
+      required: when(FIRST_NODE == false)
       section: "🔗 Additional Node Configuration"
 
     JOIN_TOKEN:
@@ -63,13 +62,20 @@ schema:
       required: when(FIRST_NODE == false)
       section: "🔗 Additional Node Configuration"
 
-    SERVER_IP:
-      type: ipv4
-      desc: IP address of the RKE2 server
-      required: when(FIRST_NODE == false)
+    CONTROL_PLANE:
+      type: bool
+      default: false
+      desc: Control plane node (only when FIRST_NODE=false)
+      applicable: when(FIRST_NODE == false)
       section: "🔗 Additional Node Configuration"
 
     # 💾 Storage Configuration
+    NO_DISKS_FOR_CLUSTER:
+      type: bool
+      default: false
+      desc: Skip all disk-related operations
+      section: "💾 Storage Configuration"
+
     CLUSTER_DISKS:
       type: devicePath
       default: ""
@@ -80,12 +86,6 @@ schema:
       type: diskList
       default: ""
       desc: Comma-separated list of premounted disk paths
-      section: "💾 Storage Configuration"
-
-    NO_DISKS_FOR_CLUSTER:
-      type: bool
-      default: false
-      desc: Skip all disk-related operations
       section: "💾 Storage Configuration"
 
     SKIP_RANCHER_PARTITION_CHECK:
@@ -105,6 +105,13 @@ schema:
         - type: str
           pattern: "^(?!.*\\*)([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\\.)+[a-zA-Z]{2,}$"
           pattern-title: "Enter a valid domain name (e.g., api.example.com) - wildcards (*.domain.com) are not supported by RKE2"
+
+    USE_CERT_MANAGER:
+      type: bool
+      default: false
+      desc: Use cert-manager with Let's Encrypt
+      applicable: when(FIRST_NODE == true)
+      section: "🔒 SSL/TLS Configuration"
 
     CERT_OPTION:
       type: enum
@@ -127,44 +134,31 @@ schema:
       required: when(CERT_OPTION == existing)
       section: "🔒 SSL/TLS Configuration"
 
-    USE_CERT_MANAGER:
-      type: bool
-      default: false
-      desc: Use cert-manager with Let's Encrypt
-      applicable: when(FIRST_NODE == true)
-      section: "🔒 SSL/TLS Configuration"
-
     # ⚙️ Advanced Configuration
-    ADDITIONAL_OIDC_PROVIDERS:
-      type: seq
-      default: []
-      desc: Additional OIDC providers
+    ROCM_BASE_URL:
+      type: url
+      default: https://repo.radeon.com/amdgpu-install/7.0.2/ubuntu/
+      desc: ROCm base repository URL
+      applicable: when(GPU_NODE == true)
       section: "⚙️ Advanced Configuration"
-      sequence:
-        - type: map
-          mapping:
-            url:
-              type: str
-            audiences:
-              type: seq
-              sequence:
-                - type: str
 
-    AIRM_IMAGE_REPOSITORY:
+    ROCM_DEB_PACKAGE:
       type: str
-      desc: Base repository URL for AIRM container images (airm-api, airm-ui, airm-dispatcher). Example - 'ghcr.io/silogen'
+      default: amdgpu-install_7.0.2.70002-1_all.deb
+      desc: ROCm DEB package name
+      applicable: when(GPU_NODE == true)
+      section: "⚙️ Advanced Configuration"
+
+    INSTALL_ARGOCD:
+      type: bool
+      default: true
+      desc: Install ArgoCD core for GitOps (small clusters only)
       section: "⚙️ Advanced Configuration"
 
     ARGOCD_VERSION:
       type: str
       default: v2.14.11
       desc: ArgoCD version to install
-      section: "⚙️ Advanced Configuration"
-
-    CF_VALUES:
-      type: str
-      default: ""
-      desc: Path to ClusterForge values file
       section: "⚙️ Advanced Configuration"
 
     CLUSTERFORGE_REPO:
@@ -180,22 +174,31 @@ schema:
       applicable: when(FIRST_NODE == true)
       section: "⚙️ Advanced Configuration"
 
-    INSTALL_ARGOCD:
-      type: bool
-      default: true
-      desc: Install ArgoCD core for GitOps (small clusters only)
+    CF_VALUES:
+      type: str
+      default: ""
+      desc: Path to ClusterForge values file
       section: "⚙️ Advanced Configuration"
+
+    ADDITIONAL_OIDC_PROVIDERS:
+      type: seq
+      default: []
+      desc: Additional OIDC providers
+      section: "⚙️ Advanced Configuration"
+      sequence:
+        - type: map
+          mapping:
+            url:
+              type: str
+            audiences:
+              type: seq
+              sequence:
+                - type: str
 
     PRELOAD_IMAGES:
       type: str
       default: ""
       desc: Comma-separated list of container images to preload
-      section: "⚙️ Advanced Configuration"
-
-    RKE2_EXTRA_CONFIG:
-      type: str
-      default: ""
-      desc: Additional RKE2 configuration in YAML format
       section: "⚙️ Advanced Configuration"
 
     RKE2_INSTALLATION_URL:
@@ -210,18 +213,16 @@ schema:
       desc: Specific RKE2 version to install
       section: "⚙️ Advanced Configuration"
 
-    ROCM_BASE_URL:
-      type: url
-      default: https://repo.radeon.com/amdgpu-install/7.0.2/ubuntu/
-      desc: ROCm base repository URL
-      applicable: when(GPU_NODE == true)
+    RKE2_EXTRA_CONFIG:
+      type: str
+      default: ""
+      desc: Additional RKE2 configuration in YAML format
       section: "⚙️ Advanced Configuration"
 
-    ROCM_DEB_PACKAGE:
+     AIRM_IMAGE_REPOSITORY:
       type: str
-      default: amdgpu-install_7.0.2.70002-1_all.deb
-      desc: ROCm DEB package name
-      applicable: when(GPU_NODE == true)
+      default: ""
+      desc: Base repository URL for AIRM container images (airm-api, airm-ui, airm-dispatcher). Example - 'ghcr.io/silogen'
       section: "⚙️ Advanced Configuration"
 
     # 💻 Command Line Options
