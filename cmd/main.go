@@ -363,6 +363,11 @@ func exportPlaybook(cfg config.Config, playbookName string, includeDestroyData b
 		return fmt.Errorf("inline tasks: %w", err)
 	}
 
+	// Inline manifest file content
+	if err := inlineManifestFiles(playbook, playbookDir); err != nil {
+		return fmt.Errorf("inline manifest files: %w", err)
+	}
+
 	// Prepend cleanup tasks if --destroy-data is requested
 	if includeDestroyData {
 		if err := prependCleanupTasks(playbook, cfg); err != nil {
@@ -534,6 +539,107 @@ func inlineTasksInPlay(play map[string]any, playbookDir string) error {
 
 	play["tasks"] = newTasks
 	return nil
+}
+
+// inlineManifestFiles finds copy tasks that reference manifest files and inlines their content
+func inlineManifestFiles(playbook any, playbookDir string) error {
+	// Handle case where playbook is a list of plays
+	if playsList, ok := playbook.([]any); ok && len(playsList) > 0 {
+		for _, play := range playsList {
+			if playMap, ok := play.(map[string]any); ok {
+				if err := inlineManifestsInPlay(playMap, playbookDir); err != nil {
+					return err
+				}
+			}
+		}
+	} else if playbookMap, ok := playbook.(map[string]any); ok {
+		// Handle case where playbook is a single play object
+		if plays, ok := playbookMap["plays"].([]any); ok {
+			for _, play := range plays {
+				if playMap, ok := play.(map[string]any); ok {
+					if err := inlineManifestsInPlay(playMap, playbookDir); err != nil {
+						return err
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// inlineManifestsInPlay processes tasks in a play to inline manifest file content
+func inlineManifestsInPlay(play map[string]any, playbookDir string) error {
+	tasks, ok := play["tasks"]
+	if !ok {
+		return nil
+	}
+
+	if err := processTasksForManifests(tasks, playbookDir); err != nil {
+		return err
+	}
+	return nil
+}
+
+// processTasksForManifests recursively processes tasks to inline manifest files
+func processTasksForManifests(tasks any, playbookDir string) error {
+	tasksList, ok := tasks.([]any)
+	if !ok {
+		return nil
+	}
+
+	for _, task := range tasksList {
+		taskMap, ok := task.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		// Process copy tasks
+		if copyTask, exists := taskMap["copy"]; exists {
+			if copyMap, ok := copyTask.(map[string]any); ok {
+				if srcPath, hasSrc := copyMap["src"].(string); hasSrc {
+					if isManifestPath(srcPath) {
+						// Read the manifest file and inline its content
+						manifestPath := filepath.Join(playbookDir, srcPath)
+						content, err := os.ReadFile(manifestPath)
+						if err != nil {
+							return fmt.Errorf("read manifest file %s: %w", manifestPath, err)
+						}
+
+						// Replace src with content
+						delete(copyMap, "src")
+						copyMap["content"] = string(content)
+					}
+				}
+			}
+		}
+
+		// Process block tasks recursively
+		if block, exists := taskMap["block"]; exists {
+			if err := processTasksForManifests(block, playbookDir); err != nil {
+				return err
+			}
+		}
+
+		// Process rescue tasks recursively
+		if rescue, exists := taskMap["rescue"]; exists {
+			if err := processTasksForManifests(rescue, playbookDir); err != nil {
+				return err
+			}
+		}
+
+		// Process always tasks recursively
+		if always, exists := taskMap["always"]; exists {
+			if err := processTasksForManifests(always, playbookDir); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// isManifestPath checks if a path references a manifest file
+func isManifestPath(path string) bool {
+	return strings.HasPrefix(path, "manifests/") && strings.HasSuffix(path, ".yaml")
 }
 
 // readIncludedTaskFile reads and parses an included task file
