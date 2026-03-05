@@ -219,6 +219,12 @@ schema:
       desc: Additional RKE2 configuration in YAML format
       section: "⚙️ Advanced Configuration"
 
+     AIRM_IMAGE_REPOSITORY:
+      type: str
+      default: ""
+      desc: Base repository URL for AIRM container images (airm-api, airm-ui, airm-dispatcher). Example - 'ghcr.io/silogen'
+      section: "⚙️ Advanced Configuration"
+
     # 💻 Command Line Options
     DISABLED_STEPS:
       type: str

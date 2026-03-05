@@ -30,6 +30,7 @@
     ARGOCD_VERSION: "v2.14.11"
     CLUSTERFORGE_REPO: "https://github.com/silogen/cluster-forge.git"
     CLUSTERFORGE_RELEASE: "latest"
+    AIRM_IMAGE_REPOSITORY: ""
     rocm_base_url: "https://repo.radeon.com/amdgpu-install/7.1.1/ubuntu/"
     rocm_deb_package: "amdgpu-install_7.1.1.70101-1_all.deb"
     rke2_installation_url: "https://get.rke2.io"
@@ -1919,9 +1920,13 @@
           when: not (is_release_url | bool)
 
         - name: Run ClusterForge bootstrap script
-          shell: |
-            cd {{ BLOOM_DIR }}/clusterforge/cluster-forge/scripts
-            bash ./bootstrap.sh {{ DOMAIN }} {% if CF_VALUES != "" %}{{ CF_VALUES }}{% endif %} --target-revision {{ clusterforge_version }}
+          shell:
+            cmd: |
+              bash ./bootstrap.sh {{ DOMAIN }} \
+              {% if CF_VALUES != "" %}{{ CF_VALUES }}{% endif %} \
+              {% if AIRM_IMAGE_REPOSITORY != "" %} --airm-image-repository {{ AIRM_IMAGE_REPOSITORY }}{% endif %} \
+              --target-revision {{ clusterforge_version }}
+          chdir: "{{ BLOOM_DIR }}/clusterforge/cluster-forge/scripts"
           register: cf_bootstrap
           environment:
             KUBECONFIG: /etc/rancher/rke2/rke2.yaml
