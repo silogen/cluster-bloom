@@ -86,7 +86,7 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | CF_VALUES | Path to ClusterForge values file (optional). Example: "values_cf.yaml" | "" |
 | CLUSTER_DISKS | Comma-separated list of disk devices. Example "/dev/sdb,/dev/sdc". Also skips NVME drive checks. | "" |
 | CLUSTER_PREMOUNTED_DISKS | Comma-separated list of absolute disk paths to use for Longhorn | "" |
-| CLUSTERFORGE_RELEASE | The version of Cluster-Forge to install. Pass the URL for a specific release, or 'none' to not install ClusterForge. | "https://github.com/silogen/cluster-forge/releases/download/deploy/deploy-release.tar.gz" |
+| CLUSTERFORGE_RELEASE | ClusterForge version to deploy. Accepts version tags ('v1.8.0'), full release URLs, 'latest', 'none', or "" (empty) to skip | "latest" |
 | CONTROL_PLANE | Set to true if this node should be a control plane node | false, only applies when FIRST_NODE is false |
 | DISABLED_STEPS | Comma-separated list of steps to skip. Example "SetupLonghornStep,SetupMetallbStep" | "" |
 | DOMAIN | The domain name for the cluster (e.g., "cluster.example.com") (required). | "" |
@@ -102,6 +102,14 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | TLS_CERT | Path to TLS certificate file for ingress (required if CERT_OPTION is 'existing') | "" |
 | TLS_KEY | Path to TLS private key file for ingress (required if CERT_OPTION is 'existing') | "" |
 | USE_CERT_MANAGER | Use cert-manager with Let's Encrypt for automatic TLS certificates | false |
+| ARGOCD_VERSION | ArgoCD version to install | v2.14.11 |
+| CLUSTERFORGE_REPO | ClusterForge git repository URL for ArgoCD-based deployment | https://github.com/silogen/cluster-forge.git |
+| INSTALL_ARGOCD | Install ArgoCD core for GitOps (small clusters only) | true |
+| PRELOAD_IMAGES | Comma-separated list of container images to preload | docker.io/rocm/pytorch:rocm6.4_ubuntu24.04_py3.12_pytorch_release_2.6.0,docker.io/rocm/vllm:rocm6.4.1_vllm_0.9.0.1_20250605 |
+| RKE2_EXTRA_CONFIG | Additional RKE2 configuration in YAML format | "" |
+| RKE2_INSTALLATION_URL | RKE2 installation script URL | https://get.rke2.io |
+| ROCM_BASE_URL | ROCm base repository URL | https://repo.radeon.com/amdgpu-install/7.0.2/ubuntu/ |
+| ROCM_DEB_PACKAGE | ROCm DEB package name | amdgpu-install_7.0.2.70002-1_all.deb |
 
 ### OIDC Configuration Examples
 
@@ -210,9 +218,13 @@ Create a YAML configuration file (e.g., `bloom.yaml`):
 
 ```yaml
 FIRST_NODE: true
-GPU_NODE: true
 RKE2_VERSION: v1.34.1+rke2r1
 NO_DISKS_FOR_CLUSTER: true
+GPU_NODE: true                     # Set to false if no GPUs
+CLUSTER_DISKS: "/dev/nvme1n1"     # Disk device path for storage
+CERT_OPTION: "generate"           # Options: "generate" or "existing"
+CLUSTERFORGE_RELEASE: "v1.8.0"    # Version tag, full URL, "latest", "none", or "" to skip
+PRELOAD_IMAGES: ""                # Optional: comma-separated container images
 ```
 
 Then run with:

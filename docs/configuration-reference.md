@@ -146,13 +146,44 @@ Configuration sources in priority order (highest to lowest):
 - **Example**: `TLS_KEY: "/path/to/tls.key"`
 - **Required When**: `CERT_OPTION: "existing"`
 
+### ArgoCD Configuration (Small Clusters)
+
+#### INSTALL_ARGOCD
+- **Type**: Boolean
+- **Default**: `true`
+- **Description**: Install ArgoCD core (headless/CLI-only mode) for GitOps-based app deployment. Only applies to `CLUSTER_SIZE: small`.
+- **Values**: `true` | `false`
+- **Example**: `INSTALL_ARGOCD: false`
+
+#### ARGOCD_VERSION
+- **Type**: String (version tag)
+- **Default**: `v2.14.11`
+- **Description**: ArgoCD version to install
+- **Example**: `ARGOCD_VERSION: "v2.14.11"`
+
+#### CLUSTERFORGE_REPO
+- **Type**: String (git URL)
+- **Default**: `https://github.com/silogen/cluster-forge.git`
+- **Description**: Git repository URL for the ClusterForge Helm chart used in ArgoCD-based deployment
+- **Example**: `CLUSTERFORGE_REPO: "https://github.com/myorg/cluster-forge.git"`
+
 ### Integration Configuration
 
 #### CLUSTERFORGE_RELEASE
-- **Type**: String (version or URL)
-- **Default**: None
-- **Description**: ClusterForge version or release URL to deploy
-- **Example**: `CLUSTERFORGE_RELEASE: "v1.2.3"`
+- **Type**: String (version, URL, or special value)
+- **Default**: `latest`
+- **Description**: ClusterForge version to deploy. Supports multiple formats:
+  - **Version tag**: e.g., `v1.8.0-rc6` - Specifies exact version/branch to checkout
+  - **Full release URL**: e.g., `https://github.com/silogen/cluster-forge/releases/download/v1.8.0-rc6/release-enterprise-ai-v1.8.0-rc6.tar.gz` - Downloads tarball and auto-extracts version for ArgoCD target
+  - **Special values**: 
+    - `latest` - Uses the default branch (main)
+    - `none` or `""` (empty string) - Skips ClusterForge installation entirely
+- **Version Parsing**: When a full URL is provided, the version is automatically extracted (e.g., `v1.8.0-rc6` from the URL) and used as the `--target-revision` for ArgoCD/Gitea
+- **Examples**: 
+  - `CLUSTERFORGE_RELEASE: "latest"`
+  - `CLUSTERFORGE_RELEASE: "v1.8.0"`
+  - `CLUSTERFORGE_RELEASE: "https://github.com/silogen/cluster-forge/releases/download/v1.8.0/release.tar.gz"`
+  - `CLUSTERFORGE_RELEASE: "none"`
 
 #### CF_VALUES
 - **Type**: String (file path)
