@@ -607,16 +607,7 @@ func prependCleanupTasks(playbook any, cfg config.Config) error {
 				},
 				{
 					"name": "Clean Longhorn mounts and processes",
-					"shell": `
-# Stop longhorn processes
-pkill -f longhorn || true
-# Unmount longhorn volumes
-for mount in $(mount | grep longhorn | awk '{print $3}'); do
-  umount "$mount" 2>/dev/null || true
-done
-# Clean longhorn directories
-rm -rf /var/lib/longhorn/* 2>/dev/null || true
-echo "Longhorn cleanup completed"`,
+					"shell": "pkill -f longhorn || true; for mount in $(mount | grep longhorn | awk '{print $3}'); do umount \"$mount\" 2>/dev/null || true; done; rm -rf /var/lib/longhorn/* 2>/dev/null || true; echo 'Longhorn cleanup completed'",
 					"register": "longhorn_cleanup",
 					"failed_when": false,
 				},
@@ -628,19 +619,7 @@ echo "Longhorn cleanup completed"`,
 				},
 				{
 					"name": "Clean RKE2 directories and files",
-					"shell": `
-# Remove RKE2 directories
-rm -rf /var/lib/rancher/rke2
-rm -rf /etc/rancher/rke2
-rm -rf /var/lib/kubelet
-rm -rf /var/log/pods
-rm -rf /var/log/containers
-# Remove RKE2 binaries
-rm -f /usr/local/bin/rke2*
-rm -f /usr/local/bin/kubectl
-rm -f /usr/local/bin/crictl
-rm -f /usr/local/bin/ctr
-echo "RKE2 cleanup completed"`,
+					"shell": "rm -rf /var/lib/rancher/rke2 /etc/rancher/rke2 /var/lib/kubelet /var/log/pods /var/log/containers; rm -f /usr/local/bin/rke2* /usr/local/bin/kubectl /usr/local/bin/crictl /usr/local/bin/ctr; echo 'RKE2 cleanup completed'",
 					"register": "rke2_cleanup",
 					"failed_when": false,
 				},
