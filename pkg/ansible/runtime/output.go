@@ -129,17 +129,17 @@ func (p *OutputProcessor) processCleanMode(line string) string {
 func (p *OutputProcessor) getEmoji(status TaskStatus) string {
 	switch status {
 	case TaskStatusOK:
-		return "✅"
+		return "✅ (ok)"
 	case TaskStatusChanged:
-		return "🔄"
+		return "🔄 (changed)"
 	case TaskStatusFailed:
-		return "❌"
+		return "❌ (failed)"
 	case TaskStatusSkipped:
-		return "⏭️"
+		return "⏭️ (skipped)"
 	case TaskStatusUnreachable:
-		return "⛔"
+		return "⛔ (unreachable)"
 	case TaskStatusIgnored:
-		return "🙈"
+		return "🙈 (ignored)"
 	default:
 		return "•"
 	}
