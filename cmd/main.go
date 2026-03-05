@@ -252,7 +252,7 @@ func runAnsible(configFile string) {
 
 	// Handle export mode
 	if export {
-		if err := exportPlaybook(cfg, playbookName); err != nil {
+		if err := exportPlaybook(cfg, playbookName, destroyData); err != nil {
 			fmt.Fprintf(os.Stderr, "Error exporting playbook: %v\n", err)
 			os.Exit(1)
 		}
@@ -315,7 +315,7 @@ func runPlaybookDirect(playbookPath string) {
 }
 
 // exportPlaybook extracts and outputs the generated playbook to stdout
-func exportPlaybook(cfg config.Config, playbookName string) error {
+func exportPlaybook(cfg config.Config, playbookName string, includeDestroyData bool) error {
 	// Create temporary directory for playbook extraction
 	tempDir, err := os.MkdirTemp("", "bloom-export-*")
 	if err != nil {
@@ -361,6 +361,13 @@ func exportPlaybook(cfg config.Config, playbookName string) error {
 	// Inline include_tasks references
 	if err := inlineIncludedTasks(playbook, playbookDir); err != nil {
 		return fmt.Errorf("inline tasks: %w", err)
+	}
+
+	// Prepend cleanup tasks if --destroy-data is requested
+	if includeDestroyData {
+		if err := prependCleanupTasks(playbook, cfg); err != nil {
+			return fmt.Errorf("prepend cleanup tasks: %w", err)
+		}
 	}
 
 	// Output the modified playbook to stdout
@@ -546,6 +553,188 @@ func readIncludedTaskFile(taskFilePath string) ([]any, error) {
 	}
 
 	return tasks, nil
+}
+
+// prependCleanupTasks adds cluster cleanup tasks to the beginning of the playbook when --destroy-data is used
+func prependCleanupTasks(playbook any, cfg config.Config) error {
+	// Extract CLUSTER_DISKS from config
+	clusterDisks := ""
+	if disks, exists := cfg["CLUSTER_DISKS"]; exists && disks != nil {
+		if disksStr, ok := disks.(string); ok {
+			clusterDisks = disksStr
+		}
+	}
+
+	// Create cleanup tasks
+	cleanupTasks := []map[string]any{
+		{
+			"name": "⚠️ DESTRUCTIVE CLEANUP: Remove existing Bloom cluster installation",
+			"tags": []string{"cleanup", "destroy-data"},
+			"block": []map[string]any{
+				{
+					"name": "Display destructive operation warning",
+					"debug": map[string]any{
+						"msg": []string{
+							"⚠️  DANGER: DESTRUCTIVE OPERATION IN PROGRESS ⚠️",
+							"",
+							"This playbook will PERMANENTLY DESTROY:",
+							"• Entire Kubernetes cluster (RKE2 uninstall)",
+							"• ALL Longhorn storage volumes and data",
+							"• ALL managed disk devices (wipefs + deletion)",
+							fmt.Sprintf("• All data on storage devices: %s", clusterDisks),
+							"",
+							"This action cannot be undone.",
+						},
+					},
+				},
+				{
+					"name": "Stop and disable RKE2 server service",
+					"systemd": map[string]any{
+						"name":    "rke2-server",
+						"state":   "stopped",
+						"enabled": false,
+					},
+					"failed_when": false,
+				},
+				{
+					"name": "Stop and disable RKE2 agent service", 
+					"systemd": map[string]any{
+						"name":    "rke2-agent",
+						"state":   "stopped",
+						"enabled": false,
+					},
+					"failed_when": false,
+				},
+				{
+					"name": "Clean Longhorn mounts and processes",
+					"shell": `
+# Stop longhorn processes
+pkill -f longhorn || true
+# Unmount longhorn volumes
+for mount in $(mount | grep longhorn | awk '{print $3}'); do
+  umount "$mount" 2>/dev/null || true
+done
+# Clean longhorn directories
+rm -rf /var/lib/longhorn/* 2>/dev/null || true
+echo "Longhorn cleanup completed"`,
+					"register": "longhorn_cleanup",
+					"failed_when": false,
+				},
+				{
+					"name": "Run RKE2 uninstall script",
+					"shell": "/usr/local/bin/rke2-uninstall.sh",
+					"register": "rke2_uninstall",
+					"failed_when": false,
+				},
+				{
+					"name": "Clean RKE2 directories and files",
+					"shell": `
+# Remove RKE2 directories
+rm -rf /var/lib/rancher/rke2
+rm -rf /etc/rancher/rke2
+rm -rf /var/lib/kubelet
+rm -rf /var/log/pods
+rm -rf /var/log/containers
+# Remove RKE2 binaries
+rm -f /usr/local/bin/rke2*
+rm -f /usr/local/bin/kubectl
+rm -f /usr/local/bin/crictl
+rm -f /usr/local/bin/ctr
+echo "RKE2 cleanup completed"`,
+					"register": "rke2_cleanup",
+					"failed_when": false,
+				},
+			},
+		},
+	}
+
+	// Add disk cleanup if CLUSTER_DISKS is specified
+	if clusterDisks != "" {
+		diskCleanupTask := map[string]any{
+			"name": "Clean and wipe cluster disks",
+			"tags": []string{"cleanup", "destroy-data", "storage"},
+			"block": []map[string]any{
+				{
+					"name": "Convert CLUSTER_DISKS to list for cleanup",
+					"set_fact": map[string]any{
+						"cluster_disks_cleanup_list": fmt.Sprintf("{{ '%s'.split(',') }}", clusterDisks),
+					},
+				},
+				{
+					"name": "Unmount cluster disks",
+					"shell": "umount {{ item }} 2>/dev/null || true",
+					"loop": "{{ cluster_disks_cleanup_list }}",
+					"failed_when": false,
+				},
+				{
+					"name": "Remove fstab entries for cluster disks",
+					"lineinfile": map[string]any{
+						"path":   "/etc/fstab",
+						"regexp": "{{ item | regex_escape }}",
+						"state":  "absent",
+					},
+					"loop": "{{ cluster_disks_cleanup_list }}",
+					"failed_when": false,
+				},
+				{
+					"name": "Wipe filesystem signatures from cluster disks",
+					"shell": "wipefs -a {{ item }} 2>/dev/null || true",
+					"loop": "{{ cluster_disks_cleanup_list }}",
+					"failed_when": false,
+				},
+				{
+					"name": "Remove mount point directories",
+					"file": map[string]any{
+						"path":  "/mnt/disk{{ ansible_loop.index0 }}",
+						"state": "absent",
+					},
+					"loop": "{{ cluster_disks_cleanup_list }}",
+					"loop_control": map[string]any{
+						"extended": true,
+					},
+					"failed_when": false,
+				},
+			},
+		}
+		cleanupTasks = append(cleanupTasks, diskCleanupTask)
+	}
+
+	// Add final cleanup completion task
+	finalTask := map[string]any{
+		"name": "Cleanup completion summary",
+		"debug": map[string]any{
+			"msg": []string{
+				"✅ Destructive cleanup completed",
+				"• RKE2 services stopped and uninstalled",
+				"• Longhorn storage cleaned",
+				"• Disk devices wiped and unmounted",
+				"• System ready for fresh installation",
+				"",
+				"Proceeding with normal cluster deployment...",
+			},
+		},
+		"tags": []string{"cleanup", "destroy-data"},
+	}
+	cleanupTasks = append(cleanupTasks, finalTask)
+
+	// Prepend cleanup tasks to the existing playbook tasks
+	if playsList, ok := playbook.([]any); ok && len(playsList) > 0 {
+		if firstPlay, ok := playsList[0].(map[string]any); ok {
+			if tasks, ok := firstPlay["tasks"].([]any); ok {
+				// Convert cleanup tasks to []any
+				var cleanupTasksAny []any
+				for _, task := range cleanupTasks {
+					cleanupTasksAny = append(cleanupTasksAny, task)
+				}
+				
+				// Prepend cleanup tasks to existing tasks
+				newTasks := append(cleanupTasksAny, tasks...)
+				firstPlay["tasks"] = newTasks
+			}
+		}
+	}
+
+	return nil
 }
 
 // confirmDestructiveOperation prompts the user to confirm the dangerous --destroy-data operation
