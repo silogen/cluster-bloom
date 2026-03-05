@@ -121,14 +121,19 @@ Advanced debugging and transparency features allow users to export generated Ans
 - **Manual Execution**: Exported playbooks can be run separately using the `run` command
 - **Debugging Support**: Full visibility into deployment actions before execution
 - **Environment Flexibility**: Export in one environment, execute in another
+- **Cleanup Integration**: Use `--export --destroy-data` to include cluster cleanup tasks in exported playbooks
+- **Existing Installation Support**: Handles existing cluster installations through automated cleanup task injection
 
 **Example Usage:**
 ```bash
 # Export playbook to stdout
-sudo ./bloom cli bloom.yaml --export
+./bloom cli bloom.yaml --export
 
 # Save exported playbook to file
-sudo ./bloom cli bloom.yaml --export > deployment.yaml
+./bloom cli bloom.yaml --export > deployment.yaml
+
+# Export with cleanup tasks for existing installations
+./bloom cli bloom.yaml --export --destroy-data > cleanupDeployment.yaml
 
 # Execute exported playbook manually
 sudo ./bloom run deployment.yaml
@@ -188,7 +193,10 @@ Exports the generated Ansible playbook to stdout instead of executing it. This e
 **Example Workflow:**
 ```bash
 # Export playbook to file
-sudo ./bloom cli bloom.yaml --export > myPlaybook.yaml
+./bloom cli bloom.yaml --export > myPlaybook.yaml
+
+# Export playbook with cleanup tasks for existing installations
+./bloom cli bloom.yaml --export --destroy-data > cleanupPlaybook.yaml
 
 # Review the generated playbook
 less myPlaybook.yaml

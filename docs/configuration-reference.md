@@ -478,6 +478,9 @@ sudo ./bloom cli bloom.yaml
 # Export and save to file
 ./bloom cli bloom.yaml --export > deployment.yaml
 
+# Export with cleanup tasks for existing installations
+./bloom cli bloom.yaml --export --destroy-data > cleanupDeployment.yaml
+
 # Dry run deployment
 sudo ./bloom cli bloom.yaml --dry-run
 
@@ -527,6 +530,9 @@ The `--export` flag enables a powerful workflow for playbook inspection and manu
 # Step 1: Export playbook
 ./bloom cli bloom.yaml --export > deployment.yaml
 
+# Step 1b: Export with cleanup for existing installations
+./bloom cli bloom.yaml --export --destroy-data > cleanupDeployment.yaml
+
 # Step 2: Review the playbook
 less deployment.yaml
 
@@ -540,12 +546,15 @@ sudo ./bloom run deployment.yaml
 - **Customization**: Modify generated playbooks for specific requirements
 - **Restricted Environments**: Generate playbooks on one system, execute on another
 - **Learning**: Study the generated Ansible code to understand cluster setup
+- **Existing Installations**: Use `--export --destroy-data` to handle existing cluster installations safely
 
 **Technical Details:**
 - **Self-Contained Playbooks**: Exported playbooks automatically inline all `include_tasks` directives, creating completely self-contained files
 - **Configuration Integration**: All user configuration values are properly applied to playbook variables
 - **Task Preservation**: Tags, when conditions, and other metadata from include directives are preserved on inlined tasks
 - **Full Compatibility**: Exported playbooks are fully compatible with the `bloom run` command and standard Ansible tools
+- **Cleanup Task Injection**: When `--destroy-data` is used with `--export`, cleanup tasks are automatically prepended to handle existing installations
+- **Comprehensive Cleanup**: Includes RKE2 uninstall, Longhorn cleanup, disk wiping, and service management for complete environment reset
 
 ## See Also
 

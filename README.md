@@ -85,6 +85,9 @@ Export generated Ansible playbooks for inspection without execution:
 # Export playbook to stdout
 ./bloom cli bloom.yaml --export
 
+# Export playbook with cleanup tasks included (for existing installations)
+./bloom cli bloom.yaml --export --destroy-data > myPlaybook.yaml
+
 # Save exported playbook to file
 ./bloom cli bloom.yaml --export > myPlaybook.yaml
 
@@ -103,6 +106,8 @@ sudo ./bloom run myPlaybook.yaml
 - Configuration values from your bloom.yaml are properly applied
 - Exported playbooks work perfectly with `sudo ./bloom run` for manual execution
 - No external dependencies or task files are required for exported playbooks
+- **Cleanup Integration**: Use `--export --destroy-data` to include cleanup tasks in exported playbooks
+- **Existing Installations**: For existing cluster installations, always use `--destroy-data` (either directly or via export)
 
 ## Configuration
 
@@ -218,6 +223,9 @@ sudo ./bloom cli bloom.yaml --dry-run
 
 # Run specific playbook tags only
 sudo ./bloom cli bloom.yaml --tags "validate_node,prep_node"
+
+# Export with cleanup tasks for existing installations
+./bloom cli bloom.yaml --export --destroy-data > cleanupPlaybook.yaml
 
 # Dangerous: Destroy existing data and start fresh
 sudo ./bloom cli bloom.yaml --destroy-data
