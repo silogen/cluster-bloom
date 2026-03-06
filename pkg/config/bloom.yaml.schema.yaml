@@ -72,7 +72,7 @@ schema:
     # 🌐 Network Configuration
     CLUSTER_LISTEN_IP:
       type: clusterListenIp
-      desc: "Network IP specification for cluster binding. Supports exact IP (192.168.1.100), subnet CIDR (192.168.1.0/24), or array of subnets like ['192.168.1.0/24', '10.0.0.0/8']. Overrides auto-detection for multi-homed systems."
+      desc: "Network IP specification for cluster binding. Supports exact IP (192.168.1.100) or subnet CIDR (192.168.1.0/24). Overrides auto-detection for multi-homed systems."
       section: "🌐 Network Configuration"
       examples:
         - "192.168.1.100"

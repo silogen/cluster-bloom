@@ -650,35 +650,7 @@
                 - "'/' in CLUSTER_LISTEN_IP"
                 - ansible_all_ipv4_addresses | select('ipaddr', CLUSTER_LISTEN_IP) | list | length == 0
 
-            - name: Check if any subnet in array has matching IPs
-              set_fact:
-                subnet_matches_found: "{{ subnet_matches_found | default(0) | int + (ansible_all_ipv4_addresses | select('ipaddr', item) | list | length) }}"
-              loop: "{{ CLUSTER_LISTEN_IP if CLUSTER_LISTEN_IP is sequence else [] }}"
-              when:
-                - CLUSTER_LISTEN_IP is sequence
-                - CLUSTER_LISTEN_IP is not string
 
-            - name: Validate subnet array has at least one matching subnet
-              fail:
-                msg: |
-                  ❌ CLUSTER_LISTEN_IP subnet array validation failed!
-                  
-                  Specified subnets: {{ CLUSTER_LISTEN_IP | join(', ') }}
-                  Available IPs: {{ ansible_all_ipv4_addresses | join(', ') }}
-                  
-                  Matching results:
-                  {% for subnet in CLUSTER_LISTEN_IP %}
-                  - {{ subnet }}: {{ ansible_all_ipv4_addresses | select('ipaddr', subnet) | list | join(', ') or 'No matches' }}
-                  {% endfor %}
-                  
-                  📋 To fix this issue:
-                  1. Include at least one subnet that contains available IPs
-                  2. Use exact IP addresses instead: "192.168.1.100"
-                  3. Check your network configuration and interface assignments
-              when:
-                - CLUSTER_LISTEN_IP is sequence
-                - CLUSTER_LISTEN_IP is not string
-                - subnet_matches_found | default(0) | int == 0
 
             - name: CLUSTER_LISTEN_IP validation successful
               debug:
