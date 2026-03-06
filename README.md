@@ -18,31 +18,15 @@
 - ROCm-compatible AMD GPUs (for GPU nodes)
 - Root/sudo access
 
-## Getting Started
-
-### Download and Setup
-
-1. Download the latest bloom binary:
-```sh
-wget https://github.com/silogen/cluster-bloom/releases/download/<version>/bloom
-```
-
-2. Make the binary executable:
-```sh
-chmod +x bloom
-```
-
 ## Usage
 
-### Configuration Generation
+### First Node Setup
 
-Launch the web UI to generate your bloom.yaml configuration:
+To set up the first node in your cluster:
 
 ```sh
-./bloom
+sudo ./bloom
 ```
-
-Access the configuration wizard at http://127.0.0.1:62078
 
 ### Additional Node Setup
 
@@ -50,8 +34,31 @@ After setting up the first node, it will generate a command in `additional_node_
 
 ```sh
 # Example (actual command will be different)
-echo -e 'FIRST_NODE: false\nJOIN_TOKEN: your-token-here\nSERVER_IP: your-server-ip' > bloom.yaml && sudo ./bloom cli bloom.yaml
+echo -e 'FIRST_NODE: false\nJOIN_TOKEN: your-token-here\nSERVER_IP: your-server-ip' > bloom.yaml && sudo ./bloom --config bloom.yaml
 ```
+
+### Configuration Wizard UI
+
+Launch the interactive configuration wizard:
+
+```sh
+sudo ./bloom demo-ui
+```
+
+The configuration wizard includes advanced TLS-SAN validation features:
+
+**TLS-SAN UI Features:**
+- **Auto-generated Preview**: Shows `k8s.{domain}` as you type the domain
+- **Real-time Validation**: Warns about duplicate entries before submission
+- **Smart Suggestions**: Explains why duplicates occur and recommends removal
+- **Live Preview**: Shows final TLS-SAN list as you configure additional domains
+- **Visual Feedback**: Color-coded warnings and validation messages
+
+**UI Validation Behavior:**
+- ✅ **Green**: Auto-generated TLS-SAN (always included)
+- ⚠️ **Orange Warning**: Duplicate detected (will be handled automatically)
+- ❌ **Red Error**: Invalid format or configuration issue
+- 📋 **Preview**: Shows exactly what will be in your certificate
 
 ### Version Information
 
@@ -59,21 +66,10 @@ echo -e 'FIRST_NODE: false\nJOIN_TOKEN: your-token-here\nSERVER_IP: your-server-
 ./bloom version
 ```
 
-### Command Help
-
-Show all available commands and complete configuration reference:
+### Help
 
 ```sh
 ./bloom help
-```
-
-*Note: Help includes auto-generated documentation for all configuration fields.*
-
-Get help for specific commands:
-
-```sh
-./bloom cleanup --help  # Remove existing cluster installation
-./bloom cli --help      # Deploy cluster using configuration file
 ```
 
 ## Configuration
@@ -89,7 +85,6 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | CERT_OPTION | Certificate option when USE_CERT_MANAGER is false. Choose 'existing' or 'generate' | "" |
 | CF_VALUES | Path to ClusterForge values file (optional). Example: "values_cf.yaml" | "" |
 | CLUSTER_DISKS | Comma-separated list of disk devices. Example "/dev/sdb,/dev/sdc". Also skips NVME drive checks. | "" |
-| CLUSTER_SIZE | Size category for cluster deployment planning. Options: small, medium, large | medium |
 | CLUSTER_PREMOUNTED_DISKS | Comma-separated list of absolute disk paths to use for Longhorn | "" |
 | CLUSTERFORGE_RELEASE | ClusterForge version to deploy. Accepts version tags ('v1.8.0'), full release URLs, 'latest', 'none', or "" (empty) to skip | "latest" |
 | CONTROL_PLANE | Set to true if this node should be a control plane node | false, only applies when FIRST_NODE is false |
@@ -100,6 +95,7 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | GPU_NODE | Set to true if this node has GPUs | true |
 | JOIN_TOKEN | The token used to join additional nodes to the cluster | |
 | NO_DISKS_FOR_CLUSTER | Set to true to skip disk-related operations | false |
+| OIDC_URL | The URL of the OIDC provider | "" |
 | RKE2_VERSION | Specific RKE2 version to install (e.g., "v1.34.1+rke2r1") | "" |
 | SERVER_IP | The IP address of the RKE2 server (required for additional nodes) | |
 | SKIP_RANCHER_PARTITION_CHECK | Set to true to skip /var/lib/rancher partition size check | false |
@@ -117,28 +113,40 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 
 ### OIDC Configuration Examples
 
-**Basic OIDC Provider:**
+**Single OIDC Provider:**
 ```yaml
+RKE2_VERSION: v1.34.1+rke2r1
 ADDITIONAL_OIDC_PROVIDERS:
   - url: "https://keycloak.example.com/realms/main"
     audiences: ["k8s"]
 ```
 
+**Multiple OIDC Providers:**
+```yaml
+RKE2_VERSION: v1.34.1+rke2r1
+ADDITIONAL_OIDC_PROVIDERS:
+  - url: "https://kc.plat-dev-3.silogen.ai/realms/airm"
+    audiences: ["k8s"]
+  - url: "https://kc.plat-dev-4.silogen.ai/realms/k8s"
+    audiences: ["kubernetes", "api"]
+```
+
 **Notes:**
-- ClaimMappings use `username` and `groups` with prefix `"oidc:"`
 - `url`: HTTPS URL of your OIDC provider (Keycloak, Auth0, etc.)
 - `audiences`: List of client IDs from your OIDC provider
+- `RKE2_VERSION`: Specify exact RKE2 version, or leave empty for latest
+- OIDC providers are optional - leave `ADDITIONAL_OIDC_PROVIDERS` empty to skip
 - **Default behavior**: If `ADDITIONAL_OIDC_PROVIDERS` is skipped, a default OIDC provider will be configured pointing to the internal Keycloak `airm` realm at `https://kc.{DOMAIN}/realms/airm`
-
-For advanced configuration, multiple providers, and troubleshooting, see [docs/oidc-authentication.md](docs/oidc-authentication.md).
 
 ### TLS-SAN Configuration
 
 TLS Subject Alternative Names (SANs) allow your Kubernetes API server to be accessed via multiple domain names. Cluster-Bloom automatically configures TLS-SANs for secure remote access to your cluster.
 
-**Note:** Wildcard domains (*.example.com) are not supported by RKE2.
+**Automatic TLS-SAN Generation:**
+- Cluster-Bloom automatically generates `k8s.{DOMAIN}` as a default TLS-SAN
+- This enables remote kubectl access via `k8s.yourdomain.com`
 
-**Basic Configuration:**
+**Additional TLS-SANs:**
 ```yaml
 DOMAIN: "example.com"
 ADDITIONAL_TLS_SAN_URLS:
@@ -146,21 +154,72 @@ ADDITIONAL_TLS_SAN_URLS:
   - "kubernetes.example.com"
 ```
 
-**Key Points:**
-- Cluster-Bloom automatically generates `k8s.{DOMAIN}` as a default TLS-SAN
-- Do not duplicate the auto-generated SAN in `ADDITIONAL_TLS_SAN_URLS`
-- Valid domain names only (no wildcards)
-- The configuration wizard provides real-time validation
+**Complete Example:**
+```yaml
+DOMAIN: "example.com"
+ADDITIONAL_TLS_SAN_URLS:
+  - "api.example.com"
+  - "kubernetes.example.com"
+```
 
-For detailed examples, testing instructions, and common use cases, see [docs/tls-san-configuration.md](docs/tls-san-configuration.md).
+**Result:** The Kubernetes API server certificate will include:
+- `k8s.example.com` (auto-generated)
+- `api.example.com` (additional)
+- `kubernetes.example.com` (additional)
+
+**Important Notes:**
+- **Auto-generated SAN**: Always includes `k8s.{DOMAIN}` - do not duplicate in `ADDITIONAL_TLS_SAN_URLS`
+- **Valid domains only**: Each SAN must be a valid domain name format
+- **Duplicate handling**: The system automatically handles duplicates (though clean configuration is recommended)
+- **UI validation**: The configuration wizard provides real-time validation and preview of final TLS-SAN list
+
+**Testing TLS-SANs:**
+```bash
+# 1. Check RKE2 configuration file contains TLS-SANs
+sudo cat /etc/rancher/rke2/config.yaml | grep -A 10 "tls-san:"
+
+# 2. Verify certificate contains your TLS-SANs
+openssl s_client -connect your-server:6443 -servername k8s.example.com </dev/null 2>/dev/null | \
+  openssl x509 -noout -text | grep -A 10 "Subject Alternative Name"
+
+# 3. Test remote kubectl access
+# First, copy kubeconfig and modify server URL
+scp ubuntu@your-server:/etc/rancher/rke2/rke2.yaml ./kubeconfig
+sed -i 's/127.0.0.1:6443/k8s.example.com:6443/g' kubeconfig
+export KUBECONFIG=./kubeconfig
+kubectl get nodes
+```
+
+**Common TLS-SAN Use Cases:**
+```yaml
+# Basic setup - only auto-generated SAN
+DOMAIN: "example.com"
+# Result: k8s.example.com
+
+# Load balancer setup
+DOMAIN: "example.com" 
+ADDITIONAL_TLS_SAN_URLS:
+  - "api.example.com"
+  - "lb.example.com"
+# Result: k8s.example.com, api.example.com, lb.example.com
+
+# Multiple access points
+DOMAIN: "example.com"
+ADDITIONAL_TLS_SAN_URLS: 
+  - "kubernetes.example.com"
+  - "cluster.example.com" 
+  - "api.example.com"
+# Result: k8s.example.com, kubernetes.example.com, cluster.example.com, api.example.com
+```
 
 ### Using a Configuration File
 
 Create a YAML configuration file (e.g., `bloom.yaml`):
 
 ```yaml
-DOMAIN: "your-domain.example.com"  # Required: Your cluster domain
 FIRST_NODE: true
+RKE2_VERSION: v1.34.1+rke2r1
+NO_DISKS_FOR_CLUSTER: true
 GPU_NODE: true                     # Set to false if no GPUs
 CLUSTER_DISKS: "/dev/nvme1n1"     # Disk device path for storage
 CERT_OPTION: "generate"           # Options: "generate" or "existing"
@@ -171,7 +230,7 @@ PRELOAD_IMAGES: ""                # Optional: comma-separated container images
 Then run with:
 
 ```sh
-sudo ./bloom cli bloom.yaml
+sudo ./bloom --config bloom.yaml
 ```
 
 ## Installation Process
@@ -183,7 +242,7 @@ Cluster-Bloom performs the following steps during installation:
 3. Configures firewall and networking
 4. Sets up ROCm for GPU nodes
 5. Prepares and installs RKE2
-6. Configures storage (local-path for small/medium clusters, Longhorn for large clusters)
+6. Configures storage with Longhorn
 7. Sets up Kubernetes tools and configuration
 8. Installs ClusterForge
 
@@ -197,4 +256,3 @@ Cluster-Bloom performs the following steps during installation:
 ## License
 
 Apache License 2.0
-

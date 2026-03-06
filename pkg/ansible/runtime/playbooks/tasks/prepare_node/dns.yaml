@@ -1,0 +1,87 @@
+# TODO: Maybe rename this as something more generic that DNS
+
+- name: Fix DNS resolution
+  block:
+    - name: Check current DNS configuration
+      shell: cat /etc/resolv.conf
+      register: current_resolv
+      failed_when: false
+      changed_when: false
+
+    - name: Show current DNS config
+      debug:
+        msg: "Current resolv.conf: {{ current_resolv.stdout_lines }}"
+
+    - name: Test DNS resolution with current config
+      shell: nslookup archive.ubuntu.com || true
+      register: dns_test
+      failed_when: false
+      changed_when: false
+
+    - name: Show DNS test result
+      debug:
+        msg: "DNS test result: {{ dns_test.stdout_lines }}"
+
+    - name: Make resolv.conf mutable (if immutable)
+      shell: chattr -i /etc/resolv.conf 2>/dev/null || true
+      ignore_errors: yes
+
+    - name: Configure working DNS servers
+      copy:
+        content: |
+          nameserver 8.8.8.8
+          nameserver 1.1.1.1
+          nameserver 8.8.4.4
+        dest: /etc/resolv.conf
+        mode: "0644"
+      when: dns_test.rc != 0 or '127.0.0.53' in current_resolv.stdout or 'no servers could be reached' in dns_test.stdout
+
+    - name: Verify DNS is working
+      shell: |
+        nslookup archive.ubuntu.com || exit 1
+        nslookup security.ubuntu.com || exit 1
+      register: dns_verify
+      retries: 3
+      delay: 2
+      until: dns_verify.rc == 0
+
+- name: Stop services that may lock apt
+  shell: |
+    systemctl stop unattended-upgrades.service || true
+    systemctl stop apt-daily.timer || true
+    systemctl stop apt-daily-upgrade.timer || true
+    systemctl kill --kill-who=all apt-daily.service || true
+    systemctl kill --kill-who=all apt-daily-upgrade.service || true
+  ignore_errors: yes
+
+- name: Wait for apt locks to be released
+  shell: |
+    timeout 300 bash -c 'while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do sleep 1; done' || true
+    timeout 300 bash -c 'while fuser /var/lib/apt/lists/lock >/dev/null 2>&1; do sleep 1; done' || true
+  ignore_errors: yes
+
+- name: Clean apt lists and locks
+  shell: |
+    killall apt apt-get dpkg 2>/dev/null || true
+    rm -f /var/lib/apt/lists/lock
+    rm -f /var/cache/apt/archives/lock
+    rm -f /var/lib/dpkg/lock*
+    dpkg --configure -a || true
+    rm -rf /var/lib/apt/lists/*
+    mkdir -p /var/lib/apt/lists/partial
+  ignore_errors: yes
+
+- name: Disable problematic apt repositories
+  shell: |
+    if [ -f /etc/apt/sources.list.d/kitware.list ]; then
+      mv /etc/apt/sources.list.d/kitware.list /etc/apt/sources.list.d/kitware.list.disabled || true
+    fi
+  ignore_errors: yes
+
+- name: Ensure universe repository is enabled
+  shell: |
+    add-apt-repository -y universe || true
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+  ignore_errors: yes
+

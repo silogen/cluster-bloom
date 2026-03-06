@@ -187,9 +187,9 @@ func CleanupBloomDisks(clusterDisks string) error {
 		}
 	}
 
-	// Skip filesystem sync as it commonly hangs on systems with I/O issues
-	// The 500ms delay below is sufficient for kernel to release mounts
-	fmt.Println("   Allowing kernel to flush pending I/O...")
+	// Sync filesystem to ensure all writes are flushed
+	fmt.Println("   Syncing filesystems...")
+	exec.Command("sync").Run()
 
 	// Brief delay to allow kernel to fully release mounts
 	time.Sleep(500 * time.Millisecond)

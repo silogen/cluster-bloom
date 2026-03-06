@@ -1,0 +1,49 @@
+---
+# Package Installation Tasks
+# 
+# Purpose: Installs essential system packages required for cluster deployment
+# Scope: Updates apt cache and installs core dependencies
+#
+# Parameters: None (uses global variables)
+#
+# Returns: Succeeds when all packages are installed
+#
+# Usage:
+#   include_tasks: tasks/prepare_node/packages.yaml
+
+- name: Update apt cache with timeout
+  shell: timeout 300 apt-get update --allow-insecure-repositories
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+    APT_KEY_DONT_WARN_ON_DANGEROUS_USAGE: "1"
+  register: apt_update_result
+  until: apt_update_result.rc == 0
+  retries: 3
+  delay: 10
+  ignore_errors: no
+
+- name: Debug apt cache update (check mode)
+  debug:
+    msg: "Would update apt package cache"
+  when: ansible_check_mode
+
+- name: Install required packages
+  apt:
+    name:
+      - open-iscsi
+      - jq
+      - nfs-common
+      - chrony
+      - curl
+      - wget
+    state: present
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+    NEEDRESTART_MODE: a
+    NEEDRESTART_SUSPEND: "1"
+  when: not ansible_check_mode
+
+- name: Debug package installation (check mode)
+  debug:
+    msg: "Would install packages: open-iscsi, jq, nfs-common, chrony, curl, wget"
+  when: ansible_check_mode

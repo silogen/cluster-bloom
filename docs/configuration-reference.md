@@ -227,14 +227,9 @@ Configuration sources in priority order (highest to lowest):
 - **Type**: Array of strings (domain names)
 - **Default**: `[]`
 - **Description**: Additional TLS Subject Alternative Name URLs for Kubernetes API server certificate
-- **Example**: `ADDITIONAL_TLS_SAN_URLS: ["api.example.com", "management.example.com"]`
+- **Example**: `ADDITIONAL_TLS_SAN_URLS: ["api.example.com", "kubernetes.example.com"]`
 - **Auto-generated**: Always includes `k8s.{DOMAIN}` - do not duplicate
-- **Validation**: 
-  - Each entry must be a valid domain name format
-  - Wildcard domains (*.example.com) are blocked by UI and server validation
-  - Real-time validation provides immediate feedback
-- **Migration**: Legacy comma-separated string format still supported
-- **Documentation**: See [TLS SAN Configuration](tls-san-configuration.md) for detailed guide
+- **Validation**: Each entry must be a valid domain name format
 
 #### ONEPASSWORD_CONNECT_TOKEN
 - **Type**: String
@@ -405,29 +400,6 @@ NO_DISKS_FOR_CLUSTER: true
 SKIP_RANCHER_PARTITION_CHECK: true
 SERVER_IP: "192.168.1.100"
 JOIN_TOKEN: "K10..."
-```
-
-### Small Cluster with ArgoCD (GitOps)
-```yaml
-FIRST_NODE: true
-GPU_NODE: true
-DOMAIN: "165.245.128.225.nip.io"
-CERT_OPTION: generate
-CLUSTER_SIZE: small
-CLUSTER_DISKS: /dev/vdc1
-CLUSTERFORGE_RELEASE: none
-```
-
-### Small Cluster without ArgoCD
-```yaml
-FIRST_NODE: true
-GPU_NODE: true
-DOMAIN: "165.245.128.225.nip.io"
-CERT_OPTION: generate
-CLUSTER_SIZE: small
-CLUSTER_DISKS: /dev/vdc1
-INSTALL_ARGOCD: false
-CLUSTERFORGE_RELEASE: none
 ```
 
 ### Testing/Development Configuration

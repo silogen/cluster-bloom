@@ -1,0 +1,15 @@
+---
+# ClusterForge Deployment Orchestration
+#
+# Purpose: Coordinates deployment of ClusterForge application management platform
+# Scope: Manages ClusterForge download, extraction, and bootstrap process
+# Usage: include_tasks: tasks/deploy_clusterforge/main.yaml
+#
+# This file orchestrates deployment of:
+# - ClusterForge release download and extraction
+# - ClusterForge bootstrap script execution
+# - Application deployment via ClusterForge platform
+
+- name: Setup ClusterForge Platform
+  tags: clusterforge_setup
+  import_tasks: clusterforge_setup.yaml

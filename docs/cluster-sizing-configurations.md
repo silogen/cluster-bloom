@@ -34,14 +34,6 @@ Disk: 1–4 TB NVMe (single or mirrored)
 
 Storage: Optional small MinIO; otherwise skip internal S3
 
-#### App Deployment:
-
-ArgoCD core (headless/CLI-only) installed by default
-
-ClusterForge apps deployed via Helm template + ArgoCD sync
-
-Disable with `INSTALL_ARGOCD: false`
-
 #### RKE2 Notes:
 
 Single rke2-server
