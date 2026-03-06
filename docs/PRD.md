@@ -112,6 +112,33 @@ Pre-flight validation system checks all configuration, resources, and system req
 
 **[📄 Configuration Reference](./configuration-reference.md)**
 
+### Playbook Export and Inspection
+Advanced debugging and transparency features allow users to export generated Ansible playbooks for inspection before execution. This feature enables debugging playbook generation, understanding deployment actions, and provides flexibility for restricted environments.
+
+**Key Capabilities:**
+- **Export Mode**: Generate complete Ansible playbook without execution using `--export` flag
+- **Configuration Integration**: Exported playbooks include all user configuration values properly applied
+- **Manual Execution**: Exported playbooks can be run separately using the `run` command
+- **Debugging Support**: Full visibility into deployment actions before execution
+- **Environment Flexibility**: Export in one environment, execute in another
+- **Cleanup Integration**: Use `--export --destroy-data` to include cluster cleanup tasks in exported playbooks
+- **Existing Installation Support**: Handles existing cluster installations through automated cleanup task injection
+
+**Example Usage:**
+```bash
+# Export playbook to stdout
+./bloom cli bloom.yaml --export
+
+# Save exported playbook to file
+./bloom cli bloom.yaml --export > deployment.yaml
+
+# Export with cleanup tasks for existing installations
+./bloom cli bloom.yaml --export --destroy-data > cleanupDeployment.yaml
+
+# Execute exported playbook manually
+sudo ./bloom run deployment.yaml
+```
+
 ### Post-Deployment Credential Display
 Automatic display of access credentials for deployed ClusterForge components including AIRM DevUser and Keycloak admin credentials with ready-to-use kubectl commands for password retrieval.
 
@@ -149,6 +176,33 @@ Interactive TUI guides through all installation steps with real-time progress tr
 ```bash
 echo -e 'FIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml
 sudo ./bloom --config bloom.yaml
+```
+
+#### Playbook Export and Inspection
+```bash
+./bloom cli bloom.yaml --export
+```
+Exports the generated Ansible playbook to stdout instead of executing it. This enables debugging playbook generation, understanding what actions will be taken before execution, and provides a workaround for restricted environments where the wrapper lacks execution permissions.
+
+**Use Cases:**
+- **Debugging**: Inspect the complete playbook before execution
+- **Transparency**: Understand exactly what actions will be performed
+- **Restricted Environments**: Export playbooks in one environment, execute in another
+- **Manual Control**: Review and manually modify playbooks before execution
+
+**Example Workflow:**
+```bash
+# Export playbook to file
+./bloom cli bloom.yaml --export > myPlaybook.yaml
+
+# Export playbook with cleanup tasks for existing installations
+./bloom cli bloom.yaml --export --destroy-data > cleanupPlaybook.yaml
+
+# Review the generated playbook
+less myPlaybook.yaml
+
+# Execute the exported playbook manually
+sudo ./bloom run myPlaybook.yaml
 ```
 
 #### Demo Mode

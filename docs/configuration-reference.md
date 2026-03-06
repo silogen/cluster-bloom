@@ -535,6 +535,112 @@ export USE_CERT_MANAGER=true
 export CERT_MANAGER_EMAIL="admin@example.com"
 ```
 
+## CLI Commands Reference
+
+### CLI Command
+
+Deploy cluster using configuration file:
+
+```bash
+bloom cli <config-file> [flags]
+```
+
+**Available Flags:**
+- `--export`: Export generated playbook to stdout instead of executing it
+- `--dry-run`: Run in check mode without making changes
+- `--destroy-data`: ⚠️ DANGER: Permanently destroys ALL cluster data, storage, and disks
+- `--playbook string`: Playbook to run (default: "cluster-bloom.yaml")
+- `--tags string`: Run only tasks with specific tags (e.g., cleanup, validate, storage)
+
+**Examples:**
+```bash
+# Standard deployment
+sudo ./bloom cli bloom.yaml
+
+# Export playbook for inspection
+./bloom cli bloom.yaml --export
+
+# Export and save to file
+./bloom cli bloom.yaml --export > deployment.yaml
+
+# Export with cleanup tasks for existing installations
+./bloom cli bloom.yaml --export --destroy-data > cleanupDeployment.yaml
+
+# Dry run deployment
+sudo ./bloom cli bloom.yaml --dry-run
+
+# Run specific tags only
+sudo ./bloom cli bloom.yaml --tags "validate_node,prep_node"
+```
+
+### Run Command
+
+Execute external Ansible playbook using Bloom's containerized runtime:
+
+```bash
+bloom run <playbook> [flags]
+```
+
+**Available Flags:**
+- `--config string`: YAML config file whose keys become ansible extra vars
+- `--dry-run`: Run in check mode without making changes
+- `--extra-vars stringArray`: Extra variables passed to ansible-playbook (repeatable)
+- `--tags string`: Run only tasks with specific tags
+- `--verbose`: Show full Ansible output instead of clean summary
+
+**Examples:**
+```bash
+# Run exported playbook
+sudo ./bloom run myPlaybook.yaml
+
+# Run with additional configuration
+sudo ./bloom run myPlaybook.yaml --config extra-vars.yaml
+
+# Run with inline variables
+sudo ./bloom run myPlaybook.yaml -e "CUSTOM_VAR=value" -e "ANOTHER_VAR=test"
+
+# Run with verbose output
+sudo ./bloom run myPlaybook.yaml --verbose
+```
+
+### Export Workflow
+
+The `--export` flag enables a powerful workflow for playbook inspection and manual execution:
+
+1. **Generate and Inspect**: Export the playbook to review what actions will be performed
+2. **Modify if Needed**: Optionally customize the exported playbook
+3. **Execute Manually**: Run the playbook using the `run` command
+
+```bash
+# Step 1: Export playbook
+./bloom cli bloom.yaml --export > deployment.yaml
+
+# Step 1b: Export with cleanup for existing installations
+./bloom cli bloom.yaml --export --destroy-data > cleanupDeployment.yaml
+
+# Step 2: Review the playbook
+less deployment.yaml
+
+# Step 3: Execute the playbook
+sudo ./bloom run deployment.yaml
+```
+
+**Use Cases for Export:**
+- **Debugging**: Understand exactly what the deployment will do
+- **Compliance**: Review playbooks before execution in regulated environments
+- **Customization**: Modify generated playbooks for specific requirements
+- **Restricted Environments**: Generate playbooks on one system, execute on another
+- **Learning**: Study the generated Ansible code to understand cluster setup
+- **Existing Installations**: Use `--export --destroy-data` to handle existing cluster installations safely
+
+**Technical Details:**
+- **Self-Contained Playbooks**: Exported playbooks automatically inline all `include_tasks` directives, creating completely self-contained files
+- **Configuration Integration**: All user configuration values are properly applied to playbook variables
+- **Task Preservation**: Tags, when conditions, and other metadata from include directives are preserved on inlined tasks
+- **Full Compatibility**: Exported playbooks are fully compatible with the `bloom run` command and standard Ansible tools
+- **Cleanup Task Injection**: When `--destroy-data` is used with `--export`, cleanup tasks are automatically prepended to handle existing installations
+- **Comprehensive Cleanup**: Includes RKE2 uninstall, Longhorn cleanup, disk wiping, and service management for complete environment reset
+
 ## See Also
 
 - [PRD.md](../../PRD.md) - Product overview

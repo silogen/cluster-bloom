@@ -74,7 +74,40 @@ Get help for specific commands:
 ```sh
 ./bloom cleanup --help  # Remove existing cluster installation
 ./bloom cli --help      # Deploy cluster using configuration file
+./bloom run --help      # Run exported Ansible playbook
 ```
+
+### Playbook Export and Debugging
+
+Export generated Ansible playbooks for inspection without execution:
+
+```sh
+# Export playbook to stdout
+./bloom cli bloom.yaml --export
+
+# Export playbook with cleanup tasks included (for existing installations)
+./bloom cli bloom.yaml --export --destroy-data > myPlaybook.yaml
+
+# Save exported playbook to file
+./bloom cli bloom.yaml --export > myPlaybook.yaml
+
+# Execute exported playbook manually
+sudo ./bloom run myPlaybook.yaml
+```
+
+**Use Cases:**
+- **Debugging**: Inspect the complete playbook before execution
+- **Understanding**: See exactly what actions will be performed
+- **Restricted Environments**: Export in one environment, run in another
+- **Manual Control**: Review and modify playbooks before execution
+
+**Important Notes:**
+- Exported playbooks are fully self-contained (all task files are automatically inlined)
+- Configuration values from your bloom.yaml are properly applied
+- Exported playbooks work perfectly with `sudo ./bloom run` for manual execution
+- No external dependencies or task files are required for exported playbooks
+- **Cleanup Integration**: Use `--export --destroy-data` to include cleanup tasks in exported playbooks
+- **Existing Installations**: For existing cluster installations, always use `--destroy-data` (either directly or via export)
 
 ## Configuration
 
@@ -174,6 +207,48 @@ Then run with:
 
 ```sh
 sudo ./bloom cli bloom.yaml
+```
+
+### CLI Command Options
+
+The `cli` command supports several options for different deployment scenarios:
+
+```sh
+# Standard deployment
+sudo ./bloom cli bloom.yaml
+
+# Export playbook without execution (for debugging/inspection)
+./bloom cli bloom.yaml --export
+
+# Dry run (check mode without making changes)
+sudo ./bloom cli bloom.yaml --dry-run
+
+# Run specific playbook tags only
+sudo ./bloom cli bloom.yaml --tags "validate_node,prep_node"
+
+# Export with cleanup tasks for existing installations
+./bloom cli bloom.yaml --export --destroy-data > cleanupPlaybook.yaml
+
+# Dangerous: Destroy existing data and start fresh
+sudo ./bloom cli bloom.yaml --destroy-data
+```
+
+### Separate Playbook Execution
+
+Run exported or custom Ansible playbooks using the containerized runtime:
+
+```sh
+# Run exported playbook
+sudo ./bloom run myPlaybook.yaml
+
+# Run with additional variables
+sudo ./bloom run myPlaybook.yaml -e "CUSTOM_VAR=value"
+
+# Run with configuration file for additional variables
+sudo ./bloom run myPlaybook.yaml --config additional-config.yaml
+
+# Run with verbose output
+sudo ./bloom run myPlaybook.yaml --verbose
 ```
 
 ## Installation Process
