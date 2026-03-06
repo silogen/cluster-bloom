@@ -629,6 +629,28 @@
                 - "'/' not in CLUSTER_LISTEN_IP"
                 - CLUSTER_LISTEN_IP not in ansible_all_ipv4_addresses
 
+            - name: Check subnet contains any system IPs using ipcalc
+              shell: |
+                matching_ips=""
+                for ip in {{ ansible_all_ipv4_addresses | join(' ') }}; do
+                  if ipcalc -c {{ CLUSTER_LISTEN_IP }} $ip 2>/dev/null; then
+                    matching_ips="$matching_ips $ip"
+                  fi
+                done
+                echo "${matching_ips## }"
+              register: subnet_matching_result
+              when:
+                - CLUSTER_LISTEN_IP is string
+                - "'/' in CLUSTER_LISTEN_IP"
+
+            - name: Set subnet matching IPs fact
+              set_fact:
+                subnet_matching_ips: "{{ subnet_matching_result.stdout.split() if subnet_matching_result.stdout else [] }}"
+              when:
+                - CLUSTER_LISTEN_IP is string
+                - "'/' in CLUSTER_LISTEN_IP"
+                - subnet_matching_result is defined
+
             - name: Validate CIDR subnet has matching interfaces
               fail:
                 msg: |
@@ -636,18 +658,18 @@
                   
                   Specified subnet: {{ CLUSTER_LISTEN_IP }}
                   Available IPs: {{ ansible_all_ipv4_addresses | join(', ') }}
-                  Matching IPs: {{ ansible_all_ipv4_addresses | select('ipaddr', CLUSTER_LISTEN_IP) | list | join(', ') or 'None' }}
+                  Matching IPs: {{ subnet_matching_ips | default([]) | join(', ') or 'None' }}
                   
                   📋 To fix this issue:
                   1. Use a subnet that contains available IPs from the list above, or
                   2. Specify an exact IP address from the available list
                   3. Check network interface configuration on the target system
                   
-                  💡 Example: If you have 192.168.1.100, use "192.168.1.0/24"
+                  💡 Example: If you have 10.0.255.96, use "10.0.255.0/24"
               when:
                 - CLUSTER_LISTEN_IP is string
                 - "'/' in CLUSTER_LISTEN_IP"
-                - ansible_all_ipv4_addresses | select('ipaddr', CLUSTER_LISTEN_IP) | list | length == 0
+                - subnet_matching_ips | default([]) | length == 0
 
 
 
@@ -661,7 +683,7 @@
                   Verified: IP exists on system interface
                   {% elif CLUSTER_LISTEN_IP is string and '/' in CLUSTER_LISTEN_IP %}
                   Type: CIDR subnet
-                  Available IPs in subnet: {{ ansible_all_ipv4_addresses | select('ipaddr', CLUSTER_LISTEN_IP) | list | join(', ') }}
+                  Available IPs in subnet: {{ subnet_matching_ips | default([]) | join(', ') or 'None' }}
                   {% endif %}
 
         - name: Determine node IP for RKE2 cluster communication
@@ -679,14 +701,15 @@
             # Priority 2: Find IP from CIDR subnet if provided
             - name: Find IP from CLUSTER_LISTEN_IP subnet
               set_fact:
-                node_ip: "{{ ansible_all_ipv4_addresses | select('ipaddr', CLUSTER_LISTEN_IP) | first }}"
+                node_ip: "{{ subnet_matching_ips[0] }}"
               when:
                 - node_ip is not defined
                 - CLUSTER_LISTEN_IP is defined
                 - CLUSTER_LISTEN_IP != ""
                 - "'/' in CLUSTER_LISTEN_IP"
                 - CLUSTER_LISTEN_IP is string
-                - ansible_all_ipv4_addresses | select('ipaddr', CLUSTER_LISTEN_IP) | list | length > 0
+                - subnet_matching_ips is defined
+                - subnet_matching_ips | length > 0
 
 
 
