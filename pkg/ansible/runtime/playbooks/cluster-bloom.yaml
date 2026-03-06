@@ -629,14 +629,31 @@
                 - "'/' not in CLUSTER_LISTEN_IP"
                 - CLUSTER_LISTEN_IP not in ansible_all_ipv4_addresses
 
-            - name: Check subnet contains any system IPs using ipcalc
+            - name: Check subnet contains any system IPs using native logic
               shell: |
+                subnet="{{ CLUSTER_LISTEN_IP }}"
+                network=$(echo "$subnet" | cut -d'/' -f1)
+                prefix=$(echo "$subnet" | cut -d'/' -f2)
+                
+                # Convert network to integer
+                network_int=$(echo "$network" | awk -F. '{print ($1 * 16777216) + ($2 * 65536) + ($3 * 256) + $4}')
+                
+                # Calculate subnet mask
+                mask=$((0xffffffff << (32 - prefix) & 0xffffffff))
+                network_masked=$((network_int & mask))
+                
                 matching_ips=""
                 for ip in {{ ansible_all_ipv4_addresses | join(' ') }}; do
-                  if ipcalc -c {{ CLUSTER_LISTEN_IP }} $ip 2>/dev/null; then
+                  # Convert IP to integer
+                  ip_int=$(echo "$ip" | awk -F. '{print ($1 * 16777216) + ($2 * 65536) + ($3 * 256) + $4}')
+                  ip_masked=$((ip_int & mask))
+                  
+                  # Check if IP is in the same network
+                  if [ "$ip_masked" -eq "$network_masked" ]; then
                     matching_ips="$matching_ips $ip"
                   fi
                 done
+                
                 echo "${matching_ips## }"
               register: subnet_matching_result
               when:
