@@ -730,17 +730,10 @@
 
 
 
-            # Priority 4: Current auto-detection logic (fallback)
-            - name: Get node IP using current auto-detection (fallback)
-              shell: >-
-                ip -4 addr show | grep "inet 10.0.3\." | awk '{{ "{" }}print $2{{ "}" }}' | cut -d/ -f1 | head -1 || echo ""
-              register: node_ip_result
-              changed_when: false
-              when: node_ip is not defined
-
-            - name: Set auto-detected node_ip fact (final fallback)
+            # Priority 3: Use default route interface (auto-detection)
+            - name: Use default route interface for cluster communication
               set_fact:
-                node_ip: "{{ node_ip_result.stdout if node_ip_result.stdout != '' else ansible_default_ipv4.address }}"
+                node_ip: "{{ ansible_default_ipv4.address }}"
               when: node_ip is not defined
 
         - name: Display selected cluster IP for verification
@@ -757,8 +750,10 @@
                 Method: First IP found from subnet {{ CLUSTER_LISTEN_IP }}
                 {% endif %}
                {% else %}
-               Method: Auto-detection (10.0.3.x subnet or default route interface)
-               Configuration: No CLUSTER_LISTEN_IP specified, using auto-detection
+               Method: Auto-detection (default route interface)
+               Configuration: No CLUSTER_LISTEN_IP specified, using default route interface
+               Interface: {{ ansible_default_ipv4.interface }}
+               Gateway: {{ ansible_default_ipv4.gateway }}
                Validation: ⏭️ Skipped (backward compatibility mode)
                {% endif %}
 
