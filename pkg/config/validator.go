@@ -145,6 +145,34 @@ func Validate(cfg Config) []string {
 						}
 					}
 				}
+			case "clusterListenIp":
+				// Special validation for CLUSTER_LISTEN_IP - supports string or array
+				if isString && strVal != "" {
+					// Validate single IP or CIDR
+					if pattern, ok := patterns[arg.Type]; ok {
+						if !pattern.MatchString(strVal) {
+							errors = append(errors, fmt.Sprintf("invalid CLUSTER_LISTEN_IP format: '%s'\n"+
+								"  Expected formats:\n"+
+								"    - Exact IP: \"192.168.1.100\"\n"+
+								"    - CIDR subnet: \"192.168.1.0/24\"\n"+
+								"  Note: Interface existence will be validated during deployment.", strVal))
+						}
+					}
+				} else if sequence, ok := value.([]interface{}); ok {
+					// Validate array of CIDRs
+					cidrPattern := regexp.MustCompile(`^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)/(3[0-2]|[12][0-9]|[0-9])$`)
+					for i, item := range sequence {
+						if itemStr, ok := item.(string); ok {
+							if itemStr != "" && !cidrPattern.MatchString(itemStr) {
+								errors = append(errors, fmt.Sprintf("CLUSTER_LISTEN_IP[%d]: invalid CIDR format: '%s'\n"+
+									"  Expected format: \"192.168.1.0/24\" (IP address with /prefix)\n"+
+									"  Valid prefix range: /0 to /32", i, itemStr))
+							}
+						} else {
+							errors = append(errors, fmt.Sprintf("CLUSTER_LISTEN_IP[%d]: must be string, got %T", i, item))
+						}
+					}
+				}
 			default:
 				// Check if this type has a pattern
 				if isString && strVal != "" {

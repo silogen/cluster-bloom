@@ -604,15 +604,167 @@
             dest: /etc/rancher/rke2/audit-policy.yaml
             mode: "0644"
 
-        - name: Get node IP for RKE2 cluster communication
-          shell: >-
-            ip -4 addr show | grep "inet 10.0.3\." | awk '{{ "{" }}print $2{{ "}" }}' | cut -d/ -f1 | head -1 || echo ""
-          register: node_ip_result
-          changed_when: false
+        - name: Validate CLUSTER_LISTEN_IP configuration
+          when: CLUSTER_LISTEN_IP is defined and CLUSTER_LISTEN_IP != ""
+          block:
+            - name: Gather network interface facts
+              setup:
+                filter: ansible_all_ipv4_addresses
 
-        - name: Set node_ip fact
-          set_fact:
-            node_ip: "{{ node_ip_result.stdout if node_ip_result.stdout != '' else ansible_default_ipv4.address }}"
+            - name: Validate explicit IP exists on system interfaces
+              fail:
+                msg: |
+                  ❌ CLUSTER_LISTEN_IP validation failed!
+                  
+                  Specified IP: {{ CLUSTER_LISTEN_IP }}
+                  Available IPs on this system: {{ ansible_all_ipv4_addresses | join(', ') }}
+                  
+                  📋 To fix this issue:
+                  1. Choose an IP from the available list above, or
+                  2. Use a CIDR subnet that contains available IPs (e.g., "192.168.1.0/24")
+                  3. Use an array of subnets: ["192.168.1.0/24", "10.0.0.0/8"]
+                  
+                  💡 Tip: Run 'ip addr show' on the target system to see all interfaces
+              when:
+                - CLUSTER_LISTEN_IP is string
+                - "'/' not in CLUSTER_LISTEN_IP"
+                - CLUSTER_LISTEN_IP not in ansible_all_ipv4_addresses
+
+            - name: Validate CIDR subnet has matching interfaces
+              fail:
+                msg: |
+                  ❌ CLUSTER_LISTEN_IP subnet validation failed!
+                  
+                  Specified subnet: {{ CLUSTER_LISTEN_IP }}
+                  Available IPs: {{ ansible_all_ipv4_addresses | join(', ') }}
+                  Matching IPs: {{ ansible_all_ipv4_addresses | select('ipaddr', CLUSTER_LISTEN_IP) | list | join(', ') or 'None' }}
+                  
+                  📋 To fix this issue:
+                  1. Use a subnet that contains available IPs from the list above, or
+                  2. Specify an exact IP address from the available list
+                  3. Check network interface configuration on the target system
+                  
+                  💡 Example: If you have 192.168.1.100, use "192.168.1.0/24"
+              when:
+                - CLUSTER_LISTEN_IP is string
+                - "'/' in CLUSTER_LISTEN_IP"
+                - ansible_all_ipv4_addresses | select('ipaddr', CLUSTER_LISTEN_IP) | list | length == 0
+
+            - name: Check if any subnet in array has matching IPs
+              set_fact:
+                subnet_matches_found: "{{ subnet_matches_found | default(0) | int + (ansible_all_ipv4_addresses | select('ipaddr', item) | list | length) }}"
+              loop: "{{ CLUSTER_LISTEN_IP }}"
+              when:
+                - CLUSTER_LISTEN_IP is not string
+                - CLUSTER_LISTEN_IP is iterable
+
+            - name: Validate subnet array has at least one matching subnet
+              fail:
+                msg: |
+                  ❌ CLUSTER_LISTEN_IP subnet array validation failed!
+                  
+                  Specified subnets: {{ CLUSTER_LISTEN_IP | join(', ') }}
+                  Available IPs: {{ ansible_all_ipv4_addresses | join(', ') }}
+                  
+                  Matching results:
+                  {% for subnet in CLUSTER_LISTEN_IP %}
+                  - {{ subnet }}: {{ ansible_all_ipv4_addresses | select('ipaddr', subnet) | list | join(', ') or 'No matches' }}
+                  {% endfor %}
+                  
+                  📋 To fix this issue:
+                  1. Include at least one subnet that contains available IPs
+                  2. Use exact IP addresses instead: "192.168.1.100"
+                  3. Check your network configuration and interface assignments
+              when:
+                - CLUSTER_LISTEN_IP is not string
+                - CLUSTER_LISTEN_IP is iterable
+                - subnet_matches_found | default(0) | int == 0
+
+            - name: CLUSTER_LISTEN_IP validation successful
+              debug:
+                msg: |
+                  ✅ CLUSTER_LISTEN_IP validation passed!
+                  Configuration: {{ CLUSTER_LISTEN_IP }}
+                  {% if CLUSTER_LISTEN_IP is string and '/' not in CLUSTER_LISTEN_IP %}
+                  Type: Explicit IP address
+                  Verified: IP exists on system interface
+                  {% elif CLUSTER_LISTEN_IP is string and '/' in CLUSTER_LISTEN_IP %}
+                  Type: CIDR subnet
+                  Available IPs in subnet: {{ ansible_all_ipv4_addresses | select('ipaddr', CLUSTER_LISTEN_IP) | list | join(', ') }}
+                  {% else %}
+                  Type: Subnet array
+                  Total matching IPs found: {{ subnet_matches_found | default(0) }}
+                  {% endif %}
+
+        - name: Determine node IP for RKE2 cluster communication
+          block:
+            # Priority 1: Use explicit IP if provided
+            - name: Use explicit CLUSTER_LISTEN_IP if provided
+              set_fact:
+                node_ip: "{{ CLUSTER_LISTEN_IP }}"
+              when: 
+                - CLUSTER_LISTEN_IP is defined
+                - CLUSTER_LISTEN_IP != ""
+                - "'/' not in CLUSTER_LISTEN_IP"
+                - CLUSTER_LISTEN_IP is string
+
+            # Priority 2: Find IP from CIDR subnet if provided
+            - name: Find IP from CLUSTER_LISTEN_IP subnet
+              set_fact:
+                node_ip: "{{ ansible_all_ipv4_addresses | select('ipaddr', CLUSTER_LISTEN_IP) | first }}"
+              when:
+                - node_ip is not defined
+                - CLUSTER_LISTEN_IP is defined
+                - CLUSTER_LISTEN_IP != ""
+                - "'/' in CLUSTER_LISTEN_IP"
+                - CLUSTER_LISTEN_IP is string
+                - ansible_all_ipv4_addresses | select('ipaddr', CLUSTER_LISTEN_IP) | list | length > 0
+
+            # Priority 3: Find IP from subnet array (try in order)
+            - name: Find IP from CLUSTER_LISTEN_IP subnet array
+              set_fact:
+                node_ip: "{{ ansible_all_ipv4_addresses | select('ipaddr', item) | first }}"
+              loop: "{{ CLUSTER_LISTEN_IP }}"
+              when:
+                - node_ip is not defined
+                - CLUSTER_LISTEN_IP is defined
+                - CLUSTER_LISTEN_IP is iterable
+                - CLUSTER_LISTEN_IP is not string
+                - ansible_all_ipv4_addresses | select('ipaddr', item) | list | length > 0
+
+            # Priority 4: Current auto-detection logic (fallback)
+            - name: Get node IP using current auto-detection (fallback)
+              shell: >-
+                ip -4 addr show | grep "inet 10.0.3\." | awk '{{ "{" }}print $2{{ "}" }}' | cut -d/ -f1 | head -1 || echo ""
+              register: node_ip_result
+              changed_when: false
+              when: node_ip is not defined
+
+            - name: Set auto-detected node_ip fact (final fallback)
+              set_fact:
+                node_ip: "{{ node_ip_result.stdout if node_ip_result.stdout != '' else ansible_default_ipv4.address }}"
+              when: node_ip is not defined
+
+        - name: Display selected cluster IP for verification
+          debug:
+            msg: |
+               🌐 Cluster IP Selection Result:
+               Selected IP: {{ node_ip }}
+               {% if CLUSTER_LISTEN_IP is defined and CLUSTER_LISTEN_IP != "" %}
+               Configuration: CLUSTER_LISTEN_IP = {{ CLUSTER_LISTEN_IP }}
+               Validation: ✅ Passed (IP/subnet verified on target system)
+               {% if CLUSTER_LISTEN_IP is string and '/' not in CLUSTER_LISTEN_IP %}
+               Method: Explicit IP address specified
+               {% elif CLUSTER_LISTEN_IP is string and '/' in CLUSTER_LISTEN_IP %}
+               Method: First IP found from subnet {{ CLUSTER_LISTEN_IP }}
+               {% elif CLUSTER_LISTEN_IP is not string %}
+               Method: First IP found from subnet array {{ CLUSTER_LISTEN_IP }}
+               {% endif %}
+               {% else %}
+               Method: Auto-detection (10.0.3.x subnet or default route interface)
+               Configuration: No CLUSTER_LISTEN_IP specified, using auto-detection
+               Validation: ⏭️ Skipped (backward compatibility mode)
+               {% endif %}
 
         - name: Configure dnsmasq
           when: DNSMASQ and FIRST_NODE and DOMAIN != ""
