@@ -157,11 +157,10 @@ func sortArguments(args []Argument) {
 	sectionOrder := map[string]int{
 		"📋 Basic Configuration":          0,
 		"🔗 Additional Node Configuration": 1,
-		"🌐 Network Configuration":        2,
-		"💾 Storage Configuration":        3,
-		"🔒 SSL/TLS Configuration":        4,
-		"⚙️ Advanced Configuration":       5,
-		"💻 Command Line Options":         6,
+		"💾 Storage Configuration":        2,
+		"🔒 SSL/TLS Configuration":        3,
+		"⚙️ Advanced Configuration":       4,
+		"💻 Command Line Options":         5,
 	}
 
 	// Simple bubble sort (good enough for ~26 items)

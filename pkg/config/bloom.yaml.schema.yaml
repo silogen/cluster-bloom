@@ -69,11 +69,10 @@ schema:
       applicable: when(FIRST_NODE == false)
       section: "🔗 Additional Node Configuration"
 
-    # 🌐 Network Configuration
     CLUSTER_LISTEN_IP:
       type: clusterListenIp
       desc: "Network IP specification for cluster binding. Supports exact IP (192.168.1.100) or subnet CIDR (192.168.1.0/24). Overrides auto-detection for multi-homed systems."
-      section: "🌐 Network Configuration"
+      section: "⚙️ Advanced Configuration"
       examples:
         - "192.168.1.100"
         - "192.168.1.0/24"
