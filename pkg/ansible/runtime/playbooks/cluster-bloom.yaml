@@ -653,7 +653,7 @@
             - name: Check if any subnet in array has matching IPs
               set_fact:
                 subnet_matches_found: "{{ subnet_matches_found | default(0) | int + (ansible_all_ipv4_addresses | select('ipaddr', item) | list | length) }}"
-              loop: "{{ CLUSTER_LISTEN_IP }}"
+              loop: "{{ CLUSTER_LISTEN_IP if CLUSTER_LISTEN_IP is sequence else [] }}"
               when:
                 - CLUSTER_LISTEN_IP is sequence
                 - CLUSTER_LISTEN_IP is not string
