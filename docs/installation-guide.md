@@ -528,7 +528,7 @@ FIX_DNS: true
 - Tests current DNS configuration before making changes
 - Only modifies `/etc/resolv.conf` if DNS test fails AND external DNS (1.1.1.1) succeeds
 - Creates timestamped backup at `/etc/resolv.conf.backup-<timestamp>`
-- Configures Level 3 DNS (4.4.4.4)
+- Configures Google/Cloudflare DNS (8.8.8.8, 1.1.1.1, 8.8.4.4)
 - Verifies DNS works after modification
 - Automatically rolls back to backup if verification fails
 

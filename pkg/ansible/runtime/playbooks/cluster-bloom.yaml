@@ -360,7 +360,10 @@
                 content: |
                   # Configured by cluster-bloom due to DNS failure
                   # Original backed up to /etc/resolv.conf.backup-{{ ansible_date_time.epoch }}
-                  nameserver 4.4.4.4
+                  nameserver 8.8.8.8
+                  nameserver 1.1.1.1
+                  nameserver 8.8.4.4
+                  # nameserver 4.4.4.4
                 dest: /etc/resolv.conf
                 mode: "0644"
               when: dns_needs_fixing
@@ -371,6 +374,7 @@
                 nslookup archive.ubuntu.com || exit 1
                 nslookup security.ubuntu.com || exit 1
               register: dns_verify
+              failed_when: false
               retries: 3
               delay: 2
               until: dns_verify.rc == 0
@@ -390,7 +394,7 @@
                       DNS modification failed verification and has been rolled back.
                       Original configuration restored from backup.
                       Manual DNS configuration may be required.
-              when: dns_needs_fixing and dns_verify.failed is defined and dns_verify.failed
+              when: dns_needs_fixing and dns_verify is defined and dns_verify.rc != 0
 
         - name: Stop services that may lock apt
           shell: |
@@ -733,7 +737,7 @@
                   # Cluster Bloom dnsmasq configuration
                   address=/{{ DOMAIN }}/{{ node_ip }} # Keycloak Internal Resolution
                   server=/cluster.local/10.243.0.10 # Forward cluster.local to CoreDNS
-                  server=4.4.4.4 # External DNS fallback
+                  server=8.8.8.8 # External DNS fallback
                   server=1.1.1.1 # External DNS fallback
                   listen-address=127.0.0.1
                   bind-interfaces
