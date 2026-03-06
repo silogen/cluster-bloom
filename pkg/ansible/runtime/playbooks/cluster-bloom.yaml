@@ -655,8 +655,8 @@
                 subnet_matches_found: "{{ subnet_matches_found | default(0) | int + (ansible_all_ipv4_addresses | select('ipaddr', item) | list | length) }}"
               loop: "{{ CLUSTER_LISTEN_IP }}"
               when:
+                - CLUSTER_LISTEN_IP is sequence
                 - CLUSTER_LISTEN_IP is not string
-                - CLUSTER_LISTEN_IP is iterable
 
             - name: Validate subnet array has at least one matching subnet
               fail:
@@ -676,8 +676,8 @@
                   2. Use exact IP addresses instead: "192.168.1.100"
                   3. Check your network configuration and interface assignments
               when:
+                - CLUSTER_LISTEN_IP is sequence
                 - CLUSTER_LISTEN_IP is not string
-                - CLUSTER_LISTEN_IP is iterable
                 - subnet_matches_found | default(0) | int == 0
 
             - name: CLUSTER_LISTEN_IP validation successful
