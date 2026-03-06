@@ -110,6 +110,59 @@ Configuration sources in priority order (highest to lowest):
 - **Description**: Domain name for cluster ingress configuration
 - **Example**: `DOMAIN: "cluster.example.com"`
 
+### Network and DNS Configuration
+
+#### FIX_DNS
+- **Type**: Boolean
+- **Default**: `false`
+- **Description**: **Opt-in** flag to allow automatic DNS resolution fixes during installation. When enabled, the playbook will test current DNS configuration and only modify `/etc/resolv.conf` if DNS is broken AND external DNS servers are reachable. Creates timestamped backups before modification and automatically rolls back on failure.
+- **Values**: `true` | `false`
+- **Example**: `FIX_DNS: true`
+- **Safety Features**:
+  - Only modifies DNS if current DNS test fails AND external DNS (1.1.1.1) succeeds
+  - Creates backup at `/etc/resolv.conf.backup-<timestamp>` before changes
+  - Verifies DNS works after modification
+  - Automatic rollback to backup if verification fails
+  - Never removes immutable attribute until after successful verification
+- **When Disabled** (`false`, default): Existing DNS configuration is never touched, even if broken
+- **Use Cases**: 
+  - Corporate networks with internal DNS servers: Leave `false` (default)
+  - Servers with working systemd-resolved: Leave `false` (default)
+  - Known DNS issues preventing apt updates: Set to `true`
+- **⚠️ Warning**: When enabled, will overwrite `/etc/resolv.conf` with Google/Cloudflare DNS if local DNS is detected as broken
+
+#### DNSMASQ
+- **Type**: Boolean
+- **Default**: `false`
+- **Description**: **Opt-in** flag to configure dnsmasq for local DNS resolution (first node only). Provides DNS resolution for `cluster.local` (Kubernetes) and custom domains. Requires `FIX_DNS: true` to take effect.
+- **Values**: `true` | `false`
+- **Example**: `DNSMASQ: true`
+- **Requirements**: 
+  - `FIX_DNS: true` (required)
+  - `FIRST_NODE: true` (automatic, only applies to first node)
+  - `DOMAIN` must be set (required for dnsmasq configuration)
+- **Behavior When Enabled**:
+  - Disables systemd-resolved (with state saved for rollback)
+  - Configures dnsmasq to resolve `{DOMAIN}` to node IP
+  - Forwards `cluster.local` queries to Kubernetes CoreDNS (10.243.0.10)
+  - Falls back to external DNS (4.4.4.4, 1.1.1.1) for other queries
+  - Makes `/etc/resolv.conf` point to `127.0.0.1` (localhost)
+  - Makes `/etc/resolv.conf` immutable after successful verification
+  - Tests configuration before committing changes
+  - Full automatic rollback on any failure
+- **Safety Features**:
+  - Creates backup at `/etc/resolv.conf.pre-dnsmasq-<timestamp>`
+  - Validates dnsmasq configuration before starting service
+  - Tests DNS resolution through dnsmasq before making permanent
+  - Automatic rollback restores: original resolv.conf, systemd-resolved state, and disables dnsmasq
+  - Clear error messages on failure
+- **When Disabled** (`false`, default): No DNS service configuration, uses system defaults
+- **Use Cases**:
+  - Need local resolution for Keycloak/ingress domains: Set to `true`
+  - Air-gapped clusters requiring custom domain resolution: Set to `true`
+  - Standard deployments with external DNS: Leave `false` (default)
+- **⚠️ Warning**: Significantly changes DNS configuration on the system. Only enable if you need local DNS for cluster domains.
+
 #### USE_CERT_MANAGER
 - **Type**: Boolean
 - **Default**: `false`
@@ -295,6 +348,10 @@ DOMAIN: "cluster.example.com"
 USE_CERT_MANAGER: true
 CERT_MANAGER_EMAIL: "admin@example.com"
 
+# Network and DNS (opt-in for safety)
+FIX_DNS: false        # Set to true only if DNS is known to be broken
+DNSMASQ: false        # Set to true (with FIX_DNS) for local cluster DNS
+
 # Integration
 CLUSTERFORGE_RELEASE: "v1.2.3"
 ADDITIONAL_OIDC_PROVIDERS:
@@ -405,6 +462,34 @@ NO_DISKS_FOR_CLUSTER: true
 SKIP_RANCHER_PARTITION_CHECK: true
 SERVER_IP: "192.168.1.100"
 JOIN_TOKEN: "K10..."
+```
+
+### First Node with DNS Issues (Opt-in DNS Fix)
+```yaml
+FIRST_NODE: true
+GPU_NODE: false
+DOMAIN: "cluster.example.com"
+
+# Enable DNS fixes (only if DNS is known to be broken)
+FIX_DNS: true         # Allows automatic DNS repair if broken
+DNSMASQ: false        # Keep false unless you need local cluster DNS
+
+USE_CERT_MANAGER: true
+CERT_MANAGER_EMAIL: "admin@example.com"
+```
+
+### First Node with Custom Domain Resolution (dnsmasq)
+```yaml
+FIRST_NODE: true
+GPU_NODE: false
+DOMAIN: "cluster.local.example.com"
+
+# Enable DNS management for local domain resolution
+FIX_DNS: true         # Required for dnsmasq configuration
+DNSMASQ: true         # Enables local DNS for cluster.local and custom domain
+
+USE_CERT_MANAGER: false
+CERT_OPTION: "generate"
 ```
 
 ### Small Cluster with ArgoCD (GitOps)
