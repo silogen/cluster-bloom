@@ -147,18 +147,21 @@ func Validate(cfg Config) []string {
 				}
 			case "clusterListenIp":
 				// Special validation for CLUSTER_LISTEN_IP - supports string only (IP or CIDR)
-				if isString && strVal != "" {
-					// Validate single IP or CIDR
-					if pattern, ok := patterns[arg.Type]; ok {
-						if !pattern.MatchString(strVal) {
-							errors = append(errors, fmt.Sprintf("invalid CLUSTER_LISTEN_IP format: '%s'\n"+
-								"  Expected formats:\n"+
-								"    - Exact IP: \"192.168.1.100\"\n"+
-								"    - CIDR subnet: \"192.168.1.0/24\"\n"+
-								"  Note: Interface existence will be validated during deployment.", strVal))
+				if isString {
+					if strVal != "" {
+						// Validate single IP or CIDR
+						if pattern, ok := patterns[arg.Type]; ok {
+							if !pattern.MatchString(strVal) {
+								errors = append(errors, fmt.Sprintf("invalid CLUSTER_LISTEN_IP format: '%s'\n"+
+									"  Expected formats:\n"+
+									"    - Exact IP: \"192.168.1.100\"\n"+
+									"    - CIDR subnet: \"192.168.1.0/24\"\n"+
+									"  Note: Interface existence will be validated during deployment.", strVal))
+							}
 						}
 					}
-				} else {
+					// Empty string is valid (means auto-detection)
+				} else if value != nil {
 					errors = append(errors, fmt.Sprintf("CLUSTER_LISTEN_IP must be a string (IP address or CIDR), got %T", value))
 				}
 			default:
