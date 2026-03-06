@@ -622,7 +622,6 @@
                   📋 To fix this issue:
                   1. Choose an IP from the available list above, or
                   2. Use a CIDR subnet that contains available IPs (e.g., "192.168.1.0/24")
-                  3. Use an array of subnets: ["192.168.1.0/24", "10.0.0.0/8"]
                   
                   💡 Tip: Run 'ip addr show' on the target system to see all interfaces
               when:
@@ -663,9 +662,6 @@
                   {% elif CLUSTER_LISTEN_IP is string and '/' in CLUSTER_LISTEN_IP %}
                   Type: CIDR subnet
                   Available IPs in subnet: {{ ansible_all_ipv4_addresses | select('ipaddr', CLUSTER_LISTEN_IP) | list | join(', ') }}
-                  {% else %}
-                  Type: Subnet array
-                  Total matching IPs found: {{ subnet_matches_found | default(0) }}
                   {% endif %}
 
         - name: Determine node IP for RKE2 cluster communication
@@ -692,17 +688,7 @@
                 - CLUSTER_LISTEN_IP is string
                 - ansible_all_ipv4_addresses | select('ipaddr', CLUSTER_LISTEN_IP) | list | length > 0
 
-            # Priority 3: Find IP from subnet array (try in order)
-            - name: Find IP from CLUSTER_LISTEN_IP subnet array
-              set_fact:
-                node_ip: "{{ ansible_all_ipv4_addresses | select('ipaddr', item) | first }}"
-              loop: "{{ CLUSTER_LISTEN_IP }}"
-              when:
-                - node_ip is not defined
-                - CLUSTER_LISTEN_IP is defined
-                - CLUSTER_LISTEN_IP is iterable
-                - CLUSTER_LISTEN_IP is not string
-                - ansible_all_ipv4_addresses | select('ipaddr', item) | list | length > 0
+
 
             # Priority 4: Current auto-detection logic (fallback)
             - name: Get node IP using current auto-detection (fallback)
@@ -725,13 +711,11 @@
                {% if CLUSTER_LISTEN_IP is defined and CLUSTER_LISTEN_IP != "" %}
                Configuration: CLUSTER_LISTEN_IP = {{ CLUSTER_LISTEN_IP }}
                Validation: ✅ Passed (IP/subnet verified on target system)
-               {% if CLUSTER_LISTEN_IP is string and '/' not in CLUSTER_LISTEN_IP %}
-               Method: Explicit IP address specified
-               {% elif CLUSTER_LISTEN_IP is string and '/' in CLUSTER_LISTEN_IP %}
-               Method: First IP found from subnet {{ CLUSTER_LISTEN_IP }}
-               {% elif CLUSTER_LISTEN_IP is not string %}
-               Method: First IP found from subnet array {{ CLUSTER_LISTEN_IP }}
-               {% endif %}
+                {% if CLUSTER_LISTEN_IP is string and '/' not in CLUSTER_LISTEN_IP %}
+                Method: Explicit IP address specified
+                {% elif CLUSTER_LISTEN_IP is string and '/' in CLUSTER_LISTEN_IP %}
+                Method: First IP found from subnet {{ CLUSTER_LISTEN_IP }}
+                {% endif %}
                {% else %}
                Method: Auto-detection (10.0.3.x subnet or default route interface)
                Configuration: No CLUSTER_LISTEN_IP specified, using auto-detection
