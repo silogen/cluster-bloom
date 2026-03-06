@@ -76,6 +76,24 @@ Get help for specific commands:
 ./bloom cli --help      # Deploy cluster using configuration file
 ```
 
+### CLI Examples
+
+Deploy with explicit cluster IP for multi-homed systems:
+```sh
+sudo ./bloom cli bloom.yaml --cluster-listen-ip "192.168.1.100"
+```
+
+Deploy with subnet auto-detection:
+```sh
+sudo ./bloom cli bloom.yaml --cluster-listen-ip "192.168.1.0/24"
+```
+
+Use environment variables for automated deployments:
+```sh
+export CLUSTER_LISTEN_IP="10.0.50.100"
+sudo ./bloom cli bloom.yaml
+```
+
 ## Configuration
 
 Cluster-Bloom can be configured through environment variables, command-line flags, or a configuration file.
@@ -89,6 +107,7 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | CERT_OPTION | Certificate option when USE_CERT_MANAGER is false. Choose 'existing' or 'generate' | "" |
 | CF_VALUES | Path to ClusterForge values file (optional). Example: "values_cf.yaml" | "" |
 | CLUSTER_DISKS | Comma-separated list of disk devices. Example "/dev/sdb,/dev/sdc". Also skips NVME drive checks. | "" |
+| CLUSTER_LISTEN_IP | Network IP specification for cluster binding. Supports exact IP ("192.168.1.100") or subnet CIDR ("192.168.1.0/24"). Overrides auto-detection for multi-homed systems. | "" |
 | CLUSTER_SIZE | Size category for cluster deployment planning. Options: small, medium, large | medium |
 | CLUSTER_PREMOUNTED_DISKS | Comma-separated list of absolute disk paths to use for Longhorn | "" |
 | CLUSTERFORGE_RELEASE | ClusterForge version to deploy. Accepts version tags ('v1.8.0'), full release URLs, 'latest', 'none', or "" (empty) to skip | "latest" |
@@ -154,18 +173,41 @@ ADDITIONAL_TLS_SAN_URLS:
 
 For detailed examples, testing instructions, and common use cases, see [docs/tls-san-configuration.md](docs/tls-san-configuration.md).
 
+### Network Configuration for Multi-Homed Systems
+
+For servers with multiple network interfaces, use `CLUSTER_LISTEN_IP` to specify which IP address the cluster should use for internal communication:
+
+**Explicit IP Address:**
+```yaml
+CLUSTER_LISTEN_IP: "192.168.1.100"  # Use this exact IP
+```
+
+**Subnet Detection:**
+```yaml
+CLUSTER_LISTEN_IP: "192.168.1.0/24"  # Auto-select IP from this subnet
+```
+
+**Common Use Cases:**
+- **Corporate Networks:** Separate management and cluster traffic
+- **Cloud Environments:** Choose between public and private interfaces  
+- **Multi-Datacenter:** Specify cluster-specific network segments
+- **Security Zones:** Isolate cluster traffic to secure networks
+
+If not specified, Bloom uses auto-detection which may select the wrong interface on multi-homed systems.
+
 ### Using a Configuration File
 
 Create a YAML configuration file (e.g., `bloom.yaml`):
 
 ```yaml
-DOMAIN: "your-domain.example.com"  # Required: Your cluster domain
+DOMAIN: "your-domain.example.com"     # Required: Your cluster domain
 FIRST_NODE: true
-GPU_NODE: true                     # Set to false if no GPUs
-CLUSTER_DISKS: "/dev/nvme1n1"     # Disk device path for storage
-CERT_OPTION: "generate"           # Options: "generate" or "existing"
-CLUSTERFORGE_RELEASE: "v1.8.0"    # Version tag, full URL, "latest", "none", or "" to skip
-PRELOAD_IMAGES: ""                # Optional: comma-separated container images
+GPU_NODE: true                        # Set to false if no GPUs
+CLUSTER_LISTEN_IP: "192.168.1.100"   # Optional: Explicit cluster network IP
+CLUSTER_DISKS: "/dev/nvme1n1"        # Disk device path for storage
+CERT_OPTION: "generate"              # Options: "generate" or "existing"
+CLUSTERFORGE_RELEASE: "v1.8.0"       # Version tag, full URL, "latest", "none", or "" to skip
+PRELOAD_IMAGES: ""                   # Optional: comma-separated container images
 ```
 
 Then run with:
