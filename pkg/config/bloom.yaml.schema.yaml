@@ -6,7 +6,6 @@
 # ========================================
 # Schema Definition
 # ========================================
-
 schema:
   type: map
   mapping:
@@ -166,10 +165,16 @@ schema:
       desc: ClusterForge git repository URL for ArgoCD-based deployment
       section: "⚙️ Advanced Configuration"
 
+    FIX_DNS:
+      type: bool
+      default: false
+      desc: Opt-in to allow automatic DNS fixes. Only modifies DNS if broken and external DNS works. Creates backups and auto-rolls back on failure
+      section: "⚙️ Advanced Configuration"
+
     DNSMASQ:
       type: bool
-      default: true
-      desc: Install dnsmasq to allow use of local OIDC server
+      default: false
+      desc: Install dnsmasq to allow use of local OIDC server. Requires FIX_DNS=true and DOMAIN to be set
       applicable: when(FIRST_NODE == true)
       section: "⚙️ Advanced Configuration"
 

@@ -74,7 +74,40 @@ Get help for specific commands:
 ```sh
 ./bloom cleanup --help  # Remove existing cluster installation
 ./bloom cli --help      # Deploy cluster using configuration file
+./bloom run --help      # Run exported Ansible playbook
 ```
+
+### Playbook Export and Debugging
+
+Export generated Ansible playbooks for inspection without execution:
+
+```sh
+# Export playbook to stdout
+./bloom cli bloom.yaml --export
+
+# Export playbook with cleanup tasks included (for existing installations)
+./bloom cli bloom.yaml --export --destroy-data > myPlaybook.yaml
+
+# Save exported playbook to file
+./bloom cli bloom.yaml --export > myPlaybook.yaml
+
+# Execute exported playbook manually
+sudo ./bloom run myPlaybook.yaml
+```
+
+**Use Cases:**
+- **Debugging**: Inspect the complete playbook before execution
+- **Understanding**: See exactly what actions will be performed
+- **Restricted Environments**: Export in one environment, run in another
+- **Manual Control**: Review and modify playbooks before execution
+
+**Important Notes:**
+- Exported playbooks are fully self-contained (all task files are automatically inlined)
+- Configuration values from your bloom.yaml are properly applied
+- Exported playbooks work perfectly with `sudo ./bloom run` for manual execution
+- No external dependencies or task files are required for exported playbooks
+- **Cleanup Integration**: Use `--export --destroy-data` to include cleanup tasks in exported playbooks
+- **Existing Installations**: For existing cluster installations, always use `--destroy-data` (either directly or via export)
 
 ## Configuration
 
@@ -92,11 +125,13 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | CLUSTER_DISKS | Comma-separated list of disk devices. Example "/dev/sdb,/dev/sdc". Also skips NVME drive checks. | "" |
 | CLUSTER_SIZE | Size category for cluster deployment planning. Options: small, medium, large | medium |
 | CLUSTER_PREMOUNTED_DISKS | Comma-separated list of absolute disk paths to use for Longhorn | "" |
-| CLUSTERFORGE_RELEASE | ClusterForge version to deploy. Accepts version tags ('v1.8.0'), full release URLs, 'latest', or 'none' | "latest" |
+| CLUSTERFORGE_RELEASE | ClusterForge version to deploy. Accepts version tags ('v1.8.0'), full release URLs, 'latest', 'none', or "" (empty) to skip | "latest" |
 | CONTROL_PLANE | Set to true if this node should be a control plane node | false, only applies when FIRST_NODE is false |
 | DISABLED_STEPS | Comma-separated list of steps to skip. Example "SetupLonghornStep,SetupMetallbStep" | "" |
 | DOMAIN | The domain name for the cluster (e.g., "cluster.example.com") (required). | "" |
 | ENABLED_STEPS | Comma-separated list of steps to perform. If empty, perform all. Example "SetupLonghornStep,SetupMetallbStep" | "" |
+| FIX_DNS | **Opt-in** to allow automatic DNS fixes. Only modifies DNS if broken and external DNS works. Creates backups and auto-rolls back on failure. | false |
+| DNSMASQ | **Opt-in** to configure dnsmasq for local DNS (first node only). Requires FIX_DNS=true and DOMAIN to be set. Provides cluster.local resolution. | false |
 | FIRST_NODE | Set to true if this is the first node in the cluster | true |
 | GPU_NODE | Set to true if this node has GPUs | true |
 | JOIN_TOKEN | The token used to join additional nodes to the cluster | |
@@ -165,7 +200,7 @@ FIRST_NODE: true
 GPU_NODE: true                     # Set to false if no GPUs
 CLUSTER_DISKS: "/dev/nvme1n1"     # Disk device path for storage
 CERT_OPTION: "generate"           # Options: "generate" or "existing"
-CLUSTERFORGE_RELEASE: "v1.8.0"    # Version tag, full URL, "latest", or "none" to skip
+CLUSTERFORGE_RELEASE: "v1.8.0"    # Version tag, full URL, "latest", "none", or "" to skip
 PRELOAD_IMAGES: ""                # Optional: comma-separated container images
 ```
 
@@ -173,6 +208,48 @@ Then run with:
 
 ```sh
 sudo ./bloom cli bloom.yaml
+```
+
+### CLI Command Options
+
+The `cli` command supports several options for different deployment scenarios:
+
+```sh
+# Standard deployment
+sudo ./bloom cli bloom.yaml
+
+# Export playbook without execution (for debugging/inspection)
+./bloom cli bloom.yaml --export
+
+# Dry run (check mode without making changes)
+sudo ./bloom cli bloom.yaml --dry-run
+
+# Run specific playbook tags only
+sudo ./bloom cli bloom.yaml --tags "validate_node,prep_node"
+
+# Export with cleanup tasks for existing installations
+./bloom cli bloom.yaml --export --destroy-data > cleanupPlaybook.yaml
+
+# Dangerous: Destroy existing data and start fresh
+sudo ./bloom cli bloom.yaml --destroy-data
+```
+
+### Separate Playbook Execution
+
+Run exported or custom Ansible playbooks using the containerized runtime:
+
+```sh
+# Run exported playbook
+sudo ./bloom run myPlaybook.yaml
+
+# Run with additional variables
+sudo ./bloom run myPlaybook.yaml -e "CUSTOM_VAR=value"
+
+# Run with configuration file for additional variables
+sudo ./bloom run myPlaybook.yaml --config additional-config.yaml
+
+# Run with verbose output
+sudo ./bloom run myPlaybook.yaml --verbose
 ```
 
 ## Installation Process

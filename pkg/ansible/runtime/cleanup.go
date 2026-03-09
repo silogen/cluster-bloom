@@ -203,30 +203,158 @@ func unmountClusterDisks(clusterDisks string) error {
 	if clusterDisks == "" {
 		return nil
 	}
-
-	fmt.Println("   Unmounting CLUSTER_DISKS devices...")
+	
 	devices := strings.Split(clusterDisks, ",")
+	fmt.Printf("   Unmounting cluster disks: %s\n", clusterDisks)
+	
 	for _, device := range devices {
 		device = strings.TrimSpace(device)
 		if device == "" {
 			continue
 		}
-
-		// Force unmount the device
-		fmt.Printf("   Unmounting %s...\n", device)
-		cmd := exec.Command("sudo", "umount", "-lf", device)
-		if output, err := cmd.CombinedOutput(); err != nil {
-			fmt.Printf("   Warning: Failed to unmount %s: %v (output: %s)\n", device, err, string(output))
+		
+		// Unmount the device
+		cmd := exec.Command("umount", device)
+		if err := cmd.Run(); err != nil {
+			fmt.Printf("   Warning: Failed to unmount %s: %v\n", device, err)
 		} else {
 			fmt.Printf("   Successfully unmounted %s\n", device)
 		}
+	}
+	
+	return nil
+}
 
-		// Also try to unmount any mount points using this device
-		cmd = exec.Command("bash", "-c", fmt.Sprintf("mount | grep '^%s' | awk '{print $3}' | xargs -r sudo umount -lf 2>/dev/null || true", device))
-		cmd.Run()
+// GenerateCleanupTasks creates Ansible tasks equivalent to the cleanup functions above
+func GenerateCleanupTasks(clusterDisks string) []map[string]any {
+	var cleanupTasks []map[string]any
+
+	// Main cleanup block task
+	cleanupBlock := map[string]any{
+		"name": "⚠️ DESTRUCTIVE CLEANUP: Remove existing Bloom cluster installation",
+		"tags": []string{"cleanup", "destroy-data"},
+		"block": []map[string]any{
+			{
+				"name": "Display destructive operation warning",
+				"debug": map[string]any{
+					"msg": []string{
+						"⚠️  DANGER: DESTRUCTIVE OPERATION IN PROGRESS ⚠️",
+						"",
+						"This playbook will PERMANENTLY DESTROY:",
+						"• Entire Kubernetes cluster (RKE2 uninstall)",
+						"• ALL Longhorn storage volumes and data",
+						"• ALL managed disk devices (wipefs + deletion)",
+						fmt.Sprintf("• All data on storage devices: %s", clusterDisks),
+						"",
+						"This action cannot be undone.",
+					},
+				},
+			},
+			// Longhorn cleanup tasks (based on CleanupLonghornMounts)
+			{
+				"name": "Stop and disable RKE2 services",
+				"systemd": map[string]any{
+					"name":    "{{ item }}",
+					"state":   "stopped",
+					"enabled": false,
+				},
+				"loop": []string{"rke2-server", "rke2-agent"},
+				"failed_when": false,
+			},
+			{
+				"name": "Clean Longhorn mounts and processes",
+				"shell": "pkill -f longhorn || true; for mount in $(mount | grep longhorn | awk '{print $3}'); do umount \"$mount\" 2>/dev/null || true; done; rm -rf /var/lib/longhorn/* 2>/dev/null || true; echo 'Longhorn cleanup completed'",
+				"register": "longhorn_cleanup",
+				"failed_when": false,
+			},
+			// RKE2 cleanup tasks (based on UninstallRKE2)
+			{
+				"name": "Run RKE2 uninstall script",
+				"shell": "/usr/local/bin/rke2-uninstall.sh",
+				"register": "rke2_uninstall",
+				"failed_when": false,
+			},
+			{
+				"name": "Clean RKE2 directories and files",
+				"shell": "rm -rf /var/lib/rancher/rke2 /etc/rancher/rke2 /var/lib/kubelet /var/log/pods /var/log/containers; rm -f /usr/local/bin/rke2* /usr/local/bin/kubectl /usr/local/bin/crictl /usr/local/bin/ctr; echo 'RKE2 cleanup completed'",
+				"register": "rke2_cleanup",
+				"failed_when": false,
+			},
+		},
 	}
 
-	return nil
+	cleanupTasks = append(cleanupTasks, cleanupBlock)
+
+	// Disk cleanup tasks (based on CleanupBloomDisks)
+	if clusterDisks != "" {
+		diskCleanupTask := map[string]any{
+			"name": "Clean and wipe cluster disks",
+			"tags": []string{"cleanup", "destroy-data", "storage"},
+			"block": []map[string]any{
+				{
+					"name": "Convert CLUSTER_DISKS to list for cleanup",
+					"set_fact": map[string]any{
+						"cluster_disks_cleanup_list": fmt.Sprintf("{{ '%s'.split(',') }}", clusterDisks),
+					},
+				},
+				{
+					"name": "Unmount cluster disks",
+					"shell": "umount {{ item }} 2>/dev/null || true",
+					"loop": "{{ cluster_disks_cleanup_list }}",
+					"failed_when": false,
+				},
+				{
+					"name": "Remove fstab entries for cluster disks",
+					"lineinfile": map[string]any{
+						"path":   "/etc/fstab",
+						"regexp": "{{ item | regex_escape }}",
+						"state":  "absent",
+					},
+					"loop": "{{ cluster_disks_cleanup_list }}",
+					"failed_when": false,
+				},
+				{
+					"name": "Wipe filesystem signatures from cluster disks",
+					"shell": "wipefs -a {{ item }} 2>/dev/null || true",
+					"loop": "{{ cluster_disks_cleanup_list }}",
+					"failed_when": false,
+				},
+				{
+					"name": "Remove mount point directories",
+					"file": map[string]any{
+						"path":  "/mnt/disk{{ ansible_loop.index0 }}",
+						"state": "absent",
+					},
+					"loop": "{{ cluster_disks_cleanup_list }}",
+					"loop_control": map[string]any{
+						"extended": true,
+					},
+					"failed_when": false,
+				},
+			},
+		}
+		cleanupTasks = append(cleanupTasks, diskCleanupTask)
+	}
+
+	// Completion task
+	finalTask := map[string]any{
+		"name": "Cleanup completion summary",
+		"debug": map[string]any{
+			"msg": []string{
+				"✅ Destructive cleanup completed",
+				"• RKE2 services stopped and uninstalled",
+				"• Longhorn storage cleaned",
+				"• Disk devices wiped and unmounted",
+				"• System ready for fresh installation",
+				"",
+				"Proceeding with normal cluster deployment...",
+			},
+		},
+		"tags": []string{"cleanup", "destroy-data"},
+	}
+	cleanupTasks = append(cleanupTasks, finalTask)
+
+	return cleanupTasks
 }
 
 // unmountPriorLonghornDisks helper function to handle fstab cleanup

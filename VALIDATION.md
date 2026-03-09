@@ -24,7 +24,7 @@ The validation system runs in `initConfig()` in the following order:
 - Must use `http://` or `https://` schemes
 - Must have a valid host component
 - Empty URLs are allowed for optional parameters
-- Special case: `CLUSTERFORGE_RELEASE` accepts "none" value
+- Special case: `CLUSTERFORGE_RELEASE` accepts "none" or "" (empty string) to skip installation
 
 **Error Messages**:
 - `"invalid URL format for {param}: {error}"`

@@ -509,6 +509,83 @@ kubectl logs rocm-test
 kubectl delete pod rocm-test
 ```
 
+## Troubleshooting
+
+### DNS Resolution Issues
+
+If you encounter DNS resolution issues during installation (e.g., `apt update` fails with DNS errors), ClusterBloom provides opt-in DNS configuration options:
+
+#### FIX_DNS Option
+
+**Problem**: DNS resolution is broken, preventing package installation.
+
+**Solution**: Enable automatic DNS fixes:
+```yaml
+FIX_DNS: true
+```
+
+**Behavior when enabled:**
+- Tests current DNS configuration before making changes
+- Only modifies `/etc/resolv.conf` if DNS test fails AND external DNS (1.1.1.1) succeeds
+- Creates timestamped backup at `/etc/resolv.conf.backup-<timestamp>`
+- Configures Google/Cloudflare DNS (8.8.8.8, 1.1.1.1, 8.8.4.4)
+- Verifies DNS works after modification
+- Automatically rolls back to backup if verification fails
+
+**⚠️ Warning:** Will overwrite `/etc/resolv.conf` if DNS is detected as broken. Original is always backed up.
+
+**When to use:**
+- ✅ Known DNS issues preventing apt updates
+- ✅ Broken DNS after system migration
+- ❌ Corporate networks with internal DNS (may break internal resolution)
+- ❌ Working systemd-resolved configurations (leave disabled)
+
+#### DNSMASQ Option
+
+**Problem**: Need local DNS resolution for cluster domains (e.g., `cluster.local`, custom ingress domains).
+
+**Solution**: Enable dnsmasq for local DNS management:
+```yaml
+FIX_DNS: true      # Required
+DNSMASQ: true      # Enables dnsmasq
+DOMAIN: "cluster.example.com"  # Required for dnsmasq
+```
+
+**Behavior when enabled:**
+- Only applies to first node
+- Disables systemd-resolved (state saved for rollback)
+- Configures dnsmasq to resolve custom domain to node IP
+- Forwards `cluster.local` queries to Kubernetes CoreDNS (10.243.0.10)
+- Falls back to external DNS (4.4.4.4, 1.1.1.1) for other queries
+- Points `/etc/resolv.conf` to localhost (127.0.0.1)
+- Makes `/etc/resolv.conf` immutable after successful verification
+- Creates backup at `/etc/resolv.conf.pre-dnsmasq-<timestamp>`
+- Automatic complete rollback on any failure
+
+**⚠️ Warning:** Significantly changes DNS configuration. Only enable if you need local cluster DNS.
+
+**When to use:**
+- ✅ Air-gapped clusters requiring custom domain resolution
+- ✅ Local resolution for Keycloak/ingress domains
+- ❌ Standard deployments with external DNS (leave disabled)
+- ❌ When you don't need local domain resolution
+
+#### Manual DNS Recovery
+
+If DNS was modified and you need to restore original configuration:
+
+```bash
+# Find backup files
+ls -la /etc/resolv.conf.backup-* /etc/resolv.conf.pre-dnsmasq-*
+
+# Restore from backup (use most recent timestamp)
+sudo chattr -i /etc/resolv.conf  # Remove immutable flag if present
+sudo cp /etc/resolv.conf.backup-<timestamp> /etc/resolv.conf
+
+# Restore systemd-resolved if needed
+sudo systemctl enable --now systemd-resolved
+```
+
 ## Key Differences: Manual vs Automated
 
 ClusterBloom automates all of the above steps and provides:

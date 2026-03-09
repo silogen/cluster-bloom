@@ -110,6 +110,59 @@ Configuration sources in priority order (highest to lowest):
 - **Description**: Domain name for cluster ingress configuration
 - **Example**: `DOMAIN: "cluster.example.com"`
 
+### Network and DNS Configuration
+
+#### FIX_DNS
+- **Type**: Boolean
+- **Default**: `false`
+- **Description**: **Opt-in** flag to allow automatic DNS resolution fixes during installation. When enabled, the playbook will test current DNS configuration and only modify `/etc/resolv.conf` if DNS is broken AND external DNS servers are reachable. Creates timestamped backups before modification and automatically rolls back on failure.
+- **Values**: `true` | `false`
+- **Example**: `FIX_DNS: true`
+- **Safety Features**:
+  - Only modifies DNS if current DNS test fails AND external DNS (1.1.1.1) succeeds
+  - Creates backup at `/etc/resolv.conf.backup-<timestamp>` before changes
+  - Verifies DNS works after modification
+  - Automatic rollback to backup if verification fails
+  - Never removes immutable attribute until after successful verification
+- **When Disabled** (`false`, default): Existing DNS configuration is never touched, even if broken
+- **Use Cases**: 
+  - Corporate networks with internal DNS servers: Leave `false` (default)
+  - Servers with working systemd-resolved: Leave `false` (default)
+  - Known DNS issues preventing apt updates: Set to `true`
+- **⚠️ Warning**: When enabled, will overwrite `/etc/resolv.conf` with Google/Cloudflare DNS if local DNS is detected as broken
+
+#### DNSMASQ
+- **Type**: Boolean
+- **Default**: `false`
+- **Description**: **Opt-in** flag to configure dnsmasq for local DNS resolution (first node only). Provides DNS resolution for `cluster.local` (Kubernetes) and custom domains. Requires `FIX_DNS: true` to take effect.
+- **Values**: `true` | `false`
+- **Example**: `DNSMASQ: true`
+- **Requirements**: 
+  - `FIX_DNS: true` (required)
+  - `FIRST_NODE: true` (automatic, only applies to first node)
+  - `DOMAIN` must be set (required for dnsmasq configuration)
+- **Behavior When Enabled**:
+  - Disables systemd-resolved (with state saved for rollback)
+  - Configures dnsmasq to resolve `{DOMAIN}` to node IP
+  - Forwards `cluster.local` queries to Kubernetes CoreDNS (10.243.0.10)
+  - Falls back to external DNS (4.4.4.4, 1.1.1.1) for other queries
+  - Makes `/etc/resolv.conf` point to `127.0.0.1` (localhost)
+  - Makes `/etc/resolv.conf` immutable after successful verification
+  - Tests configuration before committing changes
+  - Full automatic rollback on any failure
+- **Safety Features**:
+  - Creates backup at `/etc/resolv.conf.pre-dnsmasq-<timestamp>`
+  - Validates dnsmasq configuration before starting service
+  - Tests DNS resolution through dnsmasq before making permanent
+  - Automatic rollback restores: original resolv.conf, systemd-resolved state, and disables dnsmasq
+  - Clear error messages on failure
+- **When Disabled** (`false`, default): No DNS service configuration, uses system defaults
+- **Use Cases**:
+  - Need local resolution for Keycloak/ingress domains: Set to `true`
+  - Air-gapped clusters requiring custom domain resolution: Set to `true`
+  - Standard deployments with external DNS: Leave `false` (default)
+- **⚠️ Warning**: Significantly changes DNS configuration on the system. Only enable if you need local DNS for cluster domains.
+
 #### USE_CERT_MANAGER
 - **Type**: Boolean
 - **Default**: `false`
@@ -177,7 +230,7 @@ Configuration sources in priority order (highest to lowest):
   - **Full release URL**: e.g., `https://github.com/silogen/cluster-forge/releases/download/v1.8.0-rc6/release-enterprise-ai-v1.8.0-rc6.tar.gz` - Downloads tarball and auto-extracts version for ArgoCD target
   - **Special values**: 
     - `latest` - Uses the default branch (main)
-    - `none` - Skips ClusterForge installation entirely
+    - `none` or `""` (empty string) - Skips ClusterForge installation entirely
 - **Version Parsing**: When a full URL is provided, the version is automatically extracted (e.g., `v1.8.0-rc6` from the URL) and used as the `--target-revision` for ArgoCD/Gitea
 - **Examples**: 
   - `CLUSTERFORGE_RELEASE: "latest"`
@@ -313,6 +366,10 @@ DOMAIN: "cluster.example.com"
 USE_CERT_MANAGER: true
 CERT_MANAGER_EMAIL: "admin@example.com"
 
+# Network and DNS (opt-in for safety)
+FIX_DNS: false        # Set to true only if DNS is known to be broken
+DNSMASQ: false        # Set to true (with FIX_DNS) for local cluster DNS
+
 # Integration
 CLUSTERFORGE_RELEASE: "v1.2.3"
 ADDITIONAL_OIDC_PROVIDERS:
@@ -425,6 +482,34 @@ SERVER_IP: "192.168.1.100"
 JOIN_TOKEN: "K10..."
 ```
 
+### First Node with DNS Issues (Opt-in DNS Fix)
+```yaml
+FIRST_NODE: true
+GPU_NODE: false
+DOMAIN: "cluster.example.com"
+
+# Enable DNS fixes (only if DNS is known to be broken)
+FIX_DNS: true         # Allows automatic DNS repair if broken
+DNSMASQ: false        # Keep false unless you need local cluster DNS
+
+USE_CERT_MANAGER: true
+CERT_MANAGER_EMAIL: "admin@example.com"
+```
+
+### First Node with Custom Domain Resolution (dnsmasq)
+```yaml
+FIRST_NODE: true
+GPU_NODE: false
+DOMAIN: "cluster.local.example.com"
+
+# Enable DNS management for local domain resolution
+FIX_DNS: true         # Required for dnsmasq configuration
+DNSMASQ: true         # Enables local DNS for cluster.local and custom domain
+
+USE_CERT_MANAGER: false
+CERT_OPTION: "generate"
+```
+
 ### Small Cluster with ArgoCD (GitOps)
 ```yaml
 FIRST_NODE: true
@@ -467,6 +552,112 @@ export DOMAIN="cluster.example.com"
 export USE_CERT_MANAGER=true
 export CERT_MANAGER_EMAIL="admin@example.com"
 ```
+
+## CLI Commands Reference
+
+### CLI Command
+
+Deploy cluster using configuration file:
+
+```bash
+bloom cli <config-file> [flags]
+```
+
+**Available Flags:**
+- `--export`: Export generated playbook to stdout instead of executing it
+- `--dry-run`: Run in check mode without making changes
+- `--destroy-data`: ⚠️ DANGER: Permanently destroys ALL cluster data, storage, and disks
+- `--playbook string`: Playbook to run (default: "cluster-bloom.yaml")
+- `--tags string`: Run only tasks with specific tags (e.g., cleanup, validate, storage)
+
+**Examples:**
+```bash
+# Standard deployment
+sudo ./bloom cli bloom.yaml
+
+# Export playbook for inspection
+./bloom cli bloom.yaml --export
+
+# Export and save to file
+./bloom cli bloom.yaml --export > deployment.yaml
+
+# Export with cleanup tasks for existing installations
+./bloom cli bloom.yaml --export --destroy-data > cleanupDeployment.yaml
+
+# Dry run deployment
+sudo ./bloom cli bloom.yaml --dry-run
+
+# Run specific tags only
+sudo ./bloom cli bloom.yaml --tags "validate_node,prep_node"
+```
+
+### Run Command
+
+Execute external Ansible playbook using Bloom's containerized runtime:
+
+```bash
+bloom run <playbook> [flags]
+```
+
+**Available Flags:**
+- `--config string`: YAML config file whose keys become ansible extra vars
+- `--dry-run`: Run in check mode without making changes
+- `--extra-vars stringArray`: Extra variables passed to ansible-playbook (repeatable)
+- `--tags string`: Run only tasks with specific tags
+- `--verbose`: Show full Ansible output instead of clean summary
+
+**Examples:**
+```bash
+# Run exported playbook
+sudo ./bloom run myPlaybook.yaml
+
+# Run with additional configuration
+sudo ./bloom run myPlaybook.yaml --config extra-vars.yaml
+
+# Run with inline variables
+sudo ./bloom run myPlaybook.yaml -e "CUSTOM_VAR=value" -e "ANOTHER_VAR=test"
+
+# Run with verbose output
+sudo ./bloom run myPlaybook.yaml --verbose
+```
+
+### Export Workflow
+
+The `--export` flag enables a powerful workflow for playbook inspection and manual execution:
+
+1. **Generate and Inspect**: Export the playbook to review what actions will be performed
+2. **Modify if Needed**: Optionally customize the exported playbook
+3. **Execute Manually**: Run the playbook using the `run` command
+
+```bash
+# Step 1: Export playbook
+./bloom cli bloom.yaml --export > deployment.yaml
+
+# Step 1b: Export with cleanup for existing installations
+./bloom cli bloom.yaml --export --destroy-data > cleanupDeployment.yaml
+
+# Step 2: Review the playbook
+less deployment.yaml
+
+# Step 3: Execute the playbook
+sudo ./bloom run deployment.yaml
+```
+
+**Use Cases for Export:**
+- **Debugging**: Understand exactly what the deployment will do
+- **Compliance**: Review playbooks before execution in regulated environments
+- **Customization**: Modify generated playbooks for specific requirements
+- **Restricted Environments**: Generate playbooks on one system, execute on another
+- **Learning**: Study the generated Ansible code to understand cluster setup
+- **Existing Installations**: Use `--export --destroy-data` to handle existing cluster installations safely
+
+**Technical Details:**
+- **Self-Contained Playbooks**: Exported playbooks automatically inline all `include_tasks` directives, creating completely self-contained files
+- **Configuration Integration**: All user configuration values are properly applied to playbook variables
+- **Task Preservation**: Tags, when conditions, and other metadata from include directives are preserved on inlined tasks
+- **Full Compatibility**: Exported playbooks are fully compatible with the `bloom run` command and standard Ansible tools
+- **Cleanup Task Injection**: When `--destroy-data` is used with `--export`, cleanup tasks are automatically prepended to handle existing installations
+- **Comprehensive Cleanup**: Includes RKE2 uninstall, Longhorn cleanup, disk wiping, and service management for complete environment reset
 
 ## See Also
 

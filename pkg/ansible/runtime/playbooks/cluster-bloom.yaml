@@ -25,7 +25,21 @@
     ADDITIONAL_TLS_SAN_URLS: []
     RKE2_VERSION: ""
     RKE2_EXTRA_CONFIG: ""
-    DNSMASQ: true
+    
+    # DNS Configuration (opt-in for safety)
+    # FIX_DNS: Set to true to allow automatic DNS fixes if DNS is broken
+    #          Only modifies /etc/resolv.conf if DNS tests fail AND external DNS works
+    #          Creates backups before modification with automatic rollback on failure
+    #          WARNING: Will overwrite /etc/resolv.conf if DNS is detected as broken
+    FIX_DNS: false
+    
+    # DNSMASQ: Set to true (along with FIX_DNS) to configure dnsmasq on first node
+    #          Provides local DNS resolution for cluster.local and custom domains
+    #          Disables systemd-resolved and makes /etc/resolv.conf point to 127.0.0.1
+    #          Requires FIX_DNS: true to take effect
+    #          WARNING: Significantly changes DNS configuration on the system
+    DNSMASQ: false
+    
     INSTALL_ARGOCD: true
     ARGOCD_VERSION: "v2.14.11"
     CLUSTERFORGE_REPO: "https://github.com/silogen/cluster-forge.git"
@@ -278,7 +292,17 @@
 
     - name: Install Dependent Packages
       block:
-        - name: Fix DNS resolution
+        - name: DNS Configuration Notice
+          debug:
+            msg: |
+              DNS modifications are {{ 'ENABLED' if FIX_DNS else 'DISABLED (opt-in required)' }}.
+              {% if not FIX_DNS %}
+              To enable automatic DNS fixes, set FIX_DNS: true in your configuration.
+              This will only modify DNS if it's broken and external DNS is reachable.
+              {% endif %}
+
+        - name: Fix DNS resolution (safe mode)
+          when: FIX_DNS
           block:
             - name: Check current DNS configuration
               shell: cat /etc/resolv.conf
@@ -291,37 +315,87 @@
                 msg: "Current resolv.conf: {{ current_resolv.stdout_lines }}"
 
             - name: Test DNS resolution with current config
-              shell: nslookup archive.ubuntu.com || true
+              shell: nslookup archive.ubuntu.com
               register: dns_test
               failed_when: false
               changed_when: false
+              timeout: 10
+
+            - name: Test alternative DNS server
+              shell: nslookup archive.ubuntu.com 1.1.1.1
+              register: dns_test_alt
+              failed_when: false
+              changed_when: false
+              timeout: 10
 
             - name: Show DNS test result
               debug:
-                msg: "DNS test result: {{ dns_test.stdout_lines }}"
+                msg: 
+                  - "Current DNS test: {{ 'PASSED' if dns_test.rc == 0 else 'FAILED' }}"
+                  - "Alternative DNS test: {{ 'PASSED' if dns_test_alt.rc == 0 else 'FAILED' }}"
+
+            # Only modify DNS if it's actually broken AND external DNS works
+            - name: Determine if DNS needs fixing
+              set_fact:
+                dns_needs_fixing: "{{ dns_test.rc != 0 and dns_test_alt.rc == 0 }}"
+
+            - name: DNS Status Decision
+              debug:
+                msg: "{{ 'DNS is broken and will be fixed' if dns_needs_fixing else 'DNS is working, no changes needed' }}"
+
+            - name: Backup current resolv.conf before modification
+              copy:
+                src: /etc/resolv.conf
+                dest: /etc/resolv.conf.backup-{{ ansible_date_time.epoch }}
+                remote_src: yes
+                mode: "0644"
+              when: dns_needs_fixing
 
             - name: Make resolv.conf mutable (if immutable)
               shell: chattr -i /etc/resolv.conf 2>/dev/null || true
               ignore_errors: yes
+              when: dns_needs_fixing
 
-            - name: Configure working DNS servers
+            - name: Configure working DNS servers (only if broken)
               copy:
                 content: |
+                  # Configured by cluster-bloom due to DNS failure
+                  # Original backed up to /etc/resolv.conf.backup-{{ ansible_date_time.epoch }}
                   nameserver 8.8.8.8
                   nameserver 1.1.1.1
                   nameserver 8.8.4.4
+                  # nameserver 4.4.4.4
                 dest: /etc/resolv.conf
                 mode: "0644"
-              when: dns_test.rc != 0 or '127.0.0.53' in current_resolv.stdout or 'no servers could be reached' in dns_test.stdout
+              when: dns_needs_fixing
+              register: dns_modified
 
-            - name: Verify DNS is working
+            - name: Verify DNS is working after changes
               shell: |
                 nslookup archive.ubuntu.com || exit 1
                 nslookup security.ubuntu.com || exit 1
               register: dns_verify
+              failed_when: false
               retries: 3
               delay: 2
               until: dns_verify.rc == 0
+              when: dns_needs_fixing
+
+            - name: Rollback DNS changes if verification failed
+              block:
+                - name: Restore original resolv.conf
+                  copy:
+                    src: /etc/resolv.conf.backup-{{ ansible_date_time.epoch }}
+                    dest: /etc/resolv.conf
+                    remote_src: yes
+                    mode: "0644"
+                - name: Fail with helpful message
+                  fail:
+                    msg: |
+                      DNS modification failed verification and has been rolled back.
+                      Original configuration restored from backup.
+                      Manual DNS configuration may be required.
+              when: dns_needs_fixing and dns_verify is defined and dns_verify.rc != 0
 
         - name: Stop services that may lock apt
           shell: |
@@ -615,22 +689,53 @@
           set_fact:
             node_ip: "{{ node_ip_result.stdout if node_ip_result.stdout != '' else ansible_default_ipv4.address }}"
 
-        - name: Configure dnsmasq
-          when: DNSMASQ and FIRST_NODE and DOMAIN != ""
+        - name: dnsmasq Configuration Notice
+          when: FIRST_NODE and DOMAIN != ""
+          debug:
+            msg: |
+              dnsmasq configuration is {{ 'ENABLED' if (DNSMASQ and FIX_DNS) else 'DISABLED' }}.
+              {% if not FIX_DNS %}
+              - FIX_DNS is not enabled (required for DNS modifications)
+              {% endif %}
+              {% if not DNSMASQ %}
+              - DNSMASQ is disabled
+              {% endif %}
+              {% if FIX_DNS and DNSMASQ %}
+              dnsmasq will be configured to handle cluster.local and {{ DOMAIN }} resolution.
+              {% else %}
+              To enable dnsmasq, set both FIX_DNS: true and DNSMASQ: true in your configuration.
+              {% endif %}
+
+        - name: Configure dnsmasq (safe mode)
+          when: DNSMASQ and FIX_DNS and FIRST_NODE and DOMAIN != ""
           block:
-            - name: Disable systemd-resolve 
-              shell: systemctl disable --now systemd-resolved
-              register: systemd_stopped
+            - name: Backup resolv.conf before dnsmasq configuration
+              copy:
+                src: /etc/resolv.conf
+                dest: /etc/resolv.conf.pre-dnsmasq-{{ ansible_date_time.epoch }}
+                remote_src: yes
+                mode: "0644"
+
+            - name: Check if systemd-resolved is active
+              shell: systemctl is-active systemd-resolved
+              register: systemd_resolved_status
               failed_when: false
-              changed_when: systemd_stopped.rc == 0
-            - name: Create dnsmasq directory for keycloak
+              changed_when: false
+
+            - name: Save systemd-resolved state for rollback
+              set_fact:
+                systemd_resolved_was_active: "{{ systemd_resolved_status.rc == 0 }}"
+
+            - name: Create dnsmasq directory
               file:
                 path: /etc/dnsmasq.d/
                 state: directory
                 mode: '0755'
+
             - name: Create dnsmasq configuration file
               copy: 
                 content: |
+                  # Cluster Bloom dnsmasq configuration
                   address=/{{ DOMAIN }}/{{ node_ip }} # Keycloak Internal Resolution
                   server=/cluster.local/10.243.0.10 # Forward cluster.local to CoreDNS
                   server=8.8.8.8 # External DNS fallback
@@ -641,31 +746,103 @@
                   no-resolv
                 dest: /etc/dnsmasq.d/keycloak.conf
                 mode: "0644"
+
+            - name: Test dnsmasq configuration
+              shell: dnsmasq --test --conf-file=/etc/dnsmasq.d/keycloak.conf
+              register: dnsmasq_test
+              failed_when: false
+              changed_when: false
+
+            - name: Fail if dnsmasq configuration is invalid
+              fail:
+                msg: "dnsmasq configuration test failed: {{ dnsmasq_test.stderr }}"
+              when: dnsmasq_test.rc != 0
+
+            - name: Disable systemd-resolved (with ability to rollback)
+              shell: systemctl disable --now systemd-resolved
+              register: systemd_stopped
+              failed_when: false
+              changed_when: systemd_stopped.rc == 0
+
             - name: Make resolv file mutable
-              file:
-                path: /etc/resolv.conf
-                attributes: -i
+              shell: chattr -i /etc/resolv.conf 2>/dev/null || true
+              ignore_errors: yes
+
             - name: Write resolv configuration file
               copy: 
                 content: |
+                  # Managed by cluster-bloom dnsmasq
+                  # Backup: /etc/resolv.conf.pre-dnsmasq-{{ ansible_date_time.epoch }}
                   nameserver 127.0.0.1
                   search cluster.local svc.cluster.local
                 dest: /etc/resolv.conf
                 mode: "0644"
-            - name: Make resolv file immutable
+              register: resolv_updated
+
+            - name: Enable and start dnsmasq service
+              service:
+                name: dnsmasq
+                state: started
+                enabled: yes
+              register: dnsmasq_service
+
+            - name: Wait for dnsmasq to be ready
+              wait_for:
+                port: 53
+                host: 127.0.0.1
+                timeout: 10
+              register: dnsmasq_ready
+
+            - name: Test DNS resolution through dnsmasq
+              shell: |
+                nslookup {{ DOMAIN }} 127.0.0.1 || exit 1
+                nslookup google.com 127.0.0.1 || exit 1
+              register: dnsmasq_dns_test
+              retries: 3
+              delay: 2
+              until: dnsmasq_dns_test.rc == 0
+
+            - name: Make resolv file immutable (only after successful verification)
               file:
                 path: /etc/resolv.conf
                 attributes: +i
-            - name: Enable dnsmasq service
-              shell: systemctl enable --now dnsmasq
-              register: dnsmasq_started
-              failed_when: false
-              changed_when: dnsmasq_started.rc == 0
-            - name: Restart dnsmasq service 
-              shell: systemctl restart dnsmasq
-              register: dnsmasq_restarted
-              failed_when: false
-              changed_when: dnsmasq_restarted.rc == 0
+              when: dnsmasq_dns_test.rc == 0
+
+          rescue:
+            - name: Rollback dnsmasq configuration on failure
+              block:
+                - name: Stop and disable dnsmasq
+                  service:
+                    name: dnsmasq
+                    state: stopped
+                    enabled: no
+                  ignore_errors: yes
+
+                - name: Make resolv.conf mutable for rollback
+                  shell: chattr -i /etc/resolv.conf 2>/dev/null || true
+                  ignore_errors: yes
+
+                - name: Restore original resolv.conf
+                  copy:
+                    src: /etc/resolv.conf.pre-dnsmasq-{{ ansible_date_time.epoch }}
+                    dest: /etc/resolv.conf
+                    remote_src: yes
+                    mode: "0644"
+
+                - name: Re-enable systemd-resolved if it was active
+                  shell: systemctl enable --now systemd-resolved
+                  when: systemd_resolved_was_active
+                  ignore_errors: yes
+
+                - name: Fail with helpful message
+                  fail:
+                    msg: |
+                      dnsmasq configuration failed and has been rolled back.
+                      Original DNS configuration restored.
+                      systemd-resolved status restored to: {{ 'active' if systemd_resolved_was_active else 'inactive' }}
+                      
+                      Error details:
+                      {{ ansible_failed_result.msg | default('Unknown error') }}
         - name: Create RKE2 config.yaml
           copy:
             content: |
@@ -1801,7 +1978,7 @@
       tags: [argocd, deploy_k8s_apps]
 
     - name: Parse ClusterForge Version
-      when: FIRST_NODE and ((CLUSTERFORGE_RELEASE != "none") or (CLUSTER_SIZE == "small" and INSTALL_ARGOCD))
+      when: FIRST_NODE and ((CLUSTERFORGE_RELEASE != "none" and CLUSTERFORGE_RELEASE != "") or (CLUSTER_SIZE == "small" and INSTALL_ARGOCD))
       block:
         - name: Determine if CLUSTERFORGE_RELEASE is a URL
           set_fact:
@@ -1881,7 +2058,7 @@
       tags: [config, deploy_k8s_apps]
 
     - name: Setup ClusterForge
-      when: FIRST_NODE and CLUSTERFORGE_RELEASE != "none"
+      when: FIRST_NODE and CLUSTERFORGE_RELEASE != "none" and CLUSTERFORGE_RELEASE != ""
       block:
         - name: Create ClusterForge directory in .bloom
           file:

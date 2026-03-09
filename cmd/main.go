@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/silogen/cluster-bloom/pkg/ansible/runtime"
@@ -24,6 +25,7 @@ var (
 	extraVars  []string
 	verbose    bool
 	configFile string
+	export     bool
 )
 
 func init() {
@@ -162,10 +164,15 @@ By default, this command requires confirmation before proceeding. Use --force to
 		Short: "Deploy cluster using configuration file",
 		Long: `Deploy a Kubernetes cluster using the specified configuration file.
 
-Requires a configuration file (typically bloom.yaml).`,
+Requires a configuration file (typically bloom.yaml).
+
+Use --export flag to output the generated playbook to stdout instead of executing it.
+Example: sudo ./bloom cli bloom.yaml --export > myPlaybook.yaml`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			checkRootPrivileges("cli")
+			if !export {
+				checkRootPrivileges("cli")
+			}
 			runAnsible(args[0])
 		},
 	}
@@ -193,6 +200,7 @@ imports (roles, tasks, vars) within that directory tree work as expected.`,
 	cliCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Run in check mode without making changes")
 	cliCmd.Flags().StringVar(&tags, "tags", "", "Run only tasks with specific tags (e.g., cleanup, validate, storage)")
 	cliCmd.Flags().BoolVar(&destroyData, "destroy-data", false, "⚠️  DANGER: Permanently destroys ALL cluster data, storage, and disks. Requires interactive confirmation.")
+	cliCmd.Flags().BoolVar(&export, "export", false, "Export generated playbook to stdout instead of executing it")
 
 	// Add run command flags
 	runCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Run in check mode without making changes")
@@ -240,6 +248,15 @@ func runAnsible(configFile string) {
 			fmt.Fprintf(os.Stderr, "  - %s\n", err)
 		}
 		os.Exit(1)
+	}
+
+	// Handle export mode
+	if export {
+		if err := exportPlaybook(cfg, playbookName, destroyData); err != nil {
+			fmt.Fprintf(os.Stderr, "Error exporting playbook: %v\n", err)
+			os.Exit(1)
+		}
+		return
 	}
 
 	// Handle destructive data cleanup if requested
@@ -295,6 +312,534 @@ func runPlaybookDirect(playbookPath string) {
 	}
 
 	os.Exit(exitCode)
+}
+
+// exportPlaybook extracts and outputs the generated playbook to stdout
+func exportPlaybook(cfg config.Config, playbookName string, includeDestroyData bool) error {
+	// Create temporary directory for playbook extraction
+	tempDir, err := os.MkdirTemp("", "bloom-export-*")
+	if err != nil {
+		return fmt.Errorf("create temp directory: %w", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	playbookDir := tempDir
+	
+	// Extract embedded playbooks to temp directory
+	if err := runtime.ExtractEmbeddedPlaybooksToDir(playbookDir); err != nil {
+		return fmt.Errorf("extract playbooks: %w", err)
+	}
+
+	// Extract manifests
+	if err := runtime.ExtractManifests(playbookDir); err != nil {
+		return fmt.Errorf("extract manifests: %w", err)
+	}
+
+	// Get the target playbook path
+	playbookPath := filepath.Join(playbookDir, playbookName)
+	if _, err := os.Stat(playbookPath); os.IsNotExist(err) {
+		return fmt.Errorf("playbook not found: %s", playbookName)
+	}
+
+	// Read the playbook content
+	playbookContent, err := os.ReadFile(playbookPath)
+	if err != nil {
+		return fmt.Errorf("read playbook: %w", err)
+	}
+
+	// Parse the playbook to inject configuration variables and inline tasks
+	var playbook any
+	if err := yaml.Unmarshal(playbookContent, &playbook); err != nil {
+		return fmt.Errorf("parse playbook: %w", err)
+	}
+
+	// Apply configuration to playbook variables
+	if err := injectConfigIntoPlaybook(playbook, cfg); err != nil {
+		return fmt.Errorf("inject config: %w", err)
+	}
+
+	// Inline include_tasks references
+	if err := inlineIncludedTasks(playbook, playbookDir); err != nil {
+		return fmt.Errorf("inline tasks: %w", err)
+	}
+
+	// Inline manifest file content
+	if err := inlineManifestFiles(playbook, playbookDir); err != nil {
+		return fmt.Errorf("inline manifest files: %w", err)
+	}
+
+	// Prepend cleanup tasks if --destroy-data is requested
+	if includeDestroyData {
+		if err := prependCleanupTasks(playbook, cfg); err != nil {
+			return fmt.Errorf("prepend cleanup tasks: %w", err)
+		}
+	}
+
+	// Output the modified playbook to stdout
+	output, err := yaml.Marshal(playbook)
+	if err != nil {
+		return fmt.Errorf("marshal playbook: %w", err)
+	}
+
+	fmt.Print(string(output))
+	return nil
+}
+
+// injectConfigIntoPlaybook applies configuration values to playbook variables
+func injectConfigIntoPlaybook(playbook any, cfg config.Config) error {
+	// Handle case where playbook is a list of plays (most common format)
+	if playsList, ok := playbook.([]any); ok && len(playsList) > 0 {
+		if firstPlay, ok := playsList[0].(map[string]any); ok {
+			if vars, ok := firstPlay["vars"].(map[string]any); ok {
+				// Apply configuration values to override default vars
+				for key, value := range cfg {
+					vars[key] = value
+				}
+			}
+		}
+	} else if playbookMap, ok := playbook.(map[string]any); ok {
+		// Handle case where playbook is a single play object
+		if plays, ok := playbookMap["plays"].([]any); ok && len(plays) > 0 {
+			if firstPlay, ok := plays[0].(map[string]any); ok {
+				if vars, ok := firstPlay["vars"].(map[string]any); ok {
+					// Apply configuration values to override default vars
+					for key, value := range cfg {
+						vars[key] = value
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// inlineIncludedTasks finds and inlines include_tasks directives with actual task content
+func inlineIncludedTasks(playbook any, playbookDir string) error {
+	// Handle case where playbook is a list of plays
+	if playsList, ok := playbook.([]any); ok && len(playsList) > 0 {
+		for _, play := range playsList {
+			if playMap, ok := play.(map[string]any); ok {
+				if err := inlineTasksInPlay(playMap, playbookDir); err != nil {
+					return err
+				}
+			}
+		}
+	} else if playbookMap, ok := playbook.(map[string]any); ok {
+		// Handle case where playbook is a single play object
+		if plays, ok := playbookMap["plays"].([]any); ok {
+			for _, play := range plays {
+				if playMap, ok := play.(map[string]any); ok {
+					if err := inlineTasksInPlay(playMap, playbookDir); err != nil {
+						return err
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// inlineTasksInPlay processes a single play and inlines include_tasks directives
+func inlineTasksInPlay(play map[string]any, playbookDir string) error {
+	tasks, ok := play["tasks"]
+	if !ok {
+		return nil
+	}
+
+	tasksList, ok := tasks.([]any)
+	if !ok {
+		return nil
+	}
+
+	var newTasks []any
+	
+	for _, task := range tasksList {
+		taskMap, ok := task.(map[string]any)
+		if !ok {
+			newTasks = append(newTasks, task)
+			continue
+		}
+
+		// Check if this is an include_tasks directive
+		if includeTasksPath, exists := taskMap["include_tasks"]; exists {
+			if pathStr, ok := includeTasksPath.(string); ok {
+				// Read the included task file
+				includedTasks, err := readIncludedTaskFile(filepath.Join(playbookDir, pathStr))
+				if err != nil {
+					return fmt.Errorf("read included task file %s: %w", pathStr, err)
+				}
+
+				// Copy metadata from the include_tasks directive to each included task
+				for _, includedTask := range includedTasks {
+					if includedTaskMap, ok := includedTask.(map[string]any); ok {
+						// Copy tags if they exist on the include_tasks directive
+						if tags, exists := taskMap["tags"]; exists {
+							if existingTags, hasExisting := includedTaskMap["tags"]; hasExisting {
+								// Merge tags if the included task already has tags
+								if existingTagsList, ok := existingTags.([]any); ok {
+									if includeTagsList, ok := tags.([]any); ok {
+										mergedTags := append(existingTagsList, includeTagsList...)
+										includedTaskMap["tags"] = mergedTags
+									}
+								}
+							} else {
+								// Add tags if included task doesn't have any
+								includedTaskMap["tags"] = tags
+							}
+						}
+
+						// Copy when condition if it exists on the include_tasks directive
+						if when, exists := taskMap["when"]; exists {
+							if existingWhen, hasExisting := includedTaskMap["when"]; hasExisting {
+								// Combine when conditions with 'and'
+								includedTaskMap["when"] = []any{existingWhen, when}
+							} else {
+								// Add when condition if included task doesn't have one
+								includedTaskMap["when"] = when
+							}
+						}
+					}
+				}
+
+				// Add all included tasks instead of the include_tasks directive
+				newTasks = append(newTasks, includedTasks...)
+			} else {
+				newTasks = append(newTasks, task)
+			}
+		} else {
+			// Check for block structure and inline tasks within blocks
+			if block, exists := taskMap["block"]; exists {
+				if blockTasks, ok := block.([]any); ok {
+					var newBlockTasks []any
+					for _, blockTask := range blockTasks {
+						if blockTaskMap, ok := blockTask.(map[string]any); ok {
+							if includeTasksPath, exists := blockTaskMap["include_tasks"]; exists {
+								if pathStr, ok := includeTasksPath.(string); ok {
+									includedTasks, err := readIncludedTaskFile(filepath.Join(playbookDir, pathStr))
+									if err != nil {
+										return fmt.Errorf("read included task file %s: %w", pathStr, err)
+									}
+									newBlockTasks = append(newBlockTasks, includedTasks...)
+								} else {
+									newBlockTasks = append(newBlockTasks, blockTask)
+								}
+							} else {
+								newBlockTasks = append(newBlockTasks, blockTask)
+							}
+						} else {
+							newBlockTasks = append(newBlockTasks, blockTask)
+						}
+					}
+					taskMap["block"] = newBlockTasks
+				}
+			}
+			newTasks = append(newTasks, task)
+		}
+	}
+
+	play["tasks"] = newTasks
+	return nil
+}
+
+// inlineManifestFiles finds copy tasks that reference manifest files and inlines their content
+func inlineManifestFiles(playbook any, playbookDir string) error {
+	// Handle case where playbook is a list of plays
+	if playsList, ok := playbook.([]any); ok && len(playsList) > 0 {
+		for _, play := range playsList {
+			if playMap, ok := play.(map[string]any); ok {
+				if err := inlineManifestsInPlay(playMap, playbookDir); err != nil {
+					return err
+				}
+			}
+		}
+	} else if playbookMap, ok := playbook.(map[string]any); ok {
+		// Handle case where playbook is a single play object
+		if plays, ok := playbookMap["plays"].([]any); ok {
+			for _, play := range plays {
+				if playMap, ok := play.(map[string]any); ok {
+					if err := inlineManifestsInPlay(playMap, playbookDir); err != nil {
+						return err
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// inlineManifestsInPlay processes tasks in a play to inline manifest file content
+func inlineManifestsInPlay(play map[string]any, playbookDir string) error {
+	tasks, ok := play["tasks"]
+	if !ok {
+		return nil
+	}
+
+	tasksList, ok := tasks.([]any)
+	if !ok {
+		return nil
+	}
+
+	newTasks, err := processTasksForManifestInlining(tasksList, playbookDir)
+	if err != nil {
+		return err
+	}
+
+	play["tasks"] = newTasks
+	return nil
+}
+
+// processTasksForManifestInlining recursively processes tasks to inline manifest files and expand loops
+func processTasksForManifestInlining(tasksList []any, playbookDir string) ([]any, error) {
+	var newTasksList []any
+
+	for _, task := range tasksList {
+		taskMap, ok := task.(map[string]any)
+		if !ok {
+			newTasksList = append(newTasksList, task)
+			continue
+		}
+
+		// Process copy tasks with loops (e.g., manifests/local-path/{{ item }})
+		if copyTask, exists := taskMap["copy"]; exists {
+			if copyMap, ok := copyTask.(map[string]any); ok {
+				if srcPath, hasSrc := copyMap["src"].(string); hasSrc {
+					if _, hasLoop := taskMap["loop"]; hasLoop && isManifestPathWithVariable(srcPath) {
+						// Expand loop into individual copy tasks
+						expandedTasks, err := expandLoopCopyTask(taskMap, copyMap, playbookDir)
+						if err != nil {
+							return nil, fmt.Errorf("expand loop copy task: %w", err)
+						}
+						newTasksList = append(newTasksList, expandedTasks...)
+						continue
+					} else if isManifestPath(srcPath) {
+						// Handle single file copy task
+						if err := inlineManifestContent(copyMap, srcPath, playbookDir); err != nil {
+							return nil, err
+						}
+					}
+				}
+			}
+		}
+
+		// Process template tasks (e.g., local-path-config.yaml)
+		if templateTask, exists := taskMap["template"]; exists {
+			if templateMap, ok := templateTask.(map[string]any); ok {
+				if srcPath, hasSrc := templateMap["src"].(string); hasSrc {
+					if isManifestPath(srcPath) {
+						// Convert template to copy with inlined content
+						if err := convertTemplateTaskToCopy(taskMap, templateMap, srcPath, playbookDir); err != nil {
+							return nil, fmt.Errorf("convert template task: %w", err)
+						}
+					}
+				}
+			}
+		}
+
+		// Process block tasks recursively
+		if block, exists := taskMap["block"]; exists {
+			if blockList, ok := block.([]any); ok {
+				newBlock, err := processTasksForManifestInlining(blockList, playbookDir)
+				if err != nil {
+					return nil, err
+				}
+				taskMap["block"] = newBlock
+			}
+		}
+
+		// Process rescue tasks recursively
+		if rescue, exists := taskMap["rescue"]; exists {
+			if rescueList, ok := rescue.([]any); ok {
+				newRescue, err := processTasksForManifestInlining(rescueList, playbookDir)
+				if err != nil {
+					return nil, err
+				}
+				taskMap["rescue"] = newRescue
+			}
+		}
+
+		// Process always tasks recursively
+		if always, exists := taskMap["always"]; exists {
+			if alwaysList, ok := always.([]any); ok {
+				newAlways, err := processTasksForManifestInlining(alwaysList, playbookDir)
+				if err != nil {
+					return nil, err
+				}
+				taskMap["always"] = newAlways
+			}
+		}
+
+		newTasksList = append(newTasksList, task)
+	}
+
+	return newTasksList, nil
+}
+
+// isManifestPath checks if a path references a manifest file
+func isManifestPath(path string) bool {
+	return strings.HasPrefix(path, "manifests/") && (strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".sh"))
+}
+
+// isManifestPathWithVariable checks if a path references a manifest with Ansible variables
+func isManifestPathWithVariable(path string) bool {
+	return strings.HasPrefix(path, "manifests/") && strings.Contains(path, "{{")
+}
+
+// inlineManifestContent reads manifest content and inlines it into a copy task
+func inlineManifestContent(copyMap map[string]any, srcPath, playbookDir string) error {
+	manifestPath := filepath.Join(playbookDir, srcPath)
+	content, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return fmt.Errorf("read manifest file %s: %w", manifestPath, err)
+	}
+
+	// Replace src with content
+	delete(copyMap, "src")
+	copyMap["content"] = string(content)
+	return nil
+}
+
+// expandLoopCopyTask expands a copy task with loop into individual copy tasks
+func expandLoopCopyTask(taskMap map[string]any, copyMap map[string]any, playbookDir string) ([]any, error) {
+	srcPath := copyMap["src"].(string)
+	destPath, hasDest := copyMap["dest"].(string)
+	if !hasDest {
+		return nil, fmt.Errorf("copy task missing dest")
+	}
+
+	loop, hasLoop := taskMap["loop"]
+	if !hasLoop {
+		return nil, fmt.Errorf("expected loop in task")
+	}
+
+	loopItems, ok := loop.([]any)
+	if !ok {
+		return nil, fmt.Errorf("loop must be a list")
+	}
+
+	var expandedTasks []any
+
+	// Extract task metadata (name, tags, etc.)
+	taskName := "Copy manifest"
+	if name, hasName := taskMap["name"].(string); hasName {
+		taskName = name
+	}
+
+	for _, item := range loopItems {
+		itemStr, ok := item.(string)
+		if !ok {
+			continue
+		}
+
+		// Replace {{ item }} with actual item
+		actualSrcPath := strings.ReplaceAll(srcPath, "{{ item }}", itemStr)
+		actualDestPath := strings.ReplaceAll(destPath, "{{ item }}", itemStr)
+
+		// Read manifest content
+		manifestPath := filepath.Join(playbookDir, actualSrcPath)
+		content, err := os.ReadFile(manifestPath)
+		if err != nil {
+			return nil, fmt.Errorf("read manifest file %s: %w", manifestPath, err)
+		}
+
+		// Create individual copy task
+		newTask := map[string]any{
+			"name": fmt.Sprintf("%s (%s)", taskName, itemStr),
+			"copy": map[string]any{
+				"content": string(content),
+				"dest":    actualDestPath,
+				"mode":    copyMap["mode"], // Preserve mode if present
+			},
+		}
+
+		// Copy other task properties (tags, when, etc.)
+		for key, value := range taskMap {
+			if key != "copy" && key != "loop" && key != "name" {
+				newTask[key] = value
+			}
+		}
+
+		expandedTasks = append(expandedTasks, newTask)
+	}
+
+	return expandedTasks, nil
+}
+
+// convertTemplateTaskToCopy converts a template task to a copy task with inlined content
+func convertTemplateTaskToCopy(taskMap map[string]any, templateMap map[string]any, srcPath, playbookDir string) error {
+	// For now, we'll treat template files as regular files and inline their content
+	// This is a simplification - full template processing would require variable substitution
+	manifestPath := filepath.Join(playbookDir, srcPath)
+	content, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return fmt.Errorf("read template file %s: %w", manifestPath, err)
+	}
+
+	// Convert template to copy
+	delete(taskMap, "template")
+	taskMap["copy"] = map[string]any{
+		"content": string(content),
+		"dest":    templateMap["dest"],
+		"mode":    templateMap["mode"],
+	}
+
+	// Add a warning comment that this was converted from a template
+	if name, hasName := taskMap["name"].(string); hasName {
+		taskMap["name"] = fmt.Sprintf("%s (converted from template)", name)
+	}
+
+	return nil
+}
+
+// readIncludedTaskFile reads and parses an included task file
+func readIncludedTaskFile(taskFilePath string) ([]any, error) {
+	if _, err := os.Stat(taskFilePath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("task file not found: %s", taskFilePath)
+	}
+
+	content, err := os.ReadFile(taskFilePath)
+	if err != nil {
+		return nil, fmt.Errorf("read task file: %w", err)
+	}
+
+	var tasks []any
+	if err := yaml.Unmarshal(content, &tasks); err != nil {
+		return nil, fmt.Errorf("parse task file: %w", err)
+	}
+
+	return tasks, nil
+}
+
+// prependCleanupTasks adds cluster cleanup tasks to the beginning of the playbook when --destroy-data is used
+func prependCleanupTasks(playbook any, cfg config.Config) error {
+	// Extract CLUSTER_DISKS from config
+	clusterDisks := ""
+	if disks, exists := cfg["CLUSTER_DISKS"]; exists && disks != nil {
+		if disksStr, ok := disks.(string); ok {
+			clusterDisks = disksStr
+		}
+	}
+
+	// Use the DRY cleanup task generator from runtime package
+	cleanupTasks := runtime.GenerateCleanupTasks(clusterDisks)
+
+	// Prepend cleanup tasks to the existing playbook tasks
+	if playsList, ok := playbook.([]any); ok && len(playsList) > 0 {
+		if firstPlay, ok := playsList[0].(map[string]any); ok {
+			if tasks, ok := firstPlay["tasks"].([]any); ok {
+				// Convert cleanup tasks to []any
+				var cleanupTasksAny []any
+				for _, task := range cleanupTasks {
+					cleanupTasksAny = append(cleanupTasksAny, task)
+				}
+				
+				// Prepend cleanup tasks to existing tasks
+				newTasks := append(cleanupTasksAny, tasks...)
+				firstPlay["tasks"] = newTasks
+			}
+		}
+	}
+
+	return nil
 }
 
 // confirmDestructiveOperation prompts the user to confirm the dangerous --destroy-data operation
