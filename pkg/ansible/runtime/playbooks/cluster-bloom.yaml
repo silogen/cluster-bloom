@@ -2095,6 +2095,15 @@
             git clone --branch {{ clusterforge_version }} --depth 1 {{ CLUSTERFORGE_REPO }} {{ BLOOM_DIR }}/clusterforge/cluster-forge
           when: not (is_release_url | bool)
 
+        - name: Clean ClusterForge temporary files
+          file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+          - /tmp/argocd_bootstrap_values.yaml
+          - /tmp/merged_values.yaml
+          - /tmp/argocd_values.yaml
+
         - name: Run ClusterForge bootstrap script
           shell: |
             cd {{ BLOOM_DIR }}/clusterforge/cluster-forge/scripts
