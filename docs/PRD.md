@@ -112,6 +112,8 @@ Pre-flight validation system checks all configuration, resources, and system req
 
 **[📄 Configuration Reference](./configuration-reference.md)**
 
+### AIRM Image Repository Configuration
+Flexible AIRM image repository configuration through the `AIRM_IMAGE_REPOSITORY` parameter, enabling deployment from custom container registries for private registries, custom builds, air-gapped environments, and development/testing scenarios.
 ### Playbook Export and Inspection
 Advanced debugging and transparency features allow users to export generated Ansible playbooks for inspection before execution. This feature enables debugging playbook generation, understanding deployment actions, and provides flexibility for restricted environments.
 

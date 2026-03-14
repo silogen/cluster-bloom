@@ -6,14 +6,12 @@
 # ========================================
 # Schema Definition
 # ========================================
-
 schema:
   type: map
   mapping:
-# ============================================================  
-# CLUSTERFORGE_RELEASE set to our most recent verified release
-# ============================================================
-
+    # ============================================================  
+    # CLUSTERFORGE_RELEASE set to our most recent verified release
+    # ============================================================
     CLUSTERFORGE_RELEASE:
       type: str
       default: "v1.8.0"
@@ -94,7 +92,7 @@ schema:
       desc: Skip /var/lib/rancher partition size check
       section: "💾 Storage Configuration"
 
-     # 🔒 SSL/TLS Configuration
+    # 🔒 SSL/TLS Configuration
     ADDITIONAL_TLS_SAN_URLS:
       type: seq
       default: []
@@ -223,6 +221,12 @@ schema:
       type: str
       default: ""
       desc: Additional RKE2 configuration in YAML format
+      section: "⚙️ Advanced Configuration"
+
+    AIRM_IMAGE_REPOSITORY:
+      type: str
+      default: ""
+      desc: Base repository URL for AIRM container images (airm-api, airm-ui, airm-dispatcher). Example - 'ghcr.io/silogen'
       section: "⚙️ Advanced Configuration"
 
     # 💻 Command Line Options

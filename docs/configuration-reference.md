@@ -244,6 +244,24 @@ Configuration sources in priority order (highest to lowest):
 - **Description**: ClusterForge values file path (optional)
 - **Example**: `CF_VALUES: "/path/to/values.yaml"`
 
+#### AIRM_IMAGE_REPOSITORY
+- **Type**: String (container registry URL)
+- **Default**: None (optional parameter)
+- **Description**: Base repository URL for AIRM container images. When specified, overrides the default image repositories for AIRM components (airm-api, airm-ui, airm-dispatcher) in the cluster-values configuration.
+- **Impact**: This parameter automatically configures the following values in the cluster-values repository:
+  - `airm-api.airm.backend.image.repository`: `${AIRM_IMAGE_REPOSITORY}/airm-api`
+  - `airm-api.airm.frontend.image.repository`: `${AIRM_IMAGE_REPOSITORY}/airm-ui`
+  - `airm-dispatcher.airm.dispatcher.image.repository`: `${AIRM_IMAGE_REPOSITORY}/airm-dispatcher`
+- **Use Cases**:
+  - Private container registries
+  - Custom built AIRM images
+  - Air-gapped environments
+  - Development/testing with custom images
+- **Examples**: 
+  - `AIRM_IMAGE_REPOSITORY: "ghcr.io/silogen"`
+  - `AIRM_IMAGE_REPOSITORY: "harbor.mycompany.com/airm"`
+  - `AIRM_IMAGE_REPOSITORY: "localhost:5000/custom"`
+
 #### OIDC_URL
 - **Type**: String (URL)  
 - **Default**: None
