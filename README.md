@@ -1,4 +1,7 @@
 # ClusterBloom
+
+## *** *Instructions for installing the AMD Enterprise AI Suite (for most users) are [here](https://enterprise-ai.docs.amd.com/en/latest/platform-infrastructure/on-premises-installation.html)* ***
+
 **ClusterBloom** is a tool for deploying and configuring Kubernetes clusters using RKE2, with specialized support for AMD GPU environments. It automates the process of setting up multi-node clusters, configuring storage with Longhorn, and integrating with various tools and services.
 
 
