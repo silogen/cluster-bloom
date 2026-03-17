@@ -27,6 +27,7 @@ type OutputProcessor struct {
 	startTime    time.Time
 	taskSeen     bool
 	suppressNext bool
+	pendingTask  bool
 	config       map[string]string // Configuration values (e.g., CLUSTERFORGE_RELEASE, DOMAIN)
 }
 
@@ -56,7 +57,18 @@ func (p *OutputProcessor) ProcessStream(input io.Reader, output io.Writer) error
 		// Process and write to output based on mode
 		processedLine := p.processLine(line)
 		if processedLine != "" {
-			fmt.Fprintln(output, processedLine)
+			if p.pendingTask && !strings.HasPrefix(processedLine, "⏳") {
+				// Erase the ⏳ pending line before printing the result
+				fmt.Fprint(output, "\033[2K\r")
+				p.pendingTask = false
+			}
+			if strings.HasPrefix(processedLine, "⏳") {
+				// Print without newline so it can be overwritten
+				fmt.Fprint(output, processedLine)
+				p.pendingTask = true
+			} else {
+				fmt.Fprintln(output, processedLine)
+			}
 		}
 	}
 
@@ -85,7 +97,7 @@ func (p *OutputProcessor) processCleanMode(line string) string {
 	if taskName, ok := ParseTaskHeader(line); ok {
 		p.currentTask = taskName
 		p.taskSeen = false
-		return "" // Suppress task header
+		return "⏳ " + taskName
 	}
 
 	// Check for task result
