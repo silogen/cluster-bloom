@@ -358,6 +358,11 @@ func exportPlaybook(cfg config.Config, playbookName string, includeDestroyData b
 		return fmt.Errorf("inject config: %w", err)
 	}
 
+	// Fix hosts value for export (should be localhost instead of all)
+	if err := fixHostsValueForExport(playbook); err != nil {
+		return fmt.Errorf("fix hosts value: %w", err)
+	}
+
 	// Inline include_tasks references
 	if err := inlineIncludedTasks(playbook, playbookDir); err != nil {
 		return fmt.Errorf("inline tasks: %w", err)
@@ -395,6 +400,13 @@ func injectConfigIntoPlaybook(playbook any, cfg config.Config) error {
 				for key, value := range cfg {
 					vars[key] = value
 				}
+				
+				// Add BLOOM_DIR variable to vars section for export
+				// This variable is normally injected at runtime as the current working directory
+				// For exported playbooks, use ansible's built-in playbook_dir variable or current working directory
+				if _, exists := vars["BLOOM_DIR"]; !exists {
+					vars["BLOOM_DIR"] = "{{ ansible_env.PWD | default(playbook_dir) }}"
+				}
 			}
 		}
 	} else if playbookMap, ok := playbook.(map[string]any); ok {
@@ -406,7 +418,32 @@ func injectConfigIntoPlaybook(playbook any, cfg config.Config) error {
 					for key, value := range cfg {
 						vars[key] = value
 					}
+					
+					// Add BLOOM_DIR variable to vars section for export
+					// This variable is normally injected at runtime as the current working directory
+					// For exported playbooks, use ansible's built-in playbook_dir variable or current working directory
+					if _, exists := vars["BLOOM_DIR"]; !exists {
+						vars["BLOOM_DIR"] = "{{ ansible_env.PWD | default(playbook_dir) }}"
+					}
 				}
+			}
+		}
+	}
+	return nil
+}
+
+// fixHostsValueForExport changes hosts from 'all' to 'localhost' for exported playbooks
+func fixHostsValueForExport(playbook any) error {
+	// Handle case where playbook is a list of plays (most common format)
+	if playsList, ok := playbook.([]any); ok && len(playsList) > 0 {
+		if firstPlay, ok := playsList[0].(map[string]any); ok {
+			firstPlay["hosts"] = "localhost"
+		}
+	} else if playbookMap, ok := playbook.(map[string]any); ok {
+		// Handle case where playbook is a single play object
+		if plays, ok := playbookMap["plays"].([]any); ok && len(plays) > 0 {
+			if firstPlay, ok := plays[0].(map[string]any); ok {
+				firstPlay["hosts"] = "localhost"
 			}
 		}
 	}
