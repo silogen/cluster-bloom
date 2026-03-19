@@ -24,7 +24,7 @@
     OIDC_URL: ""
     RKE2_EXTRA_CONFIG: ""
     SKIP_RANCHER_PARTITION_CHECK: false
-    ADDITIONAL_TLS_SAN_URLS: []
+    ADDITIONAL_TLS_SAN_URLS: ["api.example.com", "kubernetes.example.com"]
     PRELOAD_IMAGES: ""
     CF_VALUES: ""
     BLOOM_DIR: "~/.bloom"
