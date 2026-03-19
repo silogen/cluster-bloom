@@ -407,8 +407,8 @@
 
         - name: Wait for apt locks to be released
           shell: |
-            timeout 300 bash -c 'while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do sleep 1; done' || true
-            timeout 300 bash -c 'while fuser /var/lib/apt/lists/lock >/dev/null 2>&1; do sleep 1; done' || true
+            timeout 90 bash -c 'while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do sleep 1; done' || true
+            timeout 90 bash -c 'while fuser /var/lib/apt/lists/lock >/dev/null 2>&1; do sleep 1; done' || true
           ignore_errors: yes
 
         - name: Clean apt lists and locks
