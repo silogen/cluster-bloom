@@ -1,0 +1,226 @@
+---
+# RKE2 Preparation Tasks
+# 
+# Purpose: Prepares RKE2 configuration and prerequisites for cluster deployment
+# Scope: Configures kernel modules, directories, certificates, and manifests
+#
+# Parameters:
+#   DOMAIN: Domain name for TLS configuration
+#   ADDITIONAL_TLS_SAN_URLS: Additional SAN URLs for certificates
+#   RKE2_EXTRA_CONFIG: Additional RKE2 configuration block
+#   USE_CERT_MANAGER: Boolean to use cert-manager instead of generated certs
+#   CERT_OPTION: Certificate option ("generate" or "existing")
+#   OIDC_URL: OIDC provider URL
+#   CLUSTER_SIZE: Cluster size for Cilium configuration
+#
+# Returns: Succeeds when RKE2 is prepared for deployment
+#
+# Usage:
+#   include_tasks: tasks/deploy_cluster/prepare_rke2.yml
+
+- name: Load required kernel modules
+  modprobe:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - iscsi_tcp
+    - dm_mod
+  when: not ansible_check_mode
+
+- name: Debug kernel module loading (check mode)
+  debug:
+    msg: "Would load kernel modules: iscsi_tcp, dm_mod"
+  when: ansible_check_mode
+
+- name: Ensure kernel modules load on boot
+  lineinfile:
+    path: /etc/modules-load.d/rke2.conf
+    line: "{{ item }}"
+    create: yes
+  loop:
+    - iscsi_tcp
+    - dm_mod
+
+- name: Create RKE2 config directory
+  file:
+    path: /etc/rancher/rke2
+    state: directory
+    mode: "0755"
+
+- name: Create audit policy
+  copy:
+    content: |
+      apiVersion: audit.k8s.io/v1
+      kind: Policy
+      metadata:
+        creationTimestamp: null
+      rules:
+      - level: Metadata
+    dest: /etc/rancher/rke2/audit-policy.yaml
+    mode: "0644"
+
+- name: Get node IP for RKE2 cluster communication
+  shell: >-
+    ip -4 addr show | grep "inet 10.0.3\." | awk '{{ "{" }}print $2{{ "}" }}' | cut -d/ -f1 | head -1 || echo ""
+  register: node_ip_result
+  changed_when: false
+
+- name: Set node_ip fact
+  set_fact:
+    node_ip: "{{ node_ip_result.stdout if node_ip_result.stdout != '' else ansible_default_ipv4.address }}"
+
+- name: Create RKE2 config.yaml
+  copy:
+    content: |
+      cni: cilium
+      cluster-cidr: 10.242.0.0/16
+      service-cidr: 10.243.0.0/16
+      node-ip: {{ node_ip }}
+
+      disable: rke2-ingress-nginx
+      audit-log-path: "/var/lib/rancher/rke2/server/logs/kube-apiserver-audit.log"
+      audit-log-maxage: 30
+      audit-log-maxbackup: 10
+      audit-log-maxsize: 100
+      audit-policy-file: "/etc/rancher/rke2/audit-policy.yaml"
+    dest: /etc/rancher/rke2/config.yaml
+    mode: "0644"
+
+- name: Append extra RKE2 config
+  blockinfile:
+    path: /etc/rancher/rke2/config.yaml
+    block: "{{ RKE2_EXTRA_CONFIG }}"
+    marker: "# {mark} ANSIBLE MANAGED BLOCK - extra config"
+  when: RKE2_EXTRA_CONFIG != ""
+
+- name: Handle TLS SAN configuration
+  when: DOMAIN != "" or ADDITIONAL_TLS_SAN_URLS != ""
+  block:
+    - name: Initialize TLS SAN list
+      set_fact:
+        tls_san_list: []
+
+    - name: Add auto-generated k8s SAN
+      set_fact:
+        tls_san_list: "{{ tls_san_list + ['k8s.' + DOMAIN] }}"
+      when: DOMAIN != ""
+
+    - name: Process additional TLS SANs
+      set_fact:
+        tls_san_list: "{{ tls_san_list + [item | trim] }}"
+      loop: "{{ ADDITIONAL_TLS_SAN_URLS.split(',') }}"
+      when: 
+        - ADDITIONAL_TLS_SAN_URLS != ""
+        - item | trim != ""
+
+    - name: Generate TLS SAN block content
+      set_fact:
+        tls_san_block: |
+          tls-san:
+          {% for san in tls_san_list %}
+            - {{ san }}
+          {% endfor %}
+
+    - name: Append TLS SAN configuration to RKE2 config
+      blockinfile:
+        path: /etc/rancher/rke2/config.yaml
+        block: "{{ tls_san_block }}"
+        marker: ""
+      when: tls_san_list | length > 0
+
+- name: Generate API server certificates for Kubernetes
+  when: not USE_CERT_MANAGER and CERT_OPTION == "generate" and DOMAIN != ""
+  block:
+    - name: Create RKE2 certificate directory
+      file:
+        path: /etc/rancher/rke2/certs
+        state: directory
+        mode: '0755'
+
+    - name: Generate API server TLS certificate
+      shell: |
+        openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+          -keyout /etc/rancher/rke2/certs/tls.key \
+          -out /etc/rancher/rke2/certs/tls.crt \
+          -subj "/CN={{ DOMAIN }}" \
+          -addext "subjectAltName=DNS:{{ DOMAIN }},DNS:*.{{ DOMAIN }}"
+      register: cert_generation_result
+      failed_when: cert_generation_result.rc != 0
+
+- name: Handle OIDC configuration
+  when: OIDC_URL != ""
+  block:
+    - name: Fetch OIDC certificate
+      shell: |
+        openssl s_client -showcerts -connect {{ OIDC_URL | regex_replace('^https?://', '') }}:443 </dev/null | \
+        sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p'
+      register: oidc_cert
+
+    - name: Write OIDC certificate
+      copy:
+        content: "{{ oidc_cert.stdout }}"
+        dest: /etc/rancher/rke2/oidc-ca.crt
+        mode: "0644"
+
+    - name: Append OIDC config to RKE2
+      blockinfile:
+        path: /etc/rancher/rke2/config.yaml
+        block: |
+          kube-apiserver-arg:
+            - "--oidc-issuer-url={{ OIDC_URL }}"
+            - "--oidc-client-id=k8s"
+            - "--oidc-username-claim=preferred_username"
+            - "--oidc-groups-claim=groups"
+            - "--oidc-ca-file=/etc/rancher/rke2/oidc-ca.crt"
+            - "--oidc-username-prefix=oidc"
+            - "--oidc-groups-prefix=oidc"
+        marker: "# {mark} ANSIBLE MANAGED BLOCK - OIDC"
+
+- name: Create RKE2 manifests directory
+  file:
+    path: /var/lib/rancher/rke2/server/manifests
+    state: directory
+    mode: "0755"
+
+- name: Create Cilium HelmChartConfig for cluster size optimization
+  copy:
+    content: |
+      apiVersion: helm.cattle.io/v1
+      kind: HelmChartConfig
+      metadata:
+        name: rke2-cilium
+        namespace: kube-system
+      spec:
+        valuesContent: |-
+          # Cilium Operator Configuration
+          operator:
+            # Set replicas based on cluster size
+            replicas: {{ '1' if CLUSTER_SIZE in ['small', 'medium'] else '2' }}
+            
+            # Resource limits appropriate for cluster size
+            resources:
+              limits:
+                cpu: {{ '500m' if CLUSTER_SIZE in ['small', 'medium'] else '1000m' }}
+                memory: {{ '512Mi' if CLUSTER_SIZE in ['small', 'medium'] else '1Gi' }}
+              requests:
+                cpu: {{ '50m' if CLUSTER_SIZE in ['small', 'medium'] else '100m' }}
+                memory: 128Mi
+          
+          # Hubble observability (disabled for all cluster sizes)
+          hubble:
+            enabled: false
+            relay:
+              enabled: false
+            ui:
+              enabled: false
+            metrics:
+              enabled: []
+          
+          # Network policy enforcement
+          policyEnforcement: "default"
+          
+          # IPAM configuration
+          ipam:
+            mode: kubernetes
+    dest: /var/lib/rancher/rke2/server/manifests/rke2-cilium-config.yaml
+    mode: "0644"

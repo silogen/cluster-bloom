@@ -1,0 +1,66 @@
+---
+# System Configuration Tasks
+# 
+# Purpose: Configures system-level parameters for cluster deployment
+# Scope: Sets inotify limits and opens firewall ports
+#
+# Parameters:
+#   inotify_target_value: Target value for fs.inotify.max_user_instances
+#   rke2_ports_tcp: List of TCP ports to open
+#   rke2_ports_udp: List of UDP ports to open
+#
+# Returns: Succeeds when system is configured
+#
+# Usage:
+#   include_tasks: tasks/prepare_node/system_config.yml
+
+- name: Get current inotify value
+  shell: sysctl -n fs.inotify.max_user_instances
+  register: current_inotify
+  changed_when: false
+
+- name: Set inotify instances
+  sysctl:
+    name: fs.inotify.max_user_instances
+    value: "{{ inotify_target_value }}"
+    state: present
+    sysctl_file: /etc/sysctl.conf
+    reload: yes
+  when: current_inotify.stdout | int < inotify_target_value and not ansible_check_mode
+
+- name: Debug inotify configuration (check mode)
+  debug:
+    msg: "{% if current_inotify.stdout | int < inotify_target_value %}Would set fs.inotify.max_user_instances to {{ inotify_target_value }} (current: {{ current_inotify.stdout }}){% else %}Inotify instances OK (current: {{ current_inotify.stdout }}){% endif %}"
+  when: ansible_check_mode
+
+- name: Open TCP ports
+  iptables:
+    chain: INPUT
+    protocol: tcp
+    destination_port: "{{ item }}"
+    ctstate: NEW
+    jump: ACCEPT
+  loop: "{{ rke2_ports_tcp }}"
+  notify: Save iptables
+  when: not ansible_check_mode
+
+- name: Debug TCP ports opening (check mode)
+  debug:
+    msg: "Would open TCP ports: {{ rke2_ports_tcp | join(', ') }}"
+  when: ansible_check_mode
+
+- name: Open UDP ports
+  iptables:
+    chain: INPUT
+    protocol: udp
+    destination_port: "{{ item }}"
+    ctstate: NEW
+    jump: ACCEPT
+  loop: "{{ rke2_ports_udp }}"
+  notify: Save iptables
+  when: not ansible_check_mode
+
+- name: Debug UDP ports opening (check mode)
+  debug:
+    msg: "Would open UDP ports: {{ rke2_ports_udp | join(', ') }}"
+  when: ansible_check_mode

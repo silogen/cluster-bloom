@@ -1,0 +1,48 @@
+---
+# Node Preparation Main Orchestrator
+# 
+# Purpose: Orchestrates all node preparation tasks in proper sequence
+# Scope: Runs package installation, system configuration, GPU setup, storage, and NTP
+#
+# Parameters:
+#   GPU_NODE: Boolean indicating if this is a GPU node (default: false)
+#   NO_DISKS_FOR_CLUSTER: Boolean to skip disk preparation (default: false)
+#   CLUSTER_PREMOUNTED_DISKS: String indicating pre-mounted disk configuration
+#   FIRST_NODE: Boolean indicating if this is the first node
+#   SERVER_IP: IP address of the first node (for additional nodes)
+#
+# Returns: Succeeds when all node preparation is complete
+#
+# Usage:
+#   include_tasks: tasks/prepare_node/main.yml
+
+- name: Install Dependencies
+  include_tasks: packages.yml
+
+- name: Setup Multipath
+  include_tasks: multipath.yml
+
+- name: Setup and Check ROCm
+  include_tasks: gpu_rocm.yml
+  when: GPU_NODE | bool
+
+- name: Update Modprobe (GPU nodes)
+  include_tasks: gpu_modprobe.yml
+  when: GPU_NODE | bool
+
+- name: Prepare Longhorn Disks
+  include_tasks: storage.yml
+  when: not NO_DISKS_FOR_CLUSTER | bool and CLUSTER_PREMOUNTED_DISKS == ""
+
+- name: Configure System Settings
+  include_tasks: system_config.yml
+
+- name: Update Udev Rules (GPU nodes)
+  include_tasks: gpu_udev.yml
+  when: GPU_NODE | bool
+
+- name: Configure Logging
+  include_tasks: logging.yml
+
+- name: Configure NTP
+  include_tasks: ntp.yml

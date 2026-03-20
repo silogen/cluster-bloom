@@ -1,0 +1,135 @@
+---
+# GPU and ROCm Configuration Tasks
+# 
+# Purpose: Installs and configures AMD ROCm drivers for GPU nodes
+# Scope: Downloads, installs, and validates ROCm installation
+#
+# Parameters:
+#   GPU_NODE: Boolean indicating if this is a GPU node
+#   ROCM_BASE_URL: Base URL for ROCm packages
+#   ROCM_DEB_PACKAGE: ROCm package filename
+#
+# Returns: Succeeds when ROCm is installed and GPUs are detected
+#
+# Usage:
+#   include_tasks: tasks/prepare_node/gpu_rocm.yml
+#   when: GPU_NODE
+
+- name: Check if rocm-smi exists
+  stat:
+    path: /opt/rocm/bin/rocm-smi
+  register: rocm_smi_check
+
+- name: Get Ubuntu codename
+  shell: grep VERSION_CODENAME /etc/os-release | cut -d= -f2
+  register: ubuntu_codename
+  changed_when: false
+
+- name: Get kernel version
+  shell: uname -r
+  register: kernel_version
+  changed_when: false
+
+- name: Install kernel headers and modules
+  apt:
+    name:
+      - "linux-headers-{{ kernel_version.stdout }}"
+      - "linux-modules-extra-{{ kernel_version.stdout }}"
+      - python3-setuptools
+      - python3-wheel
+    state: present
+  when: not rocm_smi_check.stat.exists and not ansible_check_mode
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+    NEEDRESTART_MODE: a
+    NEEDRESTART_SUSPEND: "1"
+
+- name: Debug kernel headers installation (check mode)
+  debug:
+    msg: "Would install kernel headers and ROCm dependencies for kernel {{ kernel_version.stdout | default('unknown') }}"
+  when: not rocm_smi_check.stat.exists and ansible_check_mode
+
+- name: Download amdgpu-install package
+  get_url:
+    url: "{{ ROCM_BASE_URL }}/{{ ubuntu_codename.stdout }}/{{ ROCM_DEB_PACKAGE }}"
+    dest: "/tmp/{{ ROCM_DEB_PACKAGE }}"
+    mode: "0644"
+  when: not rocm_smi_check.stat.exists
+
+- name: Install amdgpu-install package
+  apt:
+    deb: "/tmp/{{ ROCM_DEB_PACKAGE }}"
+    state: present
+  when: not rocm_smi_check.stat.exists and not ansible_check_mode
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+
+- name: Debug amdgpu package installation (check mode)
+  debug:
+    msg: "Would install amdgpu-install package from /tmp/{{ ROCM_DEB_PACKAGE }}"
+  when: not rocm_smi_check.stat.exists and ansible_check_mode
+
+- name: Install ROCm
+  shell: amdgpu-install --usecase=rocm,dkms --yes
+  when: not rocm_smi_check.stat.exists and not ansible_check_mode
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+
+- name: Debug ROCm installation (check mode)
+  debug:
+    msg: "Would install ROCm with amdgpu-install --usecase=rocm,dkms --yes"
+  when: not rocm_smi_check.stat.exists and ansible_check_mode
+
+- name: Load amdgpu module
+  modprobe:
+    name: amdgpu
+    state: present
+  when: not ansible_check_mode
+
+- name: Debug amdgpu module loading (check mode)
+  debug:
+    msg: "Would load amdgpu kernel module"
+  when: ansible_check_mode
+
+- name: Verify GPUs with rocm-smi
+  shell: rocm-smi -i --json | jq -r '.[] | .["Device Name"]' | sort | uniq -c
+  register: rocm_smi_output
+  when: GPU_NODE | bool and not ansible_check_mode
+  changed_when: false
+
+- name: Debug GPU verification (check mode)
+  debug:
+    msg: "Would verify GPUs using rocm-smi command"
+  when: ansible_check_mode and GPU_NODE | bool
+  changed_when: false
+
+- name: Display detected GPUs
+  debug:
+    msg: "ROCm Devices:\n{{ rocm_smi_output.stdout }}"
+  when: GPU_NODE | bool and not ansible_check_mode and rocm_smi_output is defined
+
+- name: Validate GPU detection
+  fail:
+    msg: "No GPUs detected by rocm-smi. This node is configured as GPU_NODE=true but no AMD GPUs were found."
+  when: 
+    - GPU_NODE
+    - rocm_smi_output is defined
+    - rocm_smi_output.stdout is defined
+    - rocm_smi_output.stdout == ""
+    - not ansible_check_mode
+
+- name: Read ROCm version
+  slurp:
+    src: /opt/rocm/.info/version
+  register: rocm_version_file
+  when: GPU_NODE | bool and not ansible_check_mode
+
+- name: Debug ROCm version (check mode)
+  debug:
+    msg: "Would read ROCm version from /opt/rocm/.info/version"
+  when: GPU_NODE | bool and ansible_check_mode
+
+- name: Display ROCm version
+  debug:
+    msg: "ROCm version: {{ rocm_version_file.content | b64decode | trim }}"
+  when: GPU_NODE | bool and not ansible_check_mode and rocm_version_file is defined

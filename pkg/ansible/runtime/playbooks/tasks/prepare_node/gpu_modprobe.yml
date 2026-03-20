@@ -1,0 +1,24 @@
+---
+# GPU Modprobe Configuration Tasks
+# 
+# Purpose: Configures kernel module blacklisting for AMD GPU drivers
+# Scope: Un-blacklists amdgpu module and loads it
+#
+# Parameters:
+#   GPU_NODE: Boolean indicating if this is a GPU node
+#
+# Returns: Succeeds when amdgpu module is configured and loaded
+#
+# Usage:
+#   include_tasks: tasks/prepare_node/gpu_modprobe.yml
+#   when: GPU_NODE
+
+- name: Un-blacklist amdgpu module
+  shell: sed -i '/^blacklist amdgpu/s/^/# /' /etc/modprobe.d/*.conf
+  ignore_errors: yes
+
+- name: Load amdgpu kernel module
+  modprobe:
+    name: amdgpu
+    state: present
+  ignore_errors: yes

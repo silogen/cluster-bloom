@@ -1,0 +1,79 @@
+---
+# Storage and Disk Preparation Tasks
+# 
+# Purpose: Prepares and mounts cluster storage disks for Longhorn
+# Scope: Formats, creates mount points, and configures persistent mounts
+#
+# Parameters:
+#   NO_DISKS_FOR_CLUSTER: Boolean to skip disk preparation
+#   CLUSTER_PREMOUNTED_DISKS: String indicating pre-mounted disk configuration  
+#   CLUSTER_DISKS: List or comma-separated string of disk devices
+#   bloom_fstab_tag: Tag for managed fstab entries
+#
+# Returns: Succeeds when all disks are formatted and mounted
+#
+# Usage:
+#   include_tasks: tasks/prepare_node/storage.yml
+#   when: not NO_DISKS_FOR_CLUSTER and CLUSTER_PREMOUNTED_DISKS == ""
+
+- name: Convert CLUSTER_DISKS from comma-separated string to list
+  set_fact:
+    cluster_disks_list: "{{ CLUSTER_DISKS.split(',') if CLUSTER_DISKS is string and CLUSTER_DISKS != '' else (CLUSTER_DISKS if CLUSTER_DISKS is sequence else []) }}"
+
+- name: Create mount points for cluster disks
+  file:
+    path: "/mnt/disk{{ disk_index }}"
+    state: directory
+    mode: "0755"
+  loop: "{{ cluster_disks_list | default([]) }}"
+  loop_control:
+    index_var: disk_index
+  when: cluster_disks_list | length > 0
+
+- name: Format disks with ext4 (if not already formatted)
+  shell: |
+    if ! blkid {{ item }} | grep -q ext4; then
+      wipefs -a {{ item }}
+      mkfs.ext4 -F -F {{ item }}
+    fi
+  loop: "{{ cluster_disks_list | default([]) }}"
+  when: cluster_disks_list | length > 0 and not ansible_check_mode
+
+- name: Debug disk formatting (check mode)
+  debug:
+    msg: "Would format {{ cluster_disks_list | length }} disks with ext4: {{ cluster_disks_list | join(', ') }}"
+  when: cluster_disks_list | length > 0 and ansible_check_mode
+
+- name: Get UUIDs for cluster disks
+  shell: blkid -s UUID -o value {{ item.1 }}
+  loop: "{{ range(cluster_disks_list | length) | list | zip(cluster_disks_list) | list }}"
+  register: disk_uuids
+  when: cluster_disks_list | length > 0
+  changed_when: false
+
+- name: Add mount entries to fstab with bloom tag
+  lineinfile:
+    path: /etc/fstab
+    line: "UUID={{ item.stdout }} /mnt/disk{{ item.item.0 }} ext4 defaults,nofail 0 2 {{ bloom_fstab_tag }}"
+    state: present
+    create: yes
+    mode: "0644"
+  loop: "{{ disk_uuids.results }}"
+  when: cluster_disks_list | length > 0 and not item.skipped | default(false) and not ansible_check_mode
+
+- name: Debug fstab entries (check mode)
+  debug:
+    msg: "Would add {{ cluster_disks_list | length }} mount entries to /etc/fstab for disks mounted at /mnt/disk0 through /mnt/disk{{ (cluster_disks_list | length) - 1 }}"
+  when: cluster_disks_list | length > 0 and ansible_check_mode
+
+- name: Mount cluster disks using fstab entries (verifies fstab)
+  shell: mount /mnt/disk{{ item.item.0 }}
+  loop: "{{ disk_uuids.results }}"
+  when: cluster_disks_list | length > 0 and not item.skipped | default(false) and not ansible_check_mode
+  register: mount_results
+  failed_when: mount_results.rc != 0
+
+- name: Debug disk mounting (check mode)
+  debug:
+    msg: "Would mount {{ cluster_disks_list | length }} disks using fstab entries"
+  when: cluster_disks_list | length > 0 and ansible_check_mode

@@ -1,0 +1,67 @@
+---
+# NTP Configuration Tasks
+# 
+# Purpose: Configures chrony NTP synchronization for time consistency
+# Scope: Sets up NTP clients with appropriate time sources
+#
+# Parameters:
+#   FIRST_NODE: Boolean indicating if this is the first node
+#   SERVER_IP: IP address of the first node (for additional nodes)
+#
+# Returns: Succeeds when NTP is configured
+#
+# Usage:
+#   include_tasks: tasks/prepare_node/ntp.yml
+
+- name: Backup original chrony.conf
+  copy:
+    src: /etc/chrony/chrony.conf
+    dest: /etc/chrony/chrony.conf.bak
+    remote_src: yes
+  ignore_errors: yes
+  when: not ansible_check_mode
+
+- name: Debug chrony backup (check mode)
+  debug:
+    msg: "Would backup /etc/chrony/chrony.conf to /etc/chrony/chrony.conf.bak"
+  when: ansible_check_mode
+
+- name: Create chrony.conf for first node
+  copy:
+    content: |
+      pool 0.pool.ntp.org iburst maxsources 2
+      server time.google.com iburst
+      server time.cloudflare.com iburst
+
+      pool pool.ntp.org iburst maxsources 4
+
+      allow 10.0.0.0/8
+    dest: /etc/chrony/chrony.conf
+    mode: "0644"
+  notify: Restart chronyd
+  when: FIRST_NODE | bool and not ansible_check_mode
+
+- name: Debug chrony first node config (check mode)
+  debug:
+    msg: "Would configure chrony for first node with NTP pools and allow 10.0.0.0/8"
+  when: FIRST_NODE | bool and ansible_check_mode
+
+- name: Create chrony.conf for additional node
+  copy:
+    content: |
+      pool pool.ntp.org iburst maxsources 4
+      server time.google.com iburst
+      server time.cloudflare.com iburst
+
+      server {{ SERVER_IP }} iburst prefer
+
+      pool 0.pool.ntp.org iburst maxsources 2
+    dest: /etc/chrony/chrony.conf
+    mode: "0644"
+  notify: Restart chronyd
+  when: not FIRST_NODE | bool and SERVER_IP != "" and not ansible_check_mode
+
+- name: Debug chrony additional node config (check mode)
+  debug:
+    msg: "Would configure chrony for additional node with server preference to {{ SERVER_IP }}"
+  when: not FIRST_NODE | bool and SERVER_IP != "" and ansible_check_mode
