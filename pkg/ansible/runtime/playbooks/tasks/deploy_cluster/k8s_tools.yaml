@@ -1,0 +1,36 @@
+---
+# Kubernetes Tools Installation
+# 
+# Installs essential Kubernetes management tools including:
+# - k9s (Kubernetes cluster management UI)
+# - yq (YAML processor)
+# - kubectl (Kubernetes command-line tool)
+# - Helm (Kubernetes package manager)
+#
+# Tags: tools, deploy_cluster
+
+- name: Install k9s via snap
+  snap:
+    name: k9s
+    state: present
+
+- name: Download yq
+  get_url:
+    url: https://github.com/mikefarah/yq/releases/download/v4.46.1/yq_linux_amd64
+    dest: /usr/local/bin/yq
+    mode: "0755"
+
+- name: Download kubectl
+  get_url:
+    url: https://dl.k8s.io/release/v1.31.4/bin/linux/amd64/kubectl
+    dest: /usr/local/bin/kubectl
+    mode: "0755"
+
+- name: Install Helm
+  shell: |
+    curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 -o /tmp/get-helm-3.sh
+    chmod +x /tmp/get-helm-3.sh
+    DESIRED_VERSION=v3.16.1 /tmp/get-helm-3.sh
+    rm /tmp/get-helm-3.sh
+  args:
+    creates: /usr/local/bin/helm
