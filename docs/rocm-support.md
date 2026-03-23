@@ -8,7 +8,7 @@ ClusterBloom provides automated AMD GPU support through ROCm driver installation
 
 ### ROCm Installation
 Automated installation of ROCm drivers and runtime components:
-- **Driver Version**: Configurable via `ROCM_BASE_URL` (default: 6.3.2)
+- **Driver Version**: Configurable via `ROCM_BASE_URL` (default: 7.0.2)
 - **Components**: amdgpu kernel driver, ROCm runtime, ROCm libraries
 - **Dependencies**: Linux kernel headers, Python setuptools
 - **Installation Method**: amdgpu-install utility from AMD repositories

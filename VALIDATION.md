@@ -184,7 +184,7 @@ FIRST_NODE: true
 GPU_NODE: true
 OIDC_URL: "https://auth.example.com"
 CLUSTERFORGE_RELEASE: "https://github.com/example/repo/releases/download/v1.0/release.tar.gz"
-ROCM_BASE_URL: "https://repo.radeon.com/amdgpu-install/6.3.2/ubuntu/"
+ROCM_BASE_URL: "https://repo.radeon.com/amdgpu-install/7.0.2/ubuntu/"
 RKE2_INSTALLATION_URL: "https://get.rke2.io"
 DISABLED_STEPS: ""
 ENABLED_STEPS: ""

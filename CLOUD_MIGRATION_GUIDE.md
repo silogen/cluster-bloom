@@ -88,7 +88,7 @@ This guide provides comprehensive instructions for migrating applications built 
 
 | Component | ClusterBloom | EKS | AKS | GKE | Compatibility | Migration Effort |
 |-----------|--------------|-----|-----|-----|---------------|------------------|
-| **AMD ROCm** | v6.3.2 (bare-metal install) | GPU instance types | GPU VMs | GPU VMs | ⚠️ Pre-installed on cloud | Medium |
+| **AMD ROCm** | v7.0.2 (bare-metal install) | GPU instance types | GPU VMs | GPU VMs | ⚠️ Pre-installed on cloud | Medium |
 | **Driver Installation** | Manual via amdgpu-install | AMI with drivers | VM image with drivers | Image with drivers | ⚠️ Different | Medium |
 | **Device Plugin** | Manual deployment | Pre-deployed | Pre-deployed | Pre-deployed | ⚠️ Different | Low |
 | **Resource Name** | amd.com/gpu | amd.com/gpu | amd.com/gpu | amd.com/gpu | ✅ Compatible | None |

@@ -164,8 +164,8 @@ sudo apt install -y linux-headers-$KERNEL_VERSION linux-modules-extra-$KERNEL_VE
 sudo apt install -y python3-setuptools python3-wheel
 
 # Download and install amdgpu-install
-wget https://repo.radeon.com/amdgpu-install/6.3.2/ubuntu/$CODENAME/amdgpu-install_6.3.60302-1_all.deb
-sudo apt install -y ./amdgpu-install_6.3.60302-1_all.deb
+wget https://repo.radeon.com/amdgpu-install/7.0.2/ubuntu/$CODENAME/amdgpu-install_7.0.2.70002-1_all.deb
+sudo apt install -y ./amdgpu-install_7.0.2.70002-1_all.deb
 
 # Install ROCm
 sudo amdgpu-install --usecase=rocm,dkms --yes
