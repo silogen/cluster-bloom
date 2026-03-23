@@ -43,6 +43,47 @@ ls -l /dev/kfd /dev/dri/renderD*
 rocm-smi
 ```
 
+### Version Verification
+Ensures correct ROCm version is installed:
+- **Supported Version**: ROCm 7.0.2 only
+- **Version Check**: Validates installed version matches requirements
+- **Out-of-Date Detection**: Identifies 6.x versions requiring upgrade
+- **Unsupported Warning**: Flags 7.2+ versions not yet supported
+
+**Version Check Commands**:
+```bash
+# Check ROCm driver version
+rocm-smi --showdriverversion
+
+# Check installed ROCm version
+cat /opt/rocm/.info/version
+
+# Expected output: 7.0.2.70002-1 (or similar 7.0.2.x)
+```
+
+**Version Status Guide**:
+- ✅ **7.0.2.x** - Correct, fully supported
+- ⚠️ **6.x.x** - Out-of-date, upgrade to 7.0.2 required
+- ❌ **7.2.x** - Not supported, must use 7.0.2 instead
+- ❓ **Other** - Unknown, verify compatibility before use
+
+**Upgrade to 7.0.2**:
+```bash
+# 1. Remove old installation
+sudo amdgpu-uninstall
+sudo apt remove --purge amdgpu-install
+
+# 2. Reinstall with 7.0.2
+wget https://repo.radeon.com/amdgpu-install/7.0.2/ubuntu/$CODENAME/amdgpu-install_7.0.2.70002-1_all.deb
+sudo apt install -y ./amdgpu-install_7.0.2.70002-1_all.deb
+sudo amdgpu-install --usecase=rocm,dkms --yes
+
+# 3. Reboot and verify
+sudo reboot
+# After reboot:
+cat /opt/rocm/.info/version
+```
+
 ### Device Rules
 Configures udev rules for GPU access permissions:
 - **Permission Mode**: 0666 for /dev/kfd and /dev/dri/renderD* devices

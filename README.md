@@ -15,7 +15,7 @@
 - Ubuntu (supported versions checked at runtime)
 - Sufficient disk space (500GB+ recommended for root partition, 2TB+ for workloads)
 - NVMe drives for optimal storage configuration
-- ROCm-compatible AMD GPUs (for GPU nodes)
+- ROCm-compatible AMD GPUs (for GPU nodes) - **ROCm 7.0.2 supported**
 - Root/sudo access
 
 ## Getting Started

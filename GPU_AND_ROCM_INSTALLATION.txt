@@ -273,6 +273,33 @@ Command: cat /opt/rocm/.info/version
 
 Expected output: Version string (e.g., 7.0.2.70002-1)
 
+SUPPORTED VERSION: 7.0.2.x ONLY
+
+Version Validation:
+  - 7.0.2.x       ✓ CORRECT - Fully supported
+  - 6.x.x         ✗ OUT OF DATE - Upgrade required
+  - 7.2.x         ✗ UNSUPPORTED - Must use 7.0.2 instead
+  - Other         ? UNKNOWN - Verify compatibility
+
+If Version is Incorrect:
+------------------------
+To upgrade/downgrade to supported 7.0.2 version:
+
+1. Remove existing ROCm installation:
+   sudo amdgpu-uninstall
+   sudo apt remove --purge amdgpu-install
+
+2. Reinstall with correct version:
+   Follow installation steps in Section 4 with:
+   ROCM_BASE_URL="https://repo.radeon.com/amdgpu-install/7.0.2/ubuntu/"
+   ROCM_DEB_PACKAGE="amdgpu-install_7.0.2.70002-1_all.deb"
+
+3. Reboot the system:
+   sudo reboot
+
+4. Verify correct version after reboot:
+   cat /opt/rocm/.info/version
+
 Step 6: GPU Device Detection with JSON Output
 ----------------------------------------------
 Command: rocm-smi -i --json | jq -r '.[] | .["Device Name"]' | sort | uniq -c
