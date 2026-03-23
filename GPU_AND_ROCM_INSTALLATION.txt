@@ -23,6 +23,7 @@ installation and configuration, enabling GPU-accelerated workloads on
 Kubernetes clusters.
 
 ROCm Version: 7.0.2 (default, configurable)
+Management Tool: amd-smi (replaces deprecated rocm-smi)
 Supported OS: Ubuntu (version-specific kernel headers required)
 
 ================================================================================
@@ -91,7 +92,7 @@ Step 1: System Detection
 ------------------------
 - Detect Ubuntu version and codename
 - Detect kernel version
-- Check if ROCm is already installed (rocm-smi presence)
+- Check if ROCm is already installed (amd-smi or rocm-smi presence)
 
 Step 2: Kernel Headers Installation
 ------------------------------------
@@ -263,15 +264,16 @@ Expected output:
 
 Step 4: ROCm Software Validation
 ---------------------------------
-Command: rocm-smi
+Command: amd-smi list (ROCm 7.x) or rocm-smi (ROCm 6.x)
 
-Expected output: GPU listing with temperature, utilization, etc.
+Expected output: GPU listing with device information
 
 Step 5: ROCm Version Check
 ---------------------------
-Command: cat /opt/rocm/.info/version
+Command (ROCm 7.x): amd-smi version
+Command (Alternative): cat /opt/rocm/.info/version
 
-Expected output: Version string (e.g., 7.0.2.70002-1)
+Expected output: Version 7.0.2 or similar
 
 SUPPORTED VERSION: 7.0.2.x ONLY
 
@@ -298,18 +300,20 @@ To upgrade/downgrade to supported 7.0.2 version:
    sudo reboot
 
 4. Verify correct version after reboot:
-   cat /opt/rocm/.info/version
+   amd-smi version
 
 Step 6: GPU Device Detection with JSON Output
 ----------------------------------------------
-Command: rocm-smi -i --json | jq -r '.[] | .["Device Name"]' | sort | uniq -c
+Command (ROCm 7.x): amd-smi list --json | jq -r '.[] | .card'
+Command (ROCm 6.x): rocm-smi -i --json | jq -r '.[] | .["Device Name"]' | sort | uniq -c
 
 This shows count and model of each GPU type detected.
 
 Automated Verification:
 -----------------------
 ClusterBloom automatically runs:
-  rocm-smi -i --json | jq -r '.[] | .["Device Name"]' | sort | uniq -c
+  - amd-smi list (for ROCm 7.x)
+  - rocm-smi -i (for ROCm 6.x fallback)
 
 And validates that output is not empty. Installation fails if no GPUs detected.
 

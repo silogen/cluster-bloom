@@ -12,6 +12,7 @@ Automated installation of ROCm drivers and runtime components:
 - **Components**: amdgpu kernel driver, ROCm runtime, ROCm libraries
 - **Dependencies**: Linux kernel headers, Python setuptools
 - **Installation Method**: amdgpu-install utility from AMD repositories
+- **Management Tool**: amd-smi (ROCm 7.x) replaces deprecated rocm-smi
 
 **Installation Process**:
 1. Detect Ubuntu version and kernel version
@@ -19,14 +20,14 @@ Automated installation of ROCm drivers and runtime components:
 3. Download amdgpu-install package from AMD repository
 4. Execute installation with ROCm and DKMS use cases
 5. Load amdgpu kernel module
-6. Verify installation with rocm-smi
+6. Verify installation with amd-smi
 
 ### GPU Detection
 Validates GPU availability and configuration:
 - **Hardware Detection**: Identifies AMD GPU devices via PCI bus
 - **Driver Verification**: Checks amdgpu kernel module loading
 - **Device Validation**: Verifies /dev/kfd and /dev/dri/renderD* devices
-- **rocm-smi Check**: Validates ROCm software stack functionality
+- **amd-smi Check**: Validates ROCm software stack functionality (ROCm 7.x)
 
 **Detection Methods**:
 ```bash
@@ -39,8 +40,11 @@ lsmod | grep amdgpu
 # Device node verification
 ls -l /dev/kfd /dev/dri/renderD*
 
-# ROCm validation
-rocm-smi
+# ROCm validation (ROCm 7.x)
+amd-smi list
+
+# Detailed GPU information
+amd-smi list --json
 ```
 
 ### Version Verification
@@ -52,13 +56,13 @@ Ensures correct ROCm version is installed:
 
 **Version Check Commands**:
 ```bash
-# Check ROCm driver version
-rocm-smi --showdriverversion
+# Check ROCm version (ROCm 7.x uses amd-smi)
+amd-smi version
 
-# Check installed ROCm version
-cat /opt/rocm/.info/version
+# Get driver version in JSON format
+amd-smi version --json | jq -r '.driver.version'
 
-# Expected output: 7.0.2.70002-1 (or similar 7.0.2.x)
+# Expected output: 7.0.2 (or similar 7.0.2.x)
 ```
 
 **Version Status Guide**:
@@ -74,6 +78,7 @@ sudo amdgpu-uninstall
 sudo apt remove --purge amdgpu-install
 
 # 2. Reinstall with 7.0.2
+CODENAME=$(grep VERSION_CODENAME /etc/os-release | cut -d= -f2)
 wget https://repo.radeon.com/amdgpu-install/7.0.2/ubuntu/$CODENAME/amdgpu-install_7.0.2.70002-1_all.deb
 sudo apt install -y ./amdgpu-install_7.0.2.70002-1_all.deb
 sudo amdgpu-install --usecase=rocm,dkms --yes
@@ -81,7 +86,8 @@ sudo amdgpu-install --usecase=rocm,dkms --yes
 # 3. Reboot and verify
 sudo reboot
 # After reboot:
-cat /opt/rocm/.info/version
+amd-smi version
+amd-smi list
 ```
 
 ### Device Rules

@@ -98,6 +98,14 @@ The validation system runs in `initConfig()` in the following order:
 - When `GPU_NODE=true`, warns if `SetupAndCheckRocmStep` is disabled
 - **Warning**: `"GPU_NODE=true but ROCM_BASE_URL is empty - ROCm installation may fail"`
 
+#### ROCm Version Validation
+During deployment, ClusterBloom validates the installed ROCm version:
+- **Supported Version**: ROCm 7.0.2 only
+- **Error** (7.2+): `"WARNING: ROCm version {version} is NOT SUPPORTED. ClusterBloom requires ROCm 7.0.2. Version 7.2+ is not yet supported. Please downgrade to 7.0.2."` - Deployment fails
+- **Warning** (6.x): `"WARNING: ROCm version {version} is OUT OF DATE. ClusterBloom requires ROCm 7.0.2. Your version 6.x needs to be upgraded. Please upgrade to ROCm 7.0.2 for full compatibility and support."`
+- **Warning** (other): `"WARNING: ROCm version {version} detected. ClusterBloom officially supports and recommends ROCm 7.0.2. Other versions may work but are not fully tested or supported."`
+- **Success** (7.0.2.x): `"✓ ROCm version {version} is supported (7.0.2.x)"`
+
 #### Disk Parameter Consistency
 - When `NO_DISKS_FOR_CLUSTER=true` but disk parameters are set
 - When `NO_DISKS_FOR_CLUSTER=false` but no disk parameters specified

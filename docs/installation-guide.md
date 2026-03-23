@@ -184,12 +184,12 @@ sudo amdgpu-install --usecase=rocm,dkms --yes
 # Load amdgpu module
 sudo modprobe amdgpu
 
-# Verify installation
-rocm-smi
+# Verify installation (ROCm 7.x uses amd-smi)
+amd-smi list
 
 # Check ROCm version
-cat /opt/rocm/.info/version
-# Expected: 7.0.2.70002-1 (or similar 7.0.2.x)
+amd-smi version
+# Expected: Driver version 7.0.2 (or similar 7.0.2.x)
 # If version shows 6.x.x - OUT OF DATE, requires upgrade
 # If version shows 7.2.x - UNSUPPORTED, must use 7.0.2
 ```
@@ -199,11 +199,11 @@ cat /opt/rocm/.info/version
 ClusterBloom officially supports ROCm **7.0.2**. Check your installed version:
 
 ```bash
-# Check installed ROCm version
-rocm-smi --showdriverversion
+# Check installed ROCm version (ROCm 7.x)
+amd-smi version
 
-# Or check version file
-cat /opt/rocm/.info/version
+# Or check driver version
+amd-smi version --json | jq -r '.driver.version'
 ```
 
 **Expected Output**: `7.0.2.70002-1` (or similar 7.0.2.x)
