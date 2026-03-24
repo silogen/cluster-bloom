@@ -244,6 +244,23 @@ Configuration sources in priority order (highest to lowest):
 - **Description**: ClusterForge values file path (optional)
 - **Example**: `CF_VALUES: "/path/to/values.yaml"`
 
+#### DISABLED_APPS
+- **Type**: String (comma-separated application patterns)
+- **Default**: None (empty)
+- **Description**: List of application patterns to disable during cluster-forge deployment
+- **Supports**: Wildcards with asterisk (*) notation
+- **Examples**: 
+  - `DISABLED_APPS: "airm*,kaiwo*"` - Disable all apps starting with "airm" or "kaiwo"
+  - `DISABLED_APPS: "monitoring*,telemetry*"` - Disable monitoring and telemetry apps
+  - `DISABLED_APPS: "app1,app2,app3"` - Disable specific applications
+- **Use Cases**: 
+  - Minimal deployments with only essential services
+  - Testing environments without monitoring/logging
+  - Custom application management workflows
+  - Development clusters with reduced resource usage
+
+**Note**: This feature requires cluster-forge version supporting `--disabled-apps` flag.
+
 #### OIDC_URL
 - **Type**: String (URL)  
 - **Default**: None

@@ -2107,7 +2107,7 @@
         - name: Run ClusterForge bootstrap script
           shell: |
             cd {{ BLOOM_DIR }}/clusterforge/cluster-forge/scripts
-            bash ./bootstrap.sh {{ DOMAIN }} {% if CF_VALUES != "" %}{{ CF_VALUES }}{% endif %} --target-revision {{ clusterforge_version }}
+            bash ./bootstrap.sh {{ DOMAIN }} {% if CF_VALUES != "" %}{{ CF_VALUES }}{% endif %} --target-revision {{ clusterforge_version }}{% if DISABLED_APPS != "" %} --disabled-apps={{ DISABLED_APPS }}{% endif %}
           register: cf_bootstrap
           environment:
             KUBECONFIG: /etc/rancher/rke2/rke2.yaml

@@ -186,6 +186,18 @@ schema:
       desc: Path to ClusterForge values file
       section: "⚙️ Advanced Configuration"
 
+    DISABLED_APPS:
+      type: str
+      default: ""
+      desc: Comma-separated list of applications to disable in cluster-forge (supports wildcards like airm*, kaiwo*)
+      section: "⚙️ Advanced Configuration"
+      examples:
+        - "airm*,kaiwo*"
+        - "app1,app2,app3"
+        - "monitoring*"
+        - "telemetry*,logging*"
+        - "database*"
+
     ADDITIONAL_OIDC_PROVIDERS:
       type: seq
       default: []

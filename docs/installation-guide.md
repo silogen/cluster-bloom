@@ -586,6 +586,23 @@ sudo cp /etc/resolv.conf.backup-<timestamp> /etc/resolv.conf
 sudo systemctl enable --now systemd-resolved
 ```
 
+## Minimal Deployment Configuration
+
+For testing or resource-constrained environments, you can disable specific applications:
+
+```yaml
+# Minimal cluster without monitoring applications
+DISABLED_APPS: "monitoring*,telemetry*"
+
+# Disable AIRM and Kaiwo applications
+DISABLED_APPS: "airm*,kaiwo*"
+
+# Disable specific applications
+DISABLED_APPS: "app1,app2,database-service"
+```
+
+This feature allows you to exclude applications not needed for specific use cases and reduce resource usage.
+
 ## Key Differences: Manual vs Automated
 
 ClusterBloom automates all of the above steps and provides:

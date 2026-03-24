@@ -74,6 +74,9 @@ Flexible configuration system supporting YAML files, environment variables, and 
 
 **[📄 Configuration Reference](./configuration-reference.md)**
 
+### Application Control
+Selective application deployment with cluster-forge integration, supporting wildcard pattern matching to disable specific applications during deployment for minimal installations, testing environments, and custom workflows.
+
 ### Node Validation and Testing
 Comprehensive pre-deployment validation ensures node readiness, connectivity, GPU availability, and proper firewall configuration before any system modifications.
 

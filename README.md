@@ -121,6 +121,7 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | ADDITIONAL_TLS_SAN_URLS | Additional TLS Subject Alternative Name URLs for Kubernetes API server certificate | [] |
 | CERT_OPTION | Certificate option when USE_CERT_MANAGER is false. Choose 'existing' or 'generate' | "" |
 | CF_VALUES | Path to ClusterForge values file (optional). Example: "values_cf.yaml" | "" |
+| DISABLED_APPS | Comma-separated list of applications to disable in cluster-forge (supports wildcards like airm*, kaiwo*) | "" |
 | CLUSTER_DISKS | Comma-separated list of disk devices. Example "/dev/sdb,/dev/sdc". Also skips NVME drive checks. | "" |
 | CLUSTER_SIZE | Size category for cluster deployment planning. Options: small, medium, large | medium |
 | CLUSTER_PREMOUNTED_DISKS | Comma-separated list of absolute disk paths to use for Longhorn | "" |
@@ -200,6 +201,7 @@ GPU_NODE: true                     # Set to false if no GPUs
 CLUSTER_DISKS: "/dev/nvme1n1"     # Disk device path for storage
 CERT_OPTION: "generate"           # Options: "generate" or "existing"
 CLUSTERFORGE_RELEASE: "v1.8.0"    # Version tag, full URL, "latest", "none", or "" to skip
+DISABLED_APPS: "airm*,kaiwo*"     # Optional: disable specific applications (wildcards supported)
 PRELOAD_IMAGES: ""                # Optional: comma-separated container images
 ```
 
