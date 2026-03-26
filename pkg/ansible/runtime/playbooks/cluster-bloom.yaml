@@ -605,7 +605,7 @@
             - rocm_smi_output.stdout == ""
 
         - name: Get ROCm version from amd-smi header
-          shell: /opt/rocm/bin/amd-smi | head -2 | grep "ROCm version" | sed -n 's/.*ROCm version: \([0-9.]*\).*/\1/p'
+          shell: "/opt/rocm/bin/amd-smi | head -2 | grep 'ROCm version' | sed -n 's/.*ROCm version: \([0-9.]*\).*/\1/p'"
           register: rocm_version_output
           changed_when: false
           when: amd_smi_check.stat.exists
