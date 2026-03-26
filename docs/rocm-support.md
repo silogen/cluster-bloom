@@ -56,13 +56,16 @@ Ensures correct ROCm version is installed:
 
 **Version Check Commands**:
 ```bash
-# Check ROCm version (ROCm 7.x uses amd-smi)
-amd-smi version
+# Check ROCm version (displayed in amd-smi header)
+amd-smi
+# Look for "ROCm version: X.X.X" in the first line
 
-# Get driver version in JSON format
-amd-smi version --json | jq -r '.driver.version'
+# Example output:
+# +------------------------------------------------------------------------------+
+# | AMD-SMI 26.0.2+39589fda  amdgpu version: 6.14.14  ROCm version: 7.0.2    |
+# +------------------------------------------------------------------------------+
 
-# Expected output: 7.0.2 (or similar 7.0.2.x)
+# Expected: ROCm version: 7.0.2
 ```
 
 **Version Status Guide**:
@@ -85,9 +88,9 @@ sudo amdgpu-install --usecase=rocm,dkms --yes
 
 # 3. Reboot and verify
 sudo reboot
-# After reboot:
-amd-smi version
-amd-smi list
+# After reboot, check version in header:
+amd-smi
+# Should show: ROCm version: 7.0.2
 ```
 
 ### Device Rules

@@ -270,10 +270,15 @@ Expected output: GPU listing with device information
 
 Step 5: ROCm Version Check
 ---------------------------
-Command (ROCm 7.x): amd-smi version
+Command (ROCm 7.x): amd-smi (version shown in header)
 Command (Alternative): cat /opt/rocm/.info/version
 
-Expected output: Version 7.0.2 or similar
+Expected output: ROCm version: 7.0.2 (in amd-smi header)
+
+Example amd-smi output:
++------------------------------------------------------------------------------+
+| AMD-SMI 26.0.2+39589fda  amdgpu version: 6.14.14  ROCm version: 7.0.2    |
++------------------------------------------------------------------------------+
 
 SUPPORTED VERSION: 7.0.2.x ONLY
 
@@ -300,7 +305,8 @@ To upgrade/downgrade to supported 7.0.2 version:
    sudo reboot
 
 4. Verify correct version after reboot:
-   amd-smi version
+   amd-smi
+   # Check for "ROCm version: 7.0.2" in the header
 
 Step 6: GPU Device Detection with JSON Output
 ----------------------------------------------

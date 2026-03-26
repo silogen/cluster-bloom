@@ -602,8 +602,8 @@
             - not amd_smi_check.stat.exists
             - rocm_smi_output.stdout == ""
 
-        - name: Get ROCm version from amd-smi
-          shell: /opt/rocm/bin/amd-smi version --json | jq -r '.driver.version'
+        - name: Get ROCm version from amd-smi header
+          shell: /opt/rocm/bin/amd-smi | head -2 | grep "ROCm version" | sed -n 's/.*ROCm version: \([0-9.]*\).*/\1/p'
           register: rocm_version_output
           changed_when: false
           when: amd_smi_check.stat.exists
@@ -613,17 +613,20 @@
           slurp:
             src: /opt/rocm/.info/version
           register: rocm_version_file
-          when: not amd_smi_check.stat.exists or rocm_version_output.rc != 0
+          when: not amd_smi_check.stat.exists or rocm_version_output.rc != 0 or rocm_version_output.stdout == ""
 
         - name: Set ROCm version fact (amd-smi)
           set_fact:
             rocm_version: "{{ rocm_version_output.stdout | trim }}"
-          when: amd_smi_check.stat.exists and rocm_version_output.rc == 0
+          when: 
+            - amd_smi_check.stat.exists
+            - rocm_version_output.rc == 0
+            - rocm_version_output.stdout != ""
 
         - name: Set ROCm version fact (file)
           set_fact:
             rocm_version: "{{ rocm_version_file.content | b64decode | trim }}"
-          when: not amd_smi_check.stat.exists or rocm_version_output.rc != 0
+          when: not amd_smi_check.stat.exists or rocm_version_output.rc != 0 or rocm_version_output.stdout == ""
 
         - name: Display ROCm version
           debug:
