@@ -210,6 +210,10 @@
         state: directory
         mode: '0755'
 
+    - name: Initialize certificate SAN list
+      set_fact:
+        cert_san_list: []
+
     - name: Add additional TLS SANs to certificate
       set_fact:
         cert_san_list: "{{ cert_san_list + [item] }}"
@@ -221,13 +225,13 @@
 
     - name: Prepare certificate SAN string
       set_fact:
-        cert_san_string: "{{ cert_san_list | map('regex_replace', '^(.*)$', 'DNS:\\1') | join(',') }}"
+        cert_san_string: "{{ cert_san_list | default([]) | map('regex_replace', '^(.*)$', 'DNS:\\1') | join(',') }}"
 
     - name: Debug certificate SAN list
       debug:
         msg: 
-          - "Certificate SAN list: {{ cert_san_list }}"
-          - "Certificate SANs will be: {{ cert_san_string }}"
+          - "Certificate SAN list: {{ cert_san_list | default([]) }}"
+          - "Certificate SANs will be: {{ cert_san_string | default('') }}"
 
     - name: Generate API server TLS certificate
       shell: |
