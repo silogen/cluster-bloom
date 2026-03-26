@@ -143,10 +143,8 @@
 - name: Create RKE2 registries.yaml
   copy:
     content: |
-      mirrors:
-        docker.io:
-        ghcr.io:
-        quay.io:
+      # RKE2 registry configuration
+      # Empty configuration allows direct access to registries without mirrors
     dest: /etc/rancher/rke2/registries.yaml
     mode: "0644"
 
