@@ -8,7 +8,7 @@ ClusterBloom provides automated AMD GPU support through ROCm driver installation
 
 ### ROCm Installation
 Automated installation of ROCm drivers and runtime components:
-- **Driver Version**: Configurable via `ROCM_BASE_URL` (default: 7.0.2)
+- **Driver Version**: Configurable via `ROCM_BASE_URL` (default: 7.1.1)
 - **Components**: amdgpu kernel driver, ROCm runtime, ROCm libraries
 - **Dependencies**: Linux kernel headers, Python setuptools
 - **Installation Method**: amdgpu-install utility from AMD repositories
@@ -49,7 +49,7 @@ amd-smi list --json
 
 ### Version Verification
 Ensures correct ROCm version is installed:
-- **Supported Version**: ROCm 7.0.2 only
+- **Supported Version**: ROCm 7.1.1 exactly
 - **Version Check**: Validates installed version matches requirements
 - **Out-of-Date Detection**: Identifies 6.x versions requiring upgrade
 - **Unsupported Warning**: Flags 7.2+ versions not yet supported
@@ -62,35 +62,33 @@ amd-smi
 
 # Example output:
 # +------------------------------------------------------------------------------+
-# | AMD-SMI 26.0.2+39589fda  amdgpu version: 6.14.14  ROCm version: 7.0.2    |
+# | AMD-SMI 26.0.2+39589fda  amdgpu version: 6.14.14  ROCm version: 7.1.1    |
 # +------------------------------------------------------------------------------+
 
-# Expected: ROCm version: 7.0.2
+# Expected: ROCm version: 7.1.1
 ```
 
 **Version Status Guide**:
-- ✅ **7.0.2.x** - Correct, fully supported
-- ⚠️ **6.x.x** - Out-of-date, upgrade to 7.0.2 required
-- ❌ **7.2.x** - Not supported, must use 7.0.2 instead
-- ❓ **Other** - Unknown, verify compatibility before use
+- ✅ **7.1.1** - Correct, required and fully supported
+- ⚠️ **Other** - Version mismatch: WARNING issued; install 7.1.1
 
-**Upgrade to 7.0.2**:
+**Install ROCm 7.1.1**:
 ```bash
 # 1. Remove old installation
 sudo amdgpu-uninstall
 sudo apt remove --purge amdgpu-install
 
-# 2. Reinstall with 7.0.2
+# 2. Reinstall with 7.1.1
 CODENAME=$(grep VERSION_CODENAME /etc/os-release | cut -d= -f2)
-wget https://repo.radeon.com/amdgpu-install/7.0.2/ubuntu/$CODENAME/amdgpu-install_7.0.2.70002-1_all.deb
-sudo apt install -y ./amdgpu-install_7.0.2.70002-1_all.deb
+wget https://repo.radeon.com/amdgpu-install/7.1.1/ubuntu/$CODENAME/amdgpu-install_7.1.1.70002-1_all.deb
+sudo apt install -y ./amdgpu-install_7.1.1.70002-1_all.deb
 sudo amdgpu-install --usecase=rocm,dkms --yes
 
 # 3. Reboot and verify
 sudo reboot
 # After reboot, check version in header:
 amd-smi
-# Should show: ROCm version: 7.0.2
+# Should show: ROCm version: 7.1.1
 ```
 
 ### Device Rules

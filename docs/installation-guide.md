@@ -175,8 +175,8 @@ sudo apt install -y linux-headers-$KERNEL_VERSION linux-modules-extra-$KERNEL_VE
 sudo apt install -y python3-setuptools python3-wheel
 
 # Download and install amdgpu-install
-wget https://repo.radeon.com/amdgpu-install/7.0.2/ubuntu/$CODENAME/amdgpu-install_7.0.2.70002-1_all.deb
-sudo apt install -y ./amdgpu-install_7.0.2.70002-1_all.deb
+wget https://repo.radeon.com/amdgpu-install/7.1.1/ubuntu/$CODENAME/amdgpu-install_7.1.1.70101-1_all.deb
+sudo apt install -y ./amdgpu-install_7.1.1.70101-1_all.deb
 
 # Install ROCm
 sudo amdgpu-install --usecase=rocm,dkms --yes
@@ -190,37 +190,34 @@ amd-smi list
 # Check ROCm version (shown in header)
 amd-smi
 # Look for "ROCm version: X.X.X" in the output header
-# Expected: ROCm version: 7.0.2
-# If version shows 6.x.x - OUT OF DATE, requires upgrade
-# If version shows 7.2.x - UNSUPPORTED, must use 7.0.2
+# Expected: ROCm version: 7.1.1
+# Any version other than 7.1.1 will produce a WARNING
 ```
 
 **⚠️ ROCm Version Validation**:
 
-ClusterBloom officially supports ROCm **7.0.2**. Check your installed version:
+ClusterBloom officially supports ROCm **7.1.1**. Check your installed version:
 
 ```bash
 # Check installed ROCm version (ROCm 7.x)
 amd-smi
 # Look for "ROCm version: X.X.X" in the header output
 # Example output header:
-# | AMD-SMI 26.0.2+39589fda  amdgpu version: 6.14.14  ROCm version: 7.0.2 |
+# | AMD-SMI 26.0.2+39589fda  amdgpu version: 6.14.14  ROCm version: 7.1.1 |
 ```
 
-**Expected Output**: `7.0.2.70002-1` (or similar 7.0.2.x)
+**Expected Output**: `7.1.1.70002-1` (or similar 7.1.1.x)
 
 **If you have an out-of-date or incorrect version:**
-- **6.x.x**: Out-of-date, upgrade to 7.0.2 required
-- **7.2.x**: Not supported, must use 7.0.2 instead
-- **Other**: Verify compatibility before proceeding
+- **Other**: Version mismatch — WARNING issued; install 7.1.1
 
-**To upgrade/downgrade to 7.0.2:**
+**To install ROCm 7.1.1:**
 ```bash
 # Remove old ROCm installation
 sudo amdgpu-uninstall
 sudo apt remove --purge amdgpu-install
 
-# Then follow the installation steps above with 7.0.2
+# Then follow the installation steps above with 7.1.1
 ```
 
 **Configure GPU Permissions**:

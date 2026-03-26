@@ -22,7 +22,7 @@ ClusterBloom provides automated AMD GPU support through ROCm driver
 installation and configuration, enabling GPU-accelerated workloads on 
 Kubernetes clusters.
 
-ROCm Version: 7.0.2 (default, configurable)
+ROCm Version: 7.1.1 (default, configurable)
 Management Tool: amd-smi (replaces deprecated rocm-smi)
 Supported OS: Ubuntu (version-specific kernel headers required)
 
@@ -66,18 +66,18 @@ ROCm Repository Configuration:
 ------------------------------
 
 ROCM_BASE_URL (String)
-  Default: https://repo.radeon.com/amdgpu-install/7.0.2/ubuntu/
+  Default: https://repo.radeon.com/amdgpu-install/7.1.1/ubuntu/
   Description: Base URL for ROCm package repository
   Format: Full URL path to ROCm packages directory
-  Example: ROCM_BASE_URL="https://repo.radeon.com/amdgpu-install/7.0.2/ubuntu/"
+  Example: ROCM_BASE_URL="https://repo.radeon.com/amdgpu-install/7.1.1/ubuntu/"
   
   Version Override Example:
-  ROCM_BASE_URL="https://repo.radeon.com/amdgpu-install/7.0.2/ubuntu/"
+  ROCM_BASE_URL="https://repo.radeon.com/amdgpu-install/7.1.1/ubuntu/"
 
 ROCM_DEB_PACKAGE (String)
-  Default: amdgpu-install_7.0.2.70002-1_all.deb
+  Default: amdgpu-install_7.1.1.70101-1_all.deb
   Description: Specific ROCm installer package filename
-  Example: ROCM_DEB_PACKAGE="amdgpu-install_7.0.2.70002-1_all.deb"
+  Example: ROCM_DEB_PACKAGE="amdgpu-install_7.1.1.70101-1_all.deb"
 
 Warning:
 If GPU_NODE=true but ROCM_BASE_URL is empty, ROCm installation may fail.
@@ -115,7 +115,7 @@ Package downloaded from:
   ${ROCM_BASE_URL}/${ubuntu_codename}/${ROCM_DEB_PACKAGE}
 
 Example full URL:
-  https://repo.radeon.com/amdgpu-install/7.0.2/ubuntu/jammy/amdgpu-install_7.0.2.70002-1_all.deb
+  https://repo.radeon.com/amdgpu-install/7.1.1/ubuntu/jammy/amdgpu-install_7.1.1.70101-1_all.deb
 
 Downloaded to: /tmp/${ROCM_DEB_PACKAGE}
 
@@ -273,24 +273,22 @@ Step 5: ROCm Version Check
 Command (ROCm 7.x): amd-smi (version shown in header)
 Command (Alternative): cat /opt/rocm/.info/version
 
-Expected output: ROCm version: 7.0.2 (in amd-smi header)
+Expected output: ROCm version: 7.1.1 (in amd-smi header)
 
 Example amd-smi output:
 +------------------------------------------------------------------------------+
-| AMD-SMI 26.0.2+39589fda  amdgpu version: 6.14.14  ROCm version: 7.0.2    |
+| AMD-SMI 26.0.2+39589fda  amdgpu version: 6.14.14  ROCm version: 7.1.1    |
 +------------------------------------------------------------------------------+
 
-SUPPORTED VERSION: 7.0.2.x ONLY
+REQUIRED VERSION: 7.1.1 EXACTLY
 
 Version Validation:
-  - 7.0.2.x       ✓ CORRECT - Fully supported
-  - 6.x.x         ✗ OUT OF DATE - Upgrade required
-  - 7.2.x         ✗ UNSUPPORTED - Must use 7.0.2 instead
-  - Other         ? UNKNOWN - Verify compatibility
+  - 7.1.1         ✓ CORRECT - Required and supported
+  - Other         ‼ VERSION MISMATCH - WARNING issued; install 7.1.1
 
 If Version is Incorrect:
 ------------------------
-To upgrade/downgrade to supported 7.0.2 version:
+To install the required 7.1.1 version:
 
 1. Remove existing ROCm installation:
    sudo amdgpu-uninstall
@@ -298,15 +296,15 @@ To upgrade/downgrade to supported 7.0.2 version:
 
 2. Reinstall with correct version:
    Follow installation steps in Section 4 with:
-   ROCM_BASE_URL="https://repo.radeon.com/amdgpu-install/7.0.2/ubuntu/"
-   ROCM_DEB_PACKAGE="amdgpu-install_7.0.2.70002-1_all.deb"
+   ROCM_BASE_URL="https://repo.radeon.com/amdgpu-install/7.1.1/ubuntu/"
+   ROCM_DEB_PACKAGE="amdgpu-install_7.1.1.70101-1_all.deb"
 
 3. Reboot the system:
    sudo reboot
 
 4. Verify correct version after reboot:
    amd-smi
-   # Check for "ROCm version: 7.0.2" in the header
+   # Check for "ROCm version: 7.1.1" in the header
 
 Step 6: GPU Device Detection with JSON Output
 ----------------------------------------------
@@ -450,8 +448,8 @@ CLUSTER_TOKEN: "my-secure-token-12345"
 CLUSTER_DISKS: "/dev/sdb"
 
 # ROCm defaults will be used
-# ROCM_BASE_URL: "https://repo.radeon.com/amdgpu-install/7.0.2/ubuntu/"
-# ROCM_DEB_PACKAGE: "amdgpu-install_7.0.2.70002-1_all.deb"
+# ROCM_BASE_URL: "https://repo.radeon.com/amdgpu-install/7.1.1/ubuntu/"
+# ROCM_DEB_PACKAGE: "amdgpu-install_7.1.1.70101-1_all.deb"
 
 Example 2: GPU Worker Node Joining Existing Cluster
 ---------------------------------------------------
@@ -473,8 +471,8 @@ FIRST_NODE: true
 GPU_NODE: true
 NODE_IP: "192.168.1.10"
 CLUSTER_TOKEN: "my-secure-token-12345"
-ROCM_BASE_URL: "https://repo.radeon.com/amdgpu-install/7.0.2/ubuntu/"
-ROCM_DEB_PACKAGE: "amdgpu-install_7.0.2.70002-1_all.deb"
+ROCM_BASE_URL: "https://repo.radeon.com/amdgpu-install/7.1.1/ubuntu/"
+ROCM_DEB_PACKAGE: "amdgpu-install_7.1.1.70101-1_all.deb"
 
 Example 4: Mixed Cluster (GPU and Non-GPU Nodes)
 ------------------------------------------------
@@ -509,7 +507,7 @@ export GPU_NODE=true
 export NODE_IP="192.168.1.10"
 export CLUSTER_TOKEN="my-secure-token-12345"
 export CLUSTER_DISKS="/dev/sdb"
-export ROCM_BASE_URL="https://repo.radeon.com/amdgpu-install/7.0.2/ubuntu/"
+export ROCM_BASE_URL="https://repo.radeon.com/amdgpu-install/7.1.1/ubuntu/"
 
 Then run: ./bloom deploy
 

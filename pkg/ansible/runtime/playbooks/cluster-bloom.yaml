@@ -44,8 +44,10 @@
     ARGOCD_VERSION: "v2.14.11"
     CLUSTERFORGE_REPO: "https://github.com/silogen/cluster-forge.git"
     CLUSTERFORGE_RELEASE: "latest"
-    rocm_base_url: "https://repo.radeon.com/amdgpu-install/7.1.1/ubuntu/"
-    rocm_deb_package: "amdgpu-install_7.1.1.70101-1_all.deb"
+    rocm_required_version: "7.1.1"  # single source of truth — update this to change ROCm version
+    rocm_deb_build: "70101-1"  # build identifier paired with rocm_required_version
+    rocm_base_url: "https://repo.radeon.com/amdgpu-install/{{ rocm_required_version }}/ubuntu/"
+    rocm_deb_package: "amdgpu-install_{{ rocm_required_version }}.{{ rocm_deb_build }}_all.deb"
     rke2_installation_url: "https://get.rke2.io"
 
     supported_ubuntu_versions:
@@ -632,65 +634,38 @@
           debug:
             msg: "ROCm version: {{ rocm_version }}"
 
-        - name: Parse ROCm version components
-          set_fact:
-            rocm_version_parts: "{{ rocm_version.split('.') }}"
-
-        - name: Extract major, minor, patch from version
-          set_fact:
-            rocm_version_major: "{{ rocm_version_parts[0] | string }}"
-            rocm_version_minor: "{{ rocm_version_parts[1] | string }}"
-            rocm_version_patch: "{{ rocm_version_parts[2] | string }}"
-
-        - name: Fail for unsupported ROCm 7.2+ versions
-          fail:
-            msg: |
-              ❌ ERROR: ROCm version {{ rocm_version }} is NOT SUPPORTED
-              ClusterBloom requires ROCm 7.0.2
-              Version 7.2+ is not yet supported
-              
-              Action Required: Downgrade to ROCm 7.0.2
-              
-              Steps to downgrade:
-              1. sudo amdgpu-uninstall
-              2. sudo apt remove --purge amdgpu-install
-              3. Reinstall with ROCm 7.0.2 (see documentation)
-              4. sudo reboot
-          when: 
-            - rocm_version_major == "7"
-            - rocm_version_minor | int >= 2
-
-        - name: Warn for out-of-date ROCm 6.x versions
+        - name: Warn if ROCm version is not exactly {{ rocm_required_version }}
           debug:
             msg: |
-              ⚠️  WARNING: ROCm version {{ rocm_version }} is OUT OF DATE
-              ClusterBloom requires ROCm 7.0.2 for full support
-              Your version 6.x may have compatibility issues
-              
-              Recommended Action: Upgrade to ROCm 7.0.2
-              Installation will continue, but upgrade is strongly recommended
-          when: rocm_version_major == "6"
+              ████████████████████████████████████████████████████████████████
+              ⚠️  WARNING: ROCm version mismatch detected!
+              ████████████████████████████████████████████████████████████████
 
-        - name: Warn for other non-7.0.2 ROCm versions
-          debug:
-            msg: |
-              ⚠️  WARNING: ROCm version {{ rocm_version }} detected
-              ClusterBloom officially supports ROCm 7.0.2
-              Other versions may work but are not fully tested
-              
-              For best results, use ROCm 7.0.2
-          when: 
-            - rocm_version_major != "7" or rocm_version_minor != "0" or rocm_version_patch != "2"
-            - rocm_version_major != "6"
-            - rocm_version_major != "7" or rocm_version_minor | int < 2
+              Installed : ROCm {{ rocm_version }}
+              Required  : ROCm {{ rocm_required_version }}
 
-        - name: Confirm supported ROCm version
+              ClusterBloom requires exactly ROCm {{ rocm_required_version }}.
+              Using a different version may result in compatibility issues,
+              unexpected behavior, or unsupported features.
+
+              To install the correct version:
+                1. sudo amdgpu-uninstall
+                2. sudo apt remove --purge amdgpu-install
+                3. Re-run ClusterBloom (installs ROCm {{ rocm_required_version }} automatically)
+                   OR manually:
+                     CODENAME=$(grep VERSION_CODENAME /etc/os-release | cut -d= -f2)
+                     wget {{ rocm_base_url }}/$CODENAME/{{ rocm_deb_package }}
+                     sudo apt install -y ./{{ rocm_deb_package }}
+                     sudo amdgpu-install --usecase=rocm,dkms --yes
+                4. sudo reboot
+
+              ████████████████████████████████████████████████████████████████
+          when: rocm_version | regex_replace('^([0-9]+\.[0-9]+\.[0-9]+).*', '\1') != rocm_required_version
+
+        - name: Confirm ROCm version matches requirement
           debug:
-            msg: "✅ ROCm version {{ rocm_version }} is supported (7.0.2.x)"
-          when: 
-            - rocm_version_major == "7"
-            - rocm_version_minor == "0"
-            - rocm_version_patch == "2"
+            msg: "✅ ROCm {{ rocm_version }} confirmed — version {{ rocm_required_version }} requirement satisfied"
+          when: rocm_version | regex_replace('^([0-9]+\.[0-9]+\.[0-9]+).*', '\1') == rocm_required_version
 
       tags: [gpu, rocm, prep_node]
 
