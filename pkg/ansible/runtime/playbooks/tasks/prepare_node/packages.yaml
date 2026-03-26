@@ -14,9 +14,23 @@
 - name: Update apt cache
   apt:
     update_cache: yes
+    cache_valid_time: 3600
   environment:
     DEBIAN_FRONTEND: noninteractive
-  ignore_errors: yes
+  retries: 3
+  delay: 10
+  register: apt_cache_result
+  failed_when: false
+  when: not ansible_check_mode
+
+- name: Display apt cache update result
+  debug:
+    msg: |
+      {% if apt_cache_result.failed %}
+      ⚠️  APT cache update failed (network issue) - continuing with existing cache
+      {% else %}
+      ✅ APT cache updated successfully
+      {% endif %}
   when: not ansible_check_mode
 
 - name: Debug apt cache update (check mode)
