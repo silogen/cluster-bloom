@@ -62,7 +62,10 @@ The validation system runs in `initConfig()` in the following order:
 - `"JOIN_TOKEN is too short (minimum 32 characters), got {length} characters"`
 - `"JOIN_TOKEN contains invalid characters (only alphanumeric, +, /, =, _, ., :, - allowed)"`
 
-### 4. Step Name Validation
+### 4. Step Name Validation *(pending implementation)*
+
+> **⚠️ Pending Implementation**: `DISABLED_STEPS` and `ENABLED_STEPS` are not yet active.
+> The validation logic described below is defined but these fields have no effect in the current version.
 
 **Function**: `validateStepNames()`, `validateAllStepNames()`  
 **Parameters**: `DISABLED_STEPS`, `ENABLED_STEPS`

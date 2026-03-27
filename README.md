@@ -126,9 +126,7 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | CLUSTER_PREMOUNTED_DISKS | Comma-separated list of absolute disk paths to use for Longhorn | "" |
 | CLUSTERFORGE_RELEASE | ClusterForge version to deploy. Accepts version tags ('v1.8.0'), full release URLs, 'latest', 'none', or "" (empty) to skip | "latest" |
 | CONTROL_PLANE | Set to true if this node should be a control plane node | false, only applies when FIRST_NODE is false |
-| DISABLED_STEPS | Comma-separated list of steps to skip. Example "SetupLonghornStep,SetupMetallbStep" | "" |
 | DOMAIN | The domain name for the cluster (e.g., "cluster.example.com") (required). | "" |
-| ENABLED_STEPS | Comma-separated list of steps to perform. If empty, perform all. Example "SetupLonghornStep,SetupMetallbStep" | "" |
 | FIX_DNS | **Opt-in** to allow automatic DNS fixes. Only modifies DNS if broken and external DNS works. Creates backups and auto-rolls back on failure. | false |
 | DNSMASQ | **Opt-in** to configure dnsmasq for local DNS (first node only). Requires FIX_DNS=true and DOMAIN to be set. Provides cluster.local resolution. | false |
 | FIRST_NODE | Set to true if this is the first node in the cluster | true |
