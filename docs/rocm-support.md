@@ -8,10 +8,11 @@ ClusterBloom provides automated AMD GPU support through ROCm driver installation
 
 ### ROCm Installation
 Automated installation of ROCm drivers and runtime components:
-- **Driver Version**: Configurable via `ROCM_BASE_URL` (default: 6.3.2)
+- **Driver Version**: Configurable via `ROCM_BASE_URL` (default: 7.1.1)
 - **Components**: amdgpu kernel driver, ROCm runtime, ROCm libraries
 - **Dependencies**: Linux kernel headers, Python setuptools
 - **Installation Method**: amdgpu-install utility from AMD repositories
+- **Management Tool**: amd-smi (ROCm 7.x) replaces deprecated rocm-smi
 
 **Installation Process**:
 1. Detect Ubuntu version and kernel version
@@ -19,14 +20,14 @@ Automated installation of ROCm drivers and runtime components:
 3. Download amdgpu-install package from AMD repository
 4. Execute installation with ROCm and DKMS use cases
 5. Load amdgpu kernel module
-6. Verify installation with rocm-smi
+6. Verify installation with amd-smi
 
 ### GPU Detection
 Validates GPU availability and configuration:
 - **Hardware Detection**: Identifies AMD GPU devices via PCI bus
 - **Driver Verification**: Checks amdgpu kernel module loading
 - **Device Validation**: Verifies /dev/kfd and /dev/dri/renderD* devices
-- **rocm-smi Check**: Validates ROCm software stack functionality
+- **amd-smi Check**: Validates ROCm software stack functionality (ROCm 7.x)
 
 **Detection Methods**:
 ```bash
@@ -39,8 +40,55 @@ lsmod | grep amdgpu
 # Device node verification
 ls -l /dev/kfd /dev/dri/renderD*
 
-# ROCm validation
-rocm-smi
+# ROCm validation (ROCm 7.x)
+amd-smi list
+
+# Detailed GPU information
+amd-smi list --json
+```
+
+### Version Verification
+Ensures correct ROCm version is installed:
+- **Supported Version**: ROCm 7.1.1 exactly
+- **Version Check**: Validates installed version matches requirements
+- **Out-of-Date Detection**: Identifies 6.x versions requiring upgrade
+- **Unsupported Warning**: Flags 7.2+ versions not yet supported
+
+**Version Check Commands**:
+```bash
+# Check ROCm version (displayed in amd-smi header)
+amd-smi
+# Look for "ROCm version: X.X.X" in the first line
+
+# Example output:
+# +------------------------------------------------------------------------------+
+# | AMD-SMI 26.0.2+39589fda  amdgpu version: 6.14.14  ROCm version: 7.1.1    |
+# +------------------------------------------------------------------------------+
+
+# Expected: ROCm version: 7.1.1
+```
+
+**Version Status Guide**:
+- ✅ **7.1.1** - Correct, required and fully supported
+- ⚠️ **Other** - Version mismatch: WARNING issued; install 7.1.1
+
+**Install ROCm 7.1.1**:
+```bash
+# 1. Remove old installation
+sudo amdgpu-uninstall
+sudo apt remove --purge amdgpu-install
+
+# 2. Reinstall with 7.1.1
+CODENAME=$(grep VERSION_CODENAME /etc/os-release | cut -d= -f2)
+wget https://repo.radeon.com/amdgpu-install/7.1.1/ubuntu/$CODENAME/amdgpu-install_7.1.1.70002-1_all.deb
+sudo apt install -y ./amdgpu-install_7.1.1.70002-1_all.deb
+sudo amdgpu-install --usecase=rocm,dkms --yes
+
+# 3. Reboot and verify
+sudo reboot
+# After reboot, check version in header:
+amd-smi
+# Should show: ROCm version: 7.1.1
 ```
 
 ### Device Rules

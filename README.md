@@ -15,7 +15,7 @@
 - Ubuntu (supported versions checked at runtime)
 - Sufficient disk space (500GB+ recommended for root partition, 2TB+ for workloads)
 - NVMe drives for optimal storage configuration
-- ROCm-compatible AMD GPUs (for GPU nodes)
+- ROCm-compatible AMD GPUs (for GPU nodes) - **ROCm 7.1.1 required**
 - Root/sudo access
 
 ## Getting Started
@@ -147,8 +147,8 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | PRELOAD_IMAGES | Comma-separated list of container images to preload | docker.io/rocm/pytorch:rocm6.4_ubuntu24.04_py3.12_pytorch_release_2.6.0,docker.io/rocm/vllm:rocm6.4.1_vllm_0.9.0.1_20250605 |
 | RKE2_EXTRA_CONFIG | Additional RKE2 configuration in YAML format | "" |
 | RKE2_INSTALLATION_URL | RKE2 installation script URL | https://get.rke2.io |
-| ROCM_BASE_URL | ROCm base repository URL | https://repo.radeon.com/amdgpu-install/7.0.2/ubuntu/ |
-| ROCM_DEB_PACKAGE | ROCm DEB package name | amdgpu-install_7.0.2.70002-1_all.deb |
+| ROCM_BASE_URL | ROCm base repository URL | https://repo.radeon.com/amdgpu-install/7.1.1/ubuntu/ |
+| ROCM_DEB_PACKAGE | ROCm DEB package name | amdgpu-install_7.1.1.70101-1_all.deb |
 
 ### OIDC Configuration Examples
 
