@@ -56,7 +56,9 @@ echo -e 'FIRST_NODE: false\nJOIN_TOKEN: your-token-here\nSERVER_IP: your-server-
 ### Version Information
 
 ```sh
-./bloom version
+./bloom version   # subcommand
+./bloom --version # flag (short: -v)
+./bloom -v
 ```
 
 ### Command Help

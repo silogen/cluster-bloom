@@ -19,8 +19,9 @@ This document provides detailed technical architecture information for ClusterBl
 - Testing mode for components
 - Non-destructive operation testing
 
-#### Version Command (`cmd/version.go`)
-- Version information display
+#### Version Command
+- Version information display via `./bloom version` subcommand
+- Also available as a root flag: `./bloom --version` / `./bloom -v`
 - Build metadata reporting
 - Git commit and tag information
 
