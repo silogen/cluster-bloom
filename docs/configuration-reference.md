@@ -87,14 +87,17 @@ Configuration sources in priority order (highest to lowest):
 
 ### Step Control Configuration
 
-#### DISABLED_STEPS
+> **⚠️ Pending Implementation**: `DISABLED_STEPS` and `ENABLED_STEPS` are not yet active.
+> These fields are reserved for a future release and have no effect in the current version.
+
+#### DISABLED_STEPS *(pending implementation)*
 - **Type**: String (comma-separated step IDs)
 - **Default**: None
 - **Description**: Comma-separated list of step IDs to skip during installation
 - **Example**: `DISABLED_STEPS: "install-longhorn,install-metallb"`
 - **Mutually Exclusive With**: `ENABLED_STEPS`
 
-#### ENABLED_STEPS
+#### ENABLED_STEPS *(pending implementation)*
 - **Type**: String (comma-separated step IDs)
 - **Default**: None
 - **Description**: Comma-separated list of step IDs to execute (all others skipped)
@@ -411,7 +414,7 @@ sudo ./bloom --config bloom.yaml --domain custom.example.com
 
 ### Mutually Exclusive Fields
 
-- `DISABLED_STEPS` and `ENABLED_STEPS` cannot both be set
+- `DISABLED_STEPS` and `ENABLED_STEPS` cannot both be set *(pending implementation)*
 - `USE_CERT_MANAGER: true` and `CERT_OPTION: "existing"` cannot both be set
 
 ### Conditional Requirements

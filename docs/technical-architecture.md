@@ -19,8 +19,9 @@ This document provides detailed technical architecture information for ClusterBl
 - Testing mode for components
 - Non-destructive operation testing
 
-#### Version Command (`cmd/version.go`)
-- Version information display
+#### Version Command
+- Version information display via `./bloom version` subcommand
+- Also available as a root flag: `./bloom --version` / `./bloom -v`
 - Build metadata reporting
 - Git commit and tag information
 
@@ -49,7 +50,7 @@ This document provides detailed technical architecture information for ClusterBl
 - Dependency ordering
 - Pre/post Kubernetes separation
 - Step state management
-- DISABLED_STEPS/ENABLED_STEPS filtering
+- DISABLED_STEPS/ENABLED_STEPS filtering *(pending implementation)*
 
 #### Disk Management (`pkg/disks.go`)
 - Storage device detection
@@ -161,22 +162,26 @@ Add-ons and integrations after cluster is running:
 
 ### Step Control Mechanisms
 
-#### Step Filtering
-Two mutually exclusive mechanisms for controlling step execution:
+#### Step Filtering *(pending implementation)*
 
-**DISABLED_STEPS**:
+> **⚠️ Pending Implementation**: `DISABLED_STEPS` and `ENABLED_STEPS` are reserved for a future
+> release. They have no effect in the current version and are excluded from the `bloom help` output.
+
+Two mutually exclusive mechanisms are planned for controlling step execution:
+
+**DISABLED_STEPS** *(not yet active)*:
 ```yaml
 DISABLED_STEPS: "install-longhorn,install-metallb"
 ```
-- Skips specified steps
+- Will skip specified steps
 - All other steps execute normally
 - Comma-separated step IDs
 
-**ENABLED_STEPS**:
+**ENABLED_STEPS** *(not yet active)*:
 ```yaml
 ENABLED_STEPS: "install-rke2,configure-kubeconfig"
 ```
-- Executes ONLY specified steps
+- Will execute ONLY specified steps
 - All other steps are skipped
 - Useful for targeted operations
 - Mutually exclusive with DISABLED_STEPS
@@ -421,7 +426,7 @@ Pre-flight validation checks:
 
 - **URL Validation**: OIDC, ClusterForge, ROCm, RKE2 URLs
 - **Network Validation**: IP addresses, token formats
-- **Step Validation**: Step names in DISABLED_STEPS/ENABLED_STEPS
+- **Step Validation**: Step names in DISABLED_STEPS/ENABLED_STEPS *(pending implementation)*
 - **Conflict Detection**: Mutually exclusive options
 - **Resource Validation**: Disk space, memory, CPU
 - **OS Compatibility**: Ubuntu version, kernel modules

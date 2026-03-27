@@ -25,7 +25,8 @@ var (
 	extraVars  []string
 	verbose    bool
 	configFile string
-	export     bool
+	export      bool
+	showVersion bool
 )
 
 func init() {
@@ -103,6 +104,14 @@ func newRootCmd() *cobra.Command {
 		Short: "Kubernetes Cluster Deployment Tool",
 		Long:  `Bloom - A tool for generating bloom.yaml configurations and deploying Kubernetes clusters.`,
 		Run: func(cmd *cobra.Command, args []string) {
+			if showVersion {
+				if Version != "" {
+					fmt.Printf("%s\n", Version)
+				} else {
+					fmt.Println("dev")
+				}
+				return
+			}
 			// Default action: start webui
 			runWebUI(cmd)
 		},
@@ -194,6 +203,7 @@ imports (roles, tasks, vars) within that directory tree work as expected.`,
 
 	// Add flags
 	rootCmd.PersistentFlags().IntVarP(&port, "port", "p", 62078, "Port for web UI (fails if in use)")
+	rootCmd.Flags().BoolVarP(&showVersion, "version", "v", false, "Show version information")
 
 	// Add CLI command flags
 	cliCmd.Flags().StringVar(&playbookName, "playbook", "cluster-bloom.yaml", "Playbook to run (default: cluster-bloom.yaml)")
