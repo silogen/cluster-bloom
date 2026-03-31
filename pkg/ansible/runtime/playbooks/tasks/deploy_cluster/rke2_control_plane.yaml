@@ -1,0 +1,33 @@
+---
+# Purpose: Install and start RKE2 server on additional control plane nodes
+# Dependencies: FIRST_NODE, CONTROL_PLANE, SERVER_IP, JOIN_TOKEN, RKE2_VERSION variables
+# Usage: Imported by deploy_cluster/main.yaml (conditional on control plane node)
+# Tags: [rke2, deploy_cluster]
+
+- name: Add server and token to RKE2 config
+  blockinfile:
+    path: /etc/rancher/rke2/config.yaml
+    block: |
+      server: https://{{ SERVER_IP }}:9345
+      token: {{ JOIN_TOKEN }}
+    marker: "# {mark} ANSIBLE MANAGED BLOCK - join config"
+
+- name: "Install RKE2 server (control plane){% if RKE2_VERSION is defined and RKE2_VERSION != '' %} ({{ RKE2_VERSION }}){% else %} (latest){% endif %}"
+  shell: |
+    {% if RKE2_VERSION is defined and RKE2_VERSION != "" %}
+    curl -sfL {{ rke2_installation_url }} | INSTALL_RKE2_TYPE=server INSTALL_RKE2_VERSION="{{ RKE2_VERSION }}" sh -
+    {% else %}
+    curl -sfL {{ rke2_installation_url }} | INSTALL_RKE2_TYPE=server sh -
+    {% endif %}
+  args:
+    creates: /usr/local/bin/rke2
+
+- name: Enable RKE2 server service
+  service:
+    name: rke2-server
+    enabled: yes
+
+- name: Start RKE2 server service
+  service:
+    name: rke2-server
+    state: started

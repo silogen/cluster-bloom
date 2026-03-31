@@ -4,26 +4,35 @@
 # Usage: Imported by main cluster-bloom.yaml playbook
 # Tags: [deploy_k8s_apps]
 
-# This section will contain the Kubernetes applications deployment logic
-# TODO: Modularize into separate files (argocd.yaml, metallb.yaml, longhorn.yaml, etc.)
+- name: Wait for kubectl to be available
+  when: FIRST_NODE and not NO_DISKS_FOR_CLUSTER
+  wait_for:
+    path: /var/lib/rancher/rke2/bin/kubectl
+    state: present
+    timeout: 300
+  tags: [storage, deploy_k8s_apps]
 
-- name: Placeholder - Deploy ArgoCD
-  debug:
-    msg: "Deploy ArgoCD for GitOps management"
-  when: INSTALL_ARGOCD
-  tags: [deploy_k8s_apps]
+- name: Setup Node Annotator
+  include_tasks: node_annotator.yaml
+  when: FIRST_NODE
+  tags: [node_annotator, deploy_k8s_apps]
 
-- name: Placeholder - Setup Load Balancer (MetalLB)
-  debug:
-    msg: "Configure MetalLB for load balancing"
-  tags: [deploy_k8s_apps]
+- name: Setup MetalLB (First Node)
+  include_tasks: metallb.yaml
+  when: FIRST_NODE
+  tags: [metallb, deploy_k8s_apps]
 
-- name: Placeholder - Setup Storage Provisioners
-  debug:
-    msg: "Configure Longhorn and local-path storage"
-  tags: [deploy_k8s_apps]
+- name: Setup Storage Provisioner (Small/Medium Clusters - Local-Path)
+  include_tasks: local_path.yaml
+  when: FIRST_NODE and not NO_DISKS_FOR_CLUSTER and CLUSTER_SIZE in ["small", "medium"]
+  tags: [storage, local-path, deploy_k8s_apps]
 
-- name: Placeholder - Configure Domain and TLS
-  debug:
-    msg: "Setup domain resolution and TLS certificates"
-  tags: [deploy_k8s_apps]
+- name: Setup Storage Provisioner (Large Clusters - Longhorn)
+  include_tasks: longhorn.yaml
+  when: FIRST_NODE and not NO_DISKS_FOR_CLUSTER and CLUSTER_SIZE == "large"
+  tags: [storage, longhorn, deploy_k8s_apps]
+
+- name: Setup ArgoCD Core (Small Clusters)
+  include_tasks: argocd.yaml
+  when: FIRST_NODE and CLUSTER_SIZE == "small" and INSTALL_ARGOCD
+  tags: [argocd, deploy_k8s_apps]

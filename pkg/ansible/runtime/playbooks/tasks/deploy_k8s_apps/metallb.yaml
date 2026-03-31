@@ -1,0 +1,30 @@
+---
+# Purpose: Setup MetalLB load balancer for external service access
+# Dependencies: FIRST_NODE variable
+# Usage: Imported by deploy_k8s_apps/main.yaml (conditional on FIRST_NODE)
+# Tags: [metallb, deploy_k8s_apps]
+
+- name: Get default IP for MetalLB
+  shell: ip route get 1 | awk '{print $7; exit}'
+  register: metallb_ip
+  changed_when: false
+
+- name: Create MetalLB address pool config
+  copy:
+    content: |
+      apiVersion: metallb.io/v1beta1
+      kind: IPAddressPool
+      metadata:
+        name: cluster-bloom-ip-pool
+        namespace: metallb-system
+      spec:
+        addresses:
+        - {{ metallb_ip.stdout }}/32
+      ---
+      apiVersion: metallb.io/v1beta1
+      kind: L2Advertisement
+      metadata:
+        name: cluster-bloom-l2-advertisement
+        namespace: metallb-system
+    dest: /var/lib/rancher/rke2/server/manifests/metallb-address.yaml
+    mode: "0644"

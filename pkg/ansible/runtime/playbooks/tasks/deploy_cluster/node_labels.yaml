@@ -1,0 +1,26 @@
+---
+# Purpose: Generate and configure node labels for Kubernetes cluster
+# Dependencies: NO_DISKS_FOR_CLUSTER, GPU_NODE, cluster_disks_list variables
+# Usage: Imported by deploy_cluster/main.yaml
+# Tags: [rke2, deploy_cluster]
+
+- name: Build disk labels list
+  set_fact:
+    disk_labels: "{{ disk_labels | default([]) + ['bloom.disk___mnt___disk' + item.0|string + '=disk' + item.1|replace('/', '___')] }}"
+  loop: "{{ range(cluster_disks_list | default([]) | length) | list | zip(cluster_disks_list | default([])) | list }}"
+  when: not NO_DISKS_FOR_CLUSTER and cluster_disks_list is defined and cluster_disks_list | length > 0
+
+- name: Write node labels to config
+  blockinfile:
+    path: /etc/rancher/rke2/config.yaml
+    block: |
+      node-label:
+      {% if not NO_DISKS_FOR_CLUSTER %}
+        - node.longhorn.io/create-default-disk=config
+        - node.longhorn.io/instance-manager=true
+      {% endif %}
+        - cluster-bloom/gpu-node={{ GPU_NODE | lower }}
+      {% for label in disk_labels | default([]) %}
+        - {{ label }}
+      {% endfor %}
+    marker: "# {mark} ANSIBLE MANAGED BLOCK - node labels"
