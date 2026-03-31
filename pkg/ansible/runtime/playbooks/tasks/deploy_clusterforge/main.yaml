@@ -1,18 +1,20 @@
 ---
 # Purpose: Deploys ClusterForge platform
-# Dependencies: CLUSTERFORGE_REPO, CLUSTERFORGE_RELEASE variables
+# Dependencies: CLUSTERFORGE_REPO, CLUSTERFORGE_RELEASE, DOMAIN variables
 # Usage: Imported by main cluster-bloom.yaml playbook
 # Tags: [deploy_clusterforge]
 
-# This section will contain ClusterForge deployment logic
-# TODO: Extract from original file and modularize
+- name: Parse ClusterForge Version
+  include_tasks: parse_version.yaml
+  when: FIRST_NODE and ((CLUSTERFORGE_RELEASE != "none" and CLUSTERFORGE_RELEASE != "") or (CLUSTER_SIZE == "small" and INSTALL_ARGOCD))
+  tags: [clusterforge, argocd, deploy_clusterforge, deploy_k8s_apps]
 
-- name: Placeholder - Download ClusterForge
-  debug:
-    msg: "Download ClusterForge from {{ CLUSTERFORGE_REPO }}"
-  tags: [deploy_clusterforge]
+- name: Deploy ClusterForge via ArgoCD (Small Clusters)
+  include_tasks: argocd_deploy.yaml
+  when: FIRST_NODE and CLUSTER_SIZE == "small" and INSTALL_ARGOCD
+  tags: [clusterforge, argocd, deploy_k8s_apps]
 
-- name: Placeholder - Extract and Bootstrap ClusterForge
-  debug:
-    msg: "Extract and bootstrap ClusterForge platform"
-  tags: [deploy_clusterforge]
+- name: Setup ClusterForge
+  include_tasks: clusterforge_setup.yaml
+  when: FIRST_NODE and CLUSTERFORGE_RELEASE != "none" and CLUSTERFORGE_RELEASE != ""
+  tags: [clusterforge, deploy_clusterforge]

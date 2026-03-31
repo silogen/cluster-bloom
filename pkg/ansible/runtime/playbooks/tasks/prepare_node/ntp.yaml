@@ -1,0 +1,54 @@
+---
+# Purpose: Configure chrony NTP service for time synchronization
+# Dependencies: FIRST_NODE, SERVER_IP variables
+# Usage: Imported by prepare_node/main.yaml
+# Tags: [ntp, prep_node]
+# Handlers: Restart chronyd
+
+- name: Create Chrony Config (First Node)
+  when: FIRST_NODE
+  block:
+    - name: Backup original chrony.conf
+      copy:
+        src: /etc/chrony/chrony.conf
+        dest: /etc/chrony/chrony.conf.bak
+        remote_src: yes
+      ignore_errors: yes
+
+    - name: Create chrony.conf for first node
+      copy:
+        content: |
+          pool 0.pool.ntp.org iburst maxsources 2
+          server time.google.com iburst
+          server time.cloudflare.com iburst
+
+          pool pool.ntp.org iburst maxsources 4
+
+          allow 10.0.0.0/8
+        dest: /etc/chrony/chrony.conf
+        mode: "0644"
+      notify: Restart chronyd
+
+- name: Create Chrony Config (Additional Node)
+  when: not FIRST_NODE and SERVER_IP != ""
+  block:
+    - name: Backup original chrony.conf
+      copy:
+        src: /etc/chrony/chrony.conf
+        dest: /etc/chrony/chrony.conf.bak
+        remote_src: yes
+      ignore_errors: yes
+
+    - name: Create chrony.conf for additional node
+      copy:
+        content: |
+          pool pool.ntp.org iburst maxsources 4
+          server time.google.com iburst
+          server time.cloudflare.com iburst
+
+          server {{ SERVER_IP }} iburst prefer
+
+          pool 0.pool.ntp.org iburst maxsources 2
+        dest: /etc/chrony/chrony.conf
+        mode: "0644"
+      notify: Restart chronyd

@@ -1,0 +1,64 @@
+---
+# Purpose: Create domain configuration and TLS certificate secrets
+# Dependencies: DOMAIN, USE_CERT_MANAGER, CERT_OPTION, TLS_CERT, TLS_KEY variables
+# Usage: Imported by deploy_k8s_apps/main.yaml (conditional on DOMAIN)
+# Tags: [domain, deploy_k8s_apps]
+
+- name: Wait for cluster to be ready
+  pause:
+    seconds: 5
+
+- name: Create DOMAIN ConfigMap
+  shell: |
+    cat <<EOF | /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml apply -f -
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: cluster-domain
+      namespace: default
+    data:
+      DOMAIN: "{{ DOMAIN }}"
+      use-cert-manager: "{{ USE_CERT_MANAGER | lower }}"
+    EOF
+  args:
+    executable: /bin/bash
+
+- name: Use generated certificates for ingress
+  when: not USE_CERT_MANAGER and CERT_OPTION == "generate"
+  block:
+    - name: Create kgateway-system namespace
+      shell: |
+        /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+          create namespace kgateway-system --dry-run=client -o yaml | \
+        /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml apply -f -
+
+    - name: Create TLS secret from API server certificates
+      shell: |
+        /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+          create secret tls cluster-tls \
+          --cert=/etc/rancher/rke2/certs/tls.crt \
+          --key=/etc/rancher/rke2/certs/tls.key \
+          -n kgateway-system \
+          --dry-run=client -o yaml | \
+        /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml apply -f -
+      register: secret_creation_result
+      failed_when: secret_creation_result.rc != 0
+
+- name: Use existing certificate
+  when: not USE_CERT_MANAGER and CERT_OPTION == "existing"
+  block:
+    - name: Create kgateway-system namespace
+      shell: |
+        /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+          create namespace kgateway-system --dry-run=client -o yaml | \
+        /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml apply -f -
+
+    - name: Create TLS secret from existing cert
+      shell: |
+        /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+          create secret tls cluster-tls \
+          --cert={{ TLS_CERT }} \
+          --key={{ TLS_KEY }} \
+          -n kgateway-system \
+          --dry-run=client -o yaml | \
+        /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml apply -f -

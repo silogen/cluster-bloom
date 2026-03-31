@@ -1,0 +1,33 @@
+---
+# Purpose: Parse and determine ClusterForge version for deployment
+# Dependencies: CLUSTERFORGE_RELEASE variable
+# Usage: Imported by deploy_clusterforge/main.yaml
+# Tags: [clusterforge, deploy_clusterforge]
+
+- name: Determine if CLUSTERFORGE_RELEASE is a URL
+  set_fact:
+    cf_is_url: "{{ CLUSTERFORGE_RELEASE.startswith('http') }}"
+
+- name: Parse version from URL
+  set_fact:
+    clusterforge_version: "{{ CLUSTERFORGE_RELEASE | regex_search('v[0-9]+.[0-9]+.[0-9]+(-[a-zA-Z0-9.]+)?') }}"
+  when: cf_is_url | bool
+
+- name: Use version string directly
+  set_fact:
+    clusterforge_version: "{{ CLUSTERFORGE_RELEASE }}"
+  when: not (cf_is_url | bool) and CLUSTERFORGE_RELEASE not in ["latest", "none"]
+
+- name: Use default version for latest/none
+  set_fact:
+    clusterforge_version: "main"
+  when: CLUSTERFORGE_RELEASE in ["latest", "none"]
+
+- name: Fallback to main if parsing failed
+  set_fact:
+    clusterforge_version: "main"
+  when: clusterforge_version is not defined or clusterforge_version == "" or clusterforge_version == None
+
+- name: Display parsed ClusterForge version
+  debug:
+    msg: "Using ClusterForge version: {{ clusterforge_version }}"

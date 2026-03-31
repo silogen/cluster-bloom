@@ -31,6 +31,10 @@
   include_tasks: k8s_tools.yaml
   tags: [k8s_tools, deploy_cluster]
 
+- name: Configure logrotate
+  include_tasks: logrotate.yaml
+  tags: [logging, deploy_cluster]
+
 - name: Setup KubeConfig (Control Plane Nodes)
   include_tasks: kubeconfig.yaml
   when: FIRST_NODE or CONTROL_PLANE

@@ -1,0 +1,24 @@
+---
+# Purpose: Deploy ClusterForge via ArgoCD for small clusters
+# Dependencies: CLUSTER_SIZE, INSTALL_ARGOCD, DOMAIN, clusterforge_version variables
+# Usage: Imported by deploy_clusterforge/main.yaml (conditional on small clusters)
+# Tags: [clusterforge, argocd, deploy_clusterforge]
+
+- name: Clone ClusterForge chart
+  shell: |
+    rm -rf /tmp/cluster-forge
+    git clone --branch {{ clusterforge_version }} --depth 1 {{ CLUSTERFORGE_REPO }} /tmp/cluster-forge
+
+- name: Template and apply ClusterForge
+  shell: |
+    /usr/local/bin/helm template cluster-forge /tmp/cluster-forge/root \
+      -f /tmp/cluster-forge/root/values.yaml \
+      -f /tmp/cluster-forge/root/values_s.yaml \
+      --set global.domain={{ DOMAIN }} | \
+    /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+      apply --server-side --force-conflicts -f -
+
+- name: Clean up ClusterForge checkout
+  file:
+    path: /tmp/cluster-forge
+    state: absent
