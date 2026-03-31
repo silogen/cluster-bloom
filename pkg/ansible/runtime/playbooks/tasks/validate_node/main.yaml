@@ -1,0 +1,18 @@
+---
+# Purpose: Orchestrates all node validation tasks before deployment
+# Dependencies: supported_ubuntu_versions, GPU_NODE, SKIP_RANCHER_PARTITION_CHECK variables
+# Usage: Imported by main cluster-bloom.yaml playbook
+# Tags: [validate_node]
+
+- name: Validate Ubuntu Version
+  include_tasks: ubuntu_version.yaml
+  tags: [validate_node]
+
+- name: Validate System Requirements
+  include_tasks: system_requirements.yaml
+  tags: [validate_node]
+
+- name: Check /var/lib/rancher partition size
+  include_tasks: rancher_partition.yaml
+  when: GPU_NODE and not SKIP_RANCHER_PARTITION_CHECK
+  tags: [validate_node]

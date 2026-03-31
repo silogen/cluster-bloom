@@ -1,0 +1,18 @@
+---
+# Purpose: Deploys ClusterForge platform
+# Dependencies: CLUSTERFORGE_REPO, CLUSTERFORGE_RELEASE variables
+# Usage: Imported by main cluster-bloom.yaml playbook
+# Tags: [deploy_clusterforge]
+
+# This section will contain ClusterForge deployment logic
+# TODO: Extract from original file and modularize
+
+- name: Placeholder - Download ClusterForge
+  debug:
+    msg: "Download ClusterForge from {{ CLUSTERFORGE_REPO }}"
+  tags: [deploy_clusterforge]
+
+- name: Placeholder - Extract and Bootstrap ClusterForge
+  debug:
+    msg: "Extract and bootstrap ClusterForge platform"
+  tags: [deploy_clusterforge]

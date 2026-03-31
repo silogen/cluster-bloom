@@ -1,0 +1,179 @@
+---
+# Purpose: Install system packages and configure DNS safely for cluster deployment
+# Dependencies: FIX_DNS variable (optional DNS modification control)
+# Usage: Imported by prepare_node/main.yaml
+# Tags: [packages, prep_node]
+
+- name: DNS Configuration Notice
+  debug:
+    msg: |
+      DNS modifications are {{ 'ENABLED' if FIX_DNS else 'DISABLED (opt-in required)' }}.
+      {% if not FIX_DNS %}
+      To enable automatic DNS fixes, set FIX_DNS: true in your configuration.
+      This will only modify DNS if it's broken and external DNS is reachable.
+      {% endif %}
+
+- name: Fix DNS resolution (safe mode)
+  when: FIX_DNS
+  block:
+    - name: Check current DNS configuration
+      shell: cat /etc/resolv.conf
+      register: current_resolv
+      failed_when: false
+      changed_when: false
+
+    - name: Show current DNS config
+      debug:
+        msg: "Current resolv.conf: {{ current_resolv.stdout_lines }}"
+
+    - name: Test DNS resolution with current config
+      shell: nslookup archive.ubuntu.com
+      register: dns_test
+      failed_when: false
+      changed_when: false
+      timeout: 10
+
+    - name: Test alternative DNS server
+      shell: nslookup archive.ubuntu.com 1.1.1.1
+      register: dns_test_alt
+      failed_when: false
+      changed_when: false
+      timeout: 10
+
+    - name: Show DNS test result
+      debug:
+        msg: 
+          - "Current DNS test: {{ 'PASSED' if dns_test.rc == 0 else 'FAILED' }}"
+          - "Alternative DNS test: {{ 'PASSED' if dns_test_alt.rc == 0 else 'FAILED' }}"
+
+    # Only modify DNS if it's actually broken AND external DNS works
+    - name: Determine if DNS needs fixing
+      set_fact:
+        dns_needs_fixing: "{{ dns_test.rc != 0 and dns_test_alt.rc == 0 }}"
+
+    - name: DNS Status Decision
+      debug:
+        msg: "{{ 'DNS is broken and will be fixed' if dns_needs_fixing else 'DNS is working, no changes needed' }}"
+
+    - name: Backup current resolv.conf before modification
+      copy:
+        src: /etc/resolv.conf
+        dest: /etc/resolv.conf.backup-{{ ansible_date_time.epoch }}
+        remote_src: yes
+        mode: "0644"
+      when: dns_needs_fixing
+
+    - name: Make resolv.conf mutable (if immutable)
+      shell: chattr -i /etc/resolv.conf 2>/dev/null || true
+      ignore_errors: yes
+      when: dns_needs_fixing
+
+    - name: Configure working DNS servers (only if broken)
+      copy:
+        content: |
+          # Configured by cluster-bloom due to DNS failure
+          # Original backed up to /etc/resolv.conf.backup-{{ ansible_date_time.epoch }}
+          nameserver 8.8.8.8
+          nameserver 1.1.1.1
+          nameserver 8.8.4.4
+          # nameserver 4.4.4.4
+        dest: /etc/resolv.conf
+        mode: "0644"
+      when: dns_needs_fixing
+      register: dns_modified
+
+    - name: Verify DNS is working after changes
+      shell: |
+        nslookup archive.ubuntu.com || exit 1
+        nslookup security.ubuntu.com || exit 1
+      register: dns_verify
+      failed_when: false
+      retries: 3
+      delay: 2
+      until: dns_verify.rc == 0
+      when: dns_needs_fixing
+
+    - name: Rollback DNS changes if verification failed
+      block:
+        - name: Restore original resolv.conf
+          copy:
+            src: /etc/resolv.conf.backup-{{ ansible_date_time.epoch }}
+            dest: /etc/resolv.conf
+            remote_src: yes
+            mode: "0644"
+        - name: Fail with helpful message
+          fail:
+            msg: |
+              DNS modification failed verification and has been rolled back.
+              Original configuration restored from backup.
+              Manual DNS configuration may be required.
+      when: dns_needs_fixing and dns_verify is defined and dns_verify.rc != 0
+
+- name: Stop services that may lock apt
+  shell: |
+    systemctl stop unattended-upgrades.service || true
+    systemctl stop apt-daily.timer || true
+    systemctl stop apt-daily-upgrade.timer || true
+    systemctl kill --kill-who=all apt-daily.service || true
+    systemctl kill --kill-who=all apt-daily-upgrade.service || true
+  ignore_errors: yes
+
+- name: Wait for apt locks to be released
+  shell: |
+    timeout 90 bash -c 'while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do sleep 1; done' || true
+    timeout 90 bash -c 'while fuser /var/lib/apt/lists/lock >/dev/null 2>&1; do sleep 1; done' || true
+  ignore_errors: yes
+
+- name: Clean apt lists and locks
+  shell: |
+    killall apt apt-get dpkg 2>/dev/null || true
+    rm -f /var/lib/apt/lists/lock
+    rm -f /var/cache/apt/archives/lock
+    rm -f /var/lib/dpkg/lock*
+    dpkg --configure -a || true
+    rm -rf /var/lib/apt/lists/*
+    mkdir -p /var/lib/apt/lists/partial
+  ignore_errors: yes
+
+- name: Disable problematic apt repositories
+  shell: |
+    if [ -f /etc/apt/sources.list.d/kitware.list ]; then
+      mv /etc/apt/sources.list.d/kitware.list /etc/apt/sources.list.d/kitware.list.disabled || true
+    fi
+  ignore_errors: yes
+
+- name: Ensure universe repository is enabled
+  shell: |
+    add-apt-repository -y universe || true
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+  ignore_errors: yes
+
+- name: Update apt cache with timeout
+  shell: timeout 300 apt-get update --allow-insecure-repositories
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+    APT_KEY_DONT_WARN_ON_DANGEROUS_USAGE: "1"
+  register: apt_update_result
+  until: apt_update_result.rc == 0
+  retries: 3
+  delay: 10
+  ignore_errors: no
+
+- name: Install required packages
+  apt:
+    name:
+      - open-iscsi
+      - jq
+      - nfs-common
+      - chrony
+      - curl
+      - wget
+      - dnsmasq
+    state: present
+    update_cache: yes
+    cache_valid_time: 3600
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+    NEEDRESTART_MODE: a
+    NEEDRESTART_SUSPEND: "1"

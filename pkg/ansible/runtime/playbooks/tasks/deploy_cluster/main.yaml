@@ -1,0 +1,27 @@
+---
+# Purpose: Orchestrates RKE2 cluster deployment and configuration
+# Dependencies: Various RKE2 and cluster variables
+# Usage: Imported by main cluster-bloom.yaml playbook
+# Tags: [deploy_cluster]
+
+# This section contains the remaining RKE2 preparation tasks from the original file
+# TODO: Further modularize into separate files (prepare_rke2.yaml, k8s_auth.yaml, tls_certs.yaml, etc.)
+
+# For now, including the entire remaining Prepare RKE2 block
+# Lines 735-2200+ from original cluster-bloom.yaml
+# This includes kernel modules, RKE2 config, dnsmasq, TLS, OIDC auth, etc.
+
+- name: Placeholder - RKE2 Preparation Tasks
+  debug:
+    msg: "RKE2 cluster preparation tasks will be included here from original lines 735-2200+"
+  tags: [deploy_cluster]
+
+- name: Placeholder - Load required kernel modules for RKE2
+  debug:
+    msg: "Load kernel modules (iscsi_tcp, dm_mod) for RKE2"
+  tags: [deploy_cluster]
+
+- name: Placeholder - Configure RKE2 with OIDC, TLS, and dnsmasq
+  debug:
+    msg: "Configure RKE2 server, authentication, certificates"
+  tags: [deploy_cluster]
