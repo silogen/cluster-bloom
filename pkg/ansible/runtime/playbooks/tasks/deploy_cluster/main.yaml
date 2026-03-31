@@ -17,6 +17,10 @@
   include_tasks: prepare_rke2.yaml
   tags: [deploy_cluster]
 
+- name: Generate SSL/TLS Certificates
+  include_tasks: certificates.yaml
+  tags: [certificates, deploy_cluster]
+
 - name: Generate Node Labels
   include_tasks: node_labels.yaml
   tags: [rke2, deploy_cluster]

@@ -32,6 +32,11 @@
           create namespace kgateway-system --dry-run=client -o yaml | \
         /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml apply -f -
 
+    - name: Check if generated certificates exist
+      stat:
+        path: /etc/rancher/rke2/certs/tls.crt
+      register: generated_cert_check
+
     - name: Create TLS secret from API server certificates
       shell: |
         /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
@@ -43,6 +48,7 @@
         /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml apply -f -
       register: secret_creation_result
       failed_when: secret_creation_result.rc != 0
+      when: generated_cert_check.stat.exists
 
 - name: Use existing certificate
   when: not USE_CERT_MANAGER and CERT_OPTION == "existing"

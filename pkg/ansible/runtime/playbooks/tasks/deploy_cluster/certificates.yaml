@@ -1,0 +1,50 @@
+---
+# Purpose: Generate API server certificates for Kubernetes when using CERT_OPTION="generate"
+# Dependencies: DOMAIN, USE_CERT_MANAGER, CERT_OPTION, ADDITIONAL_TLS_SAN_URLS variables
+# Usage: Imported by deploy_cluster/main.yaml (conditional on certificate requirements)
+# Tags: [certificates, deploy_cluster]
+
+- name: Generate API server certificates for Kubernetes
+  when: not USE_CERT_MANAGER and CERT_OPTION == "generate" and DOMAIN != ""
+  block:
+    - name: Create RKE2 certificate directory
+      file:
+        path: /etc/rancher/rke2/certs
+        state: directory
+        mode: '0755'
+
+    # Initialize certificate SAN list for cert generation
+    - name: Initialize certificate SAN list
+      set_fact:
+        cert_san_list: ["k8s.{{ DOMAIN }}","kc.{{ DOMAIN }}","*.{{ DOMAIN }}",]
+
+    - name: Add additional TLS SANs to certificate
+      set_fact:
+        cert_san_list: "{{ cert_san_list + [item] }}"
+      loop: "{{ ADDITIONAL_TLS_SAN_URLS if ADDITIONAL_TLS_SAN_URLS is sequence else ADDITIONAL_TLS_SAN_URLS.split(',') if ADDITIONAL_TLS_SAN_URLS else [] }}"
+      when: 
+        - ADDITIONAL_TLS_SAN_URLS is defined
+        - ADDITIONAL_TLS_SAN_URLS != ""
+        - ADDITIONAL_TLS_SAN_URLS != []
+        - item != ""
+        - "'*' not in item"
+
+    - name: Prepare certificate SAN string
+      set_fact:
+        cert_san_string: "{{ cert_san_list | map('regex_replace', '^(.*)$', 'DNS:\\1') | join(',') }}"
+
+    - name: Debug certificate SAN list
+      debug:
+        msg: 
+          - "Certificate SAN list: {{ cert_san_list }}"
+          - "Certificate SANs will be: {{ cert_san_string }}"
+
+    - name: Generate API server TLS certificate
+      shell: |
+        openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+          -keyout /etc/rancher/rke2/certs/tls.key \
+          -out /etc/rancher/rke2/certs/tls.crt \
+          -subj "/CN={{ DOMAIN }}" \
+          -addext "subjectAltName={{ cert_san_string }}"
+      register: cert_generation_result
+      failed_when: cert_generation_result.rc != 0
