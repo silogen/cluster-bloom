@@ -4,11 +4,21 @@
 # Usage: Imported by deploy_clusterforge/main.yaml
 # Tags: [clusterforge, deploy_clusterforge]
 
-- name: Create ClusterForge directory in .bloom
+- name: Create BLOOM_DIR base directory
+  file:
+    path: "{{ BLOOM_DIR }}"
+    state: directory
+    mode: "0755"
+    owner: "{{ ansible_user | default('ubuntu') }}"
+    group: "{{ ansible_user | default('ubuntu') }}"
+
+- name: Create ClusterForge directory in BLOOM_DIR
   file:
     path: "{{ BLOOM_DIR }}/clusterforge"
     state: directory
     mode: "0755"
+    owner: "{{ ansible_user | default('ubuntu') }}"
+    group: "{{ ansible_user | default('ubuntu') }}"
 
 - name: Check if CLUSTERFORGE_RELEASE is a URL
   set_fact:

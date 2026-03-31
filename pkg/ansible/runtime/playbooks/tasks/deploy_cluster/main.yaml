@@ -4,6 +4,15 @@
 # Usage: Imported by main cluster-bloom.yaml playbook
 # Tags: [deploy_cluster]
 
+- name: Create BLOOM_DIR base directory
+  file:
+    path: "{{ BLOOM_DIR }}"
+    state: directory
+    mode: "0755"
+    owner: "{{ ansible_user | default('ubuntu') }}"
+    group: "{{ ansible_user | default('ubuntu') }}"
+  become: yes
+
 - name: Prepare RKE2
   include_tasks: prepare_rke2.yaml
   tags: [deploy_cluster]
