@@ -1,6 +1,6 @@
 ---
 # Purpose: Main ClusterForge platform setup and bootstrap
-# Dependencies: CLUSTERFORGE_RELEASE, CLUSTERFORGE_REPO, BLOOM_DIR, DOMAIN, CF_VALUES variables
+# Dependencies: CLUSTERFORGE_RELEASE, CLUSTERFORGE_REPO, BLOOM_DIR, DOMAIN, CLUSTER_SIZE variables
 # Usage: Imported by deploy_clusterforge/main.yaml
 # Tags: [clusterforge, deploy_clusterforge]
 
@@ -59,13 +59,35 @@
   - /tmp/merged_values.yaml
   - /tmp/argocd_values.yaml
 
+- name: Debug ClusterForge bootstrap variables
+  debug:
+    msg:
+      - "DOMAIN: {{ DOMAIN }}"
+      - "CLUSTER_SIZE: {{ CLUSTER_SIZE | default('medium') }}"
+      - "BLOOM_DIR: {{ BLOOM_DIR }}"
+      - "CLUSTERFORGE_RELEASE: {{ CLUSTERFORGE_RELEASE }}"
+
+- name: Check if bootstrap script exists
+  stat:
+    path: "{{ BLOOM_DIR }}/clusterforge/cluster-forge/scripts/bootstrap.sh"
+  register: bootstrap_script_check
+
+- name: Make bootstrap script executable
+  file:
+    path: "{{ BLOOM_DIR }}/clusterforge/cluster-forge/scripts/bootstrap.sh"
+    mode: '0755'
+  when: bootstrap_script_check.stat.exists
+
 - name: Run ClusterForge bootstrap script
   shell: |
     cd {{ BLOOM_DIR }}/clusterforge/cluster-forge/scripts
-    bash ./bootstrap.sh {{ DOMAIN }} {% if CF_VALUES != "" %}{{ CF_VALUES }}{% endif %} --target-revision {{ clusterforge_version }}
+    pwd
+    ls -la bootstrap.sh
+    ./bootstrap.sh {{ DOMAIN }} --cluster-size={{ CLUSTER_SIZE | default('medium') }}
   register: cf_bootstrap
   environment:
     KUBECONFIG: /etc/rancher/rke2/rke2.yaml
+  when: bootstrap_script_check.stat.exists
 
 - name: Display ClusterForge deployment output
   debug:

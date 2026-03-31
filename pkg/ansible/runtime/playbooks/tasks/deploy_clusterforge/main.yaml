@@ -16,5 +16,5 @@
 
 - name: Setup ClusterForge
   include_tasks: clusterforge_setup.yaml
-  when: FIRST_NODE and CLUSTERFORGE_RELEASE != "none" and CLUSTERFORGE_RELEASE != ""
+  when: FIRST_NODE and CLUSTERFORGE_RELEASE != "none" and CLUSTERFORGE_RELEASE != "" and DOMAIN != ""
   tags: [clusterforge, deploy_clusterforge]

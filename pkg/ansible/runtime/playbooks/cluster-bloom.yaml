@@ -45,7 +45,6 @@
     CLUSTERFORGE_REPO: "https://github.com/silogen/cluster-forge.git"
     CLUSTERFORGE_RELEASE: "latest"
     BLOOM_DIR: "/tmp/bloom"
-    CF_VALUES: ""
     rocm_required_version: "7.1.1"  # single source of truth — update this to change ROCm version
     rocm_deb_build: "70101-1"  # build identifier paired with rocm_required_version
     rocm_base_url: "https://repo.radeon.com/amdgpu-install/{{ rocm_required_version }}/ubuntu/"
