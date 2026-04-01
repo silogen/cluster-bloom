@@ -75,6 +75,8 @@
     inotify_target_value: 512
     rancher_min_partition_gb: 500
     bloom_fstab_tag: "# managed by cluster-bloom"
+    bloom_fstab_section_header: "# # # this section is managed by AMD Enterprise AI tool cluster-bloom"
+    bloom_fstab_section_footer: "# # # end of AMD Enterprise AI cluster-bloom"
 
   tasks:
     - name: Pre-deployment Data Safety Validation
@@ -734,6 +736,23 @@
           ignore_errors: yes
       tags: [gpu, prep_node]
 
+    - name: Prepare bloom fstab section markers
+      when: not NO_DISKS_FOR_CLUSTER and (CLUSTER_DISKS != "" or CLUSTER_PREMOUNTED_DISKS != "")
+      block:
+        - name: Ensure bloom fstab section header exists
+          lineinfile:
+            path: /etc/fstab
+            line: "{{ bloom_fstab_section_header }}"
+            regexp: "^# # # this section is managed by AMD Enterprise AI tool cluster-bloom"
+            state: present
+        - name: Ensure bloom fstab section footer exists
+          lineinfile:
+            path: /etc/fstab
+            line: "{{ bloom_fstab_section_footer }}"
+            regexp: "^# # # end of AMD Enterprise AI cluster-bloom"
+            state: present
+      tags: [storage, prep_node]
+
     - name: Prepare Longhorn Disks
       when: not NO_DISKS_FOR_CLUSTER and CLUSTER_PREMOUNTED_DISKS == ""
       block:
@@ -771,6 +790,7 @@
           lineinfile:
             path: /etc/fstab
             line: "UUID={{ item.stdout }} /mnt/disk{{ item.item.0 }} ext4 defaults,nofail 0 2 {{ bloom_fstab_tag }}"
+            insertbefore: "^# # # end of AMD Enterprise AI cluster-bloom"
             state: present
           loop: "{{ disk_uuids.results }}"
           when: cluster_disks_list | length > 0 and not item.skipped | default(false)
@@ -806,6 +826,7 @@
             path: /etc/fstab
             regexp: "^UUID={{ item.stdout | trim }}\\s"
             line: "UUID={{ item.stdout | trim }} {{ cluster_premounted_list[my_idx] }} ext4 defaults,nofail 0 2 {{ bloom_fstab_tag }}"
+            insertbefore: "^# # # end of AMD Enterprise AI cluster-bloom"
             state: present
           loop: "{{ premounted_uuids.results }}"
           loop_control:

@@ -403,6 +403,24 @@ func GenerateCleanupTasks(clusterDisks string, premountedDisks string) []map[str
 					"failed_when": false,
 				},
 				{
+					"name": "Remove bloom fstab section header",
+					"lineinfile": map[string]any{
+						"path":   "/etc/fstab",
+						"regexp": "^# # # this section is managed by AMD Enterprise AI tool cluster-bloom",
+						"state":  "absent",
+					},
+					"failed_when": false,
+				},
+				{
+					"name": "Remove bloom fstab section footer",
+					"lineinfile": map[string]any{
+						"path":   "/etc/fstab",
+						"regexp": "^# # # end of AMD Enterprise AI cluster-bloom",
+						"state":  "absent",
+					},
+					"failed_when": false,
+				},
+				{
 					"name": "Wipe filesystem signatures from cluster disks",
 					"shell": "wipefs -a {{ item }} 2>/dev/null || true",
 					"loop": "{{ cluster_disks_cleanup_list }}",
@@ -541,7 +559,8 @@ func unmountPriorLonghornDisks() error {
 	var cleanLines []string
 
 	for _, line := range lines {
-		if strings.Contains(line, "# managed by cluster-bloom") {
+		switch {
+		case strings.Contains(line, "# managed by cluster-bloom"):
 			fields := strings.Fields(line)
 			if len(fields) >= 2 {
 				mountPoint := fields[1]
@@ -549,7 +568,10 @@ func unmountPriorLonghornDisks() error {
 				exec.Command("sudo", "umount", "-lf", mountPoint).Run()
 			}
 			// Don't add this line to cleanLines (removes it from fstab)
-		} else {
+		case strings.HasPrefix(line, "# # # this section is managed by AMD Enterprise AI tool cluster-bloom"),
+			strings.HasPrefix(line, "# # # end of AMD Enterprise AI cluster-bloom"):
+			// Remove section markers
+		default:
 			cleanLines = append(cleanLines, line)
 		}
 	}

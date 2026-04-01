@@ -123,6 +123,8 @@ Advanced debugging and transparency features allow users to export generated Ans
 - **Environment Flexibility**: Export in one environment, execute in another
 - **Cleanup Integration**: Use `--export --destroy-data` to include cluster cleanup tasks in exported playbooks
 - **Existing Installation Support**: Handles existing cluster installations through automated cleanup task injection
+- **Standalone Cleanup Command**: `./bloom cleanup [config-file]` removes an existing installation without redeploying
+- **Destroy-Data Flag on Cleanup**: `./bloom cleanup bloom.yaml --destroy-data` wipes all disk data in addition to removing cluster services
 
 **Example Usage:**
 ```bash
@@ -205,6 +207,26 @@ less myPlaybook.yaml
 sudo ./bloom run myPlaybook.yaml
 ```
 
+#### Cluster Teardown and Cleanup
+```bash
+# Remove cluster services, Longhorn mounts, and bloom-managed disks
+sudo ./bloom cleanup
+
+# Same, with config file so disk paths are known
+sudo ./bloom cleanup bloom.yaml
+
+# Also wipe ALL disk data (CLUSTER_DISKS, premounted disks) — irreversible
+sudo ./bloom cleanup bloom.yaml --destroy-data
+
+# Skip confirmation prompt (for scripted/unattended teardown)
+sudo ./bloom cleanup bloom.yaml --destroy-data --force
+```
+Stops Longhorn, executes the RKE2 uninstall script, removes fstab entries written by bloom, and (with `--destroy-data`) wipes CLUSTER_DISKS and clears Longhorn state from premounted disks. A config file is optional but recommended so CLUSTER_DISKS and CLUSTER_PREMOUNTED_DISKS paths are known; without it, bloom cleans all mounts it previously tagged in `/etc/fstab` plus any Longhorn CSI mounts found at runtime.
+
+**Distinction from `cli --destroy-data`:**
+- `./bloom cleanup bloom.yaml --destroy-data` — standalone teardown, no redeployment
+- `./bloom cli bloom.yaml --destroy-data` — teardown followed immediately by full redeployment
+
 #### Demo Mode
 ```bash
 sudo ./bloom demo-ui
@@ -258,7 +280,7 @@ See [VALIDATION.md](VALIDATION.md) for complete validation documentation.
 - Graceful failures with clear error messages and recovery suggestions
 - Step isolation allowing manual retry
 - State persistence across restarts
-- Automated cleanup of partial installations
+- Automated cleanup of partial installations via `./bloom cleanup` or `cli --destroy-data`
 
 ## Integration Capabilities
 
