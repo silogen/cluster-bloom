@@ -237,8 +237,8 @@ Configuration sources in priority order (highest to lowest):
 - **Version Parsing**: When a full URL is provided, the version is automatically extracted (e.g., `v2.0.0-rc6` from the URL) and used as the `--target-revision` for ArgoCD/Gitea
 - **Examples**: 
   - `CLUSTERFORGE_RELEASE: "latest"`
-  - `CLUSTERFORGE_RELEASE: "v2.0.0"`
-  - `CLUSTERFORGE_RELEASE: "https://github.com/silogen/cluster-forge/releases/download/v2.0.0/release.tar.gz"`
+  - `CLUSTERFORGE_RELEASE: "v2.0.1"`
+  - `CLUSTERFORGE_RELEASE: "https://github.com/silogen/cluster-forge/releases/download/v2.0.1/release.tar.gz"`
   - `CLUSTERFORGE_RELEASE: "none"`
 
 #### CF_VALUES
