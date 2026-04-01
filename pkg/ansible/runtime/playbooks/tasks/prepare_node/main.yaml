@@ -31,6 +31,10 @@
   include_tasks: system_config.yaml
   tags: [system, firewall, gpu, prep_node]
 
+- name: Disable NUMA Balancing
+  include_tasks: disable_numa_balancing.yaml
+  tags: [system, performance, prep_node]
+
 - name: Configure NTP (Chrony)
   include_tasks: ntp.yaml
   tags: [ntp, prep_node]
