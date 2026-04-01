@@ -11,44 +11,74 @@ import (
 	"time"
 )
 
-// CleanupLonghornMounts performs cleanup of Longhorn PVCs and mounts
+// CleanupLonghornMounts performs cleanup of Longhorn PVCs and mounts.
+// Sequences: graceful kubectl drain → iSCSI logout → TERM/KILL processes → force umount.
+// This ordering is required because Longhorn uses iSCSI sessions that remain
+// in the kernel even after the Longhorn process is killed; skipping the iSCSI
+// logout leaves the device busy and causes rm/umount to block or silently fail.
 func CleanupLonghornMounts() error {
 	fmt.Println("💾 Cleaning Longhorn mounts and PVCs...")
 
-	// Stop Longhorn services first if they exist
-	fmt.Println("   Stopping Longhorn services...")
-	cmd := exec.Command("sudo", "systemctl", "stop", "longhorn-*")
-	if err := cmd.Run(); err != nil {
-		fmt.Printf("   Warning: Failed to stop Longhorn services: %v\n", err)
+	// Step 1: Graceful kubectl drain (best-effort, cluster may already be down)
+	fmt.Println("   Attempting graceful node drain via kubectl...")
+	nodeNameOut, _ := exec.Command("hostname").Output()
+	nodeName := strings.TrimSpace(string(nodeNameOut))
+	kubeconfig := "/etc/rancher/rke2/rke2.yaml"
+	if _, err := os.Stat(kubeconfig); err == nil && nodeName != "" {
+		exec.Command("kubectl", "--kubeconfig", kubeconfig,
+			"cordon", nodeName).Run()
+		exec.Command("kubectl", "--kubeconfig", kubeconfig,
+			"drain", nodeName,
+			"--delete-emptydir-data", "--ignore-daemonsets",
+			"--grace-period=30", "--timeout=90s").Run()
+		// Wait briefly for Longhorn to detach volumes
+		fmt.Println("   Waiting for Longhorn volumes to detach...")
+		for i := 0; i < 30; i++ {
+			out, _ := exec.Command("bash", "-c", "ls /dev/longhorn/ 2>/dev/null | wc -l").Output()
+			if strings.TrimSpace(string(out)) == "0" {
+				break
+			}
+			time.Sleep(2 * time.Second)
+		}
+	} else {
+		fmt.Println("   kubectl/kubeconfig not available — skipping drain")
 	}
 
-	// Find and unmount all Longhorn-related mounts (3 retries like Bloom v1)
+	// Step 2: iSCSI logout — releases kernel block device mappings for Longhorn volumes.
+	// Must happen before umount; without this the device remains busy regardless of
+	// whether the Longhorn process is alive.
+	fmt.Println("   Logging out iSCSI sessions...")
+	exec.Command("iscsiadm", "-m", "session", "--logout").Run()
+	exec.Command("iscsiadm", "-m", "node", "--op=delete").Run()
+
+	// Step 3: Graceful TERM then KILL of Longhorn processes in dependency order
+	fmt.Println("   Stopping Longhorn processes (TERM)...")
+	for _, proc := range []string{"longhorn-engine", "longhorn-instance-manager", "longhorn-manager"} {
+		exec.Command("pkill", "-TERM", "-f", proc).Run()
+	}
+	time.Sleep(5 * time.Second)
+	fmt.Println("   Force killing remaining Longhorn processes (KILL)...")
+	for _, proc := range []string{"longhorn-engine", "longhorn-instance-manager", "longhorn-manager"} {
+		exec.Command("pkill", "-KILL", "-f", proc).Run()
+	}
+
+	// Step 4: Force umount everything Longhorn-related
 	fmt.Println("   Unmounting Longhorn volumes...")
 	for attempt := 1; attempt <= 3; attempt++ {
 		fmt.Printf("   Attempt %d/3...\n", attempt)
-
-		// Unmount Longhorn device files
-		exec.Command("sudo", "umount", "-lf", "/dev/longhorn/pvc-*").Run()
-
-		// Find and unmount CSI volume mounts
-		exec.Command("bash", "-c", "sudo umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/pvc-* 2>/dev/null || true").Run()
-		exec.Command("bash", "-c", "sudo umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/*/mount 2>/dev/null || true").Run()
-
-		// Find and unmount CSI plugin mounts
-		exec.Command("bash", "-c", "mount | grep 'driver.longhorn.io' | awk '{print $3}' | xargs -r sudo umount -lf 2>/dev/null || true").Run()
-		exec.Command("bash", "-c", "sudo umount -Af /var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/* 2>/dev/null || true").Run()
+		exec.Command("bash", "-c", "umount -lf /dev/longhorn/pvc-* 2>/dev/null || true").Run()
+		exec.Command("bash", "-c", `mount | grep -E 'longhorn|driver[.]longhorn[.]io' | awk '{print $3}' | xargs -r umount -lf 2>/dev/null || true`).Run()
+		exec.Command("bash", "-c", "umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/pvc-* 2>/dev/null || true").Run()
+		exec.Command("bash", "-c", "umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/*/mount 2>/dev/null || true").Run()
+		exec.Command("bash", "-c", "umount -Af /var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/* 2>/dev/null || true").Run()
+		time.Sleep(1 * time.Second)
 	}
 
-	// Force kill any processes using Longhorn mounts
-	fmt.Println("   Killing processes using Longhorn mounts...")
-	exec.Command("sudo", "fuser", "-km", "/dev/longhorn/").Run()
+	// Step 5: fuser as last resort for anything still held open
+	exec.Command("fuser", "-km", "/dev/longhorn/").Run()
 
-	// Clean up device files
-	fmt.Println("   Cleaning up device files...")
-	exec.Command("sudo", "rm", "-rf", "/dev/longhorn/pvc-*").Run()
-
-	// Clean up kubelet CSI mounts
-	exec.Command("sudo", "rm", "-rf", "/var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/*").Run()
+	exec.Command("rm", "-rf", "/dev/longhorn/pvc-*").Run()
+	exec.Command("rm", "-rf", "/var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/*").Run()
 
 	fmt.Println("   Longhorn cleanup completed")
 	return nil
@@ -250,7 +280,61 @@ func GenerateCleanupTasks(clusterDisks string, premountedDisks string) []map[str
 					},
 				},
 			},
-			// Longhorn cleanup tasks (based on CleanupLonghornMounts)
+			// Step 1: Graceful kubectl drain while the cluster is still up
+			{
+				"name":         "Get node hostname for kubectl drain",
+				"shell":        "hostname",
+				"register":     "cleanup_hostname",
+				"changed_when": false,
+				"failed_when":  false,
+			},
+			{
+				"name": "Check if kubeconfig is available (cluster running)",
+				"stat": map[string]any{"path": "/etc/rancher/rke2/rke2.yaml"},
+				"register": "cleanup_kubeconfig",
+			},
+			{
+				"name":        "Cordon node to prevent new scheduling",
+				"shell":       "/var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml cordon {{ cleanup_hostname.stdout }} 2>/dev/null || true",
+				"when":        "cleanup_kubeconfig.stat.exists",
+				"failed_when": false,
+			},
+			{
+				"name":        "Drain node (evicts pods so Longhorn detaches volumes gracefully)",
+				"shell":       "/var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml drain {{ cleanup_hostname.stdout }} --delete-emptydir-data --ignore-daemonsets --grace-period=30 --timeout=90s 2>/dev/null || true",
+				"when":        "cleanup_kubeconfig.stat.exists",
+				"failed_when": false,
+			},
+			{
+				"name":        "Wait for Longhorn volumes to detach after drain",
+				"shell":       "for i in $(seq 1 30); do [ -z \"$(ls /dev/longhorn/ 2>/dev/null)\" ] && exit 0; sleep 2; done; echo \"timeout\"",
+				"when":        "cleanup_kubeconfig.stat.exists",
+				"failed_when": false,
+				"changed_when": false,
+			},
+			// Step 2: iSCSI logout — must happen before umount or the block device stays busy
+			{
+				"name":        "Logout iSCSI sessions (releases Longhorn kernel block devices)",
+				"shell":       "iscsiadm -m session --logout 2>/dev/null || true; iscsiadm -m node --op=delete 2>/dev/null || true",
+				"failed_when": false,
+			},
+			// Step 3: Stop Longhorn processes gracefully in dependency order
+			{
+				"name":        "Gracefully stop Longhorn processes (TERM)",
+				"shell":       "pkill -TERM -f longhorn-engine 2>/dev/null || true; pkill -TERM -f longhorn-instance-manager 2>/dev/null || true; pkill -TERM -f longhorn-manager 2>/dev/null || true",
+				"failed_when": false,
+			},
+			{
+				"name":        "Wait for Longhorn processes to stop",
+				"shell":       "sleep 5",
+				"changed_when": false,
+			},
+			{
+				"name":        "Force kill remaining Longhorn processes (KILL)",
+				"shell":       "pkill -KILL -f longhorn-engine 2>/dev/null || true; pkill -KILL -f longhorn-instance-manager 2>/dev/null || true; pkill -KILL -f longhorn-manager 2>/dev/null || true",
+				"failed_when": false,
+			},
+			// Step 4: Stop RKE2 so no new mounts are created
 			{
 				"name": "Stop and disable RKE2 services",
 				"systemd": map[string]any{
@@ -258,26 +342,31 @@ func GenerateCleanupTasks(clusterDisks string, premountedDisks string) []map[str
 					"state":   "stopped",
 					"enabled": false,
 				},
-				"loop": []string{"rke2-server", "rke2-agent"},
+				"loop":        []string{"rke2-server", "rke2-agent"},
+				"failed_when": false,
+			},
+			// Step 5: Force umount all remaining Longhorn mounts
+			{
+				"name":        "Force umount all Longhorn-related mounts",
+				"shell":       "mount | grep -E 'longhorn|driver\\.longhorn\\.io' | awk '{print $3}' | xargs -r umount -lf 2>/dev/null || true; umount -lf /dev/longhorn/pvc-* 2>/dev/null || true; umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/pvc-* 2>/dev/null || true; umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/*/mount 2>/dev/null || true; umount -Af /var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/* 2>/dev/null || true",
 				"failed_when": false,
 			},
 			{
-				"name": "Clean Longhorn mounts and processes",
-				"shell": "pkill -f longhorn || true; for mount in $(mount | grep longhorn | awk '{print $3}'); do umount \"$mount\" 2>/dev/null || true; done; rm -rf /var/lib/longhorn/* 2>/dev/null || true; echo 'Longhorn cleanup completed'",
-				"register": "longhorn_cleanup",
+				"name":        "Remove Longhorn device files and kubelet CSI state",
+				"shell":       "rm -rf /dev/longhorn/pvc-* /var/lib/longhorn/* /var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/* 2>/dev/null || true",
 				"failed_when": false,
 			},
-			// RKE2 cleanup tasks (based on UninstallRKE2)
+			// Step 6: Uninstall RKE2
 			{
-				"name": "Run RKE2 uninstall script",
-				"shell": "/usr/local/bin/rke2-uninstall.sh",
-				"register": "rke2_uninstall",
+				"name":        "Run RKE2 uninstall script",
+				"shell":       "/usr/local/bin/rke2-uninstall.sh",
+				"register":    "rke2_uninstall",
 				"failed_when": false,
 			},
 			{
-				"name": "Clean RKE2 directories and files",
-				"shell": "rm -rf /var/lib/rancher/rke2 /etc/rancher/rke2 /var/lib/kubelet /var/log/pods /var/log/containers; rm -f /usr/local/bin/rke2* /usr/local/bin/kubectl /usr/local/bin/crictl /usr/local/bin/ctr; echo 'RKE2 cleanup completed'",
-				"register": "rke2_cleanup",
+				"name":        "Clean RKE2 directories and files",
+				"shell":       "rm -rf /var/lib/rancher/rke2 /etc/rancher/rke2 /var/lib/kubelet /var/log/pods /var/log/containers; rm -f /usr/local/bin/rke2* /usr/local/bin/kubectl /usr/local/bin/crictl /usr/local/bin/ctr; echo 'RKE2 cleanup completed'",
+				"register":    "rke2_cleanup",
 				"failed_when": false,
 			},
 		},
@@ -411,6 +500,10 @@ func CleanupPremountedDisks(premountedDisks string) error {
 				continue
 			}
 		}
+		// Verify no iSCSI sessions are still holding pvc-* devices within this mountpoint.
+		// If any remain the remove will block; force-unmount the sub-paths first.
+		exec.Command("bash", "-c",
+			fmt.Sprintf(`for d in %s/pvc-*; do umount -lf "$d" 2>/dev/null || true; done`, mp)).Run()
 		// Remove PVC dirs and Longhorn disk state; keep the ext4 filesystem intact
 		patterns := []string{
 			mp + "/pvc-*",
