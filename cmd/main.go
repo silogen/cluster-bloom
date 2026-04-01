@@ -866,8 +866,16 @@ func prependCleanupTasks(playbook any, cfg config.Config) error {
 		}
 	}
 
+	// Extract CLUSTER_PREMOUNTED_DISKS from config
+	premountedDisks := ""
+	if pm, exists := cfg["CLUSTER_PREMOUNTED_DISKS"]; exists && pm != nil {
+		if pmStr, ok := pm.(string); ok {
+			premountedDisks = pmStr
+		}
+	}
+
 	// Use the DRY cleanup task generator from runtime package
-	cleanupTasks := runtime.GenerateCleanupTasks(clusterDisks)
+	cleanupTasks := runtime.GenerateCleanupTasks(clusterDisks, premountedDisks)
 
 	// Prepend cleanup tasks to the existing playbook tasks
 	if playsList, ok := playbook.([]any); ok && len(playsList) > 0 {
@@ -1003,6 +1011,17 @@ func runClusterCleanup(cfg config.Config) {
 	// Step 3: Clean Disks (equivalent to CleanDisksStep)
 	if err := runtime.CleanupBloomDisks(clusterDisks); err != nil {
 		errors = append(errors, fmt.Errorf("Disk cleanup: %w", err))
+	}
+
+	// Step 4: Clean premounted disk contents (preserve filesystem, remove PVC remnants)
+	premountedDisks := ""
+	if pm, exists := cfg["CLUSTER_PREMOUNTED_DISKS"]; exists && pm != nil {
+		if pmStr, ok := pm.(string); ok {
+			premountedDisks = pmStr
+		}
+	}
+	if err := runtime.CleanupPremountedDisks(premountedDisks); err != nil {
+		errors = append(errors, fmt.Errorf("Premounted disk cleanup: %w", err))
 	}
 
 	// Report results

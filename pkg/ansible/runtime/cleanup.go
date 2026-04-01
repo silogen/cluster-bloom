@@ -226,7 +226,7 @@ func unmountClusterDisks(clusterDisks string) error {
 }
 
 // GenerateCleanupTasks creates Ansible tasks equivalent to the cleanup functions above
-func GenerateCleanupTasks(clusterDisks string) []map[string]any {
+func GenerateCleanupTasks(clusterDisks string, premountedDisks string) []map[string]any {
 	var cleanupTasks []map[string]any
 
 	// Main cleanup block task
@@ -337,6 +337,39 @@ func GenerateCleanupTasks(clusterDisks string) []map[string]any {
 	}
 
 	// Completion task
+	// Premounted disk cleanup — wipe contents only, keep filesystem + fstab entry
+	if premountedDisks != "" {
+		premountedCleanupTask := map[string]any{
+			"name": "Clean premounted disk contents (preserve filesystem)",
+			"tags": []string{"cleanup", "destroy-data", "storage"},
+			"block": []map[string]any{
+				{
+					"name": "Parse premounted disks list for cleanup",
+					"set_fact": map[string]any{
+						"premounted_cleanup_list": "{{ CLUSTER_PREMOUNTED_DISKS.split(',') | map('trim') | reject('equalto', '') | list }}",
+					},
+				},
+				{
+					"name":  "Ensure premounted disks are mounted for cleanup",
+					"shell": "mountpoint -q {{ item }} || mount {{ item }} 2>/dev/null || true",
+					"loop":  "{{ premounted_cleanup_list }}",
+				},
+				{
+					"name":        "Remove PVC directories and Longhorn state from premounted disks",
+					"shell":       "rm -rf {{ item }}/pvc-* {{ item }}/longhorn-disk.cfg {{ item }}/longhorn-disk.cfg.tmp 2>/dev/null; echo 'cleaned {{ item }}'",
+					"loop":        "{{ premounted_cleanup_list }}",
+					"failed_when": false,
+				},
+				{
+					"name":  "Verify premounted disks are still mounted after cleanup",
+					"shell": "mountpoint -q {{ item }}",
+					"loop":  "{{ premounted_cleanup_list }}",
+				},
+			},
+		}
+		cleanupTasks = append(cleanupTasks, premountedCleanupTask)
+	}
+
 	finalTask := map[string]any{
 		"name": "Cleanup completion summary",
 		"debug": map[string]any{
@@ -355,6 +388,42 @@ func GenerateCleanupTasks(clusterDisks string) []map[string]any {
 	cleanupTasks = append(cleanupTasks, finalTask)
 
 	return cleanupTasks
+}
+
+// CleanupPremountedDisks clears PVC data and Longhorn state from premounted disks
+// without wiping the filesystem — the disks remain mounted and ext4-formatted.
+func CleanupPremountedDisks(premountedDisks string) error {
+	if premountedDisks == "" {
+		return nil
+	}
+	fmt.Println("💾 Cleaning premounted disk contents (preserving filesystems)...")
+	mountPoints := strings.Split(premountedDisks, ",")
+	for _, mp := range mountPoints {
+		mp = strings.TrimSpace(mp)
+		if mp == "" {
+			continue
+		}
+		// Ensure it is mounted before we try to clean it
+		if _, err := exec.Command("mountpoint", "-q", mp).CombinedOutput(); err != nil {
+			fmt.Printf("   Mounting %s before cleanup...\n", mp)
+			if _, err2 := exec.Command("mount", mp).CombinedOutput(); err2 != nil {
+				fmt.Printf("   Warning: Could not mount %s (skipping): %v\n", mp, err2)
+				continue
+			}
+		}
+		// Remove PVC dirs and Longhorn disk state; keep the ext4 filesystem intact
+		patterns := []string{
+			mp + "/pvc-*",
+			mp + "/longhorn-disk.cfg",
+			mp + "/longhorn-disk.cfg.tmp",
+		}
+		for _, pattern := range patterns {
+			exec.Command("bash", "-c", "rm -rf "+pattern+" 2>/dev/null").Run()
+		}
+		fmt.Printf("   Cleaned contents of %s\n", mp)
+	}
+	fmt.Println("   Premounted disk cleanup completed")
+	return nil
 }
 
 // unmountPriorLonghornDisks helper function to handle fstab cleanup

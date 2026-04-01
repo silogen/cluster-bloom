@@ -22,6 +22,12 @@
       loop: "{{ longhorn_premounted_list }}"
       changed_when: false
 
+    - name: Remove stale Longhorn disk state from premounted disks
+      file:
+        path: "{{ item }}/longhorn-disk.cfg"
+        state: absent
+      loop: "{{ longhorn_premounted_list }}"
+
 - name: Longhorn Preflight Check
   block:
     - name: Copy Longhorn preflight script
