@@ -2,6 +2,26 @@
 # Longhorn Storage Setup Tasks for Medium/Large Clusters
 # This file contains tasks for setting up Longhorn distributed storage
 
+- name: Ensure Premounted Disks Are Mounted Before Longhorn
+  when: CLUSTER_PREMOUNTED_DISKS is defined and CLUSTER_PREMOUNTED_DISKS != ""
+  block:
+    - name: Parse premounted disks list
+      set_fact:
+        longhorn_premounted_list: "{{ CLUSTER_PREMOUNTED_DISKS.split(',') | map('trim') | reject('equalto', '') | list }}"
+
+    - name: Remount any unmounted premounted disks from fstab
+      shell: |
+        if ! mountpoint -q {{ item }}; then
+          mount {{ item }}
+        fi
+      loop: "{{ longhorn_premounted_list }}"
+      changed_when: false
+
+    - name: Verify all premounted disks are mounted
+      shell: mountpoint -q {{ item }}
+      loop: "{{ longhorn_premounted_list }}"
+      changed_when: false
+
 - name: Longhorn Preflight Check
   block:
     - name: Copy Longhorn preflight script
