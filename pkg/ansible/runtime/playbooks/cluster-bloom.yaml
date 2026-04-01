@@ -197,12 +197,7 @@
           loop: "{{ premounted_mount_status.results | default([]) }}"
           when: not NO_DISKS_FOR_CLUSTER and CLUSTER_PREMOUNTED_DISKS != "" and item.stdout is defined and item.stdout == 'unmounted'
 
-        - name: Collect CLUSTER_PREMOUNTED_DISKS not-mounted issue
-          set_fact:
-            validation_issues: "{{ validation_issues + ['CLUSTER_PREMOUNTED_DISKS are not mounted: ' + (unmounted_premounted_disks | join(', ')) + ' — mount these before deployment'] }}"
-          when: not NO_DISKS_FOR_CLUSTER and CLUSTER_PREMOUNTED_DISKS != "" and unmounted_premounted_disks is defined and unmounted_premounted_disks | length > 0
-
-        # Report all issues at once
+        # Report destroy-data-fixable issues (RKE2 running, CLUSTER_DISKS already mounted)
         - name: Fail deployment if any data safety issues found
           fail:
             msg: |
@@ -221,6 +216,37 @@
               
               WARNING: This will destroy ALL existing cluster and disk data!
           when: validation_issues | length > 0
+
+        # Report premounted-disk issues separately — resolution is remount, not destroy
+        - name: Fail if CLUSTER_PREMOUNTED_DISKS are not mounted
+          fail:
+            msg: |
+              ❌ Pre-deployment Validation Failed: Premounted Disks Not Mounted
+              
+              The following CLUSTER_PREMOUNTED_DISKS are not currently mounted:
+              {% for disk in unmounted_premounted_disks %}
+              • {{ disk }}
+              {% endfor %}
+              
+              These disks must be mounted before bloom can run.
+              bloom does NOT format or wipe premounted disks — they must be
+              pre-mounted by the operator before deployment.
+              
+              To remount from an existing fstab entry:
+              {% for disk in unmounted_premounted_disks %}
+                sudo mount {{ disk }}
+              {% endfor %}
+              
+              Or if no fstab entry exists yet, mount by device and re-run bloom:
+                sudo mount /dev/<device> {{ unmounted_premounted_disks | first }}
+                # (repeat for each disk, then re-run bloom)
+              
+              Verify mounts with:  lsblk -o NAME,SIZE,MOUNTPOINT
+          when: >
+            not NO_DISKS_FOR_CLUSTER and
+            CLUSTER_PREMOUNTED_DISKS != "" and
+            unmounted_premounted_disks is defined and
+            unmounted_premounted_disks | length > 0
 
         # Success message
         - name: Pre-deployment data safety validation completed
