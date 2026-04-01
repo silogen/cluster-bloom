@@ -1,0 +1,115 @@
+---
+# Enhanced iptables Validation Tasks
+# 
+# Purpose: 
+#   1. Validates iptables configuration is not blocking cluster traffic
+#   2. Removes default blocking rules that interfere with Kubernetes
+#   3. Ensures rules persist after system restart
+#   4. Provides comprehensive validation and error handling
+# 
+# Scope: Comprehensive iptables validation and remediation for RKE2/Kubernetes clusters
+# 
+# Returns: N/A (modifies iptables rules and triggers save handler)
+# 
+# Usage:
+#   include_tasks: tasks/validate_node/ip_table_check.yaml
+#
+# Dependencies: 
+#   - iptables command availability
+#   - root/sudo privileges
+#   - "Save iptables" handler defined in main playbook
+
+# Task 1: Check for common INPUT blocking rule
+- name: Check if there is an iptables INPUT rule blocking traffic
+  command:
+    cmd: iptables -C INPUT -j REJECT --reject-with icmp-host-prohibited
+  register: ip_table_rule_check
+  failed_when: false
+  changed_when: false
+  tags: [iptables, validation]
+
+# Task 2: Check for FORWARD chain blocking rule (common on some distributions)
+- name: Check if there is an iptables FORWARD rule blocking traffic
+  command:
+    cmd: iptables -C FORWARD -j REJECT --reject-with icmp-host-prohibited
+  register: forward_rule_check
+  failed_when: false
+  changed_when: false
+  tags: [iptables, validation]
+
+# Task 3: Display detected blocking rules for logging purposes
+- name: Report detected blocking rules
+  debug:
+    msg: |
+      iptables blocking rule detection results:
+      - INPUT chain blocking rule: {{ 'EXISTS' if ip_table_rule_check.rc == 0 else 'NOT FOUND' }}
+      - FORWARD chain blocking rule: {{ 'EXISTS' if forward_rule_check.rc == 0 else 'NOT FOUND' }}
+  tags: [iptables, validation]
+
+# Task 4: Remove INPUT blocking rule if exists
+- name: Remove iptables INPUT blocking rule if it exists
+  command:
+    cmd: iptables -D INPUT -j REJECT --reject-with icmp-host-prohibited
+  register: input_rule_deleted
+  when: ip_table_rule_check.rc == 0
+  notify: Save iptables
+  tags: [iptables, remediation]
+
+# Task 5: Remove FORWARD blocking rule if exists  
+- name: Remove iptables FORWARD blocking rule if it exists
+  command:
+    cmd: iptables -D FORWARD -j REJECT --reject-with icmp-host-prohibited
+  register: forward_rule_deleted
+  when: forward_rule_check.rc == 0
+  notify: Save iptables
+  tags: [iptables, remediation]
+
+# Task 6: Verify iptables-save command availability
+- name: Verify iptables-save command is available
+  command:
+    cmd: which iptables-save
+  register: iptables_save_check
+  failed_when: iptables_save_check.rc != 0
+  changed_when: false
+  tags: [iptables, validation]
+
+# Task 7: Create iptables directory if it doesn't exist (ensure persistence works)
+- name: Ensure /etc/iptables directory exists
+  file:
+    path: /etc/iptables
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+  tags: [iptables, setup]
+
+# Task 8: Validate INPUT blocking rule was successfully removed
+- name: Validate INPUT blocking rule was removed
+  command:
+    cmd: iptables -C INPUT -j REJECT --reject-with icmp-host-prohibited
+  register: input_validation
+  failed_when: input_validation.rc == 0
+  changed_when: false
+  when: ip_table_rule_check.rc == 0
+  tags: [iptables, validation]
+
+# Task 9: Validate FORWARD blocking rule was successfully removed
+- name: Validate FORWARD blocking rule was removed
+  command:
+    cmd: iptables -C FORWARD -j REJECT --reject-with icmp-host-prohibited
+  register: forward_validation
+  failed_when: forward_validation.rc == 0
+  changed_when: false
+  when: forward_rule_check.rc == 0
+  tags: [iptables, validation]
+
+# Task 10: Display summary of remediation actions taken
+- name: Report iptables remediation summary
+  debug:
+    msg: |
+      iptables remediation summary:
+      - INPUT blocking rule removed: {{ 'YES' if (ip_table_rule_check.rc == 0 and input_rule_deleted is defined) else 'NO' }}
+      - FORWARD blocking rule removed: {{ 'YES' if (forward_rule_check.rc == 0 and forward_rule_deleted is defined) else 'NO' }}
+      - iptables-save available: {{ 'YES' if iptables_save_check.rc == 0 else 'NO' }}
+      - Rules will be persisted via handler: {{ 'YES' if (input_rule_deleted is defined and input_rule_deleted.changed) or (forward_rule_deleted is defined and forward_rule_deleted.changed) else 'NO' }}
+  tags: [iptables, summary]
