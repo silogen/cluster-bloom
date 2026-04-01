@@ -1360,6 +1360,17 @@
           loop: "{{ range(cluster_disks_list | default([]) | length) | list | zip(cluster_disks_list | default([])) | list }}"
           when: not NO_DISKS_FOR_CLUSTER and cluster_disks_list is defined and cluster_disks_list | length > 0
 
+        - name: Parse premounted disks into list
+          set_fact:
+            cluster_premounted_list: "{{ CLUSTER_PREMOUNTED_DISKS.split(',') | map('trim') | reject('equalto', '') | list }}"
+          when: not NO_DISKS_FOR_CLUSTER and CLUSTER_PREMOUNTED_DISKS != ""
+
+        - name: Build disk labels for premounted disks
+          set_fact:
+            disk_labels: "{{ disk_labels | default([]) + ['bloom.disk' + item | replace('/', '___') + '=premounted' + item | replace('/', '___')] }}"
+          loop: "{{ cluster_premounted_list | default([]) }}"
+          when: not NO_DISKS_FOR_CLUSTER and CLUSTER_PREMOUNTED_DISKS != "" and cluster_premounted_list is defined and cluster_premounted_list | length > 0
+
         - name: Write node labels to config
           blockinfile:
             path: /etc/rancher/rke2/config.yaml
