@@ -998,6 +998,14 @@ func runClusterCleanup(cfg config.Config) {
 		}
 	}
 
+	// Extract premounted disks config once for use in steps below
+	premountedDisks := ""
+	if pm, exists := cfg["CLUSTER_PREMOUNTED_DISKS"]; exists && pm != nil {
+		if pmStr, ok := pm.(string); ok {
+			premountedDisks = pmStr
+		}
+	}
+
 	// Step 1: Clean Longhorn Mounts (equivalent to CleanLonghornMountsStep)
 	if err := runtime.CleanupLonghornMounts(); err != nil {
 		errors = append(errors, fmt.Errorf("Longhorn cleanup: %w", err))
@@ -1008,20 +1016,17 @@ func runClusterCleanup(cfg config.Config) {
 		errors = append(errors, fmt.Errorf("RKE2 uninstall: %w", err))
 	}
 
-	// Step 3: Clean Disks (equivalent to CleanDisksStep)
-	if err := runtime.CleanupBloomDisks(clusterDisks); err != nil {
-		errors = append(errors, fmt.Errorf("Disk cleanup: %w", err))
-	}
-
-	// Step 4: Clean premounted disk contents (preserve filesystem, remove PVC remnants)
-	premountedDisks := ""
-	if pm, exists := cfg["CLUSTER_PREMOUNTED_DISKS"]; exists && pm != nil {
-		if pmStr, ok := pm.(string); ok {
-			premountedDisks = pmStr
-		}
-	}
+	// Step 3: Clean premounted disk contents BEFORE CleanupBloomDisks strips fstab.
+	// unmountPriorLonghornDisks (called inside CleanupBloomDisks) removes bloom fstab
+	// entries and unmounts the disks; if we run after that, mount falls back to device
+	// scan which may fail. Running here while fstab is intact guarantees the mount works.
 	if err := runtime.CleanupPremountedDisks(premountedDisks); err != nil {
 		errors = append(errors, fmt.Errorf("Premounted disk cleanup: %w", err))
+	}
+
+	// Step 4: Clean Disks — strips fstab entries and wipes CLUSTER_DISKS
+	if err := runtime.CleanupBloomDisks(clusterDisks); err != nil {
+		errors = append(errors, fmt.Errorf("Disk cleanup: %w", err))
 	}
 
 	// Report results
