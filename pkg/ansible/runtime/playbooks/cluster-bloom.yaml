@@ -177,7 +177,27 @@
             validation_issues: "{{ validation_issues + ['CLUSTER_DISKS are mounted: ' + (mounted_cluster_disks | join(', '))] }}"
           when: not NO_DISKS_FOR_CLUSTER and CLUSTER_DISKS != "" and mounted_cluster_disks is defined and mounted_cluster_disks | length > 0
 
-        # Report all issues at once
+        # CLUSTER_PREMOUNTED_DISKS checks — these MUST already be mounted
+        - name: Parse premounted disks for pre-deployment validation
+          set_fact:
+            premounted_validation_list: "{{ CLUSTER_PREMOUNTED_DISKS.split(',') | map('trim') | reject('equalto', '') | list }}"
+          when: not NO_DISKS_FOR_CLUSTER and CLUSTER_PREMOUNTED_DISKS != ""
+
+        - name: Check mount status for each disk in CLUSTER_PREMOUNTED_DISKS
+          shell: "mountpoint -q {{ item }} && echo 'mounted' || echo 'unmounted'"
+          register: premounted_mount_status
+          loop: "{{ premounted_validation_list | default([]) }}"
+          when: not NO_DISKS_FOR_CLUSTER and CLUSTER_PREMOUNTED_DISKS != "" and premounted_validation_list | length > 0
+          changed_when: false
+          failed_when: false
+
+        - name: Collect unmounted premounted disks
+          set_fact:
+            unmounted_premounted_disks: "{{ unmounted_premounted_disks | default([]) + [item.item] }}"
+          loop: "{{ premounted_mount_status.results | default([]) }}"
+          when: not NO_DISKS_FOR_CLUSTER and CLUSTER_PREMOUNTED_DISKS != "" and item.stdout is defined and item.stdout == 'unmounted'
+
+        # Report destroy-data-fixable issues (RKE2 running, CLUSTER_DISKS already mounted)
         - name: Fail deployment if any data safety issues found
           fail:
             msg: |
@@ -196,6 +216,37 @@
               
               WARNING: This will destroy ALL existing cluster and disk data!
           when: validation_issues | length > 0
+
+        # Report premounted-disk issues separately — resolution is remount, not destroy
+        - name: Fail if CLUSTER_PREMOUNTED_DISKS are not mounted
+          fail:
+            msg: |
+              ❌ Pre-deployment Validation Failed: Premounted Disks Not Mounted
+              
+              The following CLUSTER_PREMOUNTED_DISKS are not currently mounted:
+              {% for disk in unmounted_premounted_disks %}
+              • {{ disk }}
+              {% endfor %}
+              
+              These disks must be mounted before bloom can run.
+              bloom does NOT format or wipe premounted disks — they must be
+              pre-mounted by the operator before deployment.
+              
+              To remount from an existing fstab entry:
+              {% for disk in unmounted_premounted_disks %}
+                sudo mount {{ disk }}
+              {% endfor %}
+              
+              Or if no fstab entry exists yet, mount by device and re-run bloom:
+                sudo mount /dev/<device> {{ unmounted_premounted_disks | first }}
+                # (repeat for each disk, then re-run bloom)
+              
+              Verify mounts with:  lsblk -o NAME,SIZE,MOUNTPOINT
+          when: >
+            not NO_DISKS_FOR_CLUSTER and
+            CLUSTER_PREMOUNTED_DISKS != "" and
+            unmounted_premounted_disks is defined and
+            unmounted_premounted_disks | length > 0
 
         # Success message
         - name: Pre-deployment data safety validation completed
@@ -730,6 +781,36 @@
           when: cluster_disks_list | length > 0 and not item.skipped | default(false)
           register: mount_results
           failed_when: mount_results.rc != 0
+      tags: [storage, prep_node]
+
+    - name: Prepare Premounted Disks Fstab
+      when: not NO_DISKS_FOR_CLUSTER and CLUSTER_PREMOUNTED_DISKS != ""
+      block:
+        - name: Parse premounted disks into list
+          set_fact:
+            cluster_premounted_list: "{{ CLUSTER_PREMOUNTED_DISKS.split(',') | map('trim') | reject('equalto', '') | list }}"
+
+        - name: Verify each premounted disk is currently mounted
+          shell: mountpoint -q {{ item }}
+          loop: "{{ cluster_premounted_list }}"
+          changed_when: false
+
+        - name: Get UUID for each premounted mountpoint
+          shell: findmnt -n -o UUID {{ item }}
+          register: premounted_uuids
+          loop: "{{ cluster_premounted_list }}"
+          changed_when: false
+
+        - name: Add fstab entries for premounted disks
+          lineinfile:
+            path: /etc/fstab
+            regexp: "^UUID={{ item.stdout | trim }}\\s"
+            line: "UUID={{ item.stdout | trim }} {{ cluster_premounted_list[my_idx] }} ext4 defaults,nofail 0 2 {{ bloom_fstab_tag }}"
+            state: present
+          loop: "{{ premounted_uuids.results }}"
+          loop_control:
+            index_var: my_idx
+          when: item.stdout | trim != ""
       tags: [storage, prep_node]
 
     - name: Prepare RKE2
@@ -1359,6 +1440,17 @@
             disk_labels: "{{ disk_labels | default([]) + ['bloom.disk___mnt___disk' + item.0|string + '=disk' + item.1|replace('/', '___')] }}"
           loop: "{{ range(cluster_disks_list | default([]) | length) | list | zip(cluster_disks_list | default([])) | list }}"
           when: not NO_DISKS_FOR_CLUSTER and cluster_disks_list is defined and cluster_disks_list | length > 0
+
+        - name: Parse premounted disks into list
+          set_fact:
+            cluster_premounted_list: "{{ CLUSTER_PREMOUNTED_DISKS.split(',') | map('trim') | reject('equalto', '') | list }}"
+          when: not NO_DISKS_FOR_CLUSTER and CLUSTER_PREMOUNTED_DISKS != ""
+
+        - name: Build disk labels for premounted disks
+          set_fact:
+            disk_labels: "{{ disk_labels | default([]) + ['bloom.disk' + item | replace('/', '___') + '=premounted' + item | replace('/', '___')] }}"
+          loop: "{{ cluster_premounted_list | default([]) }}"
+          when: not NO_DISKS_FOR_CLUSTER and CLUSTER_PREMOUNTED_DISKS != "" and cluster_premounted_list is defined and cluster_premounted_list | length > 0
 
         - name: Write node labels to config
           blockinfile:
