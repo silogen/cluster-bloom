@@ -4,8 +4,11 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
+	"syscall"
 
 	"github.com/silogen/cluster-bloom/pkg/ansible/runtime"
 	"github.com/silogen/cluster-bloom/pkg/config"
@@ -1032,6 +1035,31 @@ func checkRootPrivileges(commandName string) {
 }
 
 func runClusterCleanup(cfg config.Config) {
+	// Protect this cleanup from being interrupted mid-operation.
+	// Aborting a disk unmount or fstab edit mid-step can corrupt the system.
+	// On the first Ctrl-C we print a prominent warning and let all steps finish.
+	var interruptOnce sync.Once
+	cleanupSigCh := make(chan os.Signal, 1)
+	signal.Notify(cleanupSigCh, os.Interrupt, syscall.SIGTERM)
+	cleanupInterrupted := false
+	go func() {
+		for range cleanupSigCh {
+			interruptOnce.Do(func() {
+				cleanupInterrupted = true
+				fmt.Println()
+				fmt.Println("=====================================================================")
+				fmt.Println("  !! INTERRUPT RECEIVED — CLEANUP IN PROGRESS !!")
+				fmt.Println()
+				fmt.Println("  A disk operation is currently in progress. Aborting now could")
+				fmt.Println("  leave the system in an inconsistent state (stale mounts, partial")
+				fmt.Println("  fstab edits, running Longhorn processes).")
+				fmt.Println()
+				fmt.Println("  Finishing the current cleanup step — please wait...")
+				fmt.Println("=====================================================================")
+			})
+		}
+	}()
+
 	fmt.Println("🧹 Starting Bloom cluster cleanup...")
 
 	var errors []error
@@ -1077,13 +1105,24 @@ func runClusterCleanup(cfg config.Config) {
 		errors = append(errors, fmt.Errorf("Disk cleanup: %w", err))
 	}
 
+	// Stop signal interception — all critical disk operations are done.
+	signal.Stop(cleanupSigCh)
+	close(cleanupSigCh)
+
 	// Report results
 	if len(errors) > 0 {
 		fmt.Printf("⚠️  Cleanup completed with warnings:\n")
 		for _, err := range errors {
 			fmt.Printf("  - %v\n", err)
 		}
+		if cleanupInterrupted {
+			fmt.Println("ℹ️  All pending disk operations finished before shutdown.")
+		}
 		os.Exit(1)
+	} else if cleanupInterrupted {
+		fmt.Println("✅ Bloom cluster cleanup completed successfully.")
+		fmt.Println("ℹ️  All pending disk operations finished — shutting down now.")
+		os.Exit(130)
 	} else {
 		fmt.Println("✅ Bloom cluster cleanup completed successfully")
 	}

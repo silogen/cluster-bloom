@@ -24,14 +24,82 @@ func CleanupLonghornMounts() error {
 	nodeNameOut, _ := exec.Command("hostname").Output()
 	nodeName := strings.TrimSpace(string(nodeNameOut))
 	kubeconfig := "/etc/rancher/rke2/rke2.yaml"
+	kubectl := "/var/lib/rancher/rke2/bin/kubectl"
+	if _, kubectlErr := os.Stat(kubectl); kubectlErr != nil {
+		kubectl = "kubectl" // fall back to PATH
+	}
 	if _, err := os.Stat(kubeconfig); err == nil && nodeName != "" {
-		exec.Command("kubectl", "--kubeconfig", kubeconfig,
-			"cordon", nodeName).Run()
-		exec.Command("kubectl", "--kubeconfig", kubeconfig,
-			"drain", nodeName,
-			"--delete-emptydir-data", "--ignore-daemonsets",
-			"--grace-period=30", "--timeout=90s").Run()
-		// Wait briefly for Longhorn to detach volumes
+		exec.Command(kubectl, "--kubeconfig", kubeconfig, "cordon", nodeName).Run()
+
+		// Count evictable (non-DaemonSet) pods on this node.
+		// NODE env var avoids quoting the node name inside awk.
+		evictableCmd := exec.Command("bash", "-c",
+			kubectl+" --kubeconfig "+kubeconfig+
+			" get pods --all-namespaces"+
+			" -o jsonpath='{range .items[*]}{.spec.nodeName} {.metadata.ownerReferences[0].kind}\\n{end}'"+
+			" 2>/dev/null | awk '$2!=\"DaemonSet\" && $1==ENVIRON[\"NODE\"] {c++} END{print c+0}'")
+		evictableCmd.Env = append(evictableCmd.Environ(), "NODE="+nodeName)
+		evictableOut, _ := evictableCmd.Output()
+		evictableCount := strings.TrimSpace(string(evictableOut))
+
+		if evictableCount == "" || evictableCount == "0" {
+			fmt.Println("   No evictable pods running — skipping drain")
+		} else {
+			fmt.Printf("   Draining node (%s evictable pods, 90s timeout)...\n", evictableCount)
+			// Run drain in background; poll every 5s for finalizer-only stalls.
+			drainDone := make(chan error, 1)
+			go func() {
+				drainDone <- exec.Command(kubectl, "--kubeconfig", kubeconfig,
+					"drain", nodeName,
+					"--delete-emptydir-data", "--ignore-daemonsets",
+					"--grace-period=30", "--timeout=90s").Run()
+			}()
+		drainLoop:
+			for {
+				select {
+				case <-drainDone:
+					break drainLoop
+				case <-time.After(5 * time.Second):
+					// List non-DS pods with namespace / name / finalizers.
+					// Format: "namespace name <finalizers-or-empty>"
+					pendingCmd := exec.Command("bash", "-c",
+						kubectl+" --kubeconfig "+kubeconfig+
+						" get pods --all-namespaces"+
+						" -o jsonpath='{range .items[*]}{.spec.nodeName} {.metadata.ownerReferences[0].kind} {.metadata.namespace} {.metadata.name} {.metadata.finalizers}\\n{end}'"+
+						" 2>/dev/null | awk '$2!=\"DaemonSet\" && $1==ENVIRON[\"NODE\"] {print $3,$4,$5}'")
+					pendingCmd.Env = append(pendingCmd.Environ(), "NODE="+nodeName)
+					pendingOut, _ := pendingCmd.Output()
+					pendingLines := strings.Split(strings.TrimSpace(string(pendingOut)), "\n")
+					var pendingCount, finalizerStalled int
+					var stuckNS, stuckName []string
+					for _, l := range pendingLines {
+						if strings.TrimSpace(l) == "" {
+							continue
+						}
+						pendingCount++
+						parts := strings.Fields(l)
+						// parts[0]=namespace parts[1]=name parts[2+]=finalizers ("[]" = none)
+						hasFinalizer := len(parts) >= 3 && parts[2] != "[]" && parts[2] != ""
+						if hasFinalizer && len(parts) >= 2 {
+							finalizerStalled++
+							stuckNS = append(stuckNS, parts[0])
+							stuckName = append(stuckName, parts[1])
+						}
+					}
+					if pendingCount > 0 && pendingCount == finalizerStalled {
+						fmt.Printf("   All %d remaining pod(s) blocked by finalizers — force-deleting\n", pendingCount)
+						for i := range stuckNS {
+							exec.Command(kubectl, "--kubeconfig", kubeconfig,
+								"delete", "pod", "-n", stuckNS[i], stuckName[i],
+								"--force", "--grace-period=0").Run()
+						}
+						break drainLoop
+					}
+				}
+			}
+		}
+
+		// Wait up to 60 s for Longhorn volumes to detach
 		fmt.Println("   Waiting for Longhorn volumes to detach...")
 		for i := 0; i < 30; i++ {
 			out, _ := exec.Command("bash", "-c", "ls /dev/longhorn/ 2>/dev/null | wc -l").Output()
