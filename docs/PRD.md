@@ -205,6 +205,49 @@ less myPlaybook.yaml
 sudo ./bloom run myPlaybook.yaml
 ```
 
+#### Cluster Teardown and Cleanup
+```bash
+# Remove cluster services, Longhorn mounts, and bloom-managed disks
+sudo ./bloom cleanup
+
+# Same, with config file so disk paths are known
+sudo ./bloom cleanup bloom.yaml
+
+# Also wipe ALL disk data (CLUSTER_DISKS, premounted disks) — irreversible
+sudo ./bloom cleanup bloom.yaml --destroy-data
+
+# Skip confirmation prompt (for scripted/unattended teardown)
+sudo ./bloom cleanup bloom.yaml --destroy-data --force
+```
+Stops Longhorn, executes the RKE2 uninstall script, removes fstab entries written by bloom, and (with `--destroy-data`) wipes CLUSTER_DISKS and clears Longhorn state from premounted disks. A config file is optional but recommended so CLUSTER_DISKS and CLUSTER_PREMOUNTED_DISKS paths are known; without it, bloom cleans all mounts it previously tagged in `/etc/fstab` plus any Longhorn CSI mounts found at runtime.
+
+**Distinction from `cli --destroy-data`:**
+- `./bloom cleanup bloom.yaml --destroy-data` — standalone teardown, no redeployment
+- `./bloom cli bloom.yaml --destroy-data` — teardown followed immediately by full redeployment
+
+#### Graceful Shutdown on Interrupt (Ctrl-C)
+
+Bloom handles `SIGINT` / `SIGTERM` differently depending on the operation in progress:
+
+**During deployment (`bloom cli`)**
+
+If Ctrl-C is pressed while the Ansible playbook is running, bloom:
+1. Immediately prints a prominent banner explaining the cluster may be in a partial state
+2. Completes SSH key restoration (removes the ephemeral key from `authorized_keys`)
+3. Suggests the next remediation step — `sudo bloom cleanup <config-file>`
+4. Exits with code 130 (standard signal exit)
+
+No disk or cluster state changes are made on the host at interrupt time; the partially-deployed state is left intact for the operator to clean up intentionally.
+
+**During cleanup (`bloom cleanup`)**
+
+Because disk unmounts and fstab edits are not safely interruptible mid-step, the first Ctrl-C during cleanup does **not** abort immediately. Instead bloom:
+1. Prints a prominent warning explaining that an interrupt was received and aborting would risk inconsistent disk state
+2. Continues running all remaining cleanup steps to completion
+3. Reports `All pending disk operations finished` and exits with code 130
+
+Subsequent Ctrl-C signals are suppressed until all steps complete; the banner is printed only once.
+
 #### Demo Mode
 ```bash
 sudo ./bloom demo-ui
