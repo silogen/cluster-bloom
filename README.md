@@ -126,7 +126,7 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | CLUSTER_DISKS | Comma-separated list of disk devices. Example "/dev/sdb,/dev/sdc". Also skips NVME drive checks. | "" |
 | CLUSTER_SIZE | Size category for cluster deployment planning. Options: small, medium, large | medium |
 | CLUSTER_PREMOUNTED_DISKS | Comma-separated list of absolute disk paths to use for Longhorn | "" |
-| CLUSTERFORGE_RELEASE | ClusterForge version to deploy. Accepts version tags ('v1.8.0'), full release URLs, 'latest', 'none', or "" (empty) to skip | "latest" |
+| CLUSTERFORGE_RELEASE | ClusterForge version to deploy. Accepts version tags ('v2.0.2'), full release URLs, 'latest', 'none', or "" (empty) to skip | "latest" |
 | CONTROL_PLANE | Set to true if this node should be a control plane node | false, only applies when FIRST_NODE is false |
 | DOMAIN | The domain name for the cluster (e.g., "cluster.example.com") (required). | "" |
 | FIX_DNS | **Opt-in** to allow automatic DNS fixes. Only modifies DNS if broken and external DNS works. Creates backups and auto-rolls back on failure. | false |
@@ -199,7 +199,7 @@ FIRST_NODE: true
 GPU_NODE: true                     # Set to false if no GPUs
 CLUSTER_DISKS: "/dev/nvme1n1"     # Disk device path for storage
 CERT_OPTION: "generate"           # Options: "generate" or "existing"
-CLUSTERFORGE_RELEASE: "v1.8.0"    # Version tag, full URL, "latest", "none", or "" to skip
+CLUSTERFORGE_RELEASE: "v2.0.0"    # Version tag, full URL, "latest", "none", or "" to skip
 PRELOAD_IMAGES: ""                # Optional: comma-separated container images
 ```
 
