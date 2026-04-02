@@ -311,6 +311,21 @@ func setupHostSSHSignalHandling(sshManager *ssh.EphemeralSSHManager) {
 	go func() {
 		sig := <-c
 
+		// Print prominent interrupt banner so the user knows what is happening
+		fmt.Println()
+		fmt.Println("=====================================================================")
+		fmt.Println("  !! BLOOM DEPLOYMENT INTERRUPTED !!")
+		fmt.Println()
+		fmt.Println("  The playbook was stopped mid-run. Your cluster may be in a")
+		fmt.Println("  partial state. Review the output above for the last completed")
+		fmt.Println("  task, then run:")
+		fmt.Println()
+		fmt.Println("    sudo bloom cleanup <config-file>")
+		fmt.Println()
+		fmt.Println("  to remove any partial installation before re-deploying.")
+		fmt.Println("  Restoring original SSH configuration...")
+		fmt.Println("=====================================================================")
+
 		// Perform SSH cleanup directly on host
 		if err := sshManager.Cleanup(); err != nil {
 			fmt.Fprintf(os.Stderr, "🔥 CRITICAL: Host SSH cleanup failed: %v\n", err)
