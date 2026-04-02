@@ -1070,8 +1070,10 @@ func runClusterCleanup(cfg config.Config) {
 		errors = append(errors, fmt.Errorf("Premounted disk cleanup: %w", err))
 	}
 
-	// Step 4: Clean Disks — strips fstab entries and wipes CLUSTER_DISKS
-	if err := runtime.CleanupBloomDisks(clusterDisks); err != nil {
+	// Step 4: Clean Disks — strips fstab entries and wipes CLUSTER_DISKS.
+	// Pass premountedDisks so those mount points' fstab entries are preserved
+	// and the disks stay mounted for the subsequent bloom deployment.
+	if err := runtime.CleanupBloomDisks(clusterDisks, premountedDisks); err != nil {
 		errors = append(errors, fmt.Errorf("Disk cleanup: %w", err))
 	}
 

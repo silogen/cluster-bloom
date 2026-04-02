@@ -132,12 +132,24 @@ func UninstallRKE2() error {
 	return nil
 }
 
-// CleanupBloomDisks removes bloom-managed disks and cleans up disk state
-func CleanupBloomDisks(clusterDisks string) error {
+// CleanupBloomDisks removes bloom-managed disks and cleans up disk state.
+// premountedDisks is the CLUSTER_PREMOUNTED_DISKS value; those mount points will
+// have their fstab entries preserved and will not be unmounted so the subsequent
+// bloom deployment validation succeeds.
+func CleanupBloomDisks(clusterDisks, premountedDisks string) error {
 	fmt.Println("💽 Cleaning bloom-managed disks...")
 
-	// First unmount prior Longhorn disks (equivalent to UnmountPriorLonghornDisks)
-	if err := unmountPriorLonghornDisks(); err != nil {
+	// Build set of premounted paths to preserve in fstab
+	keepMounted := make(map[string]struct{})
+	for _, mp := range strings.Split(premountedDisks, ",") {
+		mp = strings.TrimSpace(mp)
+		if mp != "" {
+			keepMounted[mp] = struct{}{}
+		}
+	}
+
+	// First unmount prior Longhorn disks, preserving premounted-disk fstab entries
+	if err := unmountPriorLonghornDisks(keepMounted); err != nil {
 		fmt.Printf("   Warning: Failed to unmount prior Longhorn disks: %v\n", err)
 	}
 
@@ -522,9 +534,10 @@ func CleanupPremountedDisks(premountedDisks string) error {
 		// If any remain the remove will block; force-unmount the sub-paths first.
 		exec.Command("bash", "-c",
 			fmt.Sprintf(`for d in %s/pvc-*; do umount -lf "$d" 2>/dev/null || true; done`, mp)).Run()
-		// Remove PVC dirs and Longhorn disk state; keep the ext4 filesystem intact
+		// Remove PVC dirs, Longhorn disk state and replicas; keep the ext4 filesystem intact
 		patterns := []string{
 			mp + "/pvc-*",
+			mp + "/replicas",
 			mp + "/longhorn-disk.cfg",
 			mp + "/longhorn-disk.cfg.tmp",
 		}
@@ -537,8 +550,11 @@ func CleanupPremountedDisks(premountedDisks string) error {
 	return nil
 }
 
-// unmountPriorLonghornDisks helper function to handle fstab cleanup
-func unmountPriorLonghornDisks() error {
+// unmountPriorLonghornDisks helper function to handle fstab cleanup.
+// keepMounted is a set of mount-point paths whose fstab entries should be
+// preserved and NOT unmounted (e.g. CLUSTER_PREMOUNTED_DISKS that will be
+// reused immediately after cleanup).
+func unmountPriorLonghornDisks(keepMounted map[string]struct{}) error {
 	// Read fstab to find bloom-managed entries
 	fstabContent, err := os.ReadFile("/etc/fstab")
 	if err != nil {
@@ -564,13 +580,24 @@ func unmountPriorLonghornDisks() error {
 			fields := strings.Fields(line)
 			if len(fields) >= 2 {
 				mountPoint := fields[1]
+				if _, keep := keepMounted[mountPoint]; keep {
+					// Premounted disk reused after cleanup — keep fstab entry and stay mounted
+					fmt.Printf("   Preserving bloom-managed fstab entry for reuse: %s\n", mountPoint)
+					cleanLines = append(cleanLines, line)
+					continue
+				}
 				fmt.Printf("   Unmounting bloom-managed mount: %s\n", mountPoint)
 				exec.Command("sudo", "umount", "-lf", mountPoint).Run()
 			}
 			// Don't add this line to cleanLines (removes it from fstab)
 		case strings.HasPrefix(line, "# # # this section is managed by AMD Enterprise AI tool cluster-bloom"),
 			strings.HasPrefix(line, "# # # end of AMD Enterprise AI cluster-bloom"):
-			// Remove section markers
+			if len(keepMounted) > 0 {
+				// Section still has entries — keep the markers
+				cleanLines = append(cleanLines, line)
+				continue
+			}
+			// No remaining managed entries — remove section markers
 		default:
 			cleanLines = append(cleanLines, line)
 		}
