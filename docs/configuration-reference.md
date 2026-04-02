@@ -1,0 +1,651 @@
+# Configuration Reference
+
+## Overview
+
+This document provides a comprehensive reference for all ClusterBloom configuration variables. Configuration can be provided via command-line flags, YAML files, or environment variables.
+
+## Configuration Priority
+
+Configuration sources in priority order (highest to lowest):
+
+1. Command-line flags
+2. Configuration file (bloom.yaml)
+3. Environment variables
+4. Default values
+
+## Core Configuration Variables
+
+### Node Type Configuration
+
+#### FIRST_NODE
+- **Type**: Boolean
+- **Default**: `true`
+- **Description**: Designates whether this is the first node in the cluster
+- **Values**: `true` | `false`
+- **Example**: `FIRST_NODE: false`
+
+#### CONTROL_PLANE
+- **Type**: Boolean
+- **Default**: `false`
+- **Description**: Indicates if additional node should be a control plane (only applies when `FIRST_NODE: false`)
+- **Values**: `true` | `false`
+- **Example**: `CONTROL_PLANE: true`
+
+#### GPU_NODE
+- **Type**: Boolean
+- **Default**: `false`
+- **Description**: Enables GPU-specific configurations and ROCm installation
+- **Values**: `true` | `false`
+- **Example**: `GPU_NODE: true`
+
+#### CLUSTER_SIZE
+- **Type**: Enum
+- **Default**: `small`
+- **Description**: Size category for cluster deployment planning
+- **Values**: `small` | `medium` | `large`
+- **Example**: `CLUSTER_SIZE: medium`
+
+### Cluster Joining Configuration
+
+#### SERVER_IP
+- **Type**: String (IP Address)
+- **Default**: None
+- **Description**: IP address of the first node (required for additional nodes)
+- **Required When**: `FIRST_NODE: false`
+- **Example**: `SERVER_IP: "192.168.1.100"`
+
+#### JOIN_TOKEN
+- **Type**: String
+- **Default**: None
+- **Description**: Token for joining additional nodes to the cluster
+- **Required When**: `FIRST_NODE: false`
+- **Example**: `JOIN_TOKEN: "K10abcdef..."`
+- **Note**: Retrieved from first node at `/var/lib/rancher/rke2/server/node-token`
+
+### Storage Configuration
+
+#### NO_DISKS_FOR_CLUSTER
+- **Type**: Boolean
+- **Default**: `false`
+- **Description**: Bypasses all disk-related operations
+- **Values**: `true` | `false`
+- **Example**: `NO_DISKS_FOR_CLUSTER: true`
+- **Use Case**: CPU-only nodes or when using external storage
+
+#### CLUSTER_PREMOUNTED_DISKS
+- **Type**: String (comma-separated paths)
+- **Default**: None
+- **Description**: Manual disk specification for pre-mounted disks
+- **Example**: `CLUSTER_PREMOUNTED_DISKS: "/mnt/disk0,/mnt/disk1"`
+
+#### CLUSTER_DISKS
+- **Type**: String (comma-separated device names)
+- **Default**: None
+- **Description**: Pre-selected disk devices to use
+- **Example**: `CLUSTER_DISKS: "/dev/nvme0n1,/dev/nvme1n1"`
+- **Note**: Also skips NVMe drive availability checks
+
+### Step Control Configuration
+
+> **⚠️ Pending Implementation**: `DISABLED_STEPS` and `ENABLED_STEPS` are not yet active.
+> These fields are reserved for a future release and have no effect in the current version.
+
+#### DISABLED_STEPS *(pending implementation)*
+- **Type**: String (comma-separated step IDs)
+- **Default**: None
+- **Description**: Comma-separated list of step IDs to skip during installation
+- **Example**: `DISABLED_STEPS: "install-longhorn,install-metallb"`
+- **Mutually Exclusive With**: `ENABLED_STEPS`
+
+#### ENABLED_STEPS *(pending implementation)*
+- **Type**: String (comma-separated step IDs)
+- **Default**: None
+- **Description**: Comma-separated list of step IDs to execute (all others skipped)
+- **Example**: `ENABLED_STEPS: "install-rke2,configure-kubeconfig"`
+- **Mutually Exclusive With**: `DISABLED_STEPS`
+- **Use Case**: Targeted operations or troubleshooting
+
+### Domain and Certificate Configuration
+
+#### DOMAIN
+- **Type**: String (domain name)
+- **Default**: None
+- **Description**: Domain name for cluster ingress configuration
+- **Example**: `DOMAIN: "cluster.example.com"`
+
+### Network and DNS Configuration
+
+#### FIX_DNS
+- **Type**: Boolean
+- **Default**: `false`
+- **Description**: **Opt-in** flag to allow automatic DNS resolution fixes during installation. When enabled, the playbook will test current DNS configuration and only modify `/etc/resolv.conf` if DNS is broken AND external DNS servers are reachable. Creates timestamped backups before modification and automatically rolls back on failure.
+- **Values**: `true` | `false`
+- **Example**: `FIX_DNS: true`
+- **Safety Features**:
+  - Only modifies DNS if current DNS test fails AND external DNS (1.1.1.1) succeeds
+  - Creates backup at `/etc/resolv.conf.backup-<timestamp>` before changes
+  - Verifies DNS works after modification
+  - Automatic rollback to backup if verification fails
+  - Never removes immutable attribute until after successful verification
+- **When Disabled** (`false`, default): Existing DNS configuration is never touched, even if broken
+- **Use Cases**: 
+  - Corporate networks with internal DNS servers: Leave `false` (default)
+  - Servers with working systemd-resolved: Leave `false` (default)
+  - Known DNS issues preventing apt updates: Set to `true`
+- **⚠️ Warning**: When enabled, will overwrite `/etc/resolv.conf` with Google/Cloudflare DNS if local DNS is detected as broken
+
+#### DNSMASQ
+- **Type**: Boolean
+- **Default**: `false`
+- **Description**: **Opt-in** flag to configure dnsmasq for local DNS resolution (first node only). Provides DNS resolution for `cluster.local` (Kubernetes) and custom domains. Requires `FIX_DNS: true` to take effect.
+- **Values**: `true` | `false`
+- **Example**: `DNSMASQ: true`
+- **Requirements**: 
+  - `FIX_DNS: true` (required)
+  - `FIRST_NODE: true` (automatic, only applies to first node)
+  - `DOMAIN` must be set (required for dnsmasq configuration)
+- **Behavior When Enabled**:
+  - Disables systemd-resolved (with state saved for rollback)
+  - Configures dnsmasq to resolve `{DOMAIN}` to node IP
+  - Forwards `cluster.local` queries to Kubernetes CoreDNS (10.243.0.10)
+  - Falls back to external DNS (4.4.4.4, 1.1.1.1) for other queries
+  - Makes `/etc/resolv.conf` point to `127.0.0.1` (localhost)
+  - Makes `/etc/resolv.conf` immutable after successful verification
+  - Tests configuration before committing changes
+  - Full automatic rollback on any failure
+- **Safety Features**:
+  - Creates backup at `/etc/resolv.conf.pre-dnsmasq-<timestamp>`
+  - Validates dnsmasq configuration before starting service
+  - Tests DNS resolution through dnsmasq before making permanent
+  - Automatic rollback restores: original resolv.conf, systemd-resolved state, and disables dnsmasq
+  - Clear error messages on failure
+- **When Disabled** (`false`, default): No DNS service configuration, uses system defaults
+- **Use Cases**:
+  - Need local resolution for Keycloak/ingress domains: Set to `true`
+  - Air-gapped clusters requiring custom domain resolution: Set to `true`
+  - Standard deployments with external DNS: Leave `false` (default)
+- **⚠️ Warning**: Significantly changes DNS configuration on the system. Only enable if you need local DNS for cluster domains.
+
+#### USE_CERT_MANAGER
+- **Type**: Boolean
+- **Default**: `false`
+- **Description**: Enable cert-manager with Let's Encrypt for TLS certificates
+- **Values**: `true` | `false`
+- **Example**: `USE_CERT_MANAGER: true`
+
+#### CERT_MANAGER_EMAIL
+- **Type**: String (email address)
+- **Default**: None
+- **Description**: Email address for Let's Encrypt certificate notifications
+- **Required When**: `USE_CERT_MANAGER: true`
+- **Example**: `CERT_MANAGER_EMAIL: "admin@example.com"`
+
+#### CERT_OPTION
+- **Type**: String
+- **Default**: None
+- **Description**: Certificate handling when cert-manager is disabled
+- **Values**: `existing` | `generate`
+- **Example**: `CERT_OPTION: "existing"`
+- **Applies When**: `USE_CERT_MANAGER: false`
+
+#### TLS_CERT
+- **Type**: String (file path)
+- **Default**: None
+- **Description**: Path to TLS certificate file for ingress
+- **Example**: `TLS_CERT: "/path/to/tls.crt"`
+- **Required When**: `CERT_OPTION: "existing"`
+
+#### TLS_KEY
+- **Type**: String (file path)
+- **Default**: None
+- **Description**: Path to TLS key file for ingress
+- **Example**: `TLS_KEY: "/path/to/tls.key"`
+- **Required When**: `CERT_OPTION: "existing"`
+
+### ArgoCD Configuration (Small Clusters)
+
+#### INSTALL_ARGOCD
+- **Type**: Boolean
+- **Default**: `true`
+- **Description**: Install ArgoCD core (headless/CLI-only mode) for GitOps-based app deployment. Only applies to `CLUSTER_SIZE: small`.
+- **Values**: `true` | `false`
+- **Example**: `INSTALL_ARGOCD: false`
+
+#### ARGOCD_VERSION
+- **Type**: String (version tag)
+- **Default**: `v2.14.11`
+- **Description**: ArgoCD version to install
+- **Example**: `ARGOCD_VERSION: "v2.14.11"`
+
+#### CLUSTERFORGE_REPO
+- **Type**: String (git URL)
+- **Default**: `https://github.com/silogen/cluster-forge.git`
+- **Description**: Git repository URL for the ClusterForge Helm chart used in ArgoCD-based deployment
+- **Example**: `CLUSTERFORGE_REPO: "https://github.com/myorg/cluster-forge.git"`
+
+### Integration Configuration
+
+#### CLUSTERFORGE_RELEASE
+- **Type**: String (version, URL, or special value)
+- **Default**: `latest`
+- **Description**: ClusterForge version to deploy. Supports multiple formats:
+  - **Version tag**: e.g., `v2.0.0-rc6` - Specifies exact version/branch to checkout
+  - **Full release URL**: e.g., `https://github.com/silogen/cluster-forge/releases/download/v2.0.0-rc6/release-enterprise-ai-v2.0.0-rc6.tar.gz` - Downloads tarball and auto-extracts version for ArgoCD target
+  - **Special values**: 
+    - `latest` - Uses the default branch (main)
+    - `none` or `""` (empty string) - Skips ClusterForge installation entirely
+- **Version Parsing**: When a full URL is provided, the version is automatically extracted (e.g., `v2.0.0-rc6` from the URL) and used as the `--target-revision` for ArgoCD/Gitea
+- **Examples**: 
+  - `CLUSTERFORGE_RELEASE: "latest"`
+  - `CLUSTERFORGE_RELEASE: "v2.0.2"`
+  - `CLUSTERFORGE_RELEASE: "https://github.com/silogen/cluster-forge/releases/download/v2.0.2/release.tar.gz"`
+  - `CLUSTERFORGE_RELEASE: "none"`
+
+#### CF_VALUES
+- **Type**: String (file path)
+- **Default**: None
+- **Description**: ClusterForge values file path (optional)
+- **Example**: `CF_VALUES: "/path/to/values.yaml"`
+
+#### OIDC_URL
+- **Type**: String (URL)  
+- **Default**: None
+- **Description**: **DEPRECATED** - Legacy OIDC provider configuration (removed in this branch)
+- **Replacement**: Use `ADDITIONAL_OIDC_PROVIDERS` for multiple provider support
+- **Breaking Change**: This variable no longer works - migrate to `ADDITIONAL_OIDC_PROVIDERS`
+
+#### ADDITIONAL_OIDC_PROVIDERS
+- **Type**: Array of OIDC Provider objects
+- **Default**: `[]` (empty, uses default provider)
+- **Description**: List of additional OIDC providers for multi-provider authentication
+- **Required When**: Multiple authentication providers needed
+- **Example**: 
+  ```yaml
+  ADDITIONAL_OIDC_PROVIDERS:
+    - url: "https://kc.plat-dev-3.silogen.ai/realms/airm"
+      audiences: ["k8s"]
+    - url: "https://kc.plat-dev-4.silogen.ai/realms/k8s"
+      audiences: ["kubernetes", "api"]
+  ```
+- **Default Behavior**: If empty, auto-configures `https://kc.{DOMAIN}/realms/airm` with audience `k8s`
+- **Provider Object Fields**:
+  - `url`: HTTPS URL of the OIDC provider (required)
+  - `audiences`: Array of client IDs/audiences (required)
+
+#### RKE2_VERSION
+- **Type**: String (version)
+- **Default**: `""` (latest stable)
+- **Description**: Specific RKE2 version to install
+- **Example**: `RKE2_VERSION: "v1.34.1+rke2r1"`
+- **Format**: Must include RKE2 suffix (e.g., "+rke2r1")
+
+#### ADDITIONAL_TLS_SAN_URLS
+- **Type**: Array of strings (domain names)
+- **Default**: `[]`
+- **Description**: Additional TLS Subject Alternative Name URLs for Kubernetes API server certificate
+- **Example**: `ADDITIONAL_TLS_SAN_URLS: ["api.example.com", "management.example.com"]`
+- **Auto-generated**: Always includes `k8s.{DOMAIN}` - do not duplicate
+- **Validation**: 
+  - Each entry must be a valid domain name format
+  - Wildcard domains (*.example.com) are blocked by UI and server validation
+  - Real-time validation provides immediate feedback
+- **Migration**: Legacy comma-separated string format still supported
+- **Documentation**: See [TLS SAN Configuration](tls-san-configuration.md) for detailed guide
+
+#### ONEPASSWORD_CONNECT_TOKEN
+- **Type**: String
+- **Default**: None
+- **Description**: Token for 1Password Connect integration (optional)
+- **Example**: `ONEPASSWORD_CONNECT_TOKEN: "eyJhbGc..."`
+
+#### ONEPASSWORD_CONNECT_HOST
+- **Type**: String (URL)
+- **Default**: None
+- **Description**: Host URL for 1Password Connect service (optional)
+- **Example**: `ONEPASSWORD_CONNECT_HOST: "http://onepassword-connect:8080"`
+
+### Advanced Configuration
+
+#### RKE2_EXTRA_CONFIG
+- **Type**: String (YAML format)
+- **Default**: None
+- **Description**: Additional RKE2 configuration in YAML format to append to `/etc/rancher/rke2/config.yaml`
+- **Example**:
+  ```yaml
+  RKE2_EXTRA_CONFIG: |
+    node-taint:
+      - "CriticalAddonsOnly=true:NoExecute"
+    node-label:
+      - "workload-type=ml"
+  ```
+
+#### PRELOAD_IMAGES
+- **Type**: String (comma-separated image references)
+- **Default**: None
+- **Description**: Comma-separated list of container images to preload into the cluster
+- **Example**: `PRELOAD_IMAGES: "docker.io/nvidia/cuda:11.8.0-base,ghcr.io/myapp:latest"`
+
+#### SKIP_RANCHER_PARTITION_CHECK
+- **Type**: Boolean
+- **Default**: `false`
+- **Description**: Skip validation of `/var/lib/rancher` partition size (useful for CPU-only nodes)
+- **Values**: `true` | `false`
+- **Example**: `SKIP_RANCHER_PARTITION_CHECK: true`
+
+## Configuration File Format
+
+### YAML Configuration File (bloom.yaml)
+
+```yaml
+# Node configuration
+FIRST_NODE: true
+GPU_NODE: false
+CONTROL_PLANE: false
+
+# Storage configuration
+NO_DISKS_FOR_CLUSTER: false
+CLUSTER_DISKS: "/dev/nvme0n1,/dev/nvme1n1"
+
+# Domain and certificates
+DOMAIN: "cluster.example.com"
+USE_CERT_MANAGER: true
+CERT_MANAGER_EMAIL: "admin@example.com"
+
+# Network and DNS (opt-in for safety)
+FIX_DNS: false        # Set to true only if DNS is known to be broken
+DNSMASQ: false        # Set to true (with FIX_DNS) for local cluster DNS
+
+# Integration
+CLUSTERFORGE_RELEASE: "v1.2.3"
+ADDITIONAL_OIDC_PROVIDERS:
+  - url: "https://kc.example.com/realms/airm"
+    audiences: ["k8s"]
+  - url: "https://auth.example.com/realms/main"
+    audiences: ["kubernetes", "api"]
+
+# Advanced options
+RKE2_EXTRA_CONFIG: |
+  node-label:
+    - "environment=production"
+```
+
+### Additional Node Configuration (bloom.yaml)
+
+```yaml
+FIRST_NODE: false
+CONTROL_PLANE: false
+GPU_NODE: true
+SERVER_IP: "192.168.1.100"
+JOIN_TOKEN: "K10abcdef1234567890::server:abcdef1234567890"
+```
+
+## Command-Line Usage
+
+### Configuration File
+```bash
+sudo ./bloom --config /path/to/bloom.yaml
+```
+
+### Environment Variables
+```bash
+export FIRST_NODE=false
+export SERVER_IP="192.168.1.100"
+export JOIN_TOKEN="K10..."
+sudo -E ./bloom
+```
+
+### Mixed Configuration
+```bash
+# Use config file but override specific values
+sudo ./bloom --config bloom.yaml --domain custom.example.com
+```
+
+## Validation Rules
+
+### Required Fields
+
+**For First Node**:
+- `FIRST_NODE: true` (or omitted, default is true)
+
+**For Additional Nodes**:
+- `FIRST_NODE: false`
+- `SERVER_IP` (required)
+- `JOIN_TOKEN` (required)
+
+### Mutually Exclusive Fields
+
+- `DISABLED_STEPS` and `ENABLED_STEPS` cannot both be set *(pending implementation)*
+- `USE_CERT_MANAGER: true` and `CERT_OPTION: "existing"` cannot both be set
+
+### Conditional Requirements
+
+- `CONTROL_PLANE: true` requires `FIRST_NODE: false`
+- `CERT_MANAGER_EMAIL` required when `USE_CERT_MANAGER: true`
+- `TLS_CERT` and `TLS_KEY` required when `CERT_OPTION: "existing"`
+
+## Common Configuration Scenarios
+
+### First Node (GPU-enabled)
+```yaml
+FIRST_NODE: true
+GPU_NODE: true
+DOMAIN: "ml-cluster.example.com"
+USE_CERT_MANAGER: true
+CERT_MANAGER_EMAIL: "admin@example.com"
+CLUSTERFORGE_RELEASE: "v1.2.3"
+RKE2_VERSION: "v1.34.1+rke2r1"
+ADDITIONAL_OIDC_PROVIDERS:
+  - url: "https://kc.ml-cluster.example.com/realms/airm"
+    audiences: ["k8s"]
+ADDITIONAL_TLS_SAN_URLS:
+  - "api.ml-cluster.example.com"
+```
+
+### Additional Worker Node (GPU-enabled)
+```yaml
+FIRST_NODE: false
+GPU_NODE: true
+SERVER_IP: "192.168.1.100"
+JOIN_TOKEN: "K10..."
+```
+
+### Additional Control Plane Node
+```yaml
+FIRST_NODE: false
+CONTROL_PLANE: true
+SERVER_IP: "192.168.1.100"
+JOIN_TOKEN: "K10..."
+```
+
+### CPU-Only Node (No Storage)
+```yaml
+FIRST_NODE: false
+GPU_NODE: false
+NO_DISKS_FOR_CLUSTER: true
+SKIP_RANCHER_PARTITION_CHECK: true
+SERVER_IP: "192.168.1.100"
+JOIN_TOKEN: "K10..."
+```
+
+### First Node with DNS Issues (Opt-in DNS Fix)
+```yaml
+FIRST_NODE: true
+GPU_NODE: false
+DOMAIN: "cluster.example.com"
+
+# Enable DNS fixes (only if DNS is known to be broken)
+FIX_DNS: true         # Allows automatic DNS repair if broken
+DNSMASQ: false        # Keep false unless you need local cluster DNS
+
+USE_CERT_MANAGER: true
+CERT_MANAGER_EMAIL: "admin@example.com"
+```
+
+### First Node with Custom Domain Resolution (dnsmasq)
+```yaml
+FIRST_NODE: true
+GPU_NODE: false
+DOMAIN: "cluster.local.example.com"
+
+# Enable DNS management for local domain resolution
+FIX_DNS: true         # Required for dnsmasq configuration
+DNSMASQ: true         # Enables local DNS for cluster.local and custom domain
+
+USE_CERT_MANAGER: false
+CERT_OPTION: "generate"
+```
+
+### Small Cluster with ArgoCD (GitOps)
+```yaml
+FIRST_NODE: true
+GPU_NODE: true
+DOMAIN: "165.245.128.225.nip.io"
+CERT_OPTION: generate
+CLUSTER_SIZE: small
+CLUSTER_DISKS: /dev/vdc1
+CLUSTERFORGE_RELEASE: none
+```
+
+### Small Cluster without ArgoCD
+```yaml
+FIRST_NODE: true
+GPU_NODE: true
+DOMAIN: "165.245.128.225.nip.io"
+CERT_OPTION: generate
+CLUSTER_SIZE: small
+CLUSTER_DISKS: /dev/vdc1
+INSTALL_ARGOCD: false
+CLUSTERFORGE_RELEASE: none
+```
+
+### Testing/Development Configuration
+```yaml
+FIRST_NODE: true
+GPU_NODE: false
+NO_DISKS_FOR_CLUSTER: true
+DISABLED_STEPS: "install-longhorn,install-metallb,install-clusterforge"
+```
+
+## Environment Variable Mapping
+
+All YAML configuration variables can be set as environment variables:
+
+```bash
+export FIRST_NODE=true
+export GPU_NODE=false
+export DOMAIN="cluster.example.com"
+export USE_CERT_MANAGER=true
+export CERT_MANAGER_EMAIL="admin@example.com"
+```
+
+## CLI Commands Reference
+
+### CLI Command
+
+Deploy cluster using configuration file:
+
+```bash
+bloom cli <config-file> [flags]
+```
+
+**Available Flags:**
+- `--export`: Export generated playbook to stdout instead of executing it
+- `--dry-run`: Run in check mode without making changes
+- `--destroy-data`: ⚠️ DANGER: Permanently destroys ALL cluster data, storage, and disks
+- `--playbook string`: Playbook to run (default: "cluster-bloom.yaml")
+- `--tags string`: Run only tasks with specific tags (e.g., cleanup, validate, storage)
+
+**Examples:**
+```bash
+# Standard deployment
+sudo ./bloom cli bloom.yaml
+
+# Export playbook for inspection
+./bloom cli bloom.yaml --export
+
+# Export and save to file
+./bloom cli bloom.yaml --export > deployment.yaml
+
+# Export with cleanup tasks for existing installations
+./bloom cli bloom.yaml --export --destroy-data > cleanupDeployment.yaml
+
+# Dry run deployment
+sudo ./bloom cli bloom.yaml --dry-run
+
+# Run specific tags only
+sudo ./bloom cli bloom.yaml --tags "validate_node,prep_node"
+```
+
+### Run Command
+
+Execute external Ansible playbook using Bloom's containerized runtime:
+
+```bash
+bloom run <playbook> [flags]
+```
+
+**Available Flags:**
+- `--config string`: YAML config file whose keys become ansible extra vars
+- `--dry-run`: Run in check mode without making changes
+- `--extra-vars stringArray`: Extra variables passed to ansible-playbook (repeatable)
+- `--tags string`: Run only tasks with specific tags
+- `--verbose`: Show full Ansible output instead of clean summary
+
+**Examples:**
+```bash
+# Run exported playbook
+sudo ./bloom run myPlaybook.yaml
+
+# Run with additional configuration
+sudo ./bloom run myPlaybook.yaml --config extra-vars.yaml
+
+# Run with inline variables
+sudo ./bloom run myPlaybook.yaml -e "CUSTOM_VAR=value" -e "ANOTHER_VAR=test"
+
+# Run with verbose output
+sudo ./bloom run myPlaybook.yaml --verbose
+```
+
+### Export Workflow
+
+The `--export` flag enables a powerful workflow for playbook inspection and manual execution:
+
+1. **Generate and Inspect**: Export the playbook to review what actions will be performed
+2. **Modify if Needed**: Optionally customize the exported playbook
+3. **Execute Manually**: Run the playbook using the `run` command
+
+```bash
+# Step 1: Export playbook
+./bloom cli bloom.yaml --export > deployment.yaml
+
+# Step 1b: Export with cleanup for existing installations
+./bloom cli bloom.yaml --export --destroy-data > cleanupDeployment.yaml
+
+# Step 2: Review the playbook
+less deployment.yaml
+
+# Step 3: Execute the playbook
+sudo ./bloom run deployment.yaml
+```
+
+**Use Cases for Export:**
+- **Debugging**: Understand exactly what the deployment will do
+- **Compliance**: Review playbooks before execution in regulated environments
+- **Customization**: Modify generated playbooks for specific requirements
+- **Restricted Environments**: Generate playbooks on one system, execute on another
+- **Learning**: Study the generated Ansible code to understand cluster setup
+- **Existing Installations**: Use `--export --destroy-data` to handle existing cluster installations safely
+
+**Technical Details:**
+- **Self-Contained Playbooks**: Exported playbooks automatically inline all `include_tasks` directives, creating completely self-contained files
+- **Configuration Integration**: All user configuration values are properly applied to playbook variables
+- **Task Preservation**: Tags, when conditions, and other metadata from include directives are preserved on inlined tasks
+- **Full Compatibility**: Exported playbooks are fully compatible with the `bloom run` command and standard Ansible tools
+- **Cleanup Task Injection**: When `--destroy-data` is used with `--export`, cleanup tasks are automatically prepended to handle existing installations
+- **Comprehensive Cleanup**: Includes RKE2 uninstall, Longhorn cleanup, disk wiping, and service management for complete environment reset
+
+## See Also
+
+- [PRD.md](../../PRD.md) - Product overview
+- [06-technical-architecture.md](07-technical-architecture.md) - Technical architecture
+- [07-installation-guide.md](08-installation-guide.md) - Installation procedures

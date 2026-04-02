@@ -1,0 +1,23 @@
+---
+- name: Hello World
+  hosts: localhost
+  connection: local
+
+  vars:
+    host_root: /host
+    DOMAIN: "test.local"
+
+  tasks:
+    - name: Create marker file
+      copy:
+        content: |
+          Bloom prototype executed successfully
+          Timestamp: {{ ansible_date_time.iso8601 }}
+          Hostname: {{ ansible_hostname }}
+          Domain: {{ DOMAIN }}
+        dest: "{{ host_root }}/tmp/bloom-hello.txt"
+        mode: '0644'
+
+    - name: Display success message
+      debug:
+        msg: "Hello from Bloom! Domain: {{ DOMAIN }} - Marker file created at /tmp/bloom-hello.txt"

@@ -1,6 +1,0 @@
-input:
-  DOMAIN: multi-level.sub.domain.com
-  CLUSTER_DISKS: /dev/sdb,/dev/sdc
-  CERT_OPTION: generate
-  FIRST_NODE: true
-  GPU_NODE: true

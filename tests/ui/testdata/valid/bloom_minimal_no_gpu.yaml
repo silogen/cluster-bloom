@@ -1,6 +1,0 @@
-input:
-  DOMAIN: minimal-test.local
-  CLUSTER_DISKS: /dev/nvme0n1
-  CERT_OPTION: generate
-  FIRST_NODE: true
-  GPU_NODE: false

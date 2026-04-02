@@ -39,42 +39,47 @@ Designed for growth to 100+ nodes.
 
 ## Core Features
 
-### 1. Automated RKE2 Kubernetes Deployment
+### Automated RKE2 Kubernetes Deployment
 Automated deployment of production-ready RKE2 clusters with first node initialization, additional node joining, Cilium CNI integration, and compliance-ready audit logging.
 
-**[📄 Detailed Documentation](./01-rke2-deployment.md)**
+**[📄 Detailed Documentation](./rke2-deployment.md)**
 
-### 2. AMD GPU Support with ROCm
+### AMD GPU Support with ROCm
 Automated AMD GPU driver installation, device detection, permission configuration, and Kubernetes GPU resource integration for AI/ML workloads.
 
-**[📄 Detailed Documentation](./02-rocm-support.md)**
+**[📄 Detailed Documentation](./rocm-support.md)**
 
-### 3. Storage Management with Longhorn
+### Storage Management with Longhorn
 Distributed block storage with automatic disk detection, interactive selection, persistent mounting, and Longhorn CSI integration for reliable persistent volumes.
 
-**[📄 Detailed Documentation](./03-storage-management.md)**
+**[📄 Detailed Documentation](./storage-management.md)**
 
-### 4. Network Configuration
+### Longhorn Drive Setup and Recovery
+Comprehensive drive recovery procedures including RAID detection and removal, disk space analysis, automated formatting and mounting, and troubleshooting for storage issues after node reboots.
+
+**[📄 Detailed Documentation](./longhorn-drive-setup-and-recovery.md)**
+
+### Network Configuration
 Comprehensive networking with MetalLB load balancing, firewall configuration, multipath storage networking, and time synchronization across cluster nodes.
 
-**[📄 Detailed Documentation](./04-network-configuration.md)**
+**[📄 Detailed Documentation](./network-configuration.md)**
 
-### 5. Interactive Terminal UI
+### Interactive Terminal UI
 Rich terminal interface with real-time progress tracking, live log streaming, interactive configuration wizards, and comprehensive error handling and recovery options.
 
-**[📄 Detailed Documentation](./06-terminal-ui.md)**
+**[📄 Detailed Documentation](./terminal-ui.md)**
 
-### 6. Configuration Management
+### Configuration Management
 Flexible configuration system supporting YAML files, environment variables, and CLI flags with comprehensive validation and an interactive wizard for guided setup.
 
-**[📄 Configuration Reference](./10-configuration-reference.md)**
+**[📄 Configuration Reference](./configuration-reference.md)**
 
-### 7. Node Validation and Testing
+### Node Validation and Testing
 Comprehensive pre-deployment validation ensures node readiness, connectivity, GPU availability, and proper firewall configuration before any system modifications.
 
-**[📄 Installation Guide](./08-installation-guide.md)**
+**[📄 Installation Guide](./installation-guide.md)**
 
-### 8. TLS Certificate Management
+### TLS Certificate Management
 
 Flexible certificate management with three deployment options:
 
@@ -95,25 +100,55 @@ Flexible certificate management with three deployment options:
 
 All certificates are stored as Kubernetes secrets in the `kgateway-system` namespace and integrated with the cluster's ingress controller for HTTPS traffic.
 
-**[📄 Certificate Management Details](./05-certificate-management.md)**
+**[📄 Certificate Management Details](./certificate-management.md)**
 
-### 9. Web UI and Monitoring Interface
+### Web UI and Monitoring Interface
 Browser-based configuration wizard with real-time monitoring dashboard, error recovery interface, and responsive design for remote cluster management from any device.
 
-**[📄 Technical Architecture](./07-technical-architecture.md)**
+**[📄 Technical Architecture](./technical-architecture.md)**
 
-### 10. Comprehensive Configuration Validation
+### Comprehensive Configuration Validation
 Pre-flight validation system checks all configuration, resources, and system requirements before making any changes, providing clear error messages with actionable fixes.
 
-**[📄 Configuration Reference](./10-configuration-reference.md)**
+**[📄 Configuration Reference](./configuration-reference.md)**
+
+### Playbook Export and Inspection
+Advanced debugging and transparency features allow users to export generated Ansible playbooks for inspection before execution. This feature enables debugging playbook generation, understanding deployment actions, and provides flexibility for restricted environments.
+
+**Key Capabilities:**
+- **Export Mode**: Generate complete Ansible playbook without execution using `--export` flag
+- **Configuration Integration**: Exported playbooks include all user configuration values properly applied
+- **Manual Execution**: Exported playbooks can be run separately using the `run` command
+- **Debugging Support**: Full visibility into deployment actions before execution
+- **Environment Flexibility**: Export in one environment, execute in another
+- **Cleanup Integration**: Use `--export --destroy-data` to include cluster cleanup tasks in exported playbooks
+- **Existing Installation Support**: Handles existing cluster installations through automated cleanup task injection
+
+**Example Usage:**
+```bash
+# Export playbook to stdout
+./bloom cli bloom.yaml --export
+
+# Save exported playbook to file
+./bloom cli bloom.yaml --export > deployment.yaml
+
+# Export with cleanup tasks for existing installations
+./bloom cli bloom.yaml --export --destroy-data > cleanupDeployment.yaml
+
+# Execute exported playbook manually
+sudo ./bloom run deployment.yaml
+```
+
+### Post-Deployment Credential Display
+Automatic display of access credentials for deployed ClusterForge components including AIRM DevUser and Keycloak admin credentials with ready-to-use kubectl commands for password retrieval.
 
 ## Technical Architecture
 
 ClusterBloom uses a modular architecture with command-based interfaces, sequential installation pipelines, and multiple interaction modes (CLI, TUI, Web UI). The system executes in three phases: pre-Kubernetes system preparation, Kubernetes cluster setup, and post-Kubernetes add-on deployment.
 
-**[📄 Technical Architecture Documentation](./07-technical-architecture.md)**
+**[📄 Technical Architecture Documentation](./technical-architecture.md)**
 
-**[📄 Configuration Reference](./10-configuration-reference.md)**
+**[📄 Configuration Reference](./configuration-reference.md)**
 
 ## User Experience
 
@@ -143,6 +178,33 @@ echo -e 'FIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml
 sudo ./bloom --config bloom.yaml
 ```
 
+#### Playbook Export and Inspection
+```bash
+./bloom cli bloom.yaml --export
+```
+Exports the generated Ansible playbook to stdout instead of executing it. This enables debugging playbook generation, understanding what actions will be taken before execution, and provides a workaround for restricted environments where the wrapper lacks execution permissions.
+
+**Use Cases:**
+- **Debugging**: Inspect the complete playbook before execution
+- **Transparency**: Understand exactly what actions will be performed
+- **Restricted Environments**: Export playbooks in one environment, execute in another
+- **Manual Control**: Review and manually modify playbooks before execution
+
+**Example Workflow:**
+```bash
+# Export playbook to file
+./bloom cli bloom.yaml --export > myPlaybook.yaml
+
+# Export playbook with cleanup tasks for existing installations
+./bloom cli bloom.yaml --export --destroy-data > cleanupPlaybook.yaml
+
+# Review the generated playbook
+less myPlaybook.yaml
+
+# Execute the exported playbook manually
+sudo ./bloom run myPlaybook.yaml
+```
+
 #### Demo Mode
 ```bash
 sudo ./bloom demo-ui
@@ -154,6 +216,23 @@ Demonstrates UI capabilities without system modifications for testing and famili
 ./bloom test [config-file...]
 ```
 Runs multiple configuration files in sequence for integration testing with mocked commands and structured YAML results.
+
+### Post-Deployment Credential Information
+
+After successful cluster deployment, ClusterBloom automatically displays credential information for ClusterForge components when `CLUSTERFORGE_RELEASE` is configured (not set to "none"). This eliminates the need to manually search for credentials and provides immediate access to deployed applications.
+
+**Displayed Information:**
+- **AIRM DevUser Login**: URL, username, and kubectl command to retrieve password
+  - URL: `https://airmui.<domain>`
+  - Username: `devuser@<domain>`
+  - Password retrieval: `kubectl -n keycloak get secret airm-devuser-credentials -o jsonpath='{.data.KEYCLOAK_INITIAL_DEVUSER_PASSWORD}' | base64 --decode`
+
+- **Keycloak Admin Login**: URL, username, and kubectl command to retrieve password
+  - URL: `https://kc.<domain>`
+  - Username: `silogen-admin`
+  - Password retrieval: `kubectl -n keycloak get secret keycloak-credentials -o jsonpath='{.data.KEYCLOAK_INITIAL_ADMIN_PASSWORD}' | base64 --decode`
+
+This information appears at the end of the deployment summary when using clean output mode (default), providing operators with immediate access to critical system credentials.
 
 ### Web UI Installation Workflow
 
@@ -194,10 +273,24 @@ See [VALIDATION.md](VALIDATION.md) for complete validation documentation.
 - **K9s Integration**: Terminal-based Kubernetes management
 
 ### CI/CD Pipeline
-- **GitHub Actions**: Automated build and release workflow
-- **Devbox Build System**: Consistent development environment
-- **Release Automation**: Automatic binary creation on releases
-- **Version Injection**: Build-time version injection from Git tags
+
+**Automated Release Workflow**
+- **GitHub Release Trigger**: Workflow automatically runs when a release is published
+- **Tag-based Versioning**: Release tag (e.g., `v1.0.0`) is used for binary version injection
+- **Artifact Upload**: Built binaries automatically attach to the GitHub release
+- **Prerelease Detection**: Automatically detects and respects prerelease status from GitHub release settings
+
+**Build Process**
+- **Devbox Build System**: Consistent, reproducible development environment
+- **Version Injection**: Build-time version injection from Git tags using `-ldflags`
+- **Automated Testing**: PRD sync validation ensures documentation updates accompany feature commits
+
+**Release Creation**
+1. Draft a new release in GitHub with desired tag (e.g., `v1.0.0-beta` or `v1.0.0`)
+2. Optionally mark as prerelease for non-production versions
+3. Publish the release
+4. Build workflow automatically triggers, builds binaries, and uploads artifacts
+5. Release is ready with downloadable binaries within minutes
 
 ## Testing and Quality Assurance
 
@@ -270,16 +363,16 @@ Browser-based testing with chromedp and comprehensive mock system:
 
 ### For Developers and Operators
 
-**[📄 Manual Installation Guide](./08-installation-guide.md)**  
+**[📄 Manual Installation Guide](./installation-guide.md)**  
 Complete manual installation procedures for understanding automation or performing custom installations.
 
-**[📄 Cloud Platform Compatibility](./09-cloud-compatibility.md)**  
+**[📄 Cloud Platform Compatibility](./cloud-compatibility.md)**  
 Infrastructure dependencies, migration strategies, and configuration for multi-platform deployments (EKS, AKS, GKE).
 
-**[📄 Configuration Reference](./10-configuration-reference.md)**  
+**[📄 Configuration Reference](./configuration-reference.md)**  
 Comprehensive configuration variable reference with examples and validation rules.
 
-**[📄 Technical Architecture](./07-technical-architecture.md)**  
+**[📄 Technical Architecture](./technical-architecture.md)**  
 Detailed technical architecture, component organization, and implementation patterns.
 
 ## Conclusion

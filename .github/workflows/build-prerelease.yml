@@ -3,8 +3,6 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
     branches: [main]
-  release:
-    types: [created, edited]
   workflow_dispatch:
     inputs:
       is_prerelease:
@@ -38,19 +36,21 @@ jobs:
             echo "Found feature or documentation commits:"
             echo "$FEAT_COMMITS"
             
-            # Check if PRD.md was modified in the same range
+            # Check if docs/ directory was modified anywhere in the PR/range
             PRD_MODIFIED=$(git diff --name-only "${BASE_SHA}..HEAD" | grep -E "^docs/" || echo "")
             
             if [[ -z "$PRD_MODIFIED" ]]; then
-              echo "❌ ERROR: Found feat:/docs: commits but PRD.md was not updated"
+              echo "❌ ERROR: Found feat:/docs: commits but documentation was not updated"
               echo ""
-              echo "Commits requiring PRD update:"
+              echo "Commits requiring documentation update:"
               echo "$FEAT_COMMITS"
               echo ""
-              echo "Please update PRD.md to reflect these changes."
+              echo "Please update documentation in the docs/ directory to reflect these changes."
               exit 1
             else
-              echo "✅ PRD.md was updated alongside feat:/docs: commits"
+              echo "✅ Documentation was updated in this PR/range"
+              echo "Modified documentation files:"
+              echo "$PRD_MODIFIED"
             fi
           else
             echo "✅ No feat:/docs: commits found, PRD sync check not required"
@@ -70,6 +70,7 @@ jobs:
       - name: Get Next Version
         if: github.event_name == 'workflow_dispatch'
         id: semver
+        continue-on-error: true
         uses: ietf-tools/semver-action@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -84,13 +85,39 @@ jobs:
           # For pull requests, use a test version
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             NEW_VERSION="pr-${{ github.head_ref }}"
+          elif [[ "${{ github.event_name }}" == "release" ]]; then
+            # Use the tag from the release event
+            NEW_VERSION="${{ github.event.release.tag_name }}"
+            # Determine if it's a prerelease based on the release settings
+            if [[ "${{ github.event.release.prerelease }}" == "true" ]]; then
+              EXTRA_ARGS="--latest=false --prerelease"
+            else
+              EXTRA_ARGS="--latest=false"
+            fi
           elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             if [[ "${{ github.event.inputs.is_prerelease }}" == "true" ]]; then
               EXTRA_ARGS="--latest=false --prerelease"
             else
               EXTRA_ARGS="--latest=false"
             fi
-            NEW_VERSION="${{ steps.semver.outputs.next }}"
+            
+            # Try to use semver action output, fallback to manual increment
+            if [[ -n "${{ steps.semver.outputs.next }}" ]]; then
+              NEW_VERSION="${{ steps.semver.outputs.next }}"
+            else
+              # No conventional commits found - increment patch version
+              LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+              echo "Latest tag: $LATEST_TAG"
+              
+              # Extract version numbers (remove 'v' prefix and any suffix like +rke2r1)
+              VERSION_PART=$(echo "$LATEST_TAG" | sed 's/^v//' | sed 's/+.*//')
+              IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION_PART"
+              
+              # Increment patch version
+              PATCH=$((PATCH + 1))
+              NEW_VERSION="v${MAJOR}.${MINOR}.${PATCH}"
+              echo "No conventional commits found, incrementing patch version to: $NEW_VERSION"
+            fi
           fi
           echo "Args: ${EXTRA_ARGS}"
           echo "New version: $NEW_VERSION"
@@ -98,6 +125,7 @@ jobs:
           echo "extra_args=${EXTRA_ARGS}" >> $GITHUB_OUTPUT
 
       - name: Create GitHub Release
+        if: github.event_name != 'pull_request'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.version.outputs.new_version }}
@@ -127,6 +155,7 @@ jobs:
           cp dist/bloom dist/bloom-"$VERSION"
 
       - name: Upload Release Asset
+        if: github.event_name != 'pull_request'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.version.outputs.new_version }}
