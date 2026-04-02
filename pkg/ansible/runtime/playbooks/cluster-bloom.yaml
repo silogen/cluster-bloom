@@ -13,6 +13,9 @@
     DOMAIN: ""
     CLUSTER_SIZE: medium
     SERVER_IP: ""
+    NODE_IP: ""
+    NODE_EXTERNAL_IP: ""
+    ADVERTISE_ADDRESS: ""
     JOIN_TOKEN: ""
     NO_DISKS_FOR_CLUSTER: false
     CLUSTER_DISKS: []
@@ -860,6 +863,11 @@
           set_fact:
             node_ip: "{{ node_ip_result.stdout if node_ip_result.stdout != '' else ansible_default_ipv4.address }}"
 
+        - name: Override node_ip fact
+          set_fact:
+            node_ip: "{{ NODE_IP }}"
+          when: NODE_IP != ""
+
         - name: dnsmasq Configuration Notice
           when: FIRST_NODE and DOMAIN != ""
           debug:
@@ -1030,6 +1038,21 @@
               audit-policy-file: "/etc/rancher/rke2/audit-policy.yaml"
             dest: /etc/rancher/rke2/config.yaml
             mode: "0644"
+
+        - name: Append extra networking config
+          block:
+            - name: Append node external ip configuration
+              when: NODE_EXTERNAL_IP != ""
+              blockinfile:
+                block: |
+                  node-external-ip: {{ NODE_EXTERNAL_IP }}
+                marker: "# {mark} ANSIBLE MANAGED BLOCK - external IP config"
+            - name: Append advertise ip address configuration
+              when: ADVERTISE_ADDRESS != ""
+              blockinfile:
+                block: |
+                  advertise-address: {{ ADVERTISE_ADDRESS }}
+                marker: "# {mark} ANSIBLE MANAGED BLOCK - advertise address config"
 
         - name: Append extra RKE2 config
           blockinfile:
