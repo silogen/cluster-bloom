@@ -4,8 +4,11 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
+	"syscall"
 
 	"github.com/silogen/cluster-bloom/pkg/ansible/runtime"
 	"github.com/silogen/cluster-bloom/pkg/config"
@@ -22,11 +25,11 @@ var (
 	tags         string
 	destroyData  bool
 	forceCleanup bool
-	extraVars  []string
-	verbose    bool
-	configFile string
-	export      bool
-	showVersion bool
+	extraVars    []string
+	verbose      bool
+	configFile   string
+	export       bool
+	showVersion  bool
 )
 
 func init() {
@@ -102,7 +105,31 @@ func newRootCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:   "bloom",
 		Short: "Kubernetes Cluster Deployment Tool",
-		Long:  `Bloom - A tool for generating bloom.yaml configurations and deploying Kubernetes clusters.`,
+		Long: `Bloom - tool for deploying and managing Kubernetes clusters.
+
+Commands:
+  webui     Launch web UI configuration wizard (default action)
+  cli       Deploy cluster from a bloom.yaml config file
+  cleanup   Remove an existing cluster installation
+  run       Execute an exported Ansible playbook
+  version   Show version information
+
+Common workflows:
+
+  # Deploy a cluster
+  sudo ./bloom cli bloom.yaml
+
+  # Tear down a cluster (keeps disk data)
+  sudo ./bloom cleanup bloom.yaml
+
+  # Tear down a cluster and wipe all disk data  ⚠️ IRREVERSIBLE
+  sudo ./bloom cleanup bloom.yaml --destroy-data
+
+  # Fresh redeploy (teardown + redeploy in one step)  ⚠️ IRREVERSIBLE
+  sudo ./bloom cli bloom.yaml --destroy-data
+
+  # Export playbook for inspection
+  ./bloom cli bloom.yaml --export > deployment.yaml`,
 		Run: func(cmd *cobra.Command, args []string) {
 			if showVersion {
 				if Version != "" {
@@ -142,29 +169,49 @@ func newRootCmd() *cobra.Command {
 	}
 
 	cleanupCmd := &cobra.Command{
-		Use:   "cleanup",
+		Use:   "cleanup [config-file]",
 		Short: "Clean up existing Bloom cluster installation",
 		Long: `Removes RKE2 services, Longhorn mounts, and managed disks from previous Bloom installations.
 
 This command performs the equivalent of Bloom v1 cleanup operations:
 - Stops Longhorn services and unmounts all Longhorn-related storage
-- Executes RKE2 uninstall script to remove RKE2 components  
+- Executes RKE2 uninstall script to remove RKE2 components
 - Cleans up bloom-managed disks and removes temp drives
 
+Optionally provide a config file so CLUSTER_DISKS and CLUSTER_PREMOUNTED_DISKS are known.
+Use --destroy-data to also wipe all disk data (requires config file for full disk coverage).
 By default, this command requires confirmation before proceeding. Use --force to skip confirmation.`,
+		Args: cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			checkRootPrivileges("cleanup")
-			// Check if force flag is used to bypass confirmation
+
+			// Load config if a config file was provided
+			var cfg config.Config
+			if len(args) == 1 {
+				var err error
+				cfg, err = config.LoadConfig(args[0])
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
+					os.Exit(1)
+				}
+			}
+
 			if !forceCleanup {
-				if !confirmCleanupOperation() {
-					fmt.Println("❌ Cleanup aborted by user.")
-					os.Exit(0)
+				if destroyData {
+					if !confirmDestructiveOperation(cfg) {
+						fmt.Println("\n❌ Operation aborted by user. No data was harmed.")
+						os.Exit(0)
+					}
+				} else {
+					if !confirmCleanupOperation() {
+						fmt.Println("❌ Cleanup aborted by user.")
+						os.Exit(0)
+					}
 				}
 			} else {
 				fmt.Println("🚀 Force cleanup requested - bypassing confirmation")
 			}
-			// For standalone cleanup command, we don't have a config, so pass nil
-			runClusterCleanup(nil)
+			runClusterCleanup(cfg)
 		},
 	}
 
@@ -221,6 +268,7 @@ imports (roles, tasks, vars) within that directory tree work as expected.`,
 
 	// Add cleanup-specific flags
 	cleanupCmd.Flags().BoolVarP(&forceCleanup, "force", "f", false, "Skip confirmation prompt and force immediate cleanup (USE WITH CAUTION)")
+	cleanupCmd.Flags().BoolVar(&destroyData, "destroy-data", false, "⚠️  DANGER: Permanently destroys ALL cluster data, storage, and disks. Requires interactive confirmation.")
 
 	// Add subcommands
 	rootCmd.AddCommand(webuiCmd)
@@ -334,7 +382,7 @@ func exportPlaybook(cfg config.Config, playbookName string, includeDestroyData b
 	defer os.RemoveAll(tempDir)
 
 	playbookDir := tempDir
-	
+
 	// Extract embedded playbooks to temp directory
 	if err := runtime.ExtractEmbeddedPlaybooksToDir(playbookDir); err != nil {
 		return fmt.Errorf("extract playbooks: %w", err)
@@ -410,7 +458,7 @@ func injectConfigIntoPlaybook(playbook any, cfg config.Config) error {
 				for key, value := range cfg {
 					vars[key] = value
 				}
-				
+
 				// Add BLOOM_DIR variable to vars section for export
 				// This variable is normally injected at runtime as the current working directory
 				// For exported playbooks, use ansible's built-in playbook_dir variable or current working directory
@@ -428,7 +476,7 @@ func injectConfigIntoPlaybook(playbook any, cfg config.Config) error {
 					for key, value := range cfg {
 						vars[key] = value
 					}
-					
+
 					// Add BLOOM_DIR variable to vars section for export
 					// This variable is normally injected at runtime as the current working directory
 					// For exported playbooks, use ansible's built-in playbook_dir variable or current working directory
@@ -499,7 +547,7 @@ func inlineTasksInPlay(play map[string]any, playbookDir string) error {
 	}
 
 	var newTasks []any
-	
+
 	for _, task := range tasksList {
 		taskMap, ok := task.(map[string]any)
 		if !ok {
@@ -886,7 +934,7 @@ func prependCleanupTasks(playbook any, cfg config.Config) error {
 				for _, task := range cleanupTasks {
 					cleanupTasksAny = append(cleanupTasksAny, task)
 				}
-				
+
 				// Prepend cleanup tasks to existing tasks
 				newTasks := append(cleanupTasksAny, tasks...)
 				firstPlay["tasks"] = newTasks
@@ -903,6 +951,7 @@ func confirmDestructiveOperation(cfg config.Config) bool {
 	fmt.Println()
 	fmt.Println("You are about to PERMANENTLY DESTROY:")
 	fmt.Println("• Entire Kubernetes cluster (RKE2 uninstall)")
+	fmt.Println("• All Longhorn storage volumes and data")
 	// Show specific devices that will be wiped if CLUSTER_DISKS is configured
 	if clusterDisks, exists := cfg["CLUSTER_DISKS"]; exists && clusterDisks != nil {
 		if disksStr, ok := clusterDisks.(string); ok && disksStr != "" {
@@ -986,6 +1035,31 @@ func checkRootPrivileges(commandName string) {
 }
 
 func runClusterCleanup(cfg config.Config) {
+	// Protect this cleanup from being interrupted mid-operation.
+	// Aborting a disk unmount or fstab edit mid-step can corrupt the system.
+	// On the first Ctrl-C we print a prominent warning and let all steps finish.
+	var interruptOnce sync.Once
+	cleanupSigCh := make(chan os.Signal, 1)
+	signal.Notify(cleanupSigCh, os.Interrupt, syscall.SIGTERM)
+	cleanupInterrupted := false
+	go func() {
+		for range cleanupSigCh {
+			interruptOnce.Do(func() {
+				cleanupInterrupted = true
+				fmt.Println()
+				fmt.Println("=====================================================================")
+				fmt.Println("  !! INTERRUPT RECEIVED — CLEANUP IN PROGRESS !!")
+				fmt.Println()
+				fmt.Println("  A disk operation is currently in progress. Aborting now could")
+				fmt.Println("  leave the system in an inconsistent state (stale mounts, partial")
+				fmt.Println("  fstab edits, running Longhorn processes).")
+				fmt.Println()
+				fmt.Println("  Finishing the current cleanup step — please wait...")
+				fmt.Println("=====================================================================")
+			})
+		}
+	}()
+
 	fmt.Println("🧹 Starting Bloom cluster cleanup...")
 
 	var errors []error
@@ -1024,10 +1098,16 @@ func runClusterCleanup(cfg config.Config) {
 		errors = append(errors, fmt.Errorf("Premounted disk cleanup: %w", err))
 	}
 
-	// Step 4: Clean Disks — strips fstab entries and wipes CLUSTER_DISKS
-	if err := runtime.CleanupBloomDisks(clusterDisks); err != nil {
+	// Step 4: Clean Disks — strips fstab entries and wipes CLUSTER_DISKS.
+	// Pass premountedDisks so those mount points' fstab entries are preserved
+	// and the disks stay mounted for the subsequent bloom deployment.
+	if err := runtime.CleanupBloomDisks(clusterDisks, premountedDisks); err != nil {
 		errors = append(errors, fmt.Errorf("Disk cleanup: %w", err))
 	}
+
+	// Stop signal interception — all critical disk operations are done.
+	signal.Stop(cleanupSigCh)
+	close(cleanupSigCh)
 
 	// Report results
 	if len(errors) > 0 {
@@ -1035,7 +1115,14 @@ func runClusterCleanup(cfg config.Config) {
 		for _, err := range errors {
 			fmt.Printf("  - %v\n", err)
 		}
+		if cleanupInterrupted {
+			fmt.Println("ℹ️  All pending disk operations finished before shutdown.")
+		}
 		os.Exit(1)
+	} else if cleanupInterrupted {
+		fmt.Println("✅ Bloom cluster cleanup completed successfully.")
+		fmt.Println("ℹ️  All pending disk operations finished — shutting down now.")
+		os.Exit(130)
 	} else {
 		fmt.Println("✅ Bloom cluster cleanup completed successfully")
 	}

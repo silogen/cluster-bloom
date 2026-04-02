@@ -606,6 +606,49 @@ sudo ./bloom run myPlaybook.yaml -e "CUSTOM_VAR=value" -e "ANOTHER_VAR=test"
 sudo ./bloom run myPlaybook.yaml --verbose
 ```
 
+### Cleanup Command
+
+Remove an existing Bloom cluster installation without redeploying:
+
+```bash
+bloom cleanup [config-file] [flags]
+```
+
+An optional `config-file` provides CLUSTER_DISKS and CLUSTER_PREMOUNTED_DISKS paths so bloom knows exactly which devices to clean. Without it, bloom cleans all mounts it previously tagged in `/etc/fstab` and any Longhorn CSI mounts found at runtime — CLUSTER_DISKS device-level wiping is skipped.
+
+**Available Flags:**
+- `--destroy-data`: ⚠️ DANGER: Permanently destroys ALL cluster data, storage, and disks. Requires interactive confirmation.
+- `--force`, `-f`: Skip confirmation prompt and force immediate cleanup (USE WITH CAUTION)
+
+**Cleanup sequence performed:**
+1. Drain Longhorn workloads, logout iSCSI sessions, stop Longhorn processes
+2. Run RKE2 uninstall script, remove RKE2 directories and binaries
+3. *(with `--destroy-data`)* Clear Longhorn state and PVC data from premounted disks
+4. Remove bloom-managed fstab entries (header, entries, footer), unmount tagged disks
+5. *(with `--destroy-data` and CLUSTER_DISKS known)* `wipefs` CLUSTER_DISKS devices
+
+**Examples:**
+```bash
+# Basic cluster teardown — prompts for confirmation
+sudo ./bloom cleanup
+
+# Teardown with config file (recommended — disk paths known)
+sudo ./bloom cleanup bloom.yaml
+
+# Teardown and wipe all disk data — prompts for DANGER confirmation
+sudo ./bloom cleanup bloom.yaml --destroy-data
+
+# Teardown and wipe, skip confirmation (scripted/unattended)
+sudo ./bloom cleanup bloom.yaml --destroy-data --force
+```
+
+**Distinction from `cli --destroy-data`:**
+| Command | Teardown | Redeploy | Disk Wipe |
+|---------|----------|----------|-----------|
+| `./bloom cleanup bloom.yaml` | ✅ | ❌ | ❌ |
+| `./bloom cleanup bloom.yaml --destroy-data` | ✅ | ❌ | ✅ |
+| `./bloom cli bloom.yaml --destroy-data` | ✅ | ✅ | ✅ |
+
 ### Export Workflow
 
 The `--export` flag enables a powerful workflow for playbook inspection and manual execution:
@@ -643,6 +686,7 @@ sudo ./bloom run deployment.yaml
 - **Full Compatibility**: Exported playbooks are fully compatible with the `bloom run` command and standard Ansible tools
 - **Cleanup Task Injection**: When `--destroy-data` is used with `--export`, cleanup tasks are automatically prepended to handle existing installations
 - **Comprehensive Cleanup**: Includes RKE2 uninstall, Longhorn cleanup, disk wiping, and service management for complete environment reset
+- **Standalone Cleanup Command**: `bloom cleanup [config-file] [--destroy-data] [--force]` provides teardown without redeployment; `--destroy-data` wipes disk data; `--force` skips confirmation
 
 ## See Also
 

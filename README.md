@@ -74,7 +74,8 @@ Show all available commands and complete configuration reference:
 Get help for specific commands:
 
 ```sh
-./bloom cleanup --help  # Remove existing cluster installation
+./bloom cleanup --help             # Remove existing cluster installation
+./bloom cleanup bloom.yaml --help      # Same, showing config-file usage
 ./bloom cli --help      # Deploy cluster using configuration file
 ./bloom run --help      # Run exported Ansible playbook
 ```
@@ -110,6 +111,8 @@ sudo ./bloom run myPlaybook.yaml
 - No external dependencies or task files are required for exported playbooks
 - **Cleanup Integration**: Use `--export --destroy-data` to include cleanup tasks in exported playbooks
 - **Existing Installations**: For existing cluster installations, always use `--destroy-data` (either directly or via export)
+- **Standalone Cleanup**: Use `./bloom cleanup [config-file]` to tear down an existing cluster without redeploying
+- **Wipe Disks on Cleanup**: Add `--destroy-data` to `./bloom cleanup` to also wipe CLUSTER_DISKS and premounted disk Longhorn state
 
 ## Configuration
 
@@ -229,8 +232,14 @@ sudo ./bloom cli bloom.yaml --tags "validate_node,prep_node"
 # Export with cleanup tasks for existing installations
 ./bloom cli bloom.yaml --export --destroy-data > cleanupPlaybook.yaml
 
-# Dangerous: Destroy existing data and start fresh
+# Dangerous: Destroy existing data and start fresh (cleanup + redeploy)
 sudo ./bloom cli bloom.yaml --destroy-data
+
+# Standalone cluster teardown (no redeploy)
+sudo ./bloom cleanup bloom.yaml
+
+# Standalone teardown AND wipe all disk data
+sudo ./bloom cleanup bloom.yaml --destroy-data
 ```
 
 ### Separate Playbook Execution

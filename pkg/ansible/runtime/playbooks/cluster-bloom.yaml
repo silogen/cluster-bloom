@@ -75,6 +75,8 @@
     inotify_target_value: 512
     rancher_min_partition_gb: 500
     bloom_fstab_tag: "# managed by cluster-bloom"
+    bloom_fstab_section_header: "# # # this section is managed by AMD Enterprise AI tool cluster-bloom"
+    bloom_fstab_section_footer: "# # # end of AMD Enterprise AI cluster-bloom"
 
   tasks:
     - name: Pre-deployment Data Safety Validation
@@ -734,6 +736,23 @@
           ignore_errors: yes
       tags: [gpu, prep_node]
 
+    - name: Prepare bloom fstab section markers
+      when: not NO_DISKS_FOR_CLUSTER and (CLUSTER_DISKS != "" or CLUSTER_PREMOUNTED_DISKS != "")
+      block:
+        - name: Ensure bloom fstab section header exists
+          lineinfile:
+            path: /etc/fstab
+            line: "{{ bloom_fstab_section_header }}"
+            regexp: "^# # # this section is managed by AMD Enterprise AI tool cluster-bloom"
+            state: present
+        - name: Ensure bloom fstab section footer exists
+          lineinfile:
+            path: /etc/fstab
+            line: "{{ bloom_fstab_section_footer }}"
+            regexp: "^# # # end of AMD Enterprise AI cluster-bloom"
+            state: present
+      tags: [storage, prep_node]
+
     - name: Prepare Longhorn Disks
       when: not NO_DISKS_FOR_CLUSTER and CLUSTER_PREMOUNTED_DISKS == ""
       block:
@@ -741,9 +760,24 @@
           set_fact:
             cluster_disks_list: "{{ CLUSTER_DISKS.split(',') if CLUSTER_DISKS is string and CLUSTER_DISKS != '' else (CLUSTER_DISKS if CLUSTER_DISKS is sequence else []) }}"
 
+        - name: Find highest existing /mnt/diskN index (non-bloom mounts)
+          shell: |
+            find /mnt -maxdepth 1 -type d -name 'disk[0-9]*' 2>/dev/null \
+              | sed 's|.*/disk||' \
+              | grep -E '^[0-9]+$' \
+              | sort -n \
+              | tail -1 || echo -1
+          register: existing_disk_max_index
+          changed_when: false
+          failed_when: false
+
+        - name: Set disk index offset (start above any existing /mnt/diskN)
+          set_fact:
+            disk_index_offset: "{{ (existing_disk_max_index.stdout | trim | int) + 1 }}"
+
         - name: Create mount points for cluster disks
           file:
-            path: "/mnt/disk{{ disk_index }}"
+            path: "/mnt/disk{{ disk_index_offset | int + disk_index }}"
             state: directory
             mode: "0755"
           loop: "{{ cluster_disks_list | default([]) }}"
@@ -770,13 +804,14 @@
         - name: Add mount entries to fstab with bloom tag
           lineinfile:
             path: /etc/fstab
-            line: "UUID={{ item.stdout }} /mnt/disk{{ item.item.0 }} ext4 defaults,nofail 0 2 {{ bloom_fstab_tag }}"
+            line: "UUID={{ item.stdout }} /mnt/disk{{ disk_index_offset | int + item.item.0 }} ext4 defaults,nofail 0 2 {{ bloom_fstab_tag }}"
+            insertbefore: "^# # # end of AMD Enterprise AI cluster-bloom"
             state: present
           loop: "{{ disk_uuids.results }}"
           when: cluster_disks_list | length > 0 and not item.skipped | default(false)
 
         - name: Mount cluster disks using fstab entries (verifies fstab)
-          shell: mount /mnt/disk{{ item.item.0 }}
+          shell: mount /mnt/disk{{ disk_index_offset | int + item.item.0 }}
           loop: "{{ disk_uuids.results }}"
           when: cluster_disks_list | length > 0 and not item.skipped | default(false)
           register: mount_results
@@ -806,6 +841,7 @@
             path: /etc/fstab
             regexp: "^UUID={{ item.stdout | trim }}\\s"
             line: "UUID={{ item.stdout | trim }} {{ cluster_premounted_list[my_idx] }} ext4 defaults,nofail 0 2 {{ bloom_fstab_tag }}"
+            insertbefore: "^# # # end of AMD Enterprise AI cluster-bloom"
             state: present
           loop: "{{ premounted_uuids.results }}"
           loop_control:
@@ -1437,7 +1473,7 @@
       block:
         - name: Build disk labels list
           set_fact:
-            disk_labels: "{{ disk_labels | default([]) + ['bloom.disk___mnt___disk' + item.0|string + '=disk' + item.1|replace('/', '___')] }}"
+            disk_labels: "{{ disk_labels | default([]) + ['bloom.disk___mnt___disk' + (disk_index_offset | default(0) | int + item.0) | string + '=disk' + item.1|replace('/', '___')] }}"
           loop: "{{ range(cluster_disks_list | default([]) | length) | list | zip(cluster_disks_list | default([])) | list }}"
           when: not NO_DISKS_FOR_CLUSTER and cluster_disks_list is defined and cluster_disks_list | length > 0
 
