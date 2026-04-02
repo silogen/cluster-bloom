@@ -11,11 +11,7 @@ After the first node is set up, `bloom` generates an `additional_node_command.tx
 
 ---
 
-## Using additional_node_command.txt
-
-The file contains two commands — pick the one that matches the node you are adding.
-
-### For GPU Worker Node (default)
+## For GPU Worker Node (default)
 
 **Step 1.** Create `bloom.yaml`:
 
@@ -29,9 +25,9 @@ echo -e 'FIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml
 sudo ./bloom cli bloom.yaml
 ```
 
-Use this when the new node has a GPU and will serve as a worker node.
+---
 
-### For CPU Control Node
+## For CPU Control Node
 
 **Step 1.** Create `bloom.yaml`:
 
@@ -39,72 +35,46 @@ Use this when the new node has a GPU and will serve as a worker node.
 echo -e 'FIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>\nSKIP_RANCHER_PARTITION_CHECK: true\nGPU_NODE: false' > bloom.yaml
 ```
 
-**Step 2.** Run bloom:
-
-```bash
-sudo ./bloom cli bloom.yaml
-```
-
-Use this when the new node has no GPU and will serve as a control plane node.
-
-**Key parameters for CPU control nodes:**
+**Key parameters:**
 
 - `SKIP_RANCHER_PARTITION_CHECK: true` — Skips the Rancher disk partition validation that expects GPU node disk layout
 - `GPU_NODE: false` — Tells bloom not to install GPU drivers or configure GPU-specific resources
 
 ---
 
-## Storage Configuration
+**Storage Configuration**
 
-CPU control nodes typically need storage configured. Add one of the following parameters to the `echo` command (Step 1) depending on your disk situation.
+If this node needs dedicated storage, add a storage parameter to `bloom.yaml` before running bloom. Choose one option based on your disk situation:
 
-### Option 1: Pre-mounted Disk (`CLUSTER_PREMOUNTED_DISKS`)
-
-Use this when the disk is already formatted and mounted on the node.
-
-**Step 1.** Create `bloom.yaml`:
+**Option A — Pre-mounted Disk** (`CLUSTER_PREMOUNTED_DISKS`):
+Use when the disk is already formatted and mounted (e.g., at `/mnt/disk0`).
 
 ```bash
-echo -e 'FIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>\nSKIP_RANCHER_PARTITION_CHECK: true\nGPU_NODE: false\nCLUSTER_PREMOUNTED_DISKS: /mnt/disk0' > bloom.yaml
+echo 'CLUSTER_PREMOUNTED_DISKS: /mnt/disk0' >> bloom.yaml
 ```
 
-**Step 2.** Run bloom:
-
-```bash
-sudo ./bloom cli bloom.yaml
-```
-
-**When to use:**
-- The disk is already formatted (e.g., ext4, xfs) and mounted at a path like `/mnt/disk0`
-- You want bloom to use the existing mount without repartitioning
 - Common in cloud VMs with pre-attached data volumes
+- bloom will use the existing mount without repartitioning
+- Value format: a single mount path (e.g., `/mnt/disk0`)
 
-**Value format:** A single mount path (e.g., `/mnt/disk0`)
+**Option B — Raw Disk** (`CLUSTER_DISKS`):
+Use when the disk is unformatted and bloom should partition and format it.
+
+```bash
+echo 'CLUSTER_DISKS: /dev/nvme0n1,/dev/nvme1n1' >> bloom.yaml
+```
+
+- Common with bare metal servers with unformatted NVMe drives
+- bloom will handle partitioning and formatting
+- Value format: comma-separated device paths (e.g., `/dev/nvme0n1,/dev/nvme1n1`)
 
 ---
 
-### Option 2: Raw Disk (`CLUSTER_DISKS`)
-
-Use this when the disk is unformatted and bloom should partition and format it.
-
-**Step 1.** Create `bloom.yaml`:
-
-```bash
-echo -e 'FIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>\nSKIP_RANCHER_PARTITION_CHECK: true\nGPU_NODE: false\nCLUSTER_DISKS: /dev/nvme0n1,/dev/nvme1n1' > bloom.yaml
-```
-
 **Step 2.** Run bloom:
 
 ```bash
 sudo ./bloom cli bloom.yaml
 ```
-
-**When to use:**
-- The disk is a raw block device with no filesystem
-- You want bloom to handle partitioning and formatting
-- Common with bare metal servers that have unformatted NVMe drives
-
-**Value format:** Comma-separated device paths (e.g., `/dev/nvme0n1,/dev/nvme1n1`)
 
 ---
 
