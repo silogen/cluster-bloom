@@ -20,13 +20,13 @@ Choose the command that matches the node you are adding:
 **For GPU Worker Node (default):**
 
 ```bash
-echo -e 'FIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml
+echo -e 'FIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>\nCLUSTER_SIZE: large' > bloom.yaml
 ```
 
 **For CPU Control Node:**
 
 ```bash
-echo -e 'FIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>\nSKIP_RANCHER_PARTITION_CHECK: true\nGPU_NODE: false' > bloom.yaml
+echo -e 'FIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>\nSKIP_RANCHER_PARTITION_CHECK: true\nGPU_NODE: false\nCLUSTER_SIZE: large' > bloom.yaml
 ```
 
 - `SKIP_RANCHER_PARTITION_CHECK: true` — Skips the Rancher disk partition validation that expects GPU node disk layout
