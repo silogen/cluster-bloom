@@ -56,6 +56,21 @@ schema:
       required: when(FIRST_NODE == false)
       section: "🔗 Additional Node Configuration"
 
+    NODE_IP:
+      desc: The IP address to advertise when setting up additional node. Optional.
+      applicable: when(FIRST_NODE == false)
+      type: ipv4
+
+    NODE_EXTERNAL_IP:
+      desc: The external IP address to advertise for additional node. Optional.
+      applicable: when(FIRST_NODE == false)
+      type: ipv4
+
+    ADVERTISE_ADDRESS:
+      desc: IP address the apiserver uses to advertise to members of the cluster. Optional.
+      applicable: when(FIRST_NODE == false)
+      type: ipv4
+
     JOIN_TOKEN:
       type: str
       desc: Token for joining additional nodes
