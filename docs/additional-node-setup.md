@@ -2,6 +2,8 @@
 
 After the first node is set up, `bloom` generates an `additional_node_command.txt` file in your bloom directory. This file contains ready-to-use commands for creating `bloom.yaml` on the new node.
 
+> This guide covers adding nodes to a **large** size cluster (`CLUSTER_SIZE: large`).
+
 ## Node Types
 
 | Node Type | Use Case | GPU Required |

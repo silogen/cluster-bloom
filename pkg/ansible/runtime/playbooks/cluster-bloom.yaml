@@ -2221,10 +2221,10 @@
           copy:
             content: |
               # For GPU Worker Node (default):
-              echo -e 'FIRST_NODE: false\nJOIN_TOKEN: {{ JOIN_TOKEN_content.content | b64decode | trim }}\nSERVER_IP: {{ node_ip }}' > bloom.yaml
+              echo -e 'FIRST_NODE: false\nJOIN_TOKEN: {{ JOIN_TOKEN_content.content | b64decode | trim }}\nSERVER_IP: {{ node_ip }}\nCLUSTER_SIZE: large' > bloom.yaml
 
               # For CPU Control Node:
-              echo -e 'FIRST_NODE: false\nJOIN_TOKEN: {{ JOIN_TOKEN_content.content | b64decode | trim }}\nSERVER_IP: {{ node_ip }}\nSKIP_RANCHER_PARTITION_CHECK: true\nGPU_NODE: false' > bloom.yaml
+              echo -e 'FIRST_NODE: false\nJOIN_TOKEN: {{ JOIN_TOKEN_content.content | b64decode | trim }}\nSERVER_IP: {{ node_ip }}\nSKIP_RANCHER_PARTITION_CHECK: true\nGPU_NODE: false\nCLUSTER_SIZE: large' > bloom.yaml
             dest: "{{ BLOOM_DIR }}/additional_node_command.txt"
             mode: "0644"
           become: no
