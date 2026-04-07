@@ -6,7 +6,7 @@
 
 - name: Build disk labels list
   set_fact:
-    disk_labels: "{{ disk_labels | default([]) + ['bloom.disk___mnt___disk' + item.0|string + '=disk' + item.1|replace('/', '___')] }}"
+    disk_labels: "{{ disk_labels | default([]) + ['bloom.disk___mnt___disk' + (disk_index_offset | default(0) | int + item.0) | string + '=disk' + item.1|replace('/', '___')] }}"
   loop: "{{ range(cluster_disks_list | default([]) | length) | list | zip(cluster_disks_list | default([])) | list }}"
   when: not NO_DISKS_FOR_CLUSTER and cluster_disks_list is defined and cluster_disks_list | length > 0
 

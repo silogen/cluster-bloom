@@ -14,7 +14,7 @@
 
 - name: Check /var/lib/rancher partition size
   include_tasks: rancher_partition.yaml
-  when: GPU_NODE and not SKIP_RANCHER_PARTITION_CHECK
+  when: not SKIP_RANCHER_PARTITION_CHECK
   tags: [validate_node]
 
 - name: Validate iptables Configuration

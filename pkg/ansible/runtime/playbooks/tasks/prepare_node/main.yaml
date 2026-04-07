@@ -22,6 +22,11 @@
   when: GPU_NODE
   tags: [gpu, prep_node]
 
+- name: Prepare bloom fstab section markers
+  include_tasks: fstab_markers.yaml
+  when: not NO_DISKS_FOR_CLUSTER and (CLUSTER_DISKS != "" or CLUSTER_PREMOUNTED_DISKS != "")
+  tags: [storage, prep_node]
+
 - name: Prepare Longhorn Disks
   include_tasks: storage.yaml
   when: not NO_DISKS_FOR_CLUSTER and CLUSTER_PREMOUNTED_DISKS == ""

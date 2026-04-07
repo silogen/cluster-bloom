@@ -8,9 +8,24 @@
   set_fact:
     cluster_disks_list: "{{ CLUSTER_DISKS.split(',') if CLUSTER_DISKS is string and CLUSTER_DISKS != '' else (CLUSTER_DISKS if CLUSTER_DISKS is sequence else []) }}"
 
+- name: Find highest existing /mnt/diskN index
+  shell: |
+    find /mnt -maxdepth 1 -type d -name 'disk[0-9]*' 2>/dev/null \
+      | sed 's|.*/disk||' \
+      | grep -E '^[0-9]+$' \
+      | sort -n \
+      | tail -1 || echo -1
+  register: existing_disk_max_index
+  changed_when: false
+  failed_when: false
+
+- name: Set disk index offset (start above any existing /mnt/diskN)
+  set_fact:
+    disk_index_offset: "{{ (existing_disk_max_index.stdout | trim | int) + 1 }}"
+
 - name: Create mount points for cluster disks
   file:
-    path: "/mnt/disk{{ disk_index }}"
+    path: "/mnt/disk{{ disk_index_offset | int + disk_index }}"
     state: directory
     mode: "0755"
   loop: "{{ cluster_disks_list | default([]) }}"
@@ -37,13 +52,14 @@
 - name: Add mount entries to fstab with bloom tag
   lineinfile:
     path: /etc/fstab
-    line: "UUID={{ item.stdout }} /mnt/disk{{ item.item.0 }} ext4 defaults,nofail 0 2 {{ bloom_fstab_tag }}"
+    line: "UUID={{ item.stdout }} /mnt/disk{{ disk_index_offset | int + item.item.0 }} ext4 defaults,nofail 0 2 {{ bloom_fstab_tag }}"
+    insertbefore: "^# # # end of AMD Enterprise AI cluster-bloom"
     state: present
   loop: "{{ disk_uuids.results }}"
   when: cluster_disks_list | length > 0 and not item.skipped | default(false)
 
 - name: Mount cluster disks using fstab entries (verifies fstab)
-  shell: mount /mnt/disk{{ item.item.0 }}
+  shell: mount /mnt/disk{{ disk_index_offset | int + item.item.0 }}
   loop: "{{ disk_uuids.results }}"
   when: cluster_disks_list | length > 0 and not item.skipped | default(false)
   register: mount_results

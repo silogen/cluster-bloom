@@ -1,0 +1,19 @@
+---
+# Purpose: Ensure bloom-managed fstab section header and footer lines exist
+# Dependencies: bloom_fstab_section_header, bloom_fstab_section_footer variables
+# Usage: Imported by prepare_node/main.yaml (conditional on disks being configured)
+# Tags: [storage, prep_node]
+
+- name: Ensure bloom fstab section header exists
+  lineinfile:
+    path: /etc/fstab
+    line: "{{ bloom_fstab_section_header }}"
+    regexp: "^# # # this section is managed by AMD Enterprise AI tool cluster-bloom"
+    state: present
+
+- name: Ensure bloom fstab section footer exists
+  lineinfile:
+    path: /etc/fstab
+    line: "{{ bloom_fstab_section_footer }}"
+    regexp: "^# # # end of AMD Enterprise AI cluster-bloom"
+    state: present

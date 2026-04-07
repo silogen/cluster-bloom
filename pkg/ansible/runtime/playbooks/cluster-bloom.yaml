@@ -2,7 +2,7 @@
 - name: Cluster Bloom - RKE2 Kubernetes Cluster Setup
   hosts: all
   become: yes
-  gather_facts: true
+  gather_facts: false
   gather_subset:
     - min
     - network
@@ -76,6 +76,33 @@
     inotify_target_value: 512
     rancher_min_partition_gb: 500
     bloom_fstab_tag: "# managed by cluster-bloom"
+    bloom_fstab_section_header: "# # # this section is managed by AMD Enterprise AI tool cluster-bloom"
+    bloom_fstab_section_footer: "# # # end of AMD Enterprise AI cluster-bloom"
+
+  pre_tasks:
+    - name: Check passwordless sudo is configured
+      command: sudo -n true
+      become: false
+      changed_when: false
+      register: sudo_check
+      failed_when: false
+
+    - name: Fail if passwordless sudo is not configured
+      fail:
+        msg: |
+          ❌ Passwordless sudo is required but not configured for the current user.
+
+          Fix: run the following command on the target host and then retry:
+
+            echo "$USER ALL=(ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/cluster-bloom-nopasswd
+      become: false
+      when: sudo_check.rc != 0
+
+    - name: Gather facts
+      ansible.builtin.setup:
+        gather_subset:
+          - min
+          - network
 
   tasks:
     - name: Pre-deployment Data Safety Validation

@@ -27,6 +27,7 @@
     path: /etc/fstab
     regexp: "^UUID={{ item.stdout | trim }}\\s"
     line: "UUID={{ item.stdout | trim }} {{ cluster_premounted_list[my_idx] }} ext4 defaults,nofail 0 2 {{ bloom_fstab_tag }}"
+    insertbefore: "^# # # end of AMD Enterprise AI cluster-bloom"
     state: present
   loop: "{{ premounted_uuids.results }}"
   loop_control:
