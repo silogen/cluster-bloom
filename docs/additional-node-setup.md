@@ -2,7 +2,7 @@
 
 This guide covers the complete workflow for setting up a highly available cluster with bloom, from the first control plane node to the final cluster configuration.
 
-> This guide covers setting up a **large** size cluster (`CLUSTER_SIZE: large`). Large clusters are typically used for HA setups but can also be single-node deployments.
+> This guide covers setting up a **large** size cluster (`CLUSTER_SIZE: large`). Large clusters are typically used for HA setups but can also be a pair of single control and single worker or three GPU control nodes.
 
 ## Setup Workflow Overview
 
@@ -42,10 +42,10 @@ For high availability, add additional control plane nodes **before** adding work
 
 ### Create `bloom.yaml` for Additional Control Plane Nodes
 
-Copy the join token and server IP from `additional_node_command.txt` generated on your first control plane node, then create the configuration:
+Copy the join token and server IP from `additional_node_command.txt` generated on your first control plane node to each additional node, then create the configuration on the additional node:
 
 ```bash
-echo -e 'CLUSTER_SIZE: large\nCONTROL_PLANE: true\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml
+echo -e 'CLUSTER_SIZE: large\nCONTROL_PLANE: true\nGPU_NODE: false\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml
 ```
 
 ### Add Storage Configuration
@@ -152,7 +152,7 @@ This step configures cluster-wide services, networking, and other essential comp
 
 | Node Type | Commands |
 |-----------|----------|
-| **Additional Control Plane** | `echo -e 'CLUSTER_SIZE: large\nCONTROL_PLANE: true\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml` |
+| **Additional Control Plane** | `echo -e 'CLUSTER_SIZE: large\nCONTROL_PLANE: true\nGPU_NODE: false\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml` |
 | **GPU Worker Node** | `echo -e 'CLUSTER_SIZE: large\nGPU_NODE: true\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml` |
 | **CPU Worker Node** | `echo -e 'CLUSTER_SIZE: large\nGPU_NODE: false\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml` |
 
