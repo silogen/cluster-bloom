@@ -1,8 +1,30 @@
-# Adding Nodes to an Existing Cluster
+# Cluster Setup and Node Management
 
-After the first node is set up, `bloom` generates an `additional_node_command.txt` file in your bloom directory. This file contains ready-to-use commands for creating `bloom.yaml` on the new node.
+This guide covers the complete workflow for setting up a highly available cluster with bloom, from the first control plane node to the final cluster configuration.
 
-> This guide covers adding nodes to a **large** size cluster (`CLUSTER_SIZE: large`).
+> This guide covers setting up a **large** size cluster (`CLUSTER_SIZE: large`).
+
+## Setup Workflow Overview
+
+Follow this sequence for proper cluster setup:
+
+1. **First Control Plane Node** - Initialize your cluster
+2. **Additional Control Plane Nodes** - Add remaining control plane nodes for HA (minimum 3 total, always odd number)
+3. **Worker Nodes** - Add GPU and CPU worker nodes as needed
+4. **ClusterForge** - Return to first control plane node and run clusterforge to complete setup
+
+---
+
+## Step 1: First Control Plane Node Setup
+
+Start by setting up your first control plane node with bloom. This node will serve as the foundation of your cluster.
+
+1. Create your initial `bloom.yaml` configuration
+2. Run `sudo ./bloom cli bloom.yaml` to initialize the cluster
+3. After setup completes, bloom will generate an `additional_node_command.txt` file in your bloom directory
+4. This file contains the join token and server IP needed for additional nodes
+
+---
 
 ## Node Types
 
@@ -14,36 +36,55 @@ After the first node is set up, `bloom` generates an `additional_node_command.tx
 
 ---
 
-## Setup Steps
+## Step 2: Additional Control Plane Nodes (HA Setup)
 
-### Step 1. Create `bloom.yaml`
+For high availability, add additional control plane nodes **before** adding worker nodes. The total number of control plane nodes must be odd (3, 5, 7, etc.) with a minimum of 3 nodes.
 
-Choose the command that matches the node you are adding:
+### Create `bloom.yaml` for Additional Control Plane Nodes
 
-**For GPU Worker Node (default):**
+Copy the join token and server IP from `additional_node_command.txt` generated on your first control plane node, then create the configuration:
 
 ```bash
-echo -e 'CLUSTER_SIZE: large\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml
+echo -e 'CLUSTER_SIZE: large\nCONTROL_PLANE: true\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml
+```
+
+### Add Storage Configuration
+
+Add storage configuration based on your setup (same options as worker nodes below).
+
+### Run bloom
+
+```bash
+sudo ./bloom cli bloom.yaml
+```
+
+**Repeat this process for each additional control plane node until you have an odd total (minimum 3).**
+
+---
+
+## Step 3: Worker Nodes
+
+After all control plane nodes are set up, add worker nodes for your workloads.
+
+### Create `bloom.yaml` for Worker Nodes
+
+Choose the command that matches the worker node you are adding:
+
+**For GPU Worker Node:**
+
+```bash
+echo -e 'CLUSTER_SIZE: large\nGPU_NODE: true\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml
 ```
 
 **For CPU Worker Node:**
 
 ```bash
-echo -e 'CLUSTER_SIZE: large\nCONTROL_PLANE: false\nFIRST_NODE: false\nGPU_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml
+echo -e 'CLUSTER_SIZE: large\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml
 ```
 
-**For CPU Control Node:**
+- `GPU_NODE: true` — Enables GPU drivers and GPU-specific resources (only needed for GPU worker nodes)
 
-```bash
-echo -e 'CLUSTER_SIZE: large\nCONTROL_PLANE: true\nFIRST_NODE: false\nGPU_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml
-```
-
-- `GPU_NODE: false` — Tells bloom not to install GPU drivers or configure GPU-specific resources
-- `CONTROL_PLANE: true` — Designates this node as part of the control plane
-
----
-
-### Step 2. Storage Configuration
+### Storage Configuration
 
 Add a storage parameter to `bloom.yaml` based on your disk situation:
 
@@ -69,9 +110,7 @@ echo 'CLUSTER_DISKS: /dev/nvme0n1,/dev/nvme1n1' >> bloom.yaml
 - bloom will handle partitioning and formatting
 - Value format: comma-separated device paths (e.g., `/dev/nvme0n1,/dev/nvme1n1`)
 
----
-
-### Step 3. Run bloom
+### Run bloom
 
 ```bash
 sudo ./bloom cli bloom.yaml
@@ -79,20 +118,55 @@ sudo ./bloom cli bloom.yaml
 
 ---
 
+## Step 4: ClusterForge Configuration
+
+After all nodes (control plane and worker nodes) have been added to your cluster, return to your **first control plane node** to complete the cluster setup.
+
+### Run ClusterForge
+
+On your first control plane node, run clusterforge to finalize cluster configuration:
+
+```bash
+sudo ./clusterforge
+```
+
+This step configures cluster-wide services, networking, and other essential components that require all nodes to be present.
+
+---
+
 ## Quick Reference
 
-| Scenario | Parameters to Add |
-|----------|-------------------|
-| GPU worker node | `GPU_NODE: true`, `CONTROL_PLANE: false` |
-| CPU worker node | `GPU_NODE: false`, `CONTROL_PLANE: false` |
-| CPU control node | `GPU_NODE: false`, `CONTROL_PLANE: true` |
-| Pre-mounted disk | + `CLUSTER_PREMOUNTED_DISKS: /mnt/disk0` |
-| Raw disk | + `CLUSTER_DISKS: /dev/nvme0n1` |
-| Multiple raw disks | + `CLUSTER_DISKS: /dev/nvme0n1,/dev/nvme1n1` |
+### Commands Summary
+
+| Node Type | Commands |
+|-----------|----------|
+| **Additional Control Plane** | `echo -e 'CLUSTER_SIZE: large\nCONTROL_PLANE: true\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml` |
+| **GPU Worker Node** | `echo -e 'CLUSTER_SIZE: large\nGPU_NODE: true\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml` |
+| **CPU Worker Node** | `echo -e 'CLUSTER_SIZE: large\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml` |
+
+### Storage Options
+
+| Storage Type | Command |
+|-------------|---------|
+| Pre-mounted disk | `echo 'CLUSTER_PREMOUNTED_DISKS: /mnt/disk0' >> bloom.yaml` |
+| Single raw disk | `echo 'CLUSTER_DISKS: /dev/nvme0n1' >> bloom.yaml` |
+| Multiple raw disks | `echo 'CLUSTER_DISKS: /dev/nvme0n1,/dev/nvme1n1' >> bloom.yaml` |
+
+### Setup Order
+
+1. First control plane node (initial setup)
+2. Additional control plane nodes (minimum 3 total, odd numbers)
+3. Worker nodes (GPU and CPU)
+4. ClusterForge (run on first control plane node)
 
 ---
 
 ## Troubleshooting
+
+**Control plane node fails to join**
+- Verify the join token and server IP from `additional_node_command.txt`
+- Ensure `CONTROL_PLANE: true` is set in bloom.yaml
+- Check network connectivity between nodes
 
 **Node joins but no storage is recognized**
 - Verify either `CLUSTER_PREMOUNTED_DISKS` or `CLUSTER_DISKS` is set correctly
@@ -100,7 +174,17 @@ sudo ./bloom cli bloom.yaml
 - For raw disks: confirm the device exists with `lsblk`
 
 **GPU driver installation fails on CPU node**
-- Ensure `GPU_NODE: false` is set in bloom.yaml
+- Remove `GPU_NODE: true` from bloom.yaml (only needed for GPU worker nodes)
+- CPU worker nodes and control plane nodes don't need GPU_NODE parameter
+
+**ClusterForge fails to run**
+- Ensure all intended nodes have successfully joined the cluster first
+- Verify you're running clusterforge on the first control plane node
+- Check cluster status with `kubectl get nodes`
+
+**Cluster not highly available**
+- Ensure you have an odd number of control plane nodes (3, 5, 7, etc.)
+- Add control plane nodes before worker nodes for proper HA setup
 
 ---
 
