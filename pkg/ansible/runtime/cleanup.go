@@ -37,7 +37,17 @@ func CleanupLonghornMounts() error {
 			fmt.Println("unreachable")
 		}
 	}
-	if kubeconfigErr == nil && nodeName != "" && apiReachable {
+	nodeInCluster := false
+	if apiReachable && nodeName != "" {
+		fmt.Printf("   Checking if %s is a member of the cluster... ", nodeName)
+		nodeInCluster = isNodeInCluster(kubeconfig, nodeName)
+		if nodeInCluster {
+			fmt.Println("yes")
+		} else {
+			fmt.Println("no")
+		}
+	}
+	if kubeconfigErr == nil && nodeName != "" && apiReachable && nodeInCluster {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfig,
@@ -59,8 +69,10 @@ func CleanupLonghornMounts() error {
 		}
 	} else if kubeconfigErr != nil {
 		fmt.Println("   kubectl/kubeconfig not available — skipping drain")
-	} else {
+	} else if !apiReachable {
 		fmt.Println("   Kubernetes API server unreachable — skipping drain")
+	} else {
+		fmt.Printf("   Node %s is not a member of this cluster — skipping drain\n", nodeName)
 	}
 
 	// Step 2: iSCSI logout — releases kernel block device mappings for Longhorn volumes.
@@ -123,6 +135,23 @@ func isKubeAPIReachable() bool {
 		"--kubeconfig", "/etc/rancher/rke2/rke2.yaml",
 		"version", "--request-timeout=4s").Run()
 	return err == nil
+}
+
+// isNodeInCluster checks whether nodeName appears in the cluster node list.
+// Uses a short timeout so it doesn't block cleanup if the API is sluggish.
+func isNodeInCluster(kubeconfig, nodeName string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "kubectl",
+		"--kubeconfig", kubeconfig,
+		"get", "node", nodeName,
+		"--no-headers", "--ignore-not-found",
+		"--request-timeout=4s",
+		"-o", "name").Output()
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(string(out)) != ""
 }
 
 // UninstallRKE2 executes the RKE2 uninstall script if it exists
