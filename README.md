@@ -110,7 +110,11 @@ sudo ./bloom run myPlaybook.yaml
 - No external dependencies or task files are required for exported playbooks
 - **Cleanup Integration**: Use `--export --destroy-data` to include cleanup tasks in exported playbooks
 - **Existing Installations**: For existing cluster installations, use `--destroy-data` (or the standalone `bloom cleanup bloom.yaml`) before redeployment
-- **Disk Wipe Preview**: Both `bloom cleanup` and `--destroy-data` show a preview of which mounts will be wiped and which user files are at risk before asking for confirmation
+- **Optimized Cleanup**: Best-effort node drain (~30s timeout) with automatic bypass of stuck pods; skips volume detach wait when no Longhorn volumes detected
+- **Disk Wipe Preview**: Both `bloom cleanup` and `--destroy-data` show a preview with:
+  - User files listed (up to 5), or count shown if more than 5
+  - `lost+found` folders automatically excluded (ext4 system folder)
+  - Clear visual warnings for user data at risk
 - **Premounted Disk Safety**: `CLUSTER_PREMOUNTED_DISKS` disks have bloom artifacts cleaned but their filesystem and user files are preserved
 - **Combined Disk Config**: `CLUSTER_DISKS` and `CLUSTER_PREMOUNTED_DISKS` can be used simultaneously; mount indexes are allocated automatically to avoid conflicts
 

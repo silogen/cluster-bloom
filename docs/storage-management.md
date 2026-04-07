@@ -121,12 +121,16 @@ sudo ./bloom cleanup bloom.yaml
 ```
 
 **Sequence:**
-1. Drain/cordon node (if cluster reachable) → logout iSCSI → stop Longhorn processes
-2. Force-unmount all Longhorn/CSI/kubelet volumes (including `volume-subpaths` and `globalmount`)
-3. Uninstall RKE2 and remove its directories
-4. **Pre-clean future mount range** — removes bloom artifacts (`pvc-*`, `replicas`, `longhorn-disk.cfg`) from the directories that will be used in the next deployment, preserving user files
-5. **Clean premounted disks** (`CLUSTER_PREMOUNTED_DISKS`) — removes bloom artifacts only; filesystem, fstab entry, and user files are preserved
-6. **Remove bloom-managed fstab entries** and wipe `CLUSTER_DISKS` device signatures
+1. **Best-effort node drain** (if cluster reachable, ~30s timeout)
+   - Uses `--force` and `--disable-eviction` to bypass stuck pods with finalizers or PodDisruptionBudgets
+   - Automatically skips Longhorn volume detach wait when no volumes detected
+   - Clear progress messages during potentially long operations
+2. Logout iSCSI → stop Longhorn processes
+3. Force-unmount all Longhorn/CSI/kubelet volumes (including `volume-subpaths` and `globalmount`)
+4. Uninstall RKE2 and remove its directories
+5. **Pre-clean future mount range** — removes bloom artifacts (`pvc-*`, `replicas`, `longhorn-disk.cfg`) from the directories that will be used in the next deployment, preserving user files
+6. **Clean premounted disks** (`CLUSTER_PREMOUNTED_DISKS`) — removes bloom artifacts only; filesystem, fstab entry, and user files are preserved
+7. **Remove bloom-managed fstab entries** and wipe `CLUSTER_DISKS` device signatures
 
 ### `bloom cli bloom.yaml --destroy-data`
 
@@ -143,12 +147,19 @@ Before requiring confirmation, both paths display a preview table:
   Bloom-managed mounts to be WIPED:
     ✓  /mnt/disk11       — bloom state only (3 item(s))
     ⚠️  /mnt/disk12       — 2 bloom item(s), ⚠️  1 user file(s) will be LOST: myfile.txt
+    ⚠️  /mnt/disk13       — 5 bloom item(s), ⚠️  8 user file(s) will be LOST
 
   Future mount range (/mnt/disk1 – /mnt/disk6): bloom artifacts pre-cleaned, user files preserved
     ✓  /mnt/disk1        — empty
     ℹ️  /mnt/disk6        — 1 bloom artifact(s) removed; 1 user file(s) kept: test
 ──────────────────────────────────────────────────────────────
 ```
+
+**Preview Features:**
+- User files listed individually (up to 5), or count shown if more than 5
+- `lost+found` folders automatically excluded (ext4 system folder, not user data)
+- Clear visual distinction: ✓ (safe), ⚠️ (caution), ℹ️ (info)
+- Separate sections for wiped mounts vs. pre-cleaned future range
 
 ### Mount Index Allocation
 

@@ -147,7 +147,9 @@ func newRootCmd() *cobra.Command {
 		Long: `Removes RKE2 services, Longhorn mounts, and managed disks from previous Bloom installations.
 
 This command performs the full cluster teardown sequence:
-  1. Gracefully drains and cordons the node (if a cluster is reachable)
+  1. Best-effort node drain (if cluster is reachable) with ~30s timeout
+     - Uses --force and --disable-eviction to bypass stuck pods
+     - Skips volume detach wait if no Longhorn volumes detected
   2. Logs out iSCSI sessions and stops Longhorn processes
   3. Force-unmounts all Longhorn/CSI/kubelet volumes
   4. Uninstalls RKE2 and removes all RKE2 directories
@@ -158,9 +160,11 @@ This command performs the full cluster teardown sequence:
   7. Removes bloom-managed fstab entries and wipes CLUSTER_DISKS devices
 
 When a config file is provided, CLUSTER_DISKS and CLUSTER_PREMOUNTED_DISKS are read
-from it. Before confirmation, a disk wipe preview is shown listing:
-  - Bloom-managed mounts to be wiped (highlighting any non-bloom user files)
+from it. Before confirmation, a disk wipe preview is shown:
+  - Bloom-managed mounts to be wiped (with user file warnings)
   - The future mount range that will be pre-cleaned
+  - User files listed (up to 5), or count shown if more than 5
+  - lost+found folders excluded (ext4 system folder, not user data)
 
 Mount index allocation is fstab- and config-aware: the lowest contiguous range starting
 from index 0 that does not conflict with premounted disk indexes is chosen, ensuring

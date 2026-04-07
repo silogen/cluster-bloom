@@ -123,6 +123,14 @@ Advanced debugging and transparency features allow users to export generated Ans
 - **Environment Flexibility**: Export in one environment, execute in another
 - **Cleanup Integration**: Use `--export --destroy-data` to include cluster cleanup tasks in exported playbooks, or use the standalone `bloom cleanup <config-file>` command — both produce equivalent end state
 - **Disk Wipe Preview**: Before any destructive operation, a preview table shows which bloom-managed mounts will be wiped and highlights any non-bloom user files at risk
+  - User files listed individually (up to 5), or count shown if more than 5
+  - `lost+found` folders automatically excluded (ext4 system folder, not user data)
+  - Clear visual distinction between bloom artifacts and user data
+- **Optimized Cleanup Process**: 
+  - Best-effort node drain with ~30s timeout (reduced from 60s)
+  - Uses `--force` and `--disable-eviction` to bypass stuck pods with finalizers or PodDisruptionBudgets
+  - Automatically skips Longhorn volume detach wait when no volumes are detected
+  - Clear progress messages during potentially long-running operations
 - **Premounted Disk Safety**: `CLUSTER_PREMOUNTED_DISKS` filesystems are preserved during cleanup; only bloom artifacts (pvc-*, replicas, longhorn-disk.cfg) are removed
 - **Smart Mount Index Allocation**: `CLUSTER_DISKS` mount indexes are chosen to avoid collisions with premounted disk indexes, allowing both to coexist in the same config
 
