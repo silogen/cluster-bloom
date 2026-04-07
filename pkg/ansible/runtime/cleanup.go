@@ -55,18 +55,25 @@ func CleanupLonghornMounts() error {
 			"cordon", nodeName).Run()
 		drainCtx, drainCancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer drainCancel()
+		fmt.Println("   Draining node (may take up to 60 seconds)...")
 		exec.CommandContext(drainCtx, "kubectl", "--kubeconfig", kubeconfig,
 			"drain", nodeName,
 			"--delete-emptydir-data", "--ignore-daemonsets",
 			"--grace-period=15", "--timeout=45s").Run()
-		// Wait briefly for Longhorn to detach volumes
-		fmt.Println("   Waiting for Longhorn volumes to detach...")
-		for i := 0; i < 30; i++ {
-			out, _ := exec.Command("bash", "-c", "ls /dev/longhorn/ 2>/dev/null | wc -l").Output()
-			if strings.TrimSpace(string(out)) == "0" {
-				break
+		// Only wait for Longhorn volumes if /dev/longhorn/ exists and has volumes
+		out, _ := exec.Command("bash", "-c", "ls /dev/longhorn/ 2>/dev/null | wc -l").Output()
+		initialCount := strings.TrimSpace(string(out))
+		if initialCount != "" && initialCount != "0" {
+			fmt.Println("   Waiting for Longhorn volumes to detach...")
+			for i := 0; i < 30; i++ {
+				out, _ := exec.Command("bash", "-c", "ls /dev/longhorn/ 2>/dev/null | wc -l").Output()
+				if strings.TrimSpace(string(out)) == "0" {
+					break
+				}
+				time.Sleep(2 * time.Second)
 			}
-			time.Sleep(2 * time.Second)
+		} else {
+			fmt.Println("   No Longhorn volumes detected — skipping volume detach wait")
 		}
 	} else if kubeconfigErr != nil {
 		fmt.Println("   kubectl/kubeconfig not available — skipping drain")
