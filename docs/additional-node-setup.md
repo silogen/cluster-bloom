@@ -23,19 +23,19 @@ Choose the command that matches the node you are adding:
 **For GPU Worker Node (default):**
 
 ```bash
-echo -e 'FIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>\nCLUSTER_SIZE: large' > bloom.yaml
+echo -e 'CLUSTER_SIZE: large\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml
 ```
 
 **For CPU Worker Node:**
 
 ```bash
-echo -e 'FIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>\nCLUSTER_SIZE: large\nGPU_NODE: false\nCONTROL_PLANE: false' > bloom.yaml
+echo -e 'CLUSTER_SIZE: large\nCONTROL_PLANE: false\nFIRST_NODE: false\nGPU_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml
 ```
 
 **For CPU Control Node:**
 
 ```bash
-echo -e 'FIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>\nGPU_NODE: false\nCLUSTER_SIZE: large\nCONTROL_PLANE: true' > bloom.yaml
+echo -e 'CLUSTER_SIZE: large\nCONTROL_PLANE: true\nFIRST_NODE: false\nGPU_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml
 ```
 
 - `GPU_NODE: false` — Tells bloom not to install GPU drivers or configure GPU-specific resources
