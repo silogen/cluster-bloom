@@ -30,8 +30,9 @@ Start by setting up your first control plane node with bloom. This node will ser
 
 | Node Type | Use Case | GPU Required |
 |-----------|----------|--------------|
-| **GPU Worker Node** | Runs GPU workloads (default) | Yes |
+| **GPU Worker Node** | Runs GPU workloads | Yes |
 | **CPU Worker Node** | Runs workloads without GPU | No |
+| **GPU Control Node** | Runs control plane workloads with GPU | Yes |
 | **CPU Control Node** | Runs control plane workloads without GPU | No |
 
 ---
@@ -44,8 +45,16 @@ For high availability, add additional control plane nodes **before** adding work
 
 Copy the join token and server IP from `additional_node_command.txt` generated on your first control plane node to each additional node, then create the configuration on the additional node:
 
+**For CPU Control Plane Node:**
+
 ```bash
 echo -e 'CLUSTER_SIZE: large\nCONTROL_PLANE: true\nGPU_NODE: false\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml
+```
+
+**For GPU Control Plane Node:**
+
+```bash
+echo -e 'CLUSTER_SIZE: large\nCONTROL_PLANE: true\nGPU_NODE: true\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml
 ```
 
 ### Add Storage Configuration
@@ -73,16 +82,19 @@ Choose the command that matches the worker node you are adding:
 **For GPU Worker Node:**
 
 ```bash
-echo -e 'CLUSTER_SIZE: large\nGPU_NODE: true\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml
+echo -e 'CLUSTER_SIZE: large\nCONTROL_PLANE: false\nGPU_NODE: true\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml
 ```
 
 **For CPU Worker Node:**
 
 ```bash
-echo -e 'CLUSTER_SIZE: large\nGPU_NODE: false\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml
+echo -e 'CLUSTER_SIZE: large\nCONTROL_PLANE: false\nGPU_NODE: false\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml
 ```
 
-- `GPU_NODE: true` — Enables GPU drivers and GPU-specific resources (only needed for GPU worker nodes)
+- `CONTROL_PLANE: true` — Designates this node as part of the control plane
+- `CONTROL_PLANE: false` — Designates this node as a worker node
+- `GPU_NODE: true` — Enables GPU drivers and GPU-specific resources (for GPU nodes)
+- `GPU_NODE: false` — Disables GPU drivers and resources (for CPU-only nodes)
 
 ### Storage Configuration
 
@@ -152,9 +164,10 @@ This step configures cluster-wide services, networking, and other essential comp
 
 | Node Type | Commands |
 |-----------|----------|
-| **Additional Control Plane** | `echo -e 'CLUSTER_SIZE: large\nCONTROL_PLANE: true\nGPU_NODE: false\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml` |
-| **GPU Worker Node** | `echo -e 'CLUSTER_SIZE: large\nGPU_NODE: true\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml` |
-| **CPU Worker Node** | `echo -e 'CLUSTER_SIZE: large\nGPU_NODE: false\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml` |
+| **CPU Control Plane** | `echo -e 'CLUSTER_SIZE: large\nCONTROL_PLANE: true\nGPU_NODE: false\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml` |
+| **GPU Control Plane** | `echo -e 'CLUSTER_SIZE: large\nCONTROL_PLANE: true\nGPU_NODE: true\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml` |
+| **GPU Worker Node** | `echo -e 'CLUSTER_SIZE: large\nCONTROL_PLANE: false\nGPU_NODE: true\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml` |
+| **CPU Worker Node** | `echo -e 'CLUSTER_SIZE: large\nCONTROL_PLANE: false\nGPU_NODE: false\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml` |
 
 ### Storage Options
 
