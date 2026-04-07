@@ -72,6 +72,11 @@
   when: cluster_disks_list | length > 0
   changed_when: false
 
+- name: ⚠️ CRITICAL - Formatting disks (do not interrupt)
+  debug:
+    msg: "Formatting {{ cluster_disks_list | length }} disk(s). This is a critical operation - please do not interrupt."
+  when: cluster_disks_list | length > 0
+
 - name: Format disks with ext4 (if not already formatted)
   shell: |
     if ! blkid {{ item }} | grep -q ext4; then
@@ -87,6 +92,11 @@
   register: disk_uuids
   when: cluster_disks_list | length > 0
   changed_when: false
+
+- name: ⚠️ CRITICAL - Updating /etc/fstab (do not interrupt)
+  debug:
+    msg: "Modifying /etc/fstab. This is a critical operation - please do not interrupt."
+  when: cluster_disks_list | length > 0
 
 - name: Add mount entries to fstab with bloom tag
   lineinfile:

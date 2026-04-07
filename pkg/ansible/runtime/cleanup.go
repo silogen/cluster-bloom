@@ -238,6 +238,12 @@ func UninstallRKE2() error {
 func CleanupBloomDisks(clusterDisks string) error {
 	fmt.Println("💽 Cleaning bloom-managed disks...")
 
+	// Enter critical section for disk operations
+	EnterCriticalSection("disk cleanup and fstab modification")
+	defer func() {
+		ExitCriticalSection()
+	}()
+
 	// First unmount prior Longhorn disks (equivalent to UnmountPriorLonghornDisks)
 	if err := unmountPriorLonghornDisks(); err != nil {
 		fmt.Printf("   ⚠️  Warning: Failed to unmount prior Longhorn disks: %v\n", err)

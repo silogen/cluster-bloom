@@ -1038,6 +1038,9 @@ func checkRootPrivileges(commandName string) {
 func runClusterCleanup(cfg config.Config) {
 	fmt.Println("🧹 Starting Bloom cluster cleanup...")
 
+	// Initialize signal handling for graceful shutdown
+	runtime.InitSignalHandling()
+
 	var errors []error
 
 	// Extract CLUSTER_DISKS from config
