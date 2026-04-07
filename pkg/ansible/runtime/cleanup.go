@@ -83,14 +83,36 @@ func CleanupLonghornMounts() error {
 	exec.Command("iscsiadm", "-m", "node", "--op=delete").Run()
 
 	// Step 3: Graceful TERM then KILL of Longhorn processes in dependency order
-	fmt.Println("   Stopping Longhorn processes (TERM)...")
-	for _, proc := range []string{"longhorn-engine", "longhorn-instance-manager", "longhorn-manager"} {
-		exec.Command("pkill", "-TERM", "-f", proc).Run()
+	longhornProcs := []string{"longhorn-engine", "longhorn-instance-manager", "longhorn-manager"}
+	anyRunning := false
+	for _, proc := range longhornProcs {
+		if exec.Command("pgrep", "-f", proc).Run() == nil {
+			anyRunning = true
+			break
+		}
 	}
-	time.Sleep(5 * time.Second)
-	fmt.Println("   Force killing remaining Longhorn processes (KILL)...")
-	for _, proc := range []string{"longhorn-engine", "longhorn-instance-manager", "longhorn-manager"} {
-		exec.Command("pkill", "-KILL", "-f", proc).Run()
+	if anyRunning {
+		fmt.Println("   Stopping Longhorn processes (TERM)...")
+		for _, proc := range longhornProcs {
+			exec.Command("pkill", "-TERM", "-f", proc).Run()
+		}
+		time.Sleep(5 * time.Second)
+		// Only KILL if some processes survived TERM
+		stillRunning := false
+		for _, proc := range longhornProcs {
+			if exec.Command("pgrep", "-f", proc).Run() == nil {
+				stillRunning = true
+				break
+			}
+		}
+		if stillRunning {
+			fmt.Println("   Force killing remaining Longhorn processes (KILL)...")
+			for _, proc := range longhornProcs {
+				exec.Command("pkill", "-KILL", "-f", proc).Run()
+			}
+		}
+	} else {
+		fmt.Println("   No Longhorn processes running — skipping")
 	}
 
 	// Step 4: Force umount everything Longhorn-related
@@ -313,6 +335,11 @@ func unmountClusterDisks(clusterDisks string) error {
 			continue
 		}
 		
+		// Skip silently if the device is not currently mounted
+		out, _ := exec.Command("findmnt", "--source", device, "--noheadings").Output()
+		if strings.TrimSpace(string(out)) == "" {
+			continue
+		}
 		// Unmount the device
 		cmd := exec.Command("umount", device)
 		if err := cmd.Run(); err != nil {
