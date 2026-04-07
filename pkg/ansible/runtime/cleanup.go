@@ -481,23 +481,18 @@ func GenerateCleanupTasks(clusterDisks string, premountedDisks string) []map[str
 				{
 					"name": "Convert CLUSTER_DISKS to list for cleanup",
 					"set_fact": map[string]any{
-						"cluster_disks_cleanup_list": fmt.Sprintf("{{ '%s'.split(',') }}", clusterDisks),
+						"cluster_disks_cleanup_list": fmt.Sprintf("{{ '%s'.split(',') | map('trim') | select('!=', '') | list }}", clusterDisks),
 					},
 				},
 				{
-					"name":        "Unmount cluster disks",
-					"shell":       "umount {{ item }} 2>/dev/null || true",
+					"name":        "Unmount cluster disks (skip if not mounted)",
+					"shell":       "findmnt --source {{ item }} --noheadings -o TARGET | xargs -r umount -lf 2>/dev/null || true",
 					"loop":        "{{ cluster_disks_cleanup_list }}",
 					"failed_when": false,
 				},
 				{
-					"name": "Remove fstab entries for cluster disks",
-					"lineinfile": map[string]any{
-						"path":   "/etc/fstab",
-						"regexp": "{{ item | regex_escape }}",
-						"state":  "absent",
-					},
-					"loop":        "{{ cluster_disks_cleanup_list }}",
+					"name":        "Remove bloom-managed fstab entries (preserve premounted entries)",
+					"shell":       "sed -i '/# managed by cluster-bloom/{/# premounted by cluster-bloom/!d}' /etc/fstab",
 					"failed_when": false,
 				},
 				{
@@ -507,15 +502,11 @@ func GenerateCleanupTasks(clusterDisks string, premountedDisks string) []map[str
 					"failed_when": false,
 				},
 				{
-					"name": "Remove mount point directories",
-					"file": map[string]any{
-						"path":  "/mnt/disk{{ ansible_loop.index0 }}",
-						"state": "absent",
-					},
-					"loop": "{{ cluster_disks_cleanup_list }}",
-					"loop_control": map[string]any{
-						"extended": true,
-					},
+					"name":        "Pre-clean bloom artifacts from future mount point dirs (preserve user files)",
+					"shell":       fmt.Sprintf(`n=$(echo '%s' | tr ',' '
+' | grep -c '.'); reserved=$({ grep '# premounted by cluster-bloom' /etc/fstab 2>/dev/null | awk '{print $2}' | sed 's|.*/disk||'; printf '%%s' '{{ CLUSTER_PREMOUNTED_DISKS }}' | tr ',' '
+' | sed 's/[[:space:]]//g;s|.*/disk||'; } | grep -E '^[0-9]+$' | sort -un | tr '
+' ' '); start=0; while true; do conflict=0; i=0; while [ $i -lt $n ]; do idx=$((start+i)); for r in $reserved; do [ "$idx" = "$r" ] && conflict=1 && break; done; [ $conflict -eq 1 ] && break; i=$((i+1)); done; [ $conflict -eq 0 ] && break; start=$((start+1)); done; i=0; while [ $i -lt $n ]; do mp="/mnt/disk$((start+i))"; [ -d "$mp" ] && rm -rf "$mp"/pvc-* "$mp"/replicas "$mp"/longhorn-disk.cfg "$mp"/longhorn-disk.cfg.tmp 2>/dev/null || true; i=$((i+1)); done`, clusterDisks),
 					"failed_when": false,
 				},
 			},

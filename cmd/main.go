@@ -928,11 +928,21 @@ func confirmDestructiveOperation(cfg config.Config) bool {
 	fmt.Println("You are about to PERMANENTLY DESTROY:")
 	fmt.Println("• Entire Kubernetes cluster (RKE2 uninstall)")
 	// Show specific devices that will be wiped if CLUSTER_DISKS is configured
-	if clusterDisks, exists := cfg["CLUSTER_DISKS"]; exists && clusterDisks != nil {
-		if disksStr, ok := clusterDisks.(string); ok && disksStr != "" {
+	clusterDisks := ""
+	if d, exists := cfg["CLUSTER_DISKS"]; exists && d != nil {
+		if disksStr, ok := d.(string); ok && disksStr != "" {
+			clusterDisks = disksStr
 			fmt.Printf("• All data on these storage devices: %s\n", disksStr)
 		}
 	}
+	premountedDisks := ""
+	if p, exists := cfg["CLUSTER_PREMOUNTED_DISKS"]; exists && p != nil {
+		if pmStr, ok := p.(string); ok {
+			premountedDisks = pmStr
+		}
+	}
+	// Show the same disk wipe preview as the standalone cleanup command
+	runtime.PrintDiskWipePreview(clusterDisks, premountedDisks)
 	fmt.Println()
 
 	// Read user input
