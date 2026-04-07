@@ -27,7 +27,17 @@ func CleanupLonghornMounts() error {
 	nodeName := strings.TrimSpace(string(nodeNameOut))
 	kubeconfig := "/etc/rancher/rke2/rke2.yaml"
 	_, kubeconfigErr := os.Stat(kubeconfig)
-	if kubeconfigErr == nil && nodeName != "" && isKubeAPIReachable() {
+	apiReachable := false
+	if kubeconfigErr == nil {
+		fmt.Print("   Checking Kubernetes API server reachability... ")
+		apiReachable = isKubeAPIReachable()
+		if apiReachable {
+			fmt.Println("reachable")
+		} else {
+			fmt.Println("unreachable")
+		}
+	}
+	if kubeconfigErr == nil && nodeName != "" && apiReachable {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfig,
@@ -96,15 +106,23 @@ func CleanupLonghornMounts() error {
 	return nil
 }
 
-// isKubeAPIReachable does a fast TCP probe to the RKE2 API server (port 6443).
-// This avoids hanging on kubectl commands when the cluster is not running.
+// isKubeAPIReachable checks that the RKE2 API server is both reachable and
+// responsive at the HTTP level. A plain TCP dial is not sufficient — a degraded
+// or starting-up API server can accept the connection then stall on the request.
 func isKubeAPIReachable() bool {
+	// Quick TCP probe first — avoids the process-spawn cost when port is closed
 	conn, err := net.DialTimeout("tcp", "127.0.0.1:6443", 3*time.Second)
 	if err != nil {
 		return false
 	}
 	conn.Close()
-	return true
+	// HTTP-level check: kubectl version with a short request timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	err = exec.CommandContext(ctx, "kubectl",
+		"--kubeconfig", "/etc/rancher/rke2/rke2.yaml",
+		"version", "--request-timeout=4s").Run()
+	return err == nil
 }
 
 // UninstallRKE2 executes the RKE2 uninstall script if it exists
