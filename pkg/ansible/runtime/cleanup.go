@@ -503,10 +503,7 @@ func GenerateCleanupTasks(clusterDisks string, premountedDisks string) []map[str
 				},
 				{
 					"name":        "Pre-clean bloom artifacts from future mount point dirs (preserve user files)",
-					"shell":       fmt.Sprintf(`n=$(echo '%s' | tr ',' '
-' | grep -c '.'); reserved=$({ grep '# premounted by cluster-bloom' /etc/fstab 2>/dev/null | awk '{print $2}' | sed 's|.*/disk||'; printf '%%s' '{{ CLUSTER_PREMOUNTED_DISKS }}' | tr ',' '
-' | sed 's/[[:space:]]//g;s|.*/disk||'; } | grep -E '^[0-9]+$' | sort -un | tr '
-' ' '); start=0; while true; do conflict=0; i=0; while [ $i -lt $n ]; do idx=$((start+i)); for r in $reserved; do [ "$idx" = "$r" ] && conflict=1 && break; done; [ $conflict -eq 1 ] && break; i=$((i+1)); done; [ $conflict -eq 0 ] && break; start=$((start+1)); done; i=0; while [ $i -lt $n ]; do mp="/mnt/disk$((start+i))"; [ -d "$mp" ] && rm -rf "$mp"/pvc-* "$mp"/replicas "$mp"/longhorn-disk.cfg "$mp"/longhorn-disk.cfg.tmp 2>/dev/null || true; i=$((i+1)); done`, clusterDisks),
+					"shell":       fmt.Sprintf(`n=$(echo '%s' | tr ',' $'\n' | grep -c '.'); reserved=$({ grep '# premounted by cluster-bloom' /etc/fstab 2>/dev/null | awk '{print $2}' | sed 's|.*/disk||'; printf '%%s' '{{ CLUSTER_PREMOUNTED_DISKS }}' | tr ',' $'\n' | sed 's/[[:space:]]//g;s|.*/disk||'; } | grep -E '^[0-9]+$' | sort -un | tr $'\n' ' '); start=0; while true; do conflict=0; i=0; while [ $i -lt $n ]; do idx=$((start+i)); for r in $reserved; do [ "$idx" = "$r" ] && conflict=1 && break; done; [ $conflict -eq 1 ] && break; i=$((i+1)); done; [ $conflict -eq 0 ] && break; start=$((start+1)); done; i=0; while [ $i -lt $n ]; do mp="/mnt/disk$((start+i))"; [ -d "$mp" ] && rm -rf "$mp"/pvc-* "$mp"/replicas "$mp"/longhorn-disk.cfg "$mp"/longhorn-disk.cfg.tmp 2>/dev/null || true; i=$((i+1)); done`, clusterDisks),
 					"failed_when": false,
 				},
 			},

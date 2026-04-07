@@ -12,12 +12,11 @@
   shell: |
     {
       # From fstab entries tagged "# premounted by cluster-bloom"
-      grep '# premounted by cluster-bloom' /etc/fstab 2>/dev/null         | awk '{print $2}' | sed 's|.*/disk||' | grep -E '^[0-9]+$'
+      grep '# premounted by cluster-bloom' /etc/fstab 2>/dev/null | awk '{print $2}' | sed 's|.*/disk||' | grep -E '^[0-9]+$'
       # From fstab /mnt/diskN entries NOT tagged by cluster-bloom (user-managed mounts)
-      grep '/mnt/disk[0-9]' /etc/fstab 2>/dev/null         | grep -v 'cluster-bloom'         | awk '{print $2}' | sed 's|.*/disk||' | grep -E '^[0-9]+$'
+      grep '/mnt/disk[0-9]' /etc/fstab 2>/dev/null | grep -v 'cluster-bloom' | awk '{print $2}' | sed 's|.*/disk||' | grep -E '^[0-9]+$'
       # From CLUSTER_PREMOUNTED_DISKS config variable
-      printf '%s' '{{ CLUSTER_PREMOUNTED_DISKS }}' | tr ',' '
-' | sed 's/[[:space:]]//g'         | sed 's|.*/disk||' | grep -E '^[0-9]+$'
+      printf '%s' '{{ CLUSTER_PREMOUNTED_DISKS }}' | tr ',' $'\n' | sed 's/[[:space:]]//g' | sed 's|.*/disk||' | grep -E '^[0-9]+$'
     } | sort -un
   register: reserved_disk_indexes
   changed_when: false
