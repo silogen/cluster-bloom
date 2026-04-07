@@ -110,7 +110,7 @@ sudo ./bloom run myPlaybook.yaml
 - No external dependencies or task files are required for exported playbooks
 - **Cleanup Integration**: Use `--export --destroy-data` to include cleanup tasks in exported playbooks
 - **Existing Installations**: For existing cluster installations, use `--destroy-data` (or the standalone `bloom cleanup bloom.yaml`) before redeployment
-- **Optimized Cleanup**: Best-effort node drain (~30s timeout) with automatic bypass of stuck pods; skips volume detach wait when no Longhorn volumes detected
+- **Optimized Cleanup**: Best-effort node drain (~30s timeout) that internally uses kubectl's `--force` and `--disable-eviction` to bypass stuck pods; skips volume detach wait when no Longhorn volumes detected
 - **Disk Wipe Preview**: Both `bloom cleanup` and `--destroy-data` show a preview with:
   - User files listed (up to 5), or count shown if more than 5
   - `lost+found` folders automatically excluded (ext4 system folder)

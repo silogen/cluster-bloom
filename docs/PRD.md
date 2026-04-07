@@ -128,9 +128,10 @@ Advanced debugging and transparency features allow users to export generated Ans
   - Clear visual distinction between bloom artifacts and user data
 - **Optimized Cleanup Process**: 
   - Best-effort node drain with ~30s timeout (reduced from 60s)
-  - Uses `--force` and `--disable-eviction` to bypass stuck pods with finalizers or PodDisruptionBudgets
+  - Internally passes `--force` and `--disable-eviction` to kubectl drain to bypass stuck pods with finalizers or PodDisruptionBudgets
   - Automatically skips Longhorn volume detach wait when no volumes are detected
   - Clear progress messages during potentially long-running operations
+  - Note: `--force` flag on `bloom cleanup` skips confirmation prompt (not related to kubectl drain)
 - **Premounted Disk Safety**: `CLUSTER_PREMOUNTED_DISKS` filesystems are preserved during cleanup; only bloom artifacts (pvc-*, replicas, longhorn-disk.cfg) are removed
 - **Smart Mount Index Allocation**: `CLUSTER_DISKS` mount indexes are chosen to avoid collisions with premounted disk indexes, allowing both to coexist in the same config
 

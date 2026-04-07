@@ -122,7 +122,7 @@ sudo ./bloom cleanup bloom.yaml
 
 **Sequence:**
 1. **Best-effort node drain** (if cluster reachable, ~30s timeout)
-   - Uses `--force` and `--disable-eviction` to bypass stuck pods with finalizers or PodDisruptionBudgets
+   - Internally passes `--force` and `--disable-eviction` to kubectl drain to bypass stuck pods with finalizers or PodDisruptionBudgets
    - Automatically skips Longhorn volume detach wait when no volumes detected
    - Clear progress messages during potentially long operations
 2. Logout iSCSI → stop Longhorn processes
