@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -617,6 +618,228 @@ func CleanupPremountedDisks(premountedDisks string) error {
 	fmt.Println("   Premounted disk cleanup completed")
 	return nil
 }
+
+// --- Disk index helpers ---
+
+// extractDiskIndex extracts the integer N from a /mnt/diskN path.
+func extractDiskIndex(mountPoint string) (int, error) {
+mp := strings.TrimSpace(mountPoint)
+const prefix = "/mnt/disk"
+if !strings.HasPrefix(mp, prefix) {
+return 0, fmt.Errorf("not a /mnt/diskN path: %s", mp)
+}
+return strconv.Atoi(mp[len(prefix):])
+}
+
+// isDiskBloomArtifact reports whether the named entry is a Longhorn/bloom artifact.
+func isDiskBloomArtifact(name string) bool {
+return strings.HasPrefix(name, "pvc-") ||
+name == "replicas" ||
+name == "longhorn-disk.cfg" ||
+name == "longhorn-disk.cfg.tmp"
+}
+
+// inspectDirContents returns bloom artifacts and user files found directly inside dir.
+func inspectDirContents(dir string) (bloom []string, user []string) {
+entries, err := os.ReadDir(dir)
+if err != nil {
+return
+}
+for _, e := range entries {
+if isDiskBloomArtifact(e.Name()) {
+bloom = append(bloom, e.Name())
+} else {
+user = append(user, e.Name())
+}
+}
+return
+}
+
+// truncateNames joins items, appending "+N more" if over max.
+func truncateNames(items []string, max int) string {
+if len(items) == 0 {
+return ""
+}
+shown := items
+suffix := ""
+if len(items) > max {
+shown = items[:max]
+suffix = fmt.Sprintf("+%d more", len(items)-max)
+}
+s := strings.Join(shown, ", ")
+if suffix != "" {
+s += ", " + suffix
+}
+return s
+}
+
+// countClusterDisksStr counts non-empty entries in a comma-separated CLUSTER_DISKS string.
+func countClusterDisksStr(clusterDisks string) int {
+if clusterDisks == "" {
+return 0
+}
+count := 0
+for _, d := range strings.Split(clusterDisks, ",") {
+if strings.TrimSpace(d) != "" {
+count++
+}
+}
+return count
+}
+
+// calculateFutureDiskStart returns the lowest start index S such that the sequential
+// range [S, S+diskCount) does not overlap reserved indexes. Reserved indexes come from
+// /etc/fstab premounted-by-cluster-bloom entries and the CLUSTER_PREMOUNTED_DISKS string.
+func calculateFutureDiskStart(premountedDisks string, diskCount int) int {
+reserved := map[int]bool{}
+
+// From /etc/fstab premounted-by-cluster-bloom entries
+if data, err := os.ReadFile("/etc/fstab"); err == nil {
+for _, line := range strings.Split(string(data), "\n") {
+if strings.Contains(line, "# premounted by cluster-bloom") {
+fields := strings.Fields(line)
+if len(fields) >= 2 {
+if idx, err2 := extractDiskIndex(fields[1]); err2 == nil {
+reserved[idx] = true
+}
+}
+}
+}
+}
+// From CLUSTER_PREMOUNTED_DISKS config string
+for _, p := range strings.Split(premountedDisks, ",") {
+if idx, err := extractDiskIndex(strings.TrimSpace(p)); err == nil {
+reserved[idx] = true
+}
+}
+
+// Find lowest S such that {S, S+1, ..., S+diskCount-1} is free of reserved indexes
+for start := 0; ; start++ {
+ok := true
+for i := 0; i < diskCount; i++ {
+if reserved[start+i] {
+ok = false
+break
+}
+}
+if ok {
+return start
+}
+}
+}
+
+// parseManagedFstabMounts returns mount points of bloom-managed (non-premounted) fstab entries.
+func parseManagedFstabMounts() []string {
+data, err := os.ReadFile("/etc/fstab")
+if err != nil {
+return nil
+}
+var mounts []string
+for _, line := range strings.Split(string(data), "\n") {
+if strings.Contains(line, "# managed by cluster-bloom") &&
+!strings.Contains(line, "# premounted by cluster-bloom") {
+fields := strings.Fields(line)
+if len(fields) >= 2 {
+mounts = append(mounts, fields[1])
+}
+}
+}
+return mounts
+}
+
+// PrintDiskWipePreview prints a preview of bloom-managed mounts to be wiped and
+// the future mount range to be pre-cleaned, before the user confirms cleanup.
+func PrintDiskWipePreview(clusterDisks, premountedDisks string) {
+managed := parseManagedFstabMounts()
+
+var future []string
+n := countClusterDisksStr(clusterDisks)
+if n > 0 {
+start := calculateFutureDiskStart(premountedDisks, n)
+for i := 0; i < n; i++ {
+future = append(future, fmt.Sprintf("/mnt/disk%d", start+i))
+}
+}
+
+if len(managed) == 0 && len(future) == 0 {
+return
+}
+
+sep := strings.Repeat("─", 62)
+fmt.Printf("\n%s\n", sep)
+fmt.Println("  ⚠️   DISK CLEANUP PREVIEW")
+fmt.Printf("%s\n", sep)
+
+if len(managed) > 0 {
+fmt.Println("  Bloom-managed mounts to be WIPED:")
+for _, mp := range managed {
+bloom, user := inspectDirContents(mp)
+switch {
+case len(user) > 0:
+fmt.Printf("    ⚠️  %-18s — %d bloom item(s), ⚠️  %d user file(s) will be LOST: %s\n",
+mp, len(bloom), len(user), truncateNames(user, 3))
+case len(bloom) > 0:
+fmt.Printf("    ✓  %-18s — bloom state only (%d item(s))\n", mp, len(bloom))
+default:
+fmt.Printf("    ✓  %-18s — empty\n", mp)
+}
+}
+}
+
+if len(future) > 0 {
+first := future[0]
+last := future[len(future)-1]
+fmt.Printf("\n  Future mount range (%s – %s): bloom artifacts pre-cleaned, user files preserved\n", first, last)
+for _, mp := range future {
+bloom, user := inspectDirContents(mp)
+if _, err := os.Stat(mp); os.IsNotExist(err) {
+fmt.Printf("    ✓  %-18s — will be created\n", mp)
+continue
+}
+if len(bloom) == 0 && len(user) == 0 {
+fmt.Printf("    ✓  %-18s — empty\n", mp)
+continue
+}
+parts := []string{}
+if len(bloom) > 0 {
+parts = append(parts, fmt.Sprintf("%d bloom artifact(s) removed", len(bloom)))
+}
+if len(user) > 0 {
+parts = append(parts, fmt.Sprintf("%d user file(s) kept: %s", len(user), truncateNames(user, 3)))
+}
+flag := "✓ "
+if len(user) > 0 {
+flag = "ℹ️ "
+}
+fmt.Printf("    %s %-16s — %s\n", flag, mp, strings.Join(parts, "; "))
+}
+}
+fmt.Printf("%s\n\n", sep)
+}
+
+// PrecleanFutureMountPoints removes bloom artifacts from directories that will be
+// used in the next deployment, preserving all non-bloom user files intact.
+func PrecleanFutureMountPoints(clusterDisks, premountedDisks string) error {
+n := countClusterDisksStr(clusterDisks)
+if n == 0 {
+return nil
+}
+start := calculateFutureDiskStart(premountedDisks, n)
+fmt.Printf("🗂️  Pre-cleaning future mount range /mnt/disk%d–/mnt/disk%d (bloom artifacts only)...\n", start, start+n-1)
+blooPatterns := []string{"pvc-*", "replicas", "longhorn-disk.cfg", "longhorn-disk.cfg.tmp"}
+for i := 0; i < n; i++ {
+mp := fmt.Sprintf("/mnt/disk%d", start+i)
+if _, err := os.Stat(mp); os.IsNotExist(err) {
+continue
+}
+for _, pattern := range blooPatterns {
+exec.Command("bash", "-c", "rm -rf "+mp+"/"+pattern+" 2>/dev/null").Run()
+}
+}
+fmt.Println("   Pre-clean complete")
+return nil
+}
+
 
 // unmountPriorLonghornDisks helper function to handle fstab cleanup
 func unmountPriorLonghornDisks() error {

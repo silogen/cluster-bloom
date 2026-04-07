@@ -157,15 +157,7 @@ defined in the configuration (e.g. CLUSTER_DISKS, CLUSTER_PREMOUNTED_DISKS).
 By default, this command requires confirmation before proceeding. Use --force to skip confirmation.`,
 		Run: func(cmd *cobra.Command, args []string) {
 			checkRootPrivileges("cleanup")
-			// Check if force flag is used to bypass confirmation
-			if !forceCleanup {
-				if !confirmCleanupOperation() {
-					fmt.Println("❌ Cleanup aborted by user.")
-					os.Exit(0)
-				}
-			} else {
-				fmt.Println("🚀 Force cleanup requested - bypassing confirmation")
-			}
+			// Load config early so the preview can use it before confirmation
 			var cfg config.Config
 			if len(args) > 0 {
 				var err error
@@ -175,6 +167,26 @@ By default, this command requires confirmation before proceeding. Use --force to
 				} else {
 					fmt.Printf("Using config: %s\n", args[0])
 				}
+			}
+			// Extract disk vars for the preview
+			clusterDisks := ""
+			if d, ok := cfg["CLUSTER_DISKS"].(string); ok {
+				clusterDisks = d
+			}
+			premountedDisks := ""
+			if p, ok := cfg["CLUSTER_PREMOUNTED_DISKS"].(string); ok {
+				premountedDisks = p
+			}
+			// Show disk wipe preview before asking for confirmation
+			runtime.PrintDiskWipePreview(clusterDisks, premountedDisks)
+			// Check if force flag is used to bypass confirmation
+			if !forceCleanup {
+				if !confirmCleanupOperation() {
+					fmt.Println("❌ Cleanup aborted by user.")
+					os.Exit(0)
+				}
+			} else {
+				fmt.Println("🚀 Force cleanup requested - bypassing confirmation")
 			}
 			runClusterCleanup(cfg)
 		},
@@ -1029,7 +1041,13 @@ func runClusterCleanup(cfg config.Config) {
 		errors = append(errors, fmt.Errorf("RKE2 uninstall: %w", err))
 	}
 
-	// Step 3: Clean premounted disk contents BEFORE CleanupBloomDisks strips fstab.
+	// Step 3: Pre-clean bloom artifacts from directories in the future mount range,
+	// leaving user files intact. Done before fstab is rewritten so mounts are still valid.
+	if err := runtime.PrecleanFutureMountPoints(clusterDisks, premountedDisks); err != nil {
+		errors = append(errors, fmt.Errorf("Future mount pre-clean: %w", err))
+	}
+
+	// Step 4: Clean premounted disk contents BEFORE CleanupBloomDisks strips fstab.
 	// unmountPriorLonghornDisks (called inside CleanupBloomDisks) removes bloom fstab
 	// entries and unmounts the disks; if we run after that, mount falls back to device
 	// scan which may fail. Running here while fstab is intact guarantees the mount works.
@@ -1037,7 +1055,7 @@ func runClusterCleanup(cfg config.Config) {
 		errors = append(errors, fmt.Errorf("Premounted disk cleanup: %w", err))
 	}
 
-	// Step 4: Clean Disks — strips fstab entries and wipes CLUSTER_DISKS
+	// Step 5: Clean Disks — strips fstab entries and wipes CLUSTER_DISKS
 	if err := runtime.CleanupBloomDisks(clusterDisks); err != nil {
 		errors = append(errors, fmt.Errorf("Disk cleanup: %w", err))
 	}
