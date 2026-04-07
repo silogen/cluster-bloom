@@ -70,7 +70,10 @@ func CleanupLonghornMounts() error {
 		exec.Command("bash", "-c", `mount | grep -E 'longhorn|driver[.]longhorn[.]io' | awk '{print $3}' | xargs -r umount -lf 2>/dev/null || true`).Run()
 		exec.Command("bash", "-c", "umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/pvc-* 2>/dev/null || true").Run()
 		exec.Command("bash", "-c", "umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/*/mount 2>/dev/null || true").Run()
+		exec.Command("bash", "-c", "umount -Af /var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/*/globalmount 2>/dev/null || true").Run()
 		exec.Command("bash", "-c", "umount -Af /var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/* 2>/dev/null || true").Run()
+		// Unmount kubelet volume-subpath bind mounts (reverse-sorted so nested paths are released first)
+		exec.Command("bash", "-c", `mount | grep '/var/lib/kubelet/pods/.*/volume-subpaths' | awk '{print $3}' | sort -r | xargs -r umount -lf 2>/dev/null || true`).Run()
 		time.Sleep(1 * time.Second)
 	}
 
@@ -348,7 +351,7 @@ func GenerateCleanupTasks(clusterDisks string, premountedDisks string) []map[str
 			// Step 5: Force umount all remaining Longhorn mounts
 			{
 				"name":        "Force umount all Longhorn-related mounts",
-				"shell":       "mount | grep -E 'longhorn|driver\\.longhorn\\.io' | awk '{print $3}' | xargs -r umount -lf 2>/dev/null || true; umount -lf /dev/longhorn/pvc-* 2>/dev/null || true; umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/pvc-* 2>/dev/null || true; umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/*/mount 2>/dev/null || true; umount -Af /var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/* 2>/dev/null || true",
+				"shell":       "mount | grep -E 'longhorn|driver\\.longhorn\\.io' | awk '{print $3}' | xargs -r umount -lf 2>/dev/null || true; umount -lf /dev/longhorn/pvc-* 2>/dev/null || true; umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/pvc-* 2>/dev/null || true; umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/*/mount 2>/dev/null || true; umount -Af /var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/*/globalmount 2>/dev/null || true; umount -Af /var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/* 2>/dev/null || true; mount | grep '/var/lib/kubelet/pods/.*/volume-subpaths' | awk '{print $3}' | sort -r | xargs -r umount -lf 2>/dev/null || true",
 				"failed_when": false,
 			},
 			{

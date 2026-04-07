@@ -29,7 +29,7 @@
 
 - name: Prepare Longhorn Disks
   include_tasks: storage.yaml
-  when: not NO_DISKS_FOR_CLUSTER and CLUSTER_PREMOUNTED_DISKS == ""
+  when: not NO_DISKS_FOR_CLUSTER
   tags: [storage, prep_node]
 
 - name: Prepare Premounted Disks Fstab

@@ -9,18 +9,17 @@
         cluster_disks_raw: "{{ CLUSTER_DISKS.split(',') | map('trim') | select('!=', '') | list }}"
       when: CLUSTER_DISKS is defined and CLUSTER_DISKS != ""
 
-    - name: Build indexed mount paths for CLUSTER_DISKS (same as Longhorn)
+    - name: Build indexed mount paths for CLUSTER_DISKS
       set_fact:
-        local_path_dirs: "{{ range(cluster_disks_raw | length) | map('string') | map('regex_replace', '^(.*)$', '/mnt/disk\\1') | list }}"
+        local_path_dirs: "{{ range(disk_index_offset | default(0) | int, disk_index_offset | default(0) | int + cluster_disks_raw | length) | map('string') | map('regex_replace', '^(.*)$', '/mnt/disk\\1') | list }}"
       when: cluster_disks_raw is defined and cluster_disks_raw | length > 0
 
-    - name: Build disk paths list from CLUSTER_PREMOUNTED_DISKS
+    - name: Add CLUSTER_PREMOUNTED_DISKS paths to disk list
       set_fact:
-        local_path_dirs: "{{ CLUSTER_PREMOUNTED_DISKS.split(',') | map('trim') | select('!=', '') | unique | list }}"
+        local_path_dirs: "{{ (local_path_dirs | default([])) + (CLUSTER_PREMOUNTED_DISKS.split(',') | map('trim') | select('!=', '') | unique | list) }}"
       when: 
         - CLUSTER_PREMOUNTED_DISKS is defined 
         - CLUSTER_PREMOUNTED_DISKS != ""
-        - local_path_dirs is not defined
 
     - name: Use default path if no disks configured
       set_fact:
