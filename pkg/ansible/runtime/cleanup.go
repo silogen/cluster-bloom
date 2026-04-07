@@ -635,6 +635,7 @@ name == "longhorn-disk.cfg.tmp"
 }
 
 // inspectDirContents returns bloom artifacts and user files found directly inside dir.
+// Excludes lost+found as it's an automatically created ext4 filesystem folder, not user data.
 func inspectDirContents(dir string) (bloom []string, user []string) {
 entries, err := os.ReadDir(dir)
 if err != nil {
@@ -643,9 +644,10 @@ return
 for _, e := range entries {
 if isDiskBloomArtifact(e.Name()) {
 bloom = append(bloom, e.Name())
-} else {
+} else if e.Name() != "lost+found" {
 user = append(user, e.Name())
 }
+// lost+found is silently excluded - it's an ext4 system folder, not user data
 }
 return
 }
