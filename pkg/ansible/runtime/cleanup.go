@@ -605,6 +605,7 @@ func CleanupPremountedDisks(premountedDisks string) error {
 		// Remove PVC dirs and Longhorn disk state; keep the ext4 filesystem intact
 		patterns := []string{
 			mp + "/pvc-*",
+			mp + "/replicas",
 			mp + "/longhorn-disk.cfg",
 			mp + "/longhorn-disk.cfg.tmp",
 		}
