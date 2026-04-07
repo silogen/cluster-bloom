@@ -78,7 +78,7 @@
     mode: '0755'
   when: bootstrap_script_check.stat.exists
 
-- name: Run ClusterForge bootstrap script
+- name: "Run ClusterForge bootstrap: ./bootstrap.sh {{ DOMAIN }} --cluster-size={{ CLUSTER_SIZE | default('medium') }}"
   shell: |
     cd {{ BLOOM_DIR }}/clusterforge/cluster-forge/scripts
     pwd
