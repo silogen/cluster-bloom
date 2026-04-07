@@ -2,7 +2,7 @@
 
 This guide covers the complete workflow for setting up a highly available cluster with bloom, from the first control plane node to the final cluster configuration.
 
-> This guide covers setting up a **large** size cluster (`CLUSTER_SIZE: large`).
+> This guide covers setting up a **large** size cluster (`CLUSTER_SIZE: large`). Large clusters are typically used for HA setups but can also be single-node deployments.
 
 ## Setup Workflow Overview
 
@@ -50,7 +50,7 @@ echo -e 'CLUSTER_SIZE: large\nCONTROL_PLANE: true\nFIRST_NODE: false\nJOIN_TOKEN
 
 ### Add Storage Configuration
 
-Add storage configuration based on your setup (same options as worker nodes below).
+Add storage configuration based on your setup. See the [Storage Configuration](#storage-configuration) section below for detailed options.
 
 ### Run bloom
 
@@ -79,14 +79,14 @@ echo -e 'CLUSTER_SIZE: large\nGPU_NODE: true\nFIRST_NODE: false\nJOIN_TOKEN: <to
 **For CPU Worker Node:**
 
 ```bash
-echo -e 'CLUSTER_SIZE: large\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml
+echo -e 'CLUSTER_SIZE: large\nGPU_NODE: false\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml
 ```
 
 - `GPU_NODE: true` — Enables GPU drivers and GPU-specific resources (only needed for GPU worker nodes)
 
 ### Storage Configuration
 
-Add a storage parameter to `bloom.yaml` based on your disk situation:
+Add a storage parameter to `bloom.yaml` based on your disk situation. **One of `CLUSTER_PREMOUNTED_DISKS` or `CLUSTER_DISKS` is mandatory** for proper cluster storage:
 
 **Option A — Pre-mounted Disk** (`CLUSTER_PREMOUNTED_DISKS`):
 Use when the disk is already formatted and mounted (e.g., at `/mnt/disk0`).
@@ -122,12 +122,24 @@ sudo ./bloom cli bloom.yaml
 
 After all nodes (control plane and worker nodes) have been added to your cluster, return to your **first control plane node** to complete the cluster setup.
 
-### Run ClusterForge
+### Manual ClusterForge Setup
 
-On your first control plane node, run clusterforge to finalize cluster configuration:
+Create the clusterforge directory and download the ClusterForge Enterprise AI package:
 
 ```bash
-sudo ./clusterforge
+mkdir clusterforge
+chmod 755 clusterforge
+wget -O "./clusterforge/clusterforge.tar.gz" https://github.com/silogen/cluster-forge/releases/download/v2.0.2/release-enterprise-ai-v2.0.2.tar.gz
+tar -xzf "./clusterforge/clusterforge.tar.gz" -C ./clusterforge --no-same-owner
+cd clusterforge/cluster-forge
+```
+
+### Run Bootstrap Script
+
+Execute the bootstrap script to complete the ClusterForge installation:
+
+```bash
+./scripts/bootstrap.sh <your-domain> --cluster-size=large
 ```
 
 This step configures cluster-wide services, networking, and other essential components that require all nodes to be present.
@@ -142,7 +154,7 @@ This step configures cluster-wide services, networking, and other essential comp
 |-----------|----------|
 | **Additional Control Plane** | `echo -e 'CLUSTER_SIZE: large\nCONTROL_PLANE: true\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml` |
 | **GPU Worker Node** | `echo -e 'CLUSTER_SIZE: large\nGPU_NODE: true\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml` |
-| **CPU Worker Node** | `echo -e 'CLUSTER_SIZE: large\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml` |
+| **CPU Worker Node** | `echo -e 'CLUSTER_SIZE: large\nGPU_NODE: false\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml` |
 
 ### Storage Options
 
