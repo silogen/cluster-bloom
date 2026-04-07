@@ -109,7 +109,10 @@ sudo ./bloom run myPlaybook.yaml
 - Exported playbooks work perfectly with `sudo ./bloom run` for manual execution
 - No external dependencies or task files are required for exported playbooks
 - **Cleanup Integration**: Use `--export --destroy-data` to include cleanup tasks in exported playbooks
-- **Existing Installations**: For existing cluster installations, always use `--destroy-data` (either directly or via export)
+- **Existing Installations**: For existing cluster installations, use `--destroy-data` (or the standalone `bloom cleanup bloom.yaml`) before redeployment
+- **Disk Wipe Preview**: Both `bloom cleanup` and `--destroy-data` show a preview of which mounts will be wiped and which user files are at risk before asking for confirmation
+- **Premounted Disk Safety**: `CLUSTER_PREMOUNTED_DISKS` disks have bloom artifacts cleaned but their filesystem and user files are preserved
+- **Combined Disk Config**: `CLUSTER_DISKS` and `CLUSTER_PREMOUNTED_DISKS` can be used simultaneously; mount indexes are allocated automatically to avoid conflicts
 
 ## Configuration
 
@@ -126,7 +129,7 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | CLUSTER_DISKS | Comma-separated list of disk devices. Example "/dev/sdb,/dev/sdc". Also skips NVME drive checks. | "" |
 | CLUSTER_SIZE | Size category for cluster deployment planning. Options: small, medium, large | medium |
 | CLUSTER_PREMOUNTED_DISKS | Comma-separated list of absolute disk paths to use for Longhorn | "" |
-| CLUSTERFORGE_RELEASE | ClusterForge version to deploy. Accepts version tags ('v2.0.2'), full release URLs, 'latest', 'none', or "" (empty) to skip | "latest" |
+| CLUSTERFORGE_RELEASE | ClusterForge version to deploy. Accepts version tags (e.g. `v2.0.2`), full release URLs, `latest` (fetches newest GitHub release via API), `none`, or `""` to skip | `latest` |
 | CONTROL_PLANE | Set to true if this node should be a control plane node | false, only applies when FIRST_NODE is false |
 | DOMAIN | The domain name for the cluster (e.g., "cluster.example.com") (required). | "" |
 | FIX_DNS | **Opt-in** to allow automatic DNS fixes. Only modifies DNS if broken and external DNS works. Creates backups and auto-rolls back on failure. | false |

@@ -146,13 +146,25 @@ func newRootCmd() *cobra.Command {
 		Short: "Clean up existing Bloom cluster installation",
 		Long: `Removes RKE2 services, Longhorn mounts, and managed disks from previous Bloom installations.
 
-This command performs the equivalent of Bloom v1 cleanup operations:
-- Stops Longhorn services and unmounts all Longhorn-related storage
-- Executes RKE2 uninstall script to remove RKE2 components  
-- Cleans up bloom-managed disks and removes temp drives
+This command performs the full cluster teardown sequence:
+  1. Gracefully drains and cordons the node (if a cluster is reachable)
+  2. Logs out iSCSI sessions and stops Longhorn processes
+  3. Force-unmounts all Longhorn/CSI/kubelet volumes
+  4. Uninstalls RKE2 and removes all RKE2 directories
+  5. Pre-cleans bloom artifacts (pvc-*, replicas, longhorn-disk.cfg) from the future
+     mount range — preserving user files in those directories
+  6. Cleans premounted disk contents (CLUSTER_PREMOUNTED_DISKS) while keeping the
+     filesystem and fstab entry intact
+  7. Removes bloom-managed fstab entries and wipes CLUSTER_DISKS devices
 
-An optional config file may be provided to clean up premounted and managed disks
-defined in the configuration (e.g. CLUSTER_DISKS, CLUSTER_PREMOUNTED_DISKS).
+When a config file is provided, CLUSTER_DISKS and CLUSTER_PREMOUNTED_DISKS are read
+from it. Before confirmation, a disk wipe preview is shown listing:
+  - Bloom-managed mounts to be wiped (highlighting any non-bloom user files)
+  - The future mount range that will be pre-cleaned
+
+Mount index allocation is fstab- and config-aware: the lowest contiguous range starting
+from index 0 that does not conflict with premounted disk indexes is chosen, ensuring
+CLUSTER_DISKS and CLUSTER_PREMOUNTED_DISKS can coexist without collision.
 
 By default, this command requires confirmation before proceeding. Use --force to skip confirmation.`,
 		Run: func(cmd *cobra.Command, args []string) {
@@ -233,7 +245,7 @@ imports (roles, tasks, vars) within that directory tree work as expected.`,
 	cliCmd.Flags().StringVar(&playbookName, "playbook", "cluster-bloom.yaml", "Playbook to run (default: cluster-bloom.yaml)")
 	cliCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Run in check mode without making changes")
 	cliCmd.Flags().StringVar(&tags, "tags", "", "Run only tasks with specific tags (e.g., cleanup, validate, storage)")
-	cliCmd.Flags().BoolVar(&destroyData, "destroy-data", false, "⚠️  DANGER: Permanently destroys ALL cluster data, storage, and disks. Requires interactive confirmation.")
+	cliCmd.Flags().BoolVar(&destroyData, "destroy-data", false, "⚠️  DANGER: Wipes cluster (RKE2 uninstall, Longhorn cleanup, disk wipe). Shows disk preview before confirmation. Equivalent to running bloom cleanup then redeploying.")
 	cliCmd.Flags().BoolVar(&export, "export", false, "Export generated playbook to stdout instead of executing it")
 
 	// Add run command flags

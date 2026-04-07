@@ -121,8 +121,10 @@ Advanced debugging and transparency features allow users to export generated Ans
 - **Manual Execution**: Exported playbooks can be run separately using the `run` command
 - **Debugging Support**: Full visibility into deployment actions before execution
 - **Environment Flexibility**: Export in one environment, execute in another
-- **Cleanup Integration**: Use `--export --destroy-data` to include cluster cleanup tasks in exported playbooks
-- **Existing Installation Support**: Handles existing cluster installations through automated cleanup task injection
+- **Cleanup Integration**: Use `--export --destroy-data` to include cluster cleanup tasks in exported playbooks, or use the standalone `bloom cleanup <config-file>` command — both produce equivalent end state
+- **Disk Wipe Preview**: Before any destructive operation, a preview table shows which bloom-managed mounts will be wiped and highlights any non-bloom user files at risk
+- **Premounted Disk Safety**: `CLUSTER_PREMOUNTED_DISKS` filesystems are preserved during cleanup; only bloom artifacts (pvc-*, replicas, longhorn-disk.cfg) are removed
+- **Smart Mount Index Allocation**: `CLUSTER_DISKS` mount indexes are chosen to avoid collisions with premounted disk indexes, allowing both to coexist in the same config
 
 **Example Usage:**
 ```bash
