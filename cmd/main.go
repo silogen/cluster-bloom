@@ -142,7 +142,7 @@ func newRootCmd() *cobra.Command {
 	}
 
 	cleanupCmd := &cobra.Command{
-		Use:   "cleanup",
+		Use:   "cleanup [config-file]",
 		Short: "Clean up existing Bloom cluster installation",
 		Long: `Removes RKE2 services, Longhorn mounts, and managed disks from previous Bloom installations.
 
@@ -150,6 +150,9 @@ This command performs the equivalent of Bloom v1 cleanup operations:
 - Stops Longhorn services and unmounts all Longhorn-related storage
 - Executes RKE2 uninstall script to remove RKE2 components  
 - Cleans up bloom-managed disks and removes temp drives
+
+An optional config file may be provided to clean up premounted and managed disks
+defined in the configuration (e.g. CLUSTER_DISKS, CLUSTER_PREMOUNTED_DISKS).
 
 By default, this command requires confirmation before proceeding. Use --force to skip confirmation.`,
 		Run: func(cmd *cobra.Command, args []string) {
@@ -163,8 +166,15 @@ By default, this command requires confirmation before proceeding. Use --force to
 			} else {
 				fmt.Println("🚀 Force cleanup requested - bypassing confirmation")
 			}
-			// For standalone cleanup command, we don't have a config, so pass nil
-			runClusterCleanup(nil)
+			var cfg config.Config
+			if len(args) > 0 {
+				var err error
+				cfg, err = config.LoadConfig(args[0])
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: could not load config %s: %v\n", args[0], err)
+				}
+			}
+			runClusterCleanup(cfg)
 		},
 	}
 

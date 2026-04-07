@@ -515,7 +515,7 @@ func GenerateCleanupTasks(clusterDisks string, premountedDisks string) []map[str
 				},
 				{
 					"name":        "Remove PVC directories and Longhorn state from premounted disks",
-					"shell":       "rm -rf {{ item }}/pvc-* {{ item }}/longhorn-disk.cfg {{ item }}/longhorn-disk.cfg.tmp 2>/dev/null; echo 'cleaned {{ item }}'",
+					"shell":       "rm -rf {{ item }}/pvc-* {{ item }}/replicas {{ item }}/longhorn-disk.cfg {{ item }}/longhorn-disk.cfg.tmp 2>/dev/null; echo 'cleaned {{ item }}'",
 					"loop":        "{{ premounted_cleanup_list }}",
 					"failed_when": false,
 				},
