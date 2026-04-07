@@ -4,7 +4,9 @@ package runtime
 
 import (
 	"bufio"
+	"context"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"strings"
@@ -24,13 +26,18 @@ func CleanupLonghornMounts() error {
 	nodeNameOut, _ := exec.Command("hostname").Output()
 	nodeName := strings.TrimSpace(string(nodeNameOut))
 	kubeconfig := "/etc/rancher/rke2/rke2.yaml"
-	if _, err := os.Stat(kubeconfig); err == nil && nodeName != "" {
-		exec.Command("kubectl", "--kubeconfig", kubeconfig,
+	_, kubeconfigErr := os.Stat(kubeconfig)
+	if kubeconfigErr == nil && nodeName != "" && isKubeAPIReachable() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfig,
 			"cordon", nodeName).Run()
-		exec.Command("kubectl", "--kubeconfig", kubeconfig,
+		drainCtx, drainCancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer drainCancel()
+		exec.CommandContext(drainCtx, "kubectl", "--kubeconfig", kubeconfig,
 			"drain", nodeName,
 			"--delete-emptydir-data", "--ignore-daemonsets",
-			"--grace-period=30", "--timeout=90s").Run()
+			"--grace-period=15", "--timeout=45s").Run()
 		// Wait briefly for Longhorn to detach volumes
 		fmt.Println("   Waiting for Longhorn volumes to detach...")
 		for i := 0; i < 30; i++ {
@@ -40,8 +47,10 @@ func CleanupLonghornMounts() error {
 			}
 			time.Sleep(2 * time.Second)
 		}
-	} else {
+	} else if kubeconfigErr != nil {
 		fmt.Println("   kubectl/kubeconfig not available — skipping drain")
+	} else {
+		fmt.Println("   Kubernetes API server unreachable — skipping drain")
 	}
 
 	// Step 2: iSCSI logout — releases kernel block device mappings for Longhorn volumes.
@@ -85,6 +94,17 @@ func CleanupLonghornMounts() error {
 
 	fmt.Println("   Longhorn cleanup completed")
 	return nil
+}
+
+// isKubeAPIReachable does a fast TCP probe to the RKE2 API server (port 6443).
+// This avoids hanging on kubectl commands when the cluster is not running.
+func isKubeAPIReachable() bool {
+	conn, err := net.DialTimeout("tcp", "127.0.0.1:6443", 3*time.Second)
+	if err != nil {
+		return false
+	}
+	conn.Close()
+	return true
 }
 
 // UninstallRKE2 executes the RKE2 uninstall script if it exists
