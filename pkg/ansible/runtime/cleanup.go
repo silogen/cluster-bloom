@@ -646,24 +646,6 @@ user = append(user, e.Name())
 return
 }
 
-// truncateNames joins items, appending "+N more" if over max.
-func truncateNames(items []string, max int) string {
-if len(items) == 0 {
-return ""
-}
-shown := items
-suffix := ""
-if len(items) > max {
-shown = items[:max]
-suffix = fmt.Sprintf("+%d more", len(items)-max)
-}
-s := strings.Join(shown, ", ")
-if suffix != "" {
-s += ", " + suffix
-}
-return s
-}
-
 // countClusterDisksStr counts non-empty entries in a comma-separated CLUSTER_DISKS string.
 func countClusterDisksStr(clusterDisks string) int {
 if clusterDisks == "" {
@@ -767,8 +749,13 @@ for _, mp := range managed {
 bloom, user := inspectDirContents(mp)
 switch {
 case len(user) > 0:
+if len(user) > 5 {
+fmt.Printf("    ⚠️  %-18s — %d bloom item(s), ⚠️  %d user file(s) will be LOST\n",
+mp, len(bloom), len(user))
+} else {
 fmt.Printf("    ⚠️  %-18s — %d bloom item(s), ⚠️  %d user file(s) will be LOST: %s\n",
-mp, len(bloom), len(user), truncateNames(user, 3))
+mp, len(bloom), len(user), strings.Join(user, ", "))
+}
 case len(bloom) > 0:
 fmt.Printf("    ✓  %-18s — bloom state only (%d item(s))\n", mp, len(bloom))
 default:
@@ -796,7 +783,11 @@ if len(bloom) > 0 {
 parts = append(parts, fmt.Sprintf("%d bloom artifact(s) removed", len(bloom)))
 }
 if len(user) > 0 {
-parts = append(parts, fmt.Sprintf("%d user file(s) kept: %s", len(user), truncateNames(user, 3)))
+if len(user) > 5 {
+parts = append(parts, fmt.Sprintf("%d user file(s) kept", len(user)))
+} else {
+parts = append(parts, fmt.Sprintf("%d user file(s) kept: %s", len(user), strings.Join(user, ", ")))
+}
 }
 flag := "✓ "
 if len(user) > 0 {
