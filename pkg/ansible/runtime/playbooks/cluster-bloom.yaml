@@ -2220,14 +2220,17 @@
         - name: Create additional node command file
           copy:
             content: |
-              # For GPU Worker Node (default):
-              echo -e 'CLUSTER_SIZE: large\nFIRST_NODE: false\nJOIN_TOKEN: {{ JOIN_TOKEN_content.content | b64decode | trim }}\nSERVER_IP: {{ node_ip }}' > bloom.yaml
+              # For CPU Control Node:
+              echo -e 'CLUSTER_SIZE: large\nCONTROL_PLANE: true\nGPU_NODE: false\nFIRST_NODE: false\nJOIN_TOKEN: {{ JOIN_TOKEN_content.content | b64decode | trim }}\nSERVER_IP: {{ node_ip }}' > bloom.yaml
+
+              # For GPU Control Node:
+              echo -e 'CLUSTER_SIZE: large\nCONTROL_PLANE: true\nGPU_NODE: true\nFIRST_NODE: false\nJOIN_TOKEN: {{ JOIN_TOKEN_content.content | b64decode | trim }}\nSERVER_IP: {{ node_ip }}' > bloom.yaml
+
+              # For GPU Worker Node:
+              echo -e 'CLUSTER_SIZE: large\nCONTROL_PLANE: false\nGPU_NODE: true\nFIRST_NODE: false\nJOIN_TOKEN: {{ JOIN_TOKEN_content.content | b64decode | trim }}\nSERVER_IP: {{ node_ip }}' > bloom.yaml
 
               # For CPU Worker Node:
-              echo -e 'CLUSTER_SIZE: large\nCONTROL_PLANE: false\nFIRST_NODE: false\nGPU_NODE: false\nJOIN_TOKEN: {{ JOIN_TOKEN_content.content | b64decode | trim }}\nSERVER_IP: {{ node_ip }}' > bloom.yaml
-
-              # For CPU Control Node:
-              echo -e 'CLUSTER_SIZE: large\nCONTROL_PLANE: true\nFIRST_NODE: false\nGPU_NODE: false\nJOIN_TOKEN: {{ JOIN_TOKEN_content.content | b64decode | trim }}\nSERVER_IP: {{ node_ip }}' > bloom.yaml
+              echo -e 'CLUSTER_SIZE: large\nCONTROL_PLANE: false\nGPU_NODE: false\nFIRST_NODE: false\nJOIN_TOKEN: {{ JOIN_TOKEN_content.content | b64decode | trim }}\nSERVER_IP: {{ node_ip }}' > bloom.yaml
             dest: "{{ BLOOM_DIR }}/additional_node_command.txt"
             mode: "0644"
           become: no
