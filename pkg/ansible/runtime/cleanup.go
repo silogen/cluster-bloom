@@ -53,13 +53,14 @@ func CleanupLonghornMounts() error {
 		defer cancel()
 		exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfig,
 			"cordon", nodeName).Run()
-		drainCtx, drainCancel := context.WithTimeout(context.Background(), 60*time.Second)
+		drainCtx, drainCancel := context.WithTimeout(context.Background(), 35*time.Second)
 		defer drainCancel()
-		fmt.Println("   Draining node (may take up to 60 seconds)...")
+		fmt.Println("   Draining node (best-effort, ~30s timeout)...")
 		exec.CommandContext(drainCtx, "kubectl", "--kubeconfig", kubeconfig,
 			"drain", nodeName,
 			"--delete-emptydir-data", "--ignore-daemonsets",
-			"--grace-period=15", "--timeout=45s").Run()
+			"--force", "--disable-eviction",
+			"--grace-period=10", "--timeout=30s").Run()
 		// Only wait for Longhorn volumes if /dev/longhorn/ exists and has volumes
 		out, _ := exec.Command("bash", "-c", "ls /dev/longhorn/ 2>/dev/null | wc -l").Output()
 		initialCount := strings.TrimSpace(string(out))
@@ -405,8 +406,8 @@ func GenerateCleanupTasks(clusterDisks string, premountedDisks string) []map[str
 				"failed_when": false,
 			},
 			{
-				"name":        "Drain node (evicts pods so Longhorn detaches volumes gracefully)",
-				"shell":       "/var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml drain {{ cleanup_hostname.stdout }} --delete-emptydir-data --ignore-daemonsets --grace-period=30 --timeout=90s 2>/dev/null || true",
+				"name":        "Drain node (best-effort, allows Longhorn to detach volumes)",
+				"shell":       "/var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml drain {{ cleanup_hostname.stdout }} --delete-emptydir-data --ignore-daemonsets --force --disable-eviction --grace-period=10 --timeout=30s 2>/dev/null || true",
 				"when":        "cleanup_kubeconfig.stat.exists",
 				"failed_when": false,
 			},
