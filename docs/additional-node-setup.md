@@ -9,6 +9,7 @@ After the first node is set up, `bloom` generates an `additional_node_command.tx
 | Node Type | Use Case | GPU Required |
 |-----------|----------|--------------|
 | **GPU Worker Node** | Runs GPU workloads (default) | Yes |
+| **CPU Worker Node** | Runs workloads without GPU | No |
 | **CPU Control Node** | Runs control plane workloads without GPU | No |
 
 ---
@@ -25,14 +26,20 @@ Choose the command that matches the node you are adding:
 echo -e 'FIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>\nCLUSTER_SIZE: large' > bloom.yaml
 ```
 
+**For CPU Worker Node:**
+
+```bash
+echo -e 'FIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>\nCLUSTER_SIZE: large\nGPU_NODE: false\nCONTROL_PLANE: false' > bloom.yaml
+```
+
 **For CPU Control Node:**
 
 ```bash
-echo -e 'FIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>\nSKIP_RANCHER_PARTITION_CHECK: true\nGPU_NODE: false\nCLUSTER_SIZE: large' > bloom.yaml
+echo -e 'FIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>\nGPU_NODE: false\nCLUSTER_SIZE: large\nCONTROL_PLANE: true' > bloom.yaml
 ```
 
-- `SKIP_RANCHER_PARTITION_CHECK: true` — Skips the Rancher disk partition validation that expects GPU node disk layout
 - `GPU_NODE: false` — Tells bloom not to install GPU drivers or configure GPU-specific resources
+- `CONTROL_PLANE: true` — Designates this node as part of the control plane
 
 ---
 
@@ -76,8 +83,9 @@ sudo ./bloom cli bloom.yaml
 
 | Scenario | Parameters to Add |
 |----------|-------------------|
-| GPU worker node | *(none beyond base parameters)* |
-| CPU control node | `SKIP_RANCHER_PARTITION_CHECK: true`, `GPU_NODE: false` |
+| GPU worker node | `GPU_NODE: true`, `CONTROL_PLANE: false` |
+| CPU worker node | `GPU_NODE: false`, `CONTROL_PLANE: false` |
+| CPU control node | `GPU_NODE: false`, `CONTROL_PLANE: true` |
 | Pre-mounted disk | + `CLUSTER_PREMOUNTED_DISKS: /mnt/disk0` |
 | Raw disk | + `CLUSTER_DISKS: /dev/nvme0n1` |
 | Multiple raw disks | + `CLUSTER_DISKS: /dev/nvme0n1,/dev/nvme1n1` |
@@ -85,9 +93,6 @@ sudo ./bloom cli bloom.yaml
 ---
 
 ## Troubleshooting
-
-**"Partition check failed" error on CPU node**
-- Add `SKIP_RANCHER_PARTITION_CHECK: true` to your bloom.yaml
 
 **Node joins but no storage is recognized**
 - Verify either `CLUSTER_PREMOUNTED_DISKS` or `CLUSTER_DISKS` is set correctly
