@@ -611,7 +611,10 @@ func unmountPriorLonghornDisks() error {
 	var cleanLines []string
 
 	for _, line := range lines {
-		if strings.Contains(line, "# managed by cluster-bloom") {
+		// Only remove entries tagged "# managed by cluster-bloom" (CLUSTER_DISKS).
+		// Entries tagged "# premounted by cluster-bloom" (CLUSTER_PREMOUNTED_DISKS) are
+		// intentionally skipped — premounted disks survive cleanup with filesystem intact.
+		if strings.Contains(line, "# managed by cluster-bloom") && !strings.Contains(line, "# premounted by cluster-bloom") {
 			fields := strings.Fields(line)
 			if len(fields) >= 2 {
 				mountPoint := fields[1]

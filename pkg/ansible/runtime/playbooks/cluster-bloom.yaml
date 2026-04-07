@@ -76,6 +76,7 @@
     inotify_target_value: 512
     rancher_min_partition_gb: 500
     bloom_fstab_tag: "# managed by cluster-bloom"
+    bloom_premounted_fstab_tag: "# premounted by cluster-bloom"
     bloom_fstab_section_header: "# # # this section is managed by AMD Enterprise AI tool cluster-bloom"
     bloom_fstab_section_footer: "# # # end of AMD Enterprise AI cluster-bloom"
 

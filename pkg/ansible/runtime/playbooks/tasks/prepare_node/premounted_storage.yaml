@@ -1,6 +1,6 @@
 ---
 # Purpose: Add fstab entries for pre-mounted cluster disks (operator-mounted before deployment)
-# Dependencies: NO_DISKS_FOR_CLUSTER, CLUSTER_PREMOUNTED_DISKS, bloom_fstab_tag variables
+# Dependencies: NO_DISKS_FOR_CLUSTER, CLUSTER_PREMOUNTED_DISKS, bloom_fstab_tag, bloom_premounted_fstab_tag variables
 # Usage: Imported by prepare_node/main.yaml (conditional on CLUSTER_PREMOUNTED_DISKS being set)
 # Tags: [storage, prep_node]
 #
@@ -26,7 +26,7 @@
   lineinfile:
     path: /etc/fstab
     regexp: "^UUID={{ item.stdout | trim }}\\s"
-    line: "UUID={{ item.stdout | trim }} {{ cluster_premounted_list[my_idx] }} ext4 defaults,nofail 0 2 {{ bloom_fstab_tag }}"
+    line: "UUID={{ item.stdout | trim }} {{ cluster_premounted_list[my_idx] }} ext4 defaults,nofail 0 2 {{ bloom_premounted_fstab_tag }}"
     insertbefore: "^# # # end of AMD Enterprise AI cluster-bloom"
     state: present
   loop: "{{ premounted_uuids.results }}"
