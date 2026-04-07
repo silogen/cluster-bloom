@@ -1,0 +1,34 @@
+---
+# Purpose: Add fstab entries for pre-mounted cluster disks (operator-mounted before deployment)
+# Dependencies: NO_DISKS_FOR_CLUSTER, CLUSTER_PREMOUNTED_DISKS, bloom_fstab_tag variables
+# Usage: Imported by prepare_node/main.yaml (conditional on CLUSTER_PREMOUNTED_DISKS being set)
+# Tags: [storage, prep_node]
+#
+# Note: Unlike storage.yaml, this task does NOT format or wipe disks.
+#       It only ensures fstab entries exist so mounts survive reboot.
+
+- name: Parse premounted disks into list
+  set_fact:
+    cluster_premounted_list: "{{ CLUSTER_PREMOUNTED_DISKS.split(',') | map('trim') | reject('equalto', '') | list }}"
+
+- name: Verify each premounted disk is currently mounted
+  shell: mountpoint -q {{ item }}
+  loop: "{{ cluster_premounted_list }}"
+  changed_when: false
+
+- name: Get UUID for each premounted mountpoint
+  shell: findmnt -n -o UUID {{ item }}
+  register: premounted_uuids
+  loop: "{{ cluster_premounted_list }}"
+  changed_when: false
+
+- name: Add fstab entries for premounted disks
+  lineinfile:
+    path: /etc/fstab
+    regexp: "^UUID={{ item.stdout | trim }}\\s"
+    line: "UUID={{ item.stdout | trim }} {{ cluster_premounted_list[my_idx] }} ext4 defaults,nofail 0 2 {{ bloom_fstab_tag }}"
+    state: present
+  loop: "{{ premounted_uuids.results }}"
+  loop_control:
+    index_var: my_idx
+  when: item.stdout | trim != ""

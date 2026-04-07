@@ -27,6 +27,11 @@
   when: not NO_DISKS_FOR_CLUSTER and CLUSTER_PREMOUNTED_DISKS == ""
   tags: [storage, prep_node]
 
+- name: Prepare Premounted Disks Fstab
+  include_tasks: premounted_storage.yaml
+  when: not NO_DISKS_FOR_CLUSTER and CLUSTER_PREMOUNTED_DISKS != ""
+  tags: [storage, prep_node]
+
 - name: System Configuration
   include_tasks: system_config.yaml
   tags: [system, firewall, gpu, prep_node]
