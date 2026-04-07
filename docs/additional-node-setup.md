@@ -2,7 +2,7 @@
 
 This guide covers the complete workflow for setting up a highly available cluster with bloom, from the first control plane node to the final cluster configuration.
 
-> This guide covers setting up a **large** size cluster (`CLUSTER_SIZE: large`). Large clusters are typically used for HA setups but can also be a pair of single control and single worker or three GPU control nodes.
+> This guide covers setting up a **large** size cluster (`CLUSTER_SIZE: large`). Large clusters support both highly available (HA) configurations and non-HA multi-node setups, such as a single control plane with worker nodes or multiple GPU control nodes.
 
 ## Setup Workflow Overview
 
@@ -197,10 +197,6 @@ This step configures cluster-wide services, networking, and other essential comp
 - Verify either `CLUSTER_PREMOUNTED_DISKS` or `CLUSTER_DISKS` is set correctly
 - For pre-mounted: confirm the path exists with `df -h`
 - For raw disks: confirm the device exists with `lsblk`
-
-**GPU driver installation fails on CPU node**
-- Remove `GPU_NODE: true` from bloom.yaml (only needed for GPU worker nodes)
-- CPU worker nodes and control plane nodes don't need GPU_NODE parameter
 
 **ClusterForge fails to run**
 - Ensure all intended nodes have successfully joined the cluster first
