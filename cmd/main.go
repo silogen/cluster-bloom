@@ -172,6 +172,8 @@ By default, this command requires confirmation before proceeding. Use --force to
 				cfg, err = config.LoadConfig(args[0])
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "Warning: could not load config %s: %v\n", args[0], err)
+				} else {
+					fmt.Printf("Using config: %s\n", args[0])
 				}
 			}
 			runClusterCleanup(cfg)

@@ -325,16 +325,16 @@ func unmountClusterDisks(clusterDisks string) error {
 	if clusterDisks == "" {
 		return nil
 	}
-	
+
 	devices := strings.Split(clusterDisks, ",")
 	fmt.Printf("   Unmounting cluster disks: %s\n", clusterDisks)
-	
+
 	for _, device := range devices {
 		device = strings.TrimSpace(device)
 		if device == "" {
 			continue
 		}
-		
+
 		// Skip silently if the device is not currently mounted
 		out, _ := exec.Command("findmnt", "--source", device, "--noheadings").Output()
 		if strings.TrimSpace(string(out)) == "" {
@@ -348,7 +348,7 @@ func unmountClusterDisks(clusterDisks string) error {
 			fmt.Printf("   Successfully unmounted %s\n", device)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -386,8 +386,8 @@ func GenerateCleanupTasks(clusterDisks string, premountedDisks string) []map[str
 				"failed_when":  false,
 			},
 			{
-				"name": "Check if kubeconfig is available (cluster running)",
-				"stat": map[string]any{"path": "/etc/rancher/rke2/rke2.yaml"},
+				"name":     "Check if kubeconfig is available (cluster running)",
+				"stat":     map[string]any{"path": "/etc/rancher/rke2/rke2.yaml"},
 				"register": "cleanup_kubeconfig",
 			},
 			{
@@ -403,10 +403,10 @@ func GenerateCleanupTasks(clusterDisks string, premountedDisks string) []map[str
 				"failed_when": false,
 			},
 			{
-				"name":        "Wait for Longhorn volumes to detach after drain",
-				"shell":       "for i in $(seq 1 30); do [ -z \"$(ls /dev/longhorn/ 2>/dev/null)\" ] && exit 0; sleep 2; done; echo \"timeout\"",
-				"when":        "cleanup_kubeconfig.stat.exists",
-				"failed_when": false,
+				"name":         "Wait for Longhorn volumes to detach after drain",
+				"shell":        "for i in $(seq 1 30); do [ -z \"$(ls /dev/longhorn/ 2>/dev/null)\" ] && exit 0; sleep 2; done; echo \"timeout\"",
+				"when":         "cleanup_kubeconfig.stat.exists",
+				"failed_when":  false,
 				"changed_when": false,
 			},
 			// Step 2: iSCSI logout — must happen before umount or the block device stays busy
@@ -422,8 +422,8 @@ func GenerateCleanupTasks(clusterDisks string, premountedDisks string) []map[str
 				"failed_when": false,
 			},
 			{
-				"name":        "Wait for Longhorn processes to stop",
-				"shell":       "sleep 5",
+				"name":         "Wait for Longhorn processes to stop",
+				"shell":        "sleep 5",
 				"changed_when": false,
 			},
 			{
@@ -484,9 +484,9 @@ func GenerateCleanupTasks(clusterDisks string, premountedDisks string) []map[str
 					},
 				},
 				{
-					"name": "Unmount cluster disks",
-					"shell": "umount {{ item }} 2>/dev/null || true",
-					"loop": "{{ cluster_disks_cleanup_list }}",
+					"name":        "Unmount cluster disks",
+					"shell":       "umount {{ item }} 2>/dev/null || true",
+					"loop":        "{{ cluster_disks_cleanup_list }}",
 					"failed_when": false,
 				},
 				{
@@ -496,13 +496,13 @@ func GenerateCleanupTasks(clusterDisks string, premountedDisks string) []map[str
 						"regexp": "{{ item | regex_escape }}",
 						"state":  "absent",
 					},
-					"loop": "{{ cluster_disks_cleanup_list }}",
+					"loop":        "{{ cluster_disks_cleanup_list }}",
 					"failed_when": false,
 				},
 				{
-					"name": "Wipe filesystem signatures from cluster disks",
-					"shell": "wipefs -a {{ item }} 2>/dev/null || true",
-					"loop": "{{ cluster_disks_cleanup_list }}",
+					"name":        "Wipe filesystem signatures from cluster disks",
+					"shell":       "wipefs -a {{ item }} 2>/dev/null || true",
+					"loop":        "{{ cluster_disks_cleanup_list }}",
 					"failed_when": false,
 				},
 				{
@@ -580,6 +580,7 @@ func GenerateCleanupTasks(clusterDisks string, premountedDisks string) []map[str
 // without wiping the filesystem — the disks remain mounted and ext4-formatted.
 func CleanupPremountedDisks(premountedDisks string) error {
 	if premountedDisks == "" {
+		fmt.Println("   No premounted disks configured - skipping")
 		return nil
 	}
 	fmt.Println("💾 Cleaning premounted disk contents (preserving filesystems)...")
