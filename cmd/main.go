@@ -1056,7 +1056,7 @@ func runClusterCleanup(cfg config.Config) {
 		}
 	}
 
-	fmt.Printf("   Config: CLUSTER_DISKS=%q, CLUSTER_PREMOUNTED_DISKS=%q\n", clusterDisks, premountedDisks)
+	fmt.Printf("   ⚙️  Config: CLUSTER_DISKS=%q, CLUSTER_PREMOUNTED_DISKS=%q\n", clusterDisks, premountedDisks)
 	// Step 1: Clean Longhorn Mounts (equivalent to CleanLonghornMountsStep)
 	if err := runtime.CleanupLonghornMounts(); err != nil {
 		errors = append(errors, fmt.Errorf("Longhorn cleanup: %w", err))

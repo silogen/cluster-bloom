@@ -23,29 +23,29 @@ func CleanupLonghornMounts() error {
 	fmt.Println("💾 Cleaning Longhorn mounts and PVCs...")
 
 	// Step 1: Graceful kubectl drain (best-effort, cluster may already be down)
-	fmt.Println("   Attempting graceful node drain via kubectl...")
+	fmt.Println("   🚰 Attempting graceful node drain via kubectl...")
 	nodeNameOut, _ := exec.Command("hostname").Output()
 	nodeName := strings.TrimSpace(string(nodeNameOut))
 	kubeconfig := "/etc/rancher/rke2/rke2.yaml"
 	_, kubeconfigErr := os.Stat(kubeconfig)
 	apiReachable := false
 	if kubeconfigErr == nil {
-		fmt.Print("   Checking Kubernetes API server reachability... ")
+		fmt.Print("      🔍 Checking Kubernetes API server reachability... ")
 		apiReachable = isKubeAPIReachable()
 		if apiReachable {
-			fmt.Println("reachable")
+			fmt.Println("✓ reachable")
 		} else {
-			fmt.Println("unreachable")
+			fmt.Println("✗ unreachable")
 		}
 	}
 	nodeInCluster := false
 	if apiReachable && nodeName != "" {
-		fmt.Printf("   Checking if %s is a member of the cluster... ", nodeName)
+		fmt.Printf("      🔍 Checking if %s is a member of the cluster... ", nodeName)
 		nodeInCluster = isNodeInCluster(kubeconfig, nodeName)
 		if nodeInCluster {
-			fmt.Println("yes")
+			fmt.Println("✓ yes")
 		} else {
-			fmt.Println("no")
+			fmt.Println("✗ no")
 		}
 	}
 	if kubeconfigErr == nil && nodeName != "" && apiReachable && nodeInCluster {
@@ -55,7 +55,7 @@ func CleanupLonghornMounts() error {
 			"cordon", nodeName).Run()
 		drainCtx, drainCancel := context.WithTimeout(context.Background(), 35*time.Second)
 		defer drainCancel()
-		fmt.Println("   Draining node (best-effort, ~30s timeout)...")
+		fmt.Println("      💧 Draining node (best-effort, ~30s timeout)...")
 		exec.CommandContext(drainCtx, "kubectl", "--kubeconfig", kubeconfig,
 			"drain", nodeName,
 			"--delete-emptydir-data", "--ignore-daemonsets",
@@ -65,7 +65,7 @@ func CleanupLonghornMounts() error {
 		out, _ := exec.Command("bash", "-c", "ls /dev/longhorn/ 2>/dev/null | wc -l").Output()
 		initialCount := strings.TrimSpace(string(out))
 		if initialCount != "" && initialCount != "0" {
-			fmt.Println("   Waiting for Longhorn volumes to detach...")
+			fmt.Println("      ⏳ Waiting for Longhorn volumes to detach...")
 			for i := 0; i < 30; i++ {
 				out, _ := exec.Command("bash", "-c", "ls /dev/longhorn/ 2>/dev/null | wc -l").Output()
 				if strings.TrimSpace(string(out)) == "0" {
@@ -74,20 +74,20 @@ func CleanupLonghornMounts() error {
 				time.Sleep(2 * time.Second)
 			}
 		} else {
-			fmt.Println("   No Longhorn volumes detected — skipping volume detach wait")
+			fmt.Println("      ℹ️  No Longhorn volumes detected — skipping volume detach wait")
 		}
 	} else if kubeconfigErr != nil {
-		fmt.Println("   kubectl/kubeconfig not available — skipping drain")
+		fmt.Println("      ℹ️  kubectl/kubeconfig not available — skipping drain")
 	} else if !apiReachable {
-		fmt.Println("   Kubernetes API server unreachable — skipping drain")
+		fmt.Println("      ℹ️  Kubernetes API server unreachable — skipping drain")
 	} else {
-		fmt.Printf("   Node %s is not a member of this cluster — skipping drain\n", nodeName)
+		fmt.Printf("      ℹ️  Node %s is not a member of this cluster — skipping drain\n", nodeName)
 	}
 
 	// Step 2: iSCSI logout — releases kernel block device mappings for Longhorn volumes.
 	// Must happen before umount; without this the device remains busy regardless of
 	// whether the Longhorn process is alive.
-	fmt.Println("   Logging out iSCSI sessions...")
+	fmt.Println("   🔌 Logging out iSCSI sessions...")
 	exec.Command("iscsiadm", "-m", "session", "--logout").Run()
 	exec.Command("iscsiadm", "-m", "node", "--op=delete").Run()
 
@@ -101,7 +101,7 @@ func CleanupLonghornMounts() error {
 		}
 	}
 	if anyRunning {
-		fmt.Println("   Stopping Longhorn processes (TERM)...")
+		fmt.Println("   🛑 Stopping Longhorn processes (TERM)...")
 		for _, proc := range longhornProcs {
 			exec.Command("pkill", "-TERM", "-f", proc).Run()
 		}
@@ -115,19 +115,19 @@ func CleanupLonghornMounts() error {
 			}
 		}
 		if stillRunning {
-			fmt.Println("   Force killing remaining Longhorn processes (KILL)...")
+			fmt.Println("      ⚡ Force killing remaining Longhorn processes (KILL)...")
 			for _, proc := range longhornProcs {
 				exec.Command("pkill", "-KILL", "-f", proc).Run()
 			}
 		}
 	} else {
-		fmt.Println("   No Longhorn processes running — skipping")
+		fmt.Println("   ℹ️  No Longhorn processes running — skipping")
 	}
 
 	// Step 4: Force umount everything Longhorn-related
-	fmt.Println("   Unmounting Longhorn volumes...")
+	fmt.Println("   ⏏️  Unmounting Longhorn volumes...")
 	for attempt := 1; attempt <= 3; attempt++ {
-		fmt.Printf("   Attempt %d/3...\n", attempt)
+		fmt.Printf("      🔄 Attempt %d/3...\n", attempt)
 		exec.Command("bash", "-c", "umount -lf /dev/longhorn/pvc-* 2>/dev/null || true").Run()
 		exec.Command("bash", "-c", `mount | grep -E 'longhorn|driver[.]longhorn[.]io' | awk '{print $3}' | xargs -r umount -lf 2>/dev/null || true`).Run()
 		exec.Command("bash", "-c", "umount -Af /var/lib/kubelet/pods/*/volumes/kubernetes.io~csi/pvc-* 2>/dev/null || true").Run()
@@ -145,7 +145,7 @@ func CleanupLonghornMounts() error {
 	exec.Command("rm", "-rf", "/dev/longhorn/pvc-*").Run()
 	exec.Command("rm", "-rf", "/var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/*").Run()
 
-	fmt.Println("   Longhorn cleanup completed")
+	fmt.Println("   ✅ Longhorn cleanup completed")
 	return nil
 }
 
@@ -191,28 +191,28 @@ func UninstallRKE2() error {
 
 	// Run uninstall script if it exists
 	if _, err := os.Stat("/usr/local/bin/rke2-uninstall.sh"); err == nil {
-		fmt.Println("   Executing RKE2 uninstall script (may take a couple minutes)...")
+		fmt.Println("   ⏳ Executing RKE2 uninstall script (may take a couple minutes)...")
 		cmd := exec.Command("/usr/local/bin/rke2-uninstall.sh")
 		output, err := cmd.CombinedOutput()
 
 		// Log output regardless of error (matching Bloom v1 behavior)
 		if len(output) > 0 {
-			fmt.Printf("   RKE2 uninstall script output: %s\n", string(output))
+			fmt.Printf("      📋 RKE2 uninstall script output: %s\n", string(output))
 		}
 
 		if err != nil {
-			fmt.Printf("   RKE2 uninstall script encountered warnings: %v\n", err)
+			fmt.Printf("      ⚠️  RKE2 uninstall script encountered warnings: %v\n", err)
 			// Don't return error - Bloom v1 continues on uninstall script errors
 		} else {
-			fmt.Println("   RKE2 uninstall script executed successfully")
+			fmt.Println("      ✓ RKE2 uninstall script executed successfully")
 		}
 	} else {
-		fmt.Println("   RKE2 uninstall script not found")
+		fmt.Println("   ℹ️  RKE2 uninstall script not found")
 	}
 
 	// Always force-remove RKE2 directories to ensure clean state
 	// This handles cases where the uninstall script doesn't exist, fails, or leaves remnants
-	fmt.Println("   Removing RKE2 directories and data...")
+	fmt.Println("   🗑️  Removing RKE2 directories and data...")
 	directories := []string{
 		"/etc/rancher/rke2",
 		"/var/lib/rancher/rke2",
@@ -223,13 +223,14 @@ func UninstallRKE2() error {
 		if _, err := os.Stat(dir); err == nil {
 			cmd := exec.Command("rm", "-rf", dir)
 			if err := cmd.Run(); err != nil {
-				fmt.Printf("   Warning: Failed to remove %s: %v\n", dir, err)
+				fmt.Printf("      ⚠️  Warning: Failed to remove %s: %v\n", dir, err)
 			} else {
-				fmt.Printf("   Removed %s\n", dir)
+				fmt.Printf("      ✓ Removed %s\n", dir)
 			}
 		}
 	}
 
+	fmt.Println("   ✅ RKE2 uninstall completed")
 	return nil
 }
 
@@ -239,16 +240,16 @@ func CleanupBloomDisks(clusterDisks string) error {
 
 	// First unmount prior Longhorn disks (equivalent to UnmountPriorLonghornDisks)
 	if err := unmountPriorLonghornDisks(); err != nil {
-		fmt.Printf("   Warning: Failed to unmount prior Longhorn disks: %v\n", err)
+		fmt.Printf("   ⚠️  Warning: Failed to unmount prior Longhorn disks: %v\n", err)
 	}
 
 	// Directly unmount all CLUSTER_DISKS devices if they're mounted
 	if err := unmountClusterDisks(clusterDisks); err != nil {
-		fmt.Printf("   Warning: Failed to unmount CLUSTER_DISKS: %v\n", err)
+		fmt.Printf("   ⚠️  Warning: Failed to unmount CLUSTER_DISKS: %v\n", err)
 	}
 
 	// Parse mount output to find and unmount CSI driver mounts
-	fmt.Println("   Checking for CSI driver mounts...")
+	fmt.Println("   🔍 Checking for CSI driver mounts...")
 	cmd := exec.Command("mount")
 	output, err := cmd.Output()
 	if err != nil {
@@ -261,15 +262,15 @@ func CleanupBloomDisks(clusterDisks string) error {
 		if len(fields) > 2 && strings.Contains(fields[2], "kubernetes.io/csi/driver.longhorn.io") {
 			_, err := exec.Command("sudo", "umount", "-lf", fields[2]).CombinedOutput()
 			if err != nil {
-				fmt.Printf("   Warning: Failed to unmount %s\n", fields[2])
+				fmt.Printf("      ⚠️  Warning: Failed to unmount %s\n", fields[2])
 			} else {
-				fmt.Printf("   Unmounted %s\n", fields[2])
+				fmt.Printf("      ✓ Unmounted %s\n", fields[2])
 			}
 		}
 	}
 
 	// Use lsblk to find and wipe devices with Longhorn CSI mounts
-	fmt.Println("   Checking for devices to wipe...")
+	fmt.Println("   🧹 Checking for devices to wipe...")
 	cmd = exec.Command("lsblk", "-o", "NAME,MOUNTPOINT")
 	output, err = cmd.Output()
 	if err != nil {
@@ -283,9 +284,9 @@ func CleanupBloomDisks(clusterDisks string) error {
 			device := "/dev/" + fields[0]
 			_, err := exec.Command("sudo", "wipefs", "-a", device).CombinedOutput()
 			if err != nil {
-				fmt.Printf("   Warning: Failed to wipe %s\n", device)
+				fmt.Printf("      ⚠️  Warning: Failed to wipe %s\n", device)
 			} else {
-				fmt.Printf("   Wiped %s\n", device)
+				fmt.Printf("      ✓ Wiped %s\n", device)
 			}
 		}
 	}
@@ -293,11 +294,11 @@ func CleanupBloomDisks(clusterDisks string) error {
 	// Remove longhorn plugins directory
 	_, err = exec.Command("sudo", "rm", "-rf", "/var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/*").CombinedOutput()
 	if err != nil {
-		fmt.Printf("   Warning: Failed to remove longhorn plugins directory: %v\n", err)
+		fmt.Printf("   ⚠️  Warning: Failed to remove longhorn plugins directory: %v\n", err)
 	}
 
 	// Delete unmounted disk devices (matching Bloom v1 logic)
-	fmt.Println("   Checking for unmounted disks to delete...")
+	fmt.Println("   🗑️  Checking for unmounted disks to delete...")
 	cmd = exec.Command("lsblk", "-nd", "-o", "NAME,TYPE,MOUNTPOINT")
 	output, err = cmd.Output()
 	if err != nil {
@@ -311,21 +312,21 @@ func CleanupBloomDisks(clusterDisks string) error {
 			deleteCmd := exec.Command("sudo", "tee", "/sys/block/"+fields[0]+"/device/delete")
 			deleteCmd.Stdin = strings.NewReader("1\n")
 			if err := deleteCmd.Run(); err != nil {
-				fmt.Printf("   Warning: Failed to delete /dev/%s\n", fields[0])
+				fmt.Printf("      ⚠️  Warning: Failed to delete /dev/%s\n", fields[0])
 			} else {
-				fmt.Printf("   Deleted /dev/%s\n", fields[0])
+				fmt.Printf("      ✓ Deleted /dev/%s\n", fields[0])
 			}
 		}
 	}
 
 	// Skip filesystem sync as it commonly hangs on systems with I/O issues
 	// The 500ms delay below is sufficient for kernel to release mounts
-	fmt.Println("   Allowing kernel to flush pending I/O...")
+	fmt.Println("   ⏳ Allowing kernel to flush pending I/O...")
 
 	// Brief delay to allow kernel to fully release mounts
 	time.Sleep(500 * time.Millisecond)
 
-	fmt.Println("   Disk cleanup completed")
+	fmt.Println("   ✅ Disk cleanup completed")
 	return nil
 }
 
@@ -336,7 +337,7 @@ func unmountClusterDisks(clusterDisks string) error {
 	}
 
 	devices := strings.Split(clusterDisks, ",")
-	fmt.Printf("   Unmounting cluster disks: %s\n", clusterDisks)
+	fmt.Printf("   ⏏️  Unmounting cluster disks: %s\n", clusterDisks)
 
 	for _, device := range devices {
 		device = strings.TrimSpace(device)
@@ -352,9 +353,9 @@ func unmountClusterDisks(clusterDisks string) error {
 		// Unmount the device
 		cmd := exec.Command("umount", device)
 		if err := cmd.Run(); err != nil {
-			fmt.Printf("   Warning: Failed to unmount %s: %v\n", device, err)
+			fmt.Printf("      ⚠️  Warning: Failed to unmount %s: %v\n", device, err)
 		} else {
-			fmt.Printf("   Successfully unmounted %s\n", device)
+			fmt.Printf("      ✓ Successfully unmounted %s\n", device)
 		}
 	}
 
@@ -589,9 +590,9 @@ func CleanupPremountedDisks(premountedDisks string) error {
 		}
 		// Ensure it is mounted before we try to clean it
 		if _, err := exec.Command("mountpoint", "-q", mp).CombinedOutput(); err != nil {
-			fmt.Printf("   Mounting %s before cleanup...\n", mp)
+			fmt.Printf("   📌 Mounting %s before cleanup...\n", mp)
 			if _, err2 := exec.Command("mount", mp).CombinedOutput(); err2 != nil {
-				fmt.Printf("   Warning: Could not mount %s (skipping): %v\n", mp, err2)
+				fmt.Printf("      ⚠️  Warning: Could not mount %s (skipping): %v\n", mp, err2)
 				continue
 			}
 		}
@@ -609,9 +610,9 @@ func CleanupPremountedDisks(premountedDisks string) error {
 		for _, pattern := range patterns {
 			exec.Command("bash", "-c", "rm -rf "+pattern+" 2>/dev/null").Run()
 		}
-		fmt.Printf("   Cleaned contents of %s\n", mp)
+		fmt.Printf("   ✓ Cleaned contents of %s\n", mp)
 	}
-	fmt.Println("   Premounted disk cleanup completed")
+	fmt.Println("   ✅ Premounted disk cleanup completed")
 	return nil
 }
 
@@ -825,7 +826,7 @@ for _, pattern := range blooPatterns {
 exec.Command("bash", "-c", "rm -rf "+mp+"/"+pattern+" 2>/dev/null").Run()
 }
 }
-fmt.Println("   Pre-clean complete")
+fmt.Println("   ✅ Pre-clean complete")
 return nil
 }
 
@@ -859,7 +860,7 @@ func unmountPriorLonghornDisks() error {
 			fields := strings.Fields(line)
 			if len(fields) >= 2 {
 				mountPoint := fields[1]
-				fmt.Printf("   Unmounting bloom-managed mount: %s\n", mountPoint)
+				fmt.Printf("      ⏏️  Unmounting bloom-managed mount: %s\n", mountPoint)
 				exec.Command("sudo", "umount", "-lf", mountPoint).Run()
 			}
 			// Don't add this line to cleanLines (removes it from fstab)
