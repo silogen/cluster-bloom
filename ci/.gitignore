@@ -1,0 +1,18 @@
+# Dagger generated files
+dagger.gen.go
+go.sum
+internal/
+
+# Build artifacts
+*.so
+*.dylib
+*.test
+*.out
+
+# Go workspace
+go.work
+go.work.sum
+
+# Temporary files
+*.tmp
+*.log
