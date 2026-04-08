@@ -20,7 +20,39 @@ import (
 // in the kernel even after the Longhorn process is killed; skipping the iSCSI
 // logout leaves the device busy and causes rm/umount to block or silently fail.
 func CleanupLonghornMounts() error {
-	fmt.Println("💾 Cleaning Longhorn mounts and PVCs...")
+	// --- Detection phase: probe for Longhorn artifacts before printing anything ---
+	longhornProcs := []string{"longhorn-engine", "longhorn-instance-manager", "longhorn-manager"}
+
+	anyProcsRunning := false
+	for _, proc := range longhornProcs {
+		if exec.Command("pgrep", "-f", proc).Run() == nil {
+			anyProcsRunning = true
+			break
+		}
+	}
+
+	devOut, _ := exec.Command("bash", "-c", "ls /dev/longhorn/ 2>/dev/null | wc -l").Output()
+	hasLonghornDevs := strings.TrimSpace(string(devOut)) != "0" && strings.TrimSpace(string(devOut)) != ""
+
+	mountOut, _ := exec.Command("bash", "-c", `mount | grep -cE 'longhorn|driver\.longhorn\.io' 2>/dev/null || echo 0`).Output()
+	hasLonghornMounts := strings.TrimSpace(string(mountOut)) != "0"
+
+	pvcDevOut, _ := exec.Command("bash", "-c", "ls /dev/longhorn/pvc-* 2>/dev/null | wc -l").Output()
+	pvcMountOut, _ := exec.Command("bash", "-c", "ls /mnt/disk*/pvc-* 2>/dev/null | wc -l").Output()
+	hasPVCs := (strings.TrimSpace(string(pvcDevOut)) != "0" && strings.TrimSpace(string(pvcDevOut)) != "") ||
+		(strings.TrimSpace(string(pvcMountOut)) != "0" && strings.TrimSpace(string(pvcMountOut)) != "")
+
+	longhornDetected := anyProcsRunning || hasLonghornDevs || hasLonghornMounts
+
+	// Dynamic initial label
+	switch {
+	case longhornDetected && hasPVCs:
+		fmt.Println("💾 Cleaning Longhorn mounts and PVCs...")
+	case longhornDetected:
+		fmt.Println("💾 Cleaning Longhorn mounts...")
+	default:
+		fmt.Println("🧹 Cleaning disk mounts...")
+	}
 
 	// Step 1: Graceful kubectl drain (best-effort, cluster may already be down)
 	fmt.Println("   🚰 Attempting graceful node drain via kubectl...")
@@ -92,15 +124,7 @@ func CleanupLonghornMounts() error {
 	exec.Command("iscsiadm", "-m", "node", "--op=delete").Run()
 
 	// Step 3: Graceful TERM then KILL of Longhorn processes in dependency order
-	longhornProcs := []string{"longhorn-engine", "longhorn-instance-manager", "longhorn-manager"}
-	anyRunning := false
-	for _, proc := range longhornProcs {
-		if exec.Command("pgrep", "-f", proc).Run() == nil {
-			anyRunning = true
-			break
-		}
-	}
-	if anyRunning {
+	if anyProcsRunning {
 		fmt.Println("   🛑 Stopping Longhorn processes (TERM)...")
 		for _, proc := range longhornProcs {
 			exec.Command("pkill", "-TERM", "-f", proc).Run()
@@ -145,7 +169,11 @@ func CleanupLonghornMounts() error {
 	exec.Command("rm", "-rf", "/dev/longhorn/pvc-*").Run()
 	exec.Command("rm", "-rf", "/var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/*").Run()
 
-	fmt.Println("   ✅ Longhorn cleanup completed")
+	if longhornDetected {
+		fmt.Println("   ✅ Longhorn cleanup completed")
+	} else {
+		fmt.Println("   ✅ Disk mount cleanup completed")
+	}
 	return nil
 }
 
