@@ -675,10 +675,42 @@ return count
 }
 
 // calculateFutureDiskStart returns the lowest start index S such that the sequential
-// range [S, S+diskCount) does not overlap reserved indexes. Reserved indexes come from
-// /etc/fstab premounted-by-cluster-bloom entries and the CLUSTER_PREMOUNTED_DISKS string.
-func calculateFutureDiskStart(premountedDisks string, diskCount int) int {
+// range [S, S+diskCount) does not overlap reserved indexes.
+//
+// Reserved = every currently-mounted /mnt/diskN path EXCEPT those whose block device
+// is explicitly listed in clusterDisks (those will be unmounted and wiped by cleanup).
+// Fstab tags are intentionally not used as the authority here: a disk may carry a stale
+// bloom tag from a previous run while no longer being in the current CLUSTER_DISKS
+// config, meaning bloom will NOT wipe it and its mount point remains occupied.
+func calculateFutureDiskStart(clusterDisks, premountedDisks string, diskCount int) int {
 reserved := map[int]bool{}
+
+// Build a set of the block devices in CLUSTER_DISKS — their current mount points
+// will be freed by cleanup and are therefore NOT reserved.
+clusterDevSet := map[string]bool{}
+for _, dev := range strings.Split(clusterDisks, ",") {
+if d := strings.TrimSpace(dev); d != "" {
+clusterDevSet[d] = true
+}
+}
+
+// Find the current mount point of each CLUSTER_DISKS device via /proc/mounts.
+clusterDiskMounts := map[string]bool{}
+if data, err := os.ReadFile("/proc/mounts"); err == nil {
+for _, line := range strings.Split(string(data), "\n") {
+fields := strings.Fields(line)
+if len(fields) >= 2 && clusterDevSet[fields[0]] {
+clusterDiskMounts[fields[1]] = true
+}
+}
+}
+
+// From CLUSTER_PREMOUNTED_DISKS config string
+for _, p := range strings.Split(premountedDisks, ",") {
+if idx, err := extractDiskIndex(strings.TrimSpace(p)); err == nil {
+reserved[idx] = true
+}
+}
 
 // From /etc/fstab premounted-by-cluster-bloom entries
 if data, err := os.ReadFile("/etc/fstab"); err == nil {
@@ -693,10 +725,23 @@ reserved[idx] = true
 }
 }
 }
-// From CLUSTER_PREMOUNTED_DISKS config string
-for _, p := range strings.Split(premountedDisks, ",") {
-if idx, err := extractDiskIndex(strings.TrimSpace(p)); err == nil {
+
+// Reserve every currently-mounted /mnt/diskN that is NOT a CLUSTER_DISKS mount.
+// This covers premounted disks, user disks, and any stale bloom-tagged disks that
+// are no longer in CLUSTER_DISKS — all of which survive cleanup.
+if data, err := os.ReadFile("/proc/mounts"); err == nil {
+for _, line := range strings.Split(string(data), "\n") {
+fields := strings.Fields(line)
+if len(fields) < 2 {
+continue
+}
+mp := fields[1]
+if clusterDiskMounts[mp] {
+continue // CLUSTER_DISKS mount — will be freed
+}
+if idx, err2 := extractDiskIndex(mp); err2 == nil {
 reserved[idx] = true
+}
 }
 }
 
@@ -742,7 +787,7 @@ managed := parseManagedFstabMounts()
 var future []string
 n := countClusterDisksStr(clusterDisks)
 if n > 0 {
-start := calculateFutureDiskStart(premountedDisks, n)
+start := calculateFutureDiskStart(clusterDisks, premountedDisks, n)
 for i := 0; i < n; i++ {
 future = append(future, fmt.Sprintf("/mnt/disk%d", start+i))
 }
@@ -774,6 +819,26 @@ case len(bloom) > 0:
 fmt.Printf("    ✓  %-18s — bloom state only (%d item(s))\n", mp, len(bloom))
 default:
 fmt.Printf("    ✓  %-18s — empty\n", mp)
+}
+}
+}
+
+if premountedDisks != "" {
+var premountedLines []string
+for p := range strings.SplitSeq(premountedDisks, ",") {
+mp := strings.TrimSpace(p)
+if mp == "" {
+continue
+}
+bloom, _ := inspectDirContents(mp)
+if len(bloom) > 0 {
+premountedLines = append(premountedLines, fmt.Sprintf("    ✓  %-18s — %d bloom artifact(s) removed (filesystem preserved)", mp, len(bloom)))
+}
+}
+if len(premountedLines) > 0 {
+fmt.Println("\n  Premounted disks — bloom artifacts cleaned, filesystem kept:")
+for _, line := range premountedLines {
+fmt.Println(line)
 }
 }
 }
@@ -820,7 +885,7 @@ n := countClusterDisksStr(clusterDisks)
 if n == 0 {
 return nil
 }
-start := calculateFutureDiskStart(premountedDisks, n)
+start := calculateFutureDiskStart(clusterDisks, premountedDisks, n)
 fmt.Printf("🗂️  Pre-cleaning future mount range /mnt/disk%d–/mnt/disk%d (bloom artifacts only)...\n", start, start+n-1)
 blooPatterns := []string{"pvc-*", "replicas", "longhorn-disk.cfg", "longhorn-disk.cfg.tmp"}
 for i := 0; i < n; i++ {
