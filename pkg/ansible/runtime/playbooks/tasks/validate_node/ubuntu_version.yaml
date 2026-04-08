@@ -1,0 +1,17 @@
+---
+# Purpose: Validate Ubuntu version compatibility with cluster-bloom
+# Dependencies: supported_ubuntu_versions variable
+# Usage: Imported by validate_node/main.yaml
+# Tags: [validate_node]
+
+- name: Get Ubuntu version
+  shell: grep VERSION_ID /etc/os-release | cut -d= -f2 | tr -d '"'
+  register: ubuntu_version
+  changed_when: false
+
+- name: Check if Ubuntu version is supported
+  assert:
+    that:
+      - ubuntu_version.stdout in supported_ubuntu_versions
+    fail_msg: "Ubuntu {{ ubuntu_version.stdout }} is not supported. Supported versions: {{ supported_ubuntu_versions | join(', ') }}"
+    success_msg: "Running on supported Ubuntu {{ ubuntu_version.stdout }}"

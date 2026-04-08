@@ -232,7 +232,7 @@ Configuration sources in priority order (highest to lowest):
   - **Version tag**: e.g., `v2.0.0-rc6` - Specifies exact version/branch to checkout
   - **Full release URL**: e.g., `https://github.com/silogen/cluster-forge/releases/download/v2.0.0-rc6/release-enterprise-ai-v2.0.0-rc6.tar.gz` - Downloads tarball and auto-extracts version for ArgoCD target
   - **Special values**: 
-    - `latest` - Uses the default branch (main)
+    - `latest` (or unset) - Fetches the latest published GitHub release tag via the GitHub API
     - `none` or `""` (empty string) - Skips ClusterForge installation entirely
 - **Version Parsing**: When a full URL is provided, the version is automatically extracted (e.g., `v2.0.0-rc6` from the URL) and used as the `--target-revision` for ArgoCD/Gitea
 - **Examples**: 
@@ -551,7 +551,7 @@ bloom cli <config-file> [flags]
 **Available Flags:**
 - `--export`: Export generated playbook to stdout instead of executing it
 - `--dry-run`: Run in check mode without making changes
-- `--destroy-data`: ⚠️ DANGER: Permanently destroys ALL cluster data, storage, and disks
+- `--destroy-data`: ⚠️ DANGER: Wipes the cluster before redeploying (RKE2 uninstall, Longhorn cleanup, bloom-managed disk wipe). Shows a disk wipe preview before confirmation. Premounted disks (CLUSTER_PREMOUNTED_DISKS) have their bloom artifacts cleaned but their filesystem and fstab entries preserved
 - `--playbook string`: Playbook to run (default: "cluster-bloom.yaml")
 - `--tags string`: Run only tasks with specific tags (e.g., cleanup, validate, storage)
 
@@ -641,8 +641,10 @@ sudo ./bloom run deployment.yaml
 - **Configuration Integration**: All user configuration values are properly applied to playbook variables
 - **Task Preservation**: Tags, when conditions, and other metadata from include directives are preserved on inlined tasks
 - **Full Compatibility**: Exported playbooks are fully compatible with the `bloom run` command and standard Ansible tools
-- **Cleanup Task Injection**: When `--destroy-data` is used with `--export`, cleanup tasks are automatically prepended to handle existing installations
-- **Comprehensive Cleanup**: Includes RKE2 uninstall, Longhorn cleanup, disk wiping, and service management for complete environment reset
+- **Cleanup Task Injection**: When `--destroy-data` is used with `--export`, cleanup tasks are automatically prepended. These tasks are equivalent to running `bloom cleanup <config-file>` before the deployment
+- **Disk Wipe Preview**: Both `bloom cleanup` and `bloom cli --destroy-data` show a preview of bloom-managed mounts and the future mount range before requiring confirmation
+- **Premounted Disk Safety**: `CLUSTER_PREMOUNTED_DISKS` entries have bloom artifacts (pvc-*, replicas, longhorn-disk.cfg) removed but their filesystem, fstab entry, and user files are preserved
+- **Smart Index Allocation**: Mount indexes are chosen as the lowest contiguous range not conflicting with premounted disk indexes (from fstab and config), so `CLUSTER_DISKS` and `CLUSTER_PREMOUNTED_DISKS` can coexist
 
 ## See Also
 

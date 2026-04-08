@@ -1,0 +1,53 @@
+---
+# Purpose: Coordinates Kubernetes applications deployment
+# Dependencies: INSTALL_ARGOCD, ARGOCD_VERSION, and other K8s app variables
+# Usage: Imported by main cluster-bloom.yaml playbook
+# Tags: [deploy_k8s_apps]
+
+- name: Wait for kubectl to be available
+  when: FIRST_NODE and not NO_DISKS_FOR_CLUSTER
+  wait_for:
+    path: /var/lib/rancher/rke2/bin/kubectl
+    state: present
+    timeout: 300
+  tags: [storage, deploy_k8s_apps]
+
+- name: Setup Node Annotator
+  include_tasks: node_annotator.yaml
+  when: FIRST_NODE
+  tags: [node_annotator, deploy_k8s_apps]
+
+- name: Setup MetalLB (First Node)
+  include_tasks: metallb.yaml
+  when: FIRST_NODE
+  tags: [metallb, deploy_k8s_apps]
+
+- name: Setup Storage Provisioner (Small/Medium Clusters - Local-Path)
+  include_tasks: local_path.yaml
+  when: FIRST_NODE and not NO_DISKS_FOR_CLUSTER and CLUSTER_SIZE in ["small", "medium"]
+  tags: [storage, local-path, deploy_k8s_apps]
+
+- name: Setup Storage Provisioner (Large Clusters - Longhorn)
+  include_tasks: longhorn.yaml
+  when: FIRST_NODE and not NO_DISKS_FOR_CLUSTER and CLUSTER_SIZE == "large"
+  tags: [storage, longhorn, deploy_k8s_apps]
+
+- name: Create Domain Configuration (First Node)
+  include_tasks: domain.yaml
+  when: FIRST_NODE and DOMAIN != ""
+  tags: [domain, deploy_k8s_apps]
+
+- name: Preload Container Images
+  include_tasks: preload_images.yaml
+  when: FIRST_NODE and PRELOAD_IMAGES is defined and PRELOAD_IMAGES != ""
+  tags: [images, deploy_k8s_apps]
+
+- name: Setup ArgoCD Core (Small Clusters)
+  include_tasks: argocd.yaml
+  when: FIRST_NODE and CLUSTER_SIZE == "small" and INSTALL_ARGOCD
+  tags: [argocd, deploy_k8s_apps]
+
+- name: Create Bloom ConfigMap
+  include_tasks: bloom_config.yaml
+  when: FIRST_NODE
+  tags: [config, deploy_k8s_apps]

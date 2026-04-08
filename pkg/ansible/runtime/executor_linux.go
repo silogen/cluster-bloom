@@ -44,6 +44,9 @@ func RunContainer(rootfs, playbookDir, playbook string, extraArgs []string, dryR
 		return 1
 	}
 
+	// Initialize global signal handling for graceful shutdown
+	InitSignalHandling()
+
 	// Setup host-based signal handling for SSH cleanup
 	setupHostSSHSignalHandling(sshManager)
 

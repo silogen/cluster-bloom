@@ -1,0 +1,50 @@
+---
+# Purpose: Orchestrates all node preparation tasks in proper sequence
+# Dependencies: Various - GPU_NODE, NO_DISKS_FOR_CLUSTER, CLUSTER_PREMOUNTED_DISKS, FIX_DNS
+# Usage: Imported by main cluster-bloom.yaml playbook
+# Tags: [prep_node]
+
+- name: Install Dependent Packages
+  include_tasks: packages.yaml
+  tags: [packages, prep_node]
+
+- name: Setup Multipath
+  include_tasks: multipath.yaml
+  tags: [storage, prep_node]
+
+- name: Setup and Check ROCm
+  include_tasks: gpu_rocm.yaml
+  when: GPU_NODE
+  tags: [gpu, rocm, prep_node]
+
+- name: Update Modprobe (GPU nodes)
+  include_tasks: gpu_modprobe.yaml
+  when: GPU_NODE
+  tags: [gpu, prep_node]
+
+- name: Prepare bloom fstab section markers
+  include_tasks: fstab_markers.yaml
+  when: not NO_DISKS_FOR_CLUSTER and (CLUSTER_DISKS != "" or CLUSTER_PREMOUNTED_DISKS != "")
+  tags: [storage, prep_node]
+
+- name: Prepare Longhorn Disks
+  include_tasks: storage.yaml
+  when: not NO_DISKS_FOR_CLUSTER
+  tags: [storage, prep_node]
+
+- name: Prepare Premounted Disks Fstab
+  include_tasks: premounted_storage.yaml
+  when: not NO_DISKS_FOR_CLUSTER and CLUSTER_PREMOUNTED_DISKS != ""
+  tags: [storage, prep_node]
+
+- name: System Configuration
+  include_tasks: system_config.yaml
+  tags: [system, firewall, gpu, prep_node]
+
+- name: Disable NUMA Balancing
+  include_tasks: disable_numa_balancing.yaml
+  tags: [system, performance, prep_node]
+
+- name: Configure NTP (Chrony)
+  include_tasks: ntp.yaml
+  tags: [ntp, prep_node]

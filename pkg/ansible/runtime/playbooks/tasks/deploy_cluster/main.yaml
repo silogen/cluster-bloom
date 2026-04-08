@@ -1,0 +1,59 @@
+---
+# Purpose: Orchestrates RKE2 cluster deployment and configuration
+# Dependencies: Various RKE2 and cluster variables
+# Usage: Imported by main cluster-bloom.yaml playbook
+# Tags: [deploy_cluster]
+
+- name: Create BLOOM_DIR base directory
+  file:
+    path: "{{ BLOOM_DIR }}"
+    state: directory
+    mode: "0755"
+    owner: "{{ ansible_user | default('ubuntu') }}"
+    group: "{{ ansible_user | default('ubuntu') }}"
+  become: yes
+
+- name: Prepare RKE2
+  include_tasks: prepare_rke2.yaml
+  tags: [deploy_cluster]
+
+- name: Generate SSL/TLS Certificates
+  include_tasks: certificates.yaml
+  tags: [certificates, deploy_cluster]
+
+- name: Generate Node Labels
+  include_tasks: node_labels.yaml
+  tags: [rke2, deploy_cluster]
+
+- name: Setup RKE2 (First Node)
+  include_tasks: rke2_first_node.yaml
+  when: FIRST_NODE
+  tags: [rke2, deploy_cluster]
+
+- name: Setup RKE2 (Additional Node - Worker)
+  include_tasks: rke2_worker.yaml
+  when: not FIRST_NODE and not CONTROL_PLANE
+  tags: [rke2, deploy_cluster]
+
+- name: Setup RKE2 (Additional Node - Control Plane)
+  include_tasks: rke2_control_plane.yaml
+  when: not FIRST_NODE and CONTROL_PLANE
+  tags: [rke2, deploy_cluster]
+
+- name: Install Kubernetes Tools
+  include_tasks: k8s_tools.yaml
+  tags: [k8s_tools, deploy_cluster]
+
+- name: Configure logrotate
+  include_tasks: logrotate.yaml
+  tags: [logging, deploy_cluster]
+
+- name: Setup KubeConfig (Control Plane Nodes)
+  include_tasks: kubeconfig.yaml
+  when: FIRST_NODE or CONTROL_PLANE
+  tags: [kubeconfig, deploy_cluster]
+
+- name: Generate Join Command (First Node)
+  include_tasks: join_command.yaml
+  when: FIRST_NODE
+  tags: [output, deploy_cluster]

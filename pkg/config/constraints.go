@@ -41,8 +41,7 @@ func ValidateConstraints(cfg Config) []string {
 // anyFieldPresent checks if any of the fields exist in config
 func anyFieldPresent(cfg Config, fields []string) bool {
 	for _, field := range fields {
-		val, exists := cfg[field]
-		if exists && val != nil && val != "" {
+		if isFieldSet(cfg, field) {
 			return true
 		}
 	}
@@ -54,8 +53,7 @@ func checkMutuallyExclusive(cfg Config, fields []string) error {
 	setFields := []string{}
 
 	for _, field := range fields {
-		val, exists := cfg[field]
-		if exists && val != nil && val != "" {
+		if isFieldSet(cfg, field) {
 			setFields = append(setFields, field)
 		}
 	}

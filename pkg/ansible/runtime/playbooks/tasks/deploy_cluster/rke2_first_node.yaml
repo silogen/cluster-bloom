@@ -1,0 +1,32 @@
+---
+# Purpose: Install and start RKE2 server on the first node (cluster bootstrap)
+# Dependencies: FIRST_NODE, RKE2_VERSION, rke2_installation_url variables
+# Usage: Imported by deploy_cluster/main.yaml (conditional on FIRST_NODE)
+# Tags: [rke2, deploy_cluster]
+
+- name: "Install RKE2 server{% if RKE2_VERSION is defined and RKE2_VERSION != '' %} ({{ RKE2_VERSION }}){% else %} (latest){% endif %}"
+  shell: |
+    {% if RKE2_VERSION is defined and RKE2_VERSION != "" %}
+    curl -sfL {{ rke2_installation_url }} | INSTALL_RKE2_VERSION="{{ RKE2_VERSION }}" sh -
+    {% else %}
+    curl -sfL {{ rke2_installation_url }} | sh -
+    {% endif %}
+  args:
+    creates: /usr/local/bin/rke2
+
+- name: Enable RKE2 server service
+  service:
+    name: rke2-server
+    enabled: yes
+
+- name: Start RKE2 server service
+  shell: systemctl start rke2-server
+  register: rke2_start
+  failed_when: false
+  changed_when: rke2_start.rc == 0
+
+- name: Wait for RKE2 to be ready
+  wait_for:
+    path: /var/lib/rancher/rke2/server/node-token
+    state: present
+    timeout: 300

@@ -1,0 +1,94 @@
+---
+# Purpose: Main ClusterForge platform setup and bootstrap
+# Dependencies: CLUSTERFORGE_RELEASE, CLUSTERFORGE_REPO, BLOOM_DIR, DOMAIN, CLUSTER_SIZE variables
+# Usage: Imported by deploy_clusterforge/main.yaml
+# Tags: [clusterforge, deploy_clusterforge]
+
+- name: Create BLOOM_DIR base directory
+  file:
+    path: "{{ BLOOM_DIR }}"
+    state: directory
+    mode: "0755"
+    owner: "{{ ansible_user | default('ubuntu') }}"
+    group: "{{ ansible_user | default('ubuntu') }}"
+
+- name: Create ClusterForge directory in BLOOM_DIR
+  file:
+    path: "{{ BLOOM_DIR }}/clusterforge"
+    state: directory
+    mode: "0755"
+    owner: "{{ ansible_user | default('ubuntu') }}"
+    group: "{{ ansible_user | default('ubuntu') }}"
+
+- name: Check if CLUSTERFORGE_RELEASE is a URL
+  set_fact:
+    is_release_url: "{{ CLUSTERFORGE_RELEASE.startswith('http') }}"
+
+- name: Validate CLUSTERFORGE_REPO is set for version mode
+  fail:
+    msg: "CLUSTERFORGE_REPO must be set when CLUSTERFORGE_RELEASE is a version string (not a URL)"
+  when: not (is_release_url | bool) and (CLUSTERFORGE_REPO == "" or CLUSTERFORGE_REPO is not defined)
+
+- name: Download ClusterForge release
+  get_url:
+    url: "{{ CLUSTERFORGE_RELEASE }}"
+    dest: "{{ BLOOM_DIR }}/clusterforge/clusterforge.tar.gz"
+    mode: "0644"
+  when: is_release_url | bool
+
+- name: Extract ClusterForge release
+  unarchive:
+    src: "{{ BLOOM_DIR }}/clusterforge/clusterforge.tar.gz"
+    dest: "{{ BLOOM_DIR }}/clusterforge"
+    remote_src: yes
+    extra_opts: [--no-same-owner]
+  when: is_release_url | bool
+
+- name: Clone ClusterForge repository (version/branch mode)
+  shell: |
+    rm -rf {{ BLOOM_DIR }}/clusterforge/cluster-forge
+    git clone --branch {{ clusterforge_version }} --depth 1 {{ CLUSTERFORGE_REPO }} {{ BLOOM_DIR }}/clusterforge/cluster-forge
+  when: not (is_release_url | bool)
+
+- name: Clean ClusterForge temporary files
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+  - /tmp/argocd_bootstrap_values.yaml
+  - /tmp/merged_values.yaml
+  - /tmp/argocd_values.yaml
+
+- name: Debug ClusterForge bootstrap variables
+  debug:
+    msg:
+      - "DOMAIN: {{ DOMAIN }}"
+      - "CLUSTER_SIZE: {{ CLUSTER_SIZE | default('medium') }}"
+      - "BLOOM_DIR: {{ BLOOM_DIR }}"
+      - "CLUSTERFORGE_RELEASE: {{ CLUSTERFORGE_RELEASE }}"
+
+- name: Check if bootstrap script exists
+  stat:
+    path: "{{ BLOOM_DIR }}/clusterforge/cluster-forge/scripts/bootstrap.sh"
+  register: bootstrap_script_check
+
+- name: Make bootstrap script executable
+  file:
+    path: "{{ BLOOM_DIR }}/clusterforge/cluster-forge/scripts/bootstrap.sh"
+    mode: '0755'
+  when: bootstrap_script_check.stat.exists
+
+- name: "Run ClusterForge bootstrap: ./bootstrap.sh {{ DOMAIN }} --cluster-size={{ CLUSTER_SIZE | default('medium') }}"
+  shell: |
+    cd {{ BLOOM_DIR }}/clusterforge/cluster-forge/scripts
+    pwd
+    ls -la bootstrap.sh
+    ./bootstrap.sh {{ DOMAIN }} --cluster-size={{ CLUSTER_SIZE | default('medium') }}
+  register: cf_bootstrap
+  environment:
+    KUBECONFIG: /etc/rancher/rke2/rke2.yaml
+  when: bootstrap_script_check.stat.exists
+
+- name: Display ClusterForge deployment output
+  debug:
+    msg: "{{ cf_bootstrap.stdout }}"

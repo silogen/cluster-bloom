@@ -1,0 +1,105 @@
+---
+# Purpose: Prepare and mount cluster disks for Longhorn storage
+# Dependencies: NO_DISKS_FOR_CLUSTER, CLUSTER_PREMOUNTED_DISKS, CLUSTER_DISKS, bloom_fstab_tag variables
+# Usage: Imported by prepare_node/main.yaml (conditional on disk configuration)
+# Tags: [storage, prep_node]
+
+- name: Convert CLUSTER_DISKS from comma-separated string to list
+  set_fact:
+    cluster_disks_list: "{{ CLUSTER_DISKS.split(',') if CLUSTER_DISKS is string and CLUSTER_DISKS != '' else (CLUSTER_DISKS if CLUSTER_DISKS is sequence else []) }}"
+
+- name: Collect reserved disk indexes from fstab (premounted) and CLUSTER_PREMOUNTED_DISKS config
+  shell: |
+    {
+      # From fstab entries tagged "# premounted by cluster-bloom"
+      grep '# premounted by cluster-bloom' /etc/fstab 2>/dev/null | awk '{print $2}' | sed 's|.*/disk||' | grep -E '^[0-9]+$'
+      # From fstab /mnt/diskN entries NOT tagged by cluster-bloom (user-managed mounts)
+      grep '/mnt/disk[0-9]' /etc/fstab 2>/dev/null | grep -v 'cluster-bloom' | awk '{print $2}' | sed 's|.*/disk||' | grep -E '^[0-9]+$'
+      # From CLUSTER_PREMOUNTED_DISKS config variable
+      printf '%s' '{{ CLUSTER_PREMOUNTED_DISKS }}' | tr ',' $'\n' | sed 's/[[:space:]]//g' | sed 's|.*/disk||' | grep -E '^[0-9]+$'
+    } | sort -un
+  register: reserved_disk_indexes
+  changed_when: false
+  failed_when: false
+
+- name: Find lowest non-conflicting sequential start index for CLUSTER_DISKS
+  shell: |
+    n={{ cluster_disks_list | length }}
+    reserved="{{ reserved_disk_indexes.stdout_lines | join(' ') }}"
+    start=0
+    while true; do
+      conflict=0
+      i=0
+      while [ $i -lt $n ]; do
+        idx=$((start + i))
+        for r in $reserved; do
+          if [ "$idx" = "$r" ]; then conflict=1; break; fi
+        done
+        [ $conflict -eq 1 ] && break
+        i=$((i + 1))
+      done
+      if [ $conflict -eq 0 ]; then
+        echo $start
+        break
+      fi
+      start=$((start + 1))
+    done
+  register: disk_start_index_result
+  changed_when: false
+
+- name: Set disk index offset
+  set_fact:
+    disk_index_offset: "{{ disk_start_index_result.stdout | trim | int }}"
+
+- name: Create mount points for cluster disks
+  file:
+    path: "/mnt/disk{{ disk_index_offset | int + disk_index }}"
+    state: directory
+    mode: "0755"
+  loop: "{{ cluster_disks_list | default([]) }}"
+  loop_control:
+    index_var: disk_index
+  when: cluster_disks_list | length > 0
+
+- name: Pre-clean bloom artifacts from future mount point directories (preserve user files)
+  shell: |
+    mp="/mnt/disk{{ disk_index_offset | int + disk_index }}"
+    [ -d "$mp" ] || exit 0
+    rm -rf "$mp"/pvc-* "$mp"/replicas "$mp"/longhorn-disk.cfg "$mp"/longhorn-disk.cfg.tmp 2>/dev/null || true
+  loop: "{{ cluster_disks_list | default([]) }}"
+  loop_control:
+    index_var: disk_index
+  when: cluster_disks_list | length > 0
+  changed_when: false
+
+- name: Format disks with ext4 (if not already formatted)
+  shell: |
+    if ! blkid {{ item }} | grep -q ext4; then
+      wipefs -a {{ item }}
+      mkfs.ext4 -F -F {{ item }}
+    fi
+  loop: "{{ cluster_disks_list | default([]) }}"
+  when: cluster_disks_list | length > 0
+
+- name: Get UUIDs for cluster disks
+  shell: blkid -s UUID -o value {{ item.1 }}
+  loop: "{{ range(cluster_disks_list | length) | list | zip(cluster_disks_list) | list }}"
+  register: disk_uuids
+  when: cluster_disks_list | length > 0
+  changed_when: false
+
+- name: Add mount entries to fstab with bloom tag
+  lineinfile:
+    path: /etc/fstab
+    line: "UUID={{ item.stdout }} /mnt/disk{{ disk_index_offset | int + item.item.0 }} ext4 defaults,nofail 0 2 {{ bloom_fstab_tag }}"
+    insertbefore: "^# # # end of AMD Enterprise AI cluster-bloom"
+    state: present
+  loop: "{{ disk_uuids.results }}"
+  when: cluster_disks_list | length > 0 and not item.skipped | default(false)
+
+- name: Mount cluster disks using fstab entries (verifies fstab)
+  shell: mount /mnt/disk{{ disk_index_offset | int + item.item.0 }}
+  loop: "{{ disk_uuids.results }}"
+  when: cluster_disks_list | length > 0 and not item.skipped | default(false)
+  register: mount_results
+  failed_when: mount_results.rc != 0

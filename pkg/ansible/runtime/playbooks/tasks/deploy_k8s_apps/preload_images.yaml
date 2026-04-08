@@ -1,0 +1,60 @@
+---
+# Purpose: Preload container images into cluster containerd
+# Dependencies: PRELOAD_IMAGES variable
+# Usage: Imported by deploy_k8s_apps/main.yaml (conditional on PRELOAD_IMAGES)
+# Tags: [images, deploy_k8s_apps]
+
+- name: Check for RKE2 containerd socket
+  stat:
+    path: /run/containerd/containerd.sock
+  register: rke2_containerd_socket
+
+- name: Check for K3s containerd socket  
+  stat:
+    path: /run/k3s/containerd/containerd.sock
+  register: k3s_containerd_socket
+
+- name: Determine containerd socket path
+  set_fact:
+    containerd_socket_path: "{{ '/run/containerd/containerd.sock' if rke2_containerd_socket.stat.exists else ('/run/k3s/containerd/containerd.sock' if k3s_containerd_socket.stat.exists else '') }}"
+    containerd_runtime: "{{ 'RKE2' if rke2_containerd_socket.stat.exists else ('K3s' if k3s_containerd_socket.stat.exists else 'none') }}"
+
+- name: Fail if no containerd socket found
+  fail:
+    msg: |
+      Error: No accessible containerd socket found.
+      
+      Checked locations:
+        - RKE2: /run/containerd/containerd.sock ({{ 'FOUND' if rke2_containerd_socket.stat.exists else 'NOT FOUND' }})
+        - K3s:  /run/k3s/containerd/containerd.sock ({{ 'FOUND' if k3s_containerd_socket.stat.exists else 'NOT FOUND' }})
+      
+      Please ensure RKE2 or K3s is installed and containerd is running:
+        For RKE2: systemctl status containerd
+        For K3s:  systemctl status k3s
+        
+      Verify socket permissions and that the container runtime is properly configured.
+  when: containerd_socket_path == ''
+
+- name: Parse image list
+  set_fact:
+    image_list: "{{ PRELOAD_IMAGES.split(',') }}"
+
+- name: Report detected container runtime
+  debug:
+    msg: "Using {{ containerd_runtime }} containerd socket: {{ containerd_socket_path }}"
+
+- name: Pull container images
+  shell: /var/lib/rancher/rke2/bin/ctr --address={{ containerd_socket_path }} --namespace k8s.io image pull {{ item }}
+  loop: "{{ image_list }}"
+  async: 3600
+  poll: 0
+  register: image_pull_jobs
+
+- name: Wait for image pulls to complete
+  async_status:
+    jid: "{{ item.ansible_job_id }}"
+  loop: "{{ image_pull_jobs.results }}"
+  register: image_pull_results
+  until: image_pull_results.finished
+  retries: 360
+  delay: 10

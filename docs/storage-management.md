@@ -108,6 +108,69 @@ parameters:
   fsType: "ext4"
 ```
 
+## Cleanup Behaviour
+
+Bloom provides two equivalent paths to clean up storage before redeployment:
+
+### `bloom cleanup [config-file]`
+
+Standalone cleanup command. Accepts an optional config file to read `CLUSTER_DISKS` and `CLUSTER_PREMOUNTED_DISKS`:
+
+```bash
+sudo ./bloom cleanup bloom.yaml
+```
+
+**Sequence:**
+1. **Best-effort node drain** (if cluster reachable, ~30s timeout)
+   - Internally passes `--force` and `--disable-eviction` to kubectl drain to bypass stuck pods with finalizers or PodDisruptionBudgets
+   - Automatically skips Longhorn volume detach wait when no volumes detected
+   - Clear progress messages during potentially long operations
+2. Logout iSCSI → stop Longhorn processes
+3. Force-unmount all Longhorn/CSI/kubelet volumes (including `volume-subpaths` and `globalmount`)
+4. Uninstall RKE2 and remove its directories
+5. **Pre-clean future mount range** — removes bloom artifacts (`pvc-*`, `replicas`, `longhorn-disk.cfg`) from the directories that will be used in the next deployment, preserving user files
+6. **Clean premounted disks** (`CLUSTER_PREMOUNTED_DISKS`) — removes bloom artifacts only; filesystem, fstab entry, and user files are preserved
+7. **Remove bloom-managed fstab entries** and wipe `CLUSTER_DISKS` device signatures
+
+### `bloom cli bloom.yaml --destroy-data`
+
+Equivalent to running `bloom cleanup` then redeploying. Cleanup tasks are prepended to the Ansible playbook. Both paths call the same logic and produce the same end state.
+
+### Disk Wipe Preview
+
+Before requiring confirmation, both paths display a preview table:
+
+```
+──────────────────────────────────────────────────────────────
+  ⚠️   DISK CLEANUP PREVIEW
+──────────────────────────────────────────────────────────────
+  Bloom-managed mounts to be WIPED:
+    ✓  /mnt/disk11       — bloom state only (3 item(s))
+    ⚠️  /mnt/disk12       — 2 bloom item(s), ⚠️  1 user file(s) will be LOST: myfile.txt
+    ⚠️  /mnt/disk13       — 5 bloom item(s), ⚠️  8 user file(s) will be LOST
+
+  Future mount range (/mnt/disk1 – /mnt/disk6): bloom artifacts pre-cleaned, user files preserved
+    ✓  /mnt/disk1        — empty
+    ℹ️  /mnt/disk6        — 1 bloom artifact(s) removed; 1 user file(s) kept: test
+──────────────────────────────────────────────────────────────
+```
+
+**Preview Features:**
+- User files listed individually (up to 5), or count shown if more than 5
+- `lost+found` folders automatically excluded (ext4 system folder, not user data)
+- Clear visual distinction: ✓ (safe), ⚠️ (caution), ℹ️ (info)
+- Separate sections for wiped mounts vs. pre-cleaned future range
+
+### Mount Index Allocation
+
+`CLUSTER_DISKS` and `CLUSTER_PREMOUNTED_DISKS` can now be used simultaneously. The mount index for `CLUSTER_DISKS` is chosen as the **lowest contiguous range starting from 0** that does not conflict with indexes reserved by:
+
+- `CLUSTER_PREMOUNTED_DISKS` paths (e.g. `/mnt/disk0` → reserves index 0)
+- `/etc/fstab` entries tagged `# premounted by cluster-bloom`
+
+**Example**: with `CLUSTER_PREMOUNTED_DISKS: /mnt/disk0` and 6 CLUSTER_DISKS, the range `/mnt/disk1`–`/mnt/disk6` is chosen (index 0 is reserved). If a prior deployment used `/mnt/disk11`–`/mnt/disk16` those fstab entries are removed by cleanup before the new index is calculated.
+
+
 ## Architecture
 
 ```mermaid

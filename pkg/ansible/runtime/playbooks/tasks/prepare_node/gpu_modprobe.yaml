@@ -1,0 +1,15 @@
+---
+# Purpose: Configure GPU kernel module loading for AMD GPUs
+# Dependencies: GPU_NODE variable
+# Usage: Imported by prepare_node/main.yaml (conditional on GPU_NODE)
+# Tags: [gpu, prep_node]
+
+- name: Un-blacklist amdgpu module
+  shell: sed -i '/^blacklist amdgpu/s/^/# /' /etc/modprobe.d/*.conf
+  ignore_errors: yes
+
+- name: Load amdgpu kernel module
+  modprobe:
+    name: amdgpu
+    state: present
+  ignore_errors: yes

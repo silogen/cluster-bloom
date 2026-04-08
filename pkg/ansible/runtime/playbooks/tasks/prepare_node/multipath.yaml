@@ -1,0 +1,32 @@
+---
+# Purpose: Configure multipath for storage device blacklisting
+# Dependencies: None (system configuration only)
+# Usage: Imported by prepare_node/main.yaml
+# Tags: [storage, prep_node]
+# Handlers: Restart multipathd
+
+- name: Check if multipath.conf exists
+  stat:
+    path: /etc/multipath.conf
+  register: multipath_conf
+
+- name: Create multipath.conf if not exists
+  copy:
+    content: |
+      blacklist {
+          devnode "^sd[a-z0-9]+"
+      }
+    dest: /etc/multipath.conf
+    mode: "0644"
+  when: not multipath_conf.stat.exists
+
+- name: Ensure blacklist entry in multipath.conf
+  blockinfile:
+    path: /etc/multipath.conf
+    block: |
+      blacklist {
+          devnode "^sd[a-z0-9]+"
+      }
+    marker: "# {mark} ANSIBLE MANAGED BLOCK - cluster-bloom"
+  when: multipath_conf.stat.exists
+  notify: Restart multipathd

@@ -1,0 +1,25 @@
+---
+# Purpose: Create Bloom configuration ConfigMap with cluster metadata
+# Dependencies: BLOOM_VERSION, GPU_NODE, DOMAIN, CLUSTER_SIZE, RKE2_VERSION variables
+# Usage: Imported by deploy_k8s_apps/main.yaml (conditional on FIRST_NODE)
+# Tags: [config, deploy_k8s_apps]
+
+- name: Get bloom version
+  set_fact:
+    bloom_version: "{{ BLOOM_VERSION | default('2.0.0') }}"
+
+- name: Create bloom config ConfigMap
+  shell: |
+    cat <<EOF | /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml apply -f -
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: bloom
+      namespace: default
+    data:
+      version: "{{ bloom_version }}"
+      gpu_node: "{{ GPU_NODE | lower }}"
+      DOMAIN: "{{ DOMAIN }}"
+      cluster_size: "{{ CLUSTER_SIZE }}"
+      rke2_version: "{{ RKE2_VERSION }}"
+    EOF
