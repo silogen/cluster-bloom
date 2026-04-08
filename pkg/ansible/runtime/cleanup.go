@@ -275,25 +275,22 @@ func CleanupBloomDisks(clusterDisks string) error {
 		}
 	}
 
-	// Use lsblk to find and wipe devices with Longhorn CSI mounts
-	fmt.Println("   🧹 Checking for devices to wipe...")
-	cmd = exec.Command("lsblk", "-o", "NAME,MOUNTPOINT")
-	output, err = cmd.Output()
-	if err != nil {
-		return fmt.Errorf("lsblk command failed: %w", err)
-	}
-
-	scanner = bufio.NewScanner(strings.NewReader(string(output)))
-	for scanner.Scan() {
-		fields := strings.Fields(scanner.Text())
-		if len(fields) > 1 && strings.Contains(fields[1], "kubernetes.io/csi/driver.longhorn.io") {
-			device := "/dev/" + fields[0]
-			_, err := exec.Command("sudo", "wipefs", "-a", device).CombinedOutput()
-			if err != nil {
-				fmt.Printf("      ⚠️  Warning: Failed to wipe %s\n", device)
-			} else {
-				fmt.Printf("      ✓ Wiped %s\n", device)
-			}
+	// Wipe and reformat every CLUSTER_DISKS device
+	fmt.Println("   🧹 Wiping and formatting cluster disks...")
+	for device := range strings.SplitSeq(clusterDisks, ",") {
+		device = strings.TrimSpace(device)
+		if device == "" {
+			continue
+		}
+		if _, err := exec.Command("wipefs", "-a", device).CombinedOutput(); err != nil {
+			fmt.Printf("      ⚠️  Warning: wipefs failed on %s: %v\n", device, err)
+		} else {
+			fmt.Printf("      ✓ Wiped %s\n", device)
+		}
+		if out, err := exec.Command("mkfs.ext4", "-F", device).CombinedOutput(); err != nil {
+			fmt.Printf("      ⚠️  Warning: mkfs.ext4 failed on %s: %v\n%s\n", device, err, out)
+		} else {
+			fmt.Printf("      ✓ Formatted %s as ext4\n", device)
 		}
 	}
 
@@ -511,8 +508,8 @@ func GenerateCleanupTasks(clusterDisks string, premountedDisks string) []map[str
 					"failed_when": false,
 				},
 				{
-					"name":        "Wipe filesystem signatures from cluster disks",
-					"shell":       "wipefs -a {{ item }} 2>/dev/null || true",
+					"name":        "Wipe and reformat cluster disks",
+					"shell":       "wipefs -a {{ item }} && mkfs.ext4 -F {{ item }}",
 					"loop":        "{{ cluster_disks_cleanup_list }}",
 					"failed_when": false,
 				},
