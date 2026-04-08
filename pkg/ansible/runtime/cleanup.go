@@ -34,8 +34,8 @@ func CleanupLonghornMounts() error {
 	devOut, _ := exec.Command("bash", "-c", "ls /dev/longhorn/ 2>/dev/null | wc -l").Output()
 	hasLonghornDevs := strings.TrimSpace(string(devOut)) != "0" && strings.TrimSpace(string(devOut)) != ""
 
-	mountOut, _ := exec.Command("bash", "-c", `mount | grep -cE 'longhorn|driver\.longhorn\.io' 2>/dev/null || echo 0`).Output()
-	hasLonghornMounts := strings.TrimSpace(string(mountOut)) != "0"
+	mountOut, _ := exec.Command("bash", "-c", `mount | grep -cE 'longhorn|driver\.longhorn\.io' 2>/dev/null`).Output()
+	hasLonghornMounts := strings.TrimSpace(string(mountOut)) != "0" && strings.TrimSpace(string(mountOut)) != ""
 
 	pvcDevOut, _ := exec.Command("bash", "-c", "ls /dev/longhorn/pvc-* 2>/dev/null | wc -l").Output()
 	pvcMountOut, _ := exec.Command("bash", "-c", "ls /mnt/disk*/pvc-* 2>/dev/null | wc -l").Output()
