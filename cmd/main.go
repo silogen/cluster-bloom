@@ -15,6 +15,8 @@ import (
 )
 
 var (
+	Version         string // Set via ldflags during build
+	port            int
 	playbookName    string
 	dryRun          bool
 	tags            string
