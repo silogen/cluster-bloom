@@ -131,6 +131,7 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | CERT_OPTION | Certificate option when USE_CERT_MANAGER is false. Choose 'existing' or 'generate' | "" |
 | CF_VALUES | Path to ClusterForge values file (optional). Example: "values_cf.yaml" | "" |
 | CLUSTER_DISKS | Comma-separated list of disk devices. Example "/dev/sdb,/dev/sdc". Also skips NVME drive checks. | "" |
+| CLUSTER_LISTEN_IP | Network IP specification for cluster binding. Supports exact IP ("192.168.1.100") or subnet CIDR ("192.168.1.0/24"). Overrides auto-detection for multi-homed systems. | "" |
 | CLUSTER_SIZE | Size category for cluster deployment planning. Options: small, medium, large | medium |
 | CLUSTER_PREMOUNTED_DISKS | Comma-separated list of absolute disk paths to use for Longhorn | "" |
 | CLUSTERFORGE_RELEASE | ClusterForge version to deploy. Accepts version tags (e.g. `v2.0.2`), full release URLs, `latest` (fetches newest GitHub release via API), `none`, or `""` to skip | `latest` |
@@ -196,6 +197,42 @@ ADDITIONAL_TLS_SAN_URLS:
 
 For detailed examples, testing instructions, and common use cases, see [docs/tls-san-configuration.md](docs/tls-san-configuration.md).
 
+### Network Configuration
+
+**CLUSTER_LISTEN_IP** provides precise control over which network interface the Kubernetes cluster uses for communication. This is essential for systems with multiple network interfaces where automatic detection might select the wrong IP.
+
+**Basic Configuration:**
+```yaml
+# Explicit IP address
+CLUSTER_LISTEN_IP: "192.168.1.100"
+
+# Or CIDR subnet (auto-selects first matching IP)
+CLUSTER_LISTEN_IP: "192.168.1.0/24"
+```
+
+**When to use:**
+- **Multi-homed systems**: Servers with multiple network interfaces
+- **Complex networking**: VPN, Docker networks, or overlay networks present  
+- **Specific requirements**: When you need cluster traffic on a particular interface
+
+**How it works:**
+1. **Priority 1**: If explicit IP specified, validates it exists on system interfaces
+2. **Priority 2**: If CIDR subnet specified, finds first matching IP on system  
+3. **Priority 3**: Falls back to default route interface (auto-detection)
+
+**Environment variable support:**
+```bash
+export CLUSTER_LISTEN_IP="192.168.1.100"
+sudo ./bloom cli bloom.yaml
+```
+
+**CLI flag support:**
+```bash
+sudo ./bloom cli bloom.yaml --cluster-listen-ip "192.168.1.100"
+```
+
+**Validation**: The system validates that specified IPs/subnets exist on target system interfaces before deployment, providing helpful error messages if not found.
+
 ### Using a Configuration File
 
 Create a YAML configuration file (e.g., `bloom.yaml`):
@@ -205,6 +242,7 @@ DOMAIN: "your-domain.example.com"  # Required: Your cluster domain
 FIRST_NODE: true
 GPU_NODE: true                     # Set to false if no GPUs
 CLUSTER_DISKS: "/dev/nvme1n1"     # Disk device path for storage
+CLUSTER_LISTEN_IP: "192.168.1.100" # Optional: specific IP for cluster binding
 CERT_OPTION: "generate"           # Options: "generate" or "existing"
 CLUSTERFORGE_RELEASE: "v2.0.0"    # Version tag, full URL, "latest", "none", or "" to skip
 PRELOAD_IMAGES: ""                # Optional: comma-separated container images

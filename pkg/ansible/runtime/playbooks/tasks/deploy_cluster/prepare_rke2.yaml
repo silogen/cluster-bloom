@@ -39,15 +39,154 @@
     dest: /etc/rancher/rke2/audit-policy.yaml
     mode: "0644"
 
-- name: Get node IP for RKE2 cluster communication
-  shell: >-
-    ip -4 addr show | grep "inet 10.0.3\." | awk '{{ "{" }}print $2{{ "}" }}' | cut -d/ -f1 | head -1 || echo ""
-  register: node_ip_result
-  changed_when: false
+- name: Validate CLUSTER_LISTEN_IP configuration
+  when: CLUSTER_LISTEN_IP is defined and CLUSTER_LISTEN_IP != ""
+  block:
+    - name: Gather network interface facts
+      setup:
+        filter: ansible_all_ipv4_addresses
 
-- name: Set node_ip fact
-  set_fact:
-    node_ip: "{{ node_ip_result.stdout if node_ip_result.stdout != '' else ansible_default_ipv4.address }}"
+    - name: Validate explicit IP exists on system interfaces
+      fail:
+        msg: |
+          ❌ CLUSTER_LISTEN_IP validation failed!
+          
+          Specified IP: {{ CLUSTER_LISTEN_IP }}
+          Available IPs on this system: {{ ansible_all_ipv4_addresses | join(', ') }}
+          
+          📋 To fix this issue:
+          1. Choose an IP from the available list above, or
+          2. Use a CIDR subnet that contains available IPs (e.g., "192.168.1.0/24")
+          
+          💡 Tip: Run 'ip addr show' on the target system to see all interfaces
+      when:
+        - CLUSTER_LISTEN_IP is string
+        - "'/' not in CLUSTER_LISTEN_IP"
+        - CLUSTER_LISTEN_IP not in ansible_all_ipv4_addresses
+
+    - name: Check subnet contains any system IPs using native logic
+      shell: |
+        subnet="{{ CLUSTER_LISTEN_IP }}"
+        network=$(echo "$subnet" | cut -d'/' -f1)
+        prefix=$(echo "$subnet" | cut -d'/' -f2)
+        
+        # Convert network to integer
+        network_int=$(echo "$network" | awk -F. '{print ($1 * 16777216) + ($2 * 65536) + ($3 * 256) + $4}')
+        
+        # Calculate subnet mask
+        mask=$((0xffffffff << (32 - prefix) & 0xffffffff))
+        network_masked=$((network_int & mask))
+        
+        matching_ips=""
+        for ip in {{ ansible_all_ipv4_addresses | join(' ') }}; do
+          # Convert IP to integer
+          ip_int=$(echo "$ip" | awk -F. '{print ($1 * 16777216) + ($2 * 65536) + ($3 * 256) + $4}')
+          ip_masked=$((ip_int & mask))
+          
+          # Check if IP is in the same network
+          if [ "$ip_masked" -eq "$network_masked" ]; then
+            matching_ips="$matching_ips $ip"
+          fi
+        done
+        
+        echo "${matching_ips## }"
+      register: subnet_check_result
+      changed_when: false
+      when:
+        - CLUSTER_LISTEN_IP is string
+        - "'/' in CLUSTER_LISTEN_IP"
+
+    - name: Set subnet matching IPs fact
+      set_fact:
+        subnet_matching_ips: "{{ subnet_check_result.stdout.split() if subnet_check_result.stdout else [] }}"
+      when:
+        - CLUSTER_LISTEN_IP is string
+        - "'/' in CLUSTER_LISTEN_IP"
+        - subnet_check_result is defined
+
+    - name: Fail if CIDR subnet contains no system IPs
+      fail:
+        msg: |
+          ❌ CLUSTER_LISTEN_IP subnet validation failed!
+          
+          Specified subnet: {{ CLUSTER_LISTEN_IP }}
+          Available IPs on system: {{ ansible_all_ipv4_addresses | join(', ') }}
+          IPs matching subnet: {{ subnet_matching_ips | join(', ') if subnet_matching_ips else 'None' }}
+          
+          📋 To fix this issue:
+          1. Choose a different CIDR that contains system IPs, or
+          2. Use an explicit IP from the available list above
+          
+          💡 Example: If system has "192.168.1.100", use "192.168.1.0/24"
+      when:
+        - CLUSTER_LISTEN_IP is string
+        - "'/' in CLUSTER_LISTEN_IP"
+        - subnet_matching_ips is defined
+        - subnet_matching_ips | length == 0
+
+    - name: Display IP validation results
+      debug:
+        msg: |
+          ✅ CLUSTER_LISTEN_IP validation passed!
+          Configuration: {{ CLUSTER_LISTEN_IP }}
+          {% if CLUSTER_LISTEN_IP is string and '/' not in CLUSTER_LISTEN_IP %}
+          Type: Explicit IP address
+          {% elif CLUSTER_LISTEN_IP is string and '/' in CLUSTER_LISTEN_IP %}
+          Type: CIDR subnet
+          Available IPs in subnet: {{ subnet_matching_ips | default([]) | join(', ') or 'None' }}
+          {% endif %}
+
+- name: Determine node IP for RKE2 cluster communication
+  block:
+    # Priority 1: Use explicit IP if provided
+    - name: Use explicit CLUSTER_LISTEN_IP if provided
+      set_fact:
+        node_ip: "{{ CLUSTER_LISTEN_IP }}"
+      when: 
+        - CLUSTER_LISTEN_IP is defined
+        - CLUSTER_LISTEN_IP != ""
+        - "'/' not in CLUSTER_LISTEN_IP"
+        - CLUSTER_LISTEN_IP is string
+
+    # Priority 2: Find IP from CIDR subnet if provided
+    - name: Find IP from CLUSTER_LISTEN_IP subnet
+      set_fact:
+        node_ip: "{{ subnet_matching_ips[0] }}"
+      when:
+        - node_ip is not defined
+        - CLUSTER_LISTEN_IP is defined
+        - CLUSTER_LISTEN_IP != ""
+        - "'/' in CLUSTER_LISTEN_IP"
+        - CLUSTER_LISTEN_IP is string
+        - subnet_matching_ips is defined
+        - subnet_matching_ips | length > 0
+
+    # Priority 3: Use default route interface (auto-detection)
+    - name: Use default route interface for cluster communication
+      set_fact:
+        node_ip: "{{ ansible_default_ipv4.address }}"
+      when: node_ip is not defined
+
+- name: Display selected cluster IP for verification
+  debug:
+    msg: |
+       🌐 Cluster IP Selection Result:
+       Selected IP: {{ node_ip }}
+       {% if CLUSTER_LISTEN_IP is defined and CLUSTER_LISTEN_IP != "" %}
+       Configuration: CLUSTER_LISTEN_IP = {{ CLUSTER_LISTEN_IP }}
+       Validation: ✅ Passed (IP/subnet verified on target system)
+        {% if CLUSTER_LISTEN_IP is string and '/' not in CLUSTER_LISTEN_IP %}
+        Method: Explicit IP address specified
+        {% elif CLUSTER_LISTEN_IP is string and '/' in CLUSTER_LISTEN_IP %}
+        Method: First IP found from subnet {{ CLUSTER_LISTEN_IP }}
+        {% endif %}
+       {% else %}
+       Method: Auto-detection (default route interface)
+       Configuration: No CLUSTER_LISTEN_IP specified, using default route interface
+       Interface: {{ ansible_default_ipv4.interface }}
+       Gateway: {{ ansible_default_ipv4.gateway }}
+       Validation: ⏭️ Skipped (backward compatibility mode)
+       {% endif %}
 
 - name: Create RKE2 config.yaml
   copy:
