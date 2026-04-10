@@ -257,8 +257,8 @@ detect_cpu() {
     esac
 }
 
-ACCEL="\$(detect_accel)"
-CPU_TYPE="\$(detect_cpu)"
+ACCEL="$(detect_accel)"
+CPU_TYPE="$(detect_cpu)"
 
 # Create startup script with direct variable expansion
 cat > "$VM_NAME/start-vm.sh" << STARTEOF
