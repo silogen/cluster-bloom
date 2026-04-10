@@ -138,21 +138,27 @@ func (p *OutputProcessor) processCleanMode(line string) string {
 		if p.logFile != nil {
 			p.logFile.WriteString(fmt.Sprintf("DEBUG_JOIN: Found Display join information task, processing line: %s\n", line))
 		}
-		if strings.Contains(line, "\"msg\":") && strings.Contains(line, "Cluster setup complete!") {
+		// Trim spaces and check for msg and cluster content (handles indented JSON)
+		trimmedLine := strings.TrimSpace(line)
+		if strings.Contains(trimmedLine, "\"msg\":") && strings.Contains(trimmedLine, "Cluster setup complete!") {
 			if p.logFile != nil {
 				p.logFile.WriteString("DEBUG_JOIN: Line contains msg and Cluster setup complete, extracting...\n")
 			}
 			// Extract the join information message from the JSON output
-			p.joinInfo = p.extractJoinInfoMessage(line)
+			p.joinInfo = p.extractJoinInfoMessage(trimmedLine)
 			if p.logFile != nil {
 				p.logFile.WriteString(fmt.Sprintf("DEBUG_JOIN: Extracted join info length: %d\n", len(p.joinInfo)))
 				p.logFile.WriteString(fmt.Sprintf("DEBUG_JOIN: Extracted content preview: %.100s...\n", p.joinInfo))
 			}
 		} else {
 			if p.logFile != nil {
-				hasMsg := strings.Contains(line, "\"msg\":")
-				hasCluster := strings.Contains(line, "Cluster setup complete!")
-				p.logFile.WriteString(fmt.Sprintf("DEBUG_JOIN: Line conditions - hasMsg: %v, hasCluster: %v\n", hasMsg, hasCluster))
+				hasMsg := strings.Contains(trimmedLine, "\"msg\":")
+				hasCluster := strings.Contains(trimmedLine, "Cluster setup complete!")
+				previewLen := 50
+				if len(trimmedLine) < previewLen {
+					previewLen = len(trimmedLine)
+				}
+				p.logFile.WriteString(fmt.Sprintf("DEBUG_JOIN: Line conditions - hasMsg: %v, hasCluster: %v, trimmed line: %s\n", hasMsg, hasCluster, trimmedLine[:previewLen]))
 			}
 		}
 	}
