@@ -99,6 +99,10 @@ func (p *OutputProcessor) processCleanMode(line string) string {
 	if taskName, ok := ParseTaskHeader(line); ok {
 		p.currentTask = taskName
 		p.taskSeen = false
+		// Debug logging for task detection
+		if p.logFile != nil && strings.Contains(strings.ToLower(taskName), "display join") {
+			p.logFile.WriteString(fmt.Sprintf("DEBUG_TASK: Detected join task: %s\n", taskName))
+		}
 		return "⏳ " + taskName
 	}
 
@@ -131,9 +135,25 @@ func (p *OutputProcessor) processCleanMode(line string) string {
 	// Capture join information from "Display join information" task
 	// Use case-insensitive matching and check for partial matches to be more robust
 	if strings.Contains(strings.ToLower(p.currentTask), "display join") && !p.taskSeen {
+		if p.logFile != nil {
+			p.logFile.WriteString(fmt.Sprintf("DEBUG_JOIN: Found Display join information task, processing line: %s\n", line))
+		}
 		if strings.Contains(line, "\"msg\":") && strings.Contains(line, "Cluster setup complete!") {
+			if p.logFile != nil {
+				p.logFile.WriteString("DEBUG_JOIN: Line contains msg and Cluster setup complete, extracting...\n")
+			}
 			// Extract the join information message from the JSON output
 			p.joinInfo = p.extractJoinInfoMessage(line)
+			if p.logFile != nil {
+				p.logFile.WriteString(fmt.Sprintf("DEBUG_JOIN: Extracted join info length: %d\n", len(p.joinInfo)))
+				p.logFile.WriteString(fmt.Sprintf("DEBUG_JOIN: Extracted content preview: %.100s...\n", p.joinInfo))
+			}
+		} else {
+			if p.logFile != nil {
+				hasMsg := strings.Contains(line, "\"msg\":")
+				hasCluster := strings.Contains(line, "Cluster setup complete!")
+				p.logFile.WriteString(fmt.Sprintf("DEBUG_JOIN: Line conditions - hasMsg: %v, hasCluster: %v\n", hasMsg, hasCluster))
+			}
 		}
 	}
 
@@ -181,10 +201,20 @@ func (p *OutputProcessor) PrintSummary() {
 	fmt.Printf("Total time: %s\n", formatDuration(duration))
 
 	// Print join information if available
+	if p.logFile != nil {
+		p.logFile.WriteString(fmt.Sprintf("DEBUG_SUMMARY: joinInfo length: %d\n", len(p.joinInfo)))
+	}
 	if p.joinInfo != "" {
+		if p.logFile != nil {
+			p.logFile.WriteString("DEBUG_SUMMARY: Displaying join information\n")
+		}
 		fmt.Println()
 		fmt.Print(p.joinInfo)
 		fmt.Println()
+	} else {
+		if p.logFile != nil {
+			p.logFile.WriteString("DEBUG_SUMMARY: No join information to display\n")
+		}
 	}
 
 	// Print credential information if CLUSTERFORGE_RELEASE is configured
