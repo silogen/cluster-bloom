@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -128,7 +129,8 @@ func (p *OutputProcessor) processCleanMode(line string) string {
 	}
 
 	// Capture join information from "Display join information" task
-	if p.currentTask == "Display join information" && !p.taskSeen {
+	// Use case-insensitive matching and check for partial matches to be more robust
+	if strings.Contains(strings.ToLower(p.currentTask), "display join") && !p.taskSeen {
 		if strings.Contains(line, "\"msg\":") && strings.Contains(line, "Cluster setup complete!") {
 			// Extract the join information message from the JSON output
 			p.joinInfo = p.extractJoinInfoMessage(line)
@@ -245,30 +247,19 @@ func (p *OutputProcessor) PrintSummary() {
 
 // extractJoinInfoMessage extracts join information from Ansible debug output
 func (p *OutputProcessor) extractJoinInfoMessage(line string) string {
-	// Look for the msg field in the JSON output
-	msgStart := strings.Index(line, `"msg": "`)
-	if msgStart == -1 {
-		return ""
-	}
-
-	// Find the start of the message content
-	msgStart += 8 // Length of `"msg": "`
+	// The line from your log appears to start directly with: "msg": "content..."
+	// Let's use a regex to properly extract the message content
+	msgPattern := `"msg":\s*"(.*)"`
+	re := regexp.MustCompile(msgPattern)
+	matches := re.FindStringSubmatch(line)
 	
-	// Find the end of the message (look for the closing quote, handling escaped quotes)
-	msgEnd := msgStart
-	for i := msgStart; i < len(line); i++ {
-		if line[i] == '"' && (i == msgStart || line[i-1] != '\\') {
-			msgEnd = i
-			break
-		}
-	}
-
-	if msgEnd == msgStart {
+	if len(matches) < 2 {
 		return ""
 	}
 
-	// Extract and clean up the message
-	msg := line[msgStart:msgEnd]
+	// Extract the message content
+	msg := matches[1]
+	
 	// Replace escaped newlines with actual newlines
 	msg = strings.ReplaceAll(msg, "\\n", "\n")
 	// Replace escaped quotes
