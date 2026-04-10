@@ -1,0 +1,113 @@
+name: Dagger CI (Gitea)
+
+# Gitea Actions syntax is compatible with GitHub Actions
+# Reference: https://docs.gitea.com/usage/actions/overview
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+    inputs:
+      enable_qemu:
+        description: 'Enable QEMU VM tests (requires KVM)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+jobs:
+  # Fast tests - Build and unit tests only
+  fast-tests:
+    name: Build & Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Dagger
+        run: |
+          curl -fsSL https://dl.dagger.io/dagger/install.sh | sh
+          sudo mv ./bin/dagger /usr/local/bin/
+          dagger version
+
+      - name: Initialize Dagger module
+        working-directory: ci
+        run: dagger develop
+
+      - name: Run unit tests
+        run: dagger -m ci call test --source=.
+
+      - name: Build bloom binary
+        run: dagger -m ci call build --source=. export --path=dist/bloom
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bloom-binary
+          path: dist/bloom
+          retention-days: 7
+
+  # QEMU VM tests - Only run when enabled
+  qemu-tests:
+    name: QEMU VM Integration Tests
+    runs-on: ubuntu-latest
+    # Only run if:
+    # 1. Manually triggered with enable_qemu=true, OR
+    # 2. On main/develop branch pushes (not PRs)
+    if: |
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.enable_qemu == 'true') ||
+      (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'))
+    needs: fast-tests
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Dagger
+        run: |
+          curl -fsSL https://dl.dagger.io/dagger/install.sh | sh
+          sudo mv ./bin/dagger /usr/local/bin/
+          dagger version
+
+      - name: Initialize Dagger module
+        working-directory: ci
+        run: dagger develop
+
+      - name: Check KVM availability
+        id: kvm-check
+        run: |
+          if [ -e /dev/kvm ] && [ -w /dev/kvm ]; then
+            echo "kvm_available=true" >> $GITHUB_OUTPUT
+            echo "✅ KVM is available and accessible"
+          else
+            echo "kvm_available=false" >> $GITHUB_OUTPUT
+            echo "⚠️  KVM is not available - QEMU will run without acceleration"
+          fi
+
+      - name: Run QEMU validation
+        run: dagger -m ci call validate-in-qemu --source=.
+
+  # Full CI pipeline
+  all:
+    name: Full CI Pipeline
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.enable_qemu == 'true'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Dagger
+        run: |
+          curl -fsSL https://dl.dagger.io/dagger/install.sh | sh
+          sudo mv ./bin/dagger /usr/local/bin/
+          dagger version
+
+      - name: Initialize Dagger module
+        working-directory: ci
+        run: dagger develop
+
+      - name: Run full CI pipeline
+        run: dagger -m ci call all --source=. --skip-qemu=false

@@ -214,6 +214,52 @@ for i in $(seq 0 $((DISK_COUNT - 1))); do
     fi
 done
 
+# Detect OS and set appropriate acceleration
+detect_accel() {
+    case "\$OSTYPE" in
+        darwin*)
+            # macOS: Use Hypervisor.framework
+            echo ",accel=hvf"
+            ;;
+        linux*)
+            # Linux: Use KVM if available
+            if [ -e /dev/kvm ] && [ -w /dev/kvm ]; then
+                echo ",accel=kvm"
+            else
+                echo ""  # No acceleration
+            fi
+            ;;
+        msys*|cygwin*|win32)
+            # Windows: Use Windows Hypervisor Platform (WHPX)
+            echo ",accel=whpx"
+            ;;
+        *)
+            echo ""  # Unknown OS, no acceleration
+            ;;
+    esac
+}
+
+detect_cpu() {
+    case "\$OSTYPE" in
+        darwin*|msys*|cygwin*|win32)
+            echo "qemu64"
+            ;;
+        linux*)
+            if [ -e /dev/kvm ] && [ -w /dev/kvm ]; then
+                echo "host"
+            else
+                echo "qemu64"
+            fi
+            ;;
+        *)
+            echo "qemu64"
+            ;;
+    esac
+}
+
+ACCEL="\$(detect_accel)"
+CPU_TYPE="\$(detect_cpu)"
+
 # Create startup script with direct variable expansion
 cat > "$VM_NAME/start-vm.sh" << STARTEOF
 #!/bin/bash
@@ -221,6 +267,8 @@ SCRIPT_DIR="\$(cd "\$(dirname "\$0")" && pwd)"
 cd "\$SCRIPT_DIR"
 
 echo "Starting x86_64 VM with $DISK_COUNT devices in background..."
+echo "Acceleration: $ACCEL"
+echo "CPU type: $CPU_TYPE"
 echo "Output will be logged to \$SCRIPT_DIR/startup.log"
 echo "Wait ~90 seconds for cloud-init to complete."
 echo ""
@@ -232,8 +280,8 @@ echo "  \$SCRIPT_DIR/ssh-vm.sh"
 echo ""
 
 qemu-system-x86_64 \\
-  -machine q35$(if [[ "$OSTYPE" == "darwin"* ]]; then echo ""; else echo ",accel=kvm"; fi) \\
-  -cpu $(if [[ "$OSTYPE" == "darwin"* ]]; then echo "qemu64"; else echo "host"; fi) \\
+  -machine q35$ACCEL \\
+  -cpu $CPU_TYPE \\
   -smp $VM_CPUS \\
   -m $VM_MEMORY \\
   -drive if=pflash,format=raw,readonly=on,file=$OVMF_CODE \\

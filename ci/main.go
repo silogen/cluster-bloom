@@ -12,16 +12,10 @@ type BloomCi struct{}
 // Build the bloom binary from source
 func (m *BloomCi) Build(
 	ctx context.Context,
-	// Source directory (defaults to parent directory)
-	// +optional
+	// Source directory
+	// +required
 	source *dagger.Directory,
 ) *dagger.File {
-	if source == nil {
-		source = dag.Host().Directory("..", dagger.HostDirectoryOpts{
-			Exclude: []string{"ci/", "dist/", ".git/", ".bloom/"},
-		})
-	}
-
 	return dag.Container().
 		From("golang:1.24-alpine").
 		WithMountedDirectory("/src", source).
@@ -34,16 +28,10 @@ func (m *BloomCi) Build(
 // Run unit tests
 func (m *BloomCi) Test(
 	ctx context.Context,
-	// Source directory (defaults to parent directory)
-	// +optional
+	// Source directory
+	// +required
 	source *dagger.Directory,
 ) (string, error) {
-	if source == nil {
-		source = dag.Host().Directory("..", dagger.HostDirectoryOpts{
-			Exclude: []string{"ci/", "dist/", ".git/", ".bloom/"},
-		})
-	}
-
 	return dag.Container().
 		From("golang:1.24-alpine").
 		WithMountedDirectory("/src", source).
@@ -55,10 +43,11 @@ func (m *BloomCi) Test(
 
 // Validate bloom installation in a QEMU VM
 // This runs the existing QEMU test script to validate the full installation flow
+// Supports hardware acceleration on Linux (KVM), macOS (HVF), and Windows (WHPX)
 func (m *BloomCi) ValidateInQemu(
 	ctx context.Context,
-	// Source directory (defaults to parent directory)
-	// +optional
+	// Source directory
+	// +required
 	source *dagger.Directory,
 	// VM configuration profile
 	// +optional
@@ -69,12 +58,6 @@ func (m *BloomCi) ValidateInQemu(
 	// +default="tests/qemu/bloom.yaml"
 	config string,
 ) (string, error) {
-	if source == nil {
-		source = dag.Host().Directory("..", dagger.HostDirectoryOpts{
-			Exclude: []string{"ci/", "dist/", ".git/", ".bloom/"},
-		})
-	}
-
 	// Build the bloom binary
 	bloomBinary := m.Build(ctx, source)
 
@@ -120,20 +103,14 @@ func (m *BloomCi) ValidateInQemu(
 // Run the full CI pipeline: build, test, and optionally validate in QEMU
 func (m *BloomCi) All(
 	ctx context.Context,
-	// Source directory (defaults to parent directory)
-	// +optional
+	// Source directory
+	// +required
 	source *dagger.Directory,
 	// Skip QEMU validation (requires KVM/nested virtualization)
 	// +optional
 	// +default=true
 	skipQemu bool,
 ) (string, error) {
-	if source == nil {
-		source = dag.Host().Directory("..", dagger.HostDirectoryOpts{
-			Exclude: []string{"ci/", "dist/", ".git/", ".bloom/"},
-		})
-	}
-
 	// Run unit tests
 	fmt.Println("Running unit tests...")
 	testOutput, err := m.Test(ctx, source)
@@ -169,19 +146,13 @@ func (m *BloomCi) All(
 // Export the bloom binary to the dist/ directory
 func (m *BloomCi) ExportBinary(
 	ctx context.Context,
-	// Source directory (defaults to parent directory)
-	// +optional
+	// Source directory
+	// +required
 	source *dagger.Directory,
 	// Output directory path on host
 	// +default="../dist"
 	outputPath string,
 ) (string, error) {
-	if source == nil {
-		source = dag.Host().Directory("..", dagger.HostDirectoryOpts{
-			Exclude: []string{"ci/", "dist/", ".git/", ".bloom/"},
-		})
-	}
-
 	bloomBinary := m.Build(ctx, source)
 
 	_, err := bloomBinary.Export(ctx, outputPath+"/bloom")
