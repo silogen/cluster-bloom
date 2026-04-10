@@ -29,6 +29,7 @@ type OutputProcessor struct {
 	suppressNext bool
 	pendingTask  bool
 	config       map[string]string // Configuration values (e.g., CLUSTERFORGE_RELEASE, DOMAIN)
+	joinInfo     string            // Captured join information from Display join information task
 }
 
 // NewOutputProcessor creates a new output processor
@@ -126,6 +127,14 @@ func (p *OutputProcessor) processCleanMode(line string) string {
 		}
 	}
 
+	// Capture join information from "Display join information" task
+	if p.currentTask == "Display join information" && !p.taskSeen {
+		if strings.Contains(line, "\"msg\":") && strings.Contains(line, "Cluster setup complete!") {
+			// Extract the join information message from the JSON output
+			p.joinInfo = p.extractJoinInfoMessage(line)
+		}
+	}
+
 	// Suppress most other output in clean mode
 	// Only show critical errors or important messages
 	if strings.Contains(line, "ERROR") ||
@@ -168,6 +177,13 @@ func (p *OutputProcessor) PrintSummary() {
 	fmt.Println()
 	fmt.Printf("Playbook complete: %s\n", p.stats.Summary())
 	fmt.Printf("Total time: %s\n", formatDuration(duration))
+
+	// Print join information if available
+	if p.joinInfo != "" {
+		fmt.Println()
+		fmt.Print(p.joinInfo)
+		fmt.Println()
+	}
 
 	// Print credential information if CLUSTERFORGE_RELEASE is configured
 	if p.config != nil {
@@ -225,6 +241,40 @@ func (p *OutputProcessor) PrintSummary() {
 			fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		}
 	}
+}
+
+// extractJoinInfoMessage extracts join information from Ansible debug output
+func (p *OutputProcessor) extractJoinInfoMessage(line string) string {
+	// Look for the msg field in the JSON output
+	msgStart := strings.Index(line, `"msg": "`)
+	if msgStart == -1 {
+		return ""
+	}
+
+	// Find the start of the message content
+	msgStart += 8 // Length of `"msg": "`
+	
+	// Find the end of the message (look for the closing quote, handling escaped quotes)
+	msgEnd := msgStart
+	for i := msgStart; i < len(line); i++ {
+		if line[i] == '"' && (i == msgStart || line[i-1] != '\\') {
+			msgEnd = i
+			break
+		}
+	}
+
+	if msgEnd == msgStart {
+		return ""
+	}
+
+	// Extract and clean up the message
+	msg := line[msgStart:msgEnd]
+	// Replace escaped newlines with actual newlines
+	msg = strings.ReplaceAll(msg, "\\n", "\n")
+	// Replace escaped quotes
+	msg = strings.ReplaceAll(msg, "\\\"", "\"")
+
+	return msg
 }
 
 // formatDuration formats a duration into a human-readable string
