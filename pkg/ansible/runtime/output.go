@@ -110,6 +110,11 @@ func (p *OutputProcessor) processCleanMode(line string) string {
 	if taskInfo, ok := ParseTaskResult(line); ok {
 		if !p.taskSeen && p.currentTask != "" {
 			p.taskSeen = true
+			
+			// Debug logging for task completion
+			if p.logFile != nil && strings.Contains(strings.ToLower(p.currentTask), "display join") {
+				p.logFile.WriteString(fmt.Sprintf("DEBUG_TASK_RESULT: Task completed: %s, taskSeen set to true\n", p.currentTask))
+			}
 
 			// Check if error should be ignored
 			if taskInfo.Status == TaskStatusFailed && IsIgnoredError(line) {
@@ -134,7 +139,7 @@ func (p *OutputProcessor) processCleanMode(line string) string {
 
 	// Capture join information from "Display join information" task
 	// Use case-insensitive matching and check for partial matches to be more robust
-	if strings.Contains(strings.ToLower(p.currentTask), "display join") && !p.taskSeen {
+	if strings.Contains(strings.ToLower(p.currentTask), "display join") {
 		if p.logFile != nil {
 			p.logFile.WriteString(fmt.Sprintf("DEBUG_JOIN: Found Display join information task, processing line: %s\n", line))
 		}
