@@ -141,7 +141,7 @@ Create the clusterforge directory and download the ClusterForge Enterprise AI pa
 ```bash
 wget -O "./clusterforge/clusterforge.tar.gz" https://github.com/silogen/cluster-forge/releases/download/v2.0.2/release-enterprise-ai-v2.0.2.tar.gz
 tar -xzf "./clusterforge/clusterforge.tar.gz" -C ./clusterforge --no-same-owner
-cd /cluster-forge
+cd cluster-forge
 ```
 
 ### Run Bootstrap Script
