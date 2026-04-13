@@ -139,8 +139,8 @@ After all nodes (control plane and worker nodes) have been added to your cluster
 Create the clusterforge directory and download the ClusterForge Enterprise AI package:
 
 ```bash
-wget -O "./clusterforge/clusterforge.tar.gz" https://github.com/silogen/cluster-forge/releases/download/v2.0.2/release-enterprise-ai-v2.0.2.tar.gz
-tar -xzf "./clusterforge/clusterforge.tar.gz" -C ./clusterforge --no-same-owner
+wget -O "./clusterforge.tar.gz" https://github.com/silogen/cluster-forge/releases/download/v2.0.2/release-enterprise-ai-v2.0.2.tar.gz
+tar -xzf "./clusterforge.tar.gz" -C ./clusterforge --no-same-owner
 cd cluster-forge
 ```
 
