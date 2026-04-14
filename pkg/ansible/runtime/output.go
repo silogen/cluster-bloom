@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -29,6 +30,7 @@ type OutputProcessor struct {
 	suppressNext bool
 	pendingTask  bool
 	config       map[string]string // Configuration values (e.g., CLUSTERFORGE_RELEASE, DOMAIN)
+	joinInfo     string            // Captured join information from Display join information task
 }
 
 // NewOutputProcessor creates a new output processor
@@ -97,6 +99,7 @@ func (p *OutputProcessor) processCleanMode(line string) string {
 	if taskName, ok := ParseTaskHeader(line); ok {
 		p.currentTask = taskName
 		p.taskSeen = false
+
 		return "⏳ " + taskName
 	}
 
@@ -104,6 +107,8 @@ func (p *OutputProcessor) processCleanMode(line string) string {
 	if taskInfo, ok := ParseTaskResult(line); ok {
 		if !p.taskSeen && p.currentTask != "" {
 			p.taskSeen = true
+			
+
 
 			// Check if error should be ignored
 			if taskInfo.Status == TaskStatusFailed && IsIgnoredError(line) {
@@ -123,6 +128,17 @@ func (p *OutputProcessor) processCleanMode(line string) string {
 			}
 
 			return output
+		}
+	}
+
+	// Capture join information from "Display join information" task
+	// Use case-insensitive matching and check for partial matches to be more robust
+	if strings.Contains(strings.ToLower(p.currentTask), "display join") {
+		// Trim spaces and check for msg and cluster content (handles indented JSON)
+		trimmedLine := strings.TrimSpace(line)
+		if strings.Contains(trimmedLine, "\"msg\":") && strings.Contains(trimmedLine, "Cluster setup complete!") {
+			// Extract the join information message from the JSON output
+			p.joinInfo = p.extractJoinInfoMessage(trimmedLine)
 		}
 	}
 
@@ -168,6 +184,13 @@ func (p *OutputProcessor) PrintSummary() {
 	fmt.Println()
 	fmt.Printf("Playbook complete: %s\n", p.stats.Summary())
 	fmt.Printf("Total time: %s\n", formatDuration(duration))
+
+	// Print join information if available
+	if p.joinInfo != "" {
+		fmt.Println()
+		fmt.Print(p.joinInfo)
+		fmt.Println()
+	}
 
 	// Print credential information if CLUSTERFORGE_RELEASE is configured
 	if p.config != nil {
@@ -225,6 +248,29 @@ func (p *OutputProcessor) PrintSummary() {
 			fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		}
 	}
+}
+
+// extractJoinInfoMessage extracts join information from Ansible debug output
+func (p *OutputProcessor) extractJoinInfoMessage(line string) string {
+	// The line from your log appears to start directly with: "msg": "content..."
+	// Let's use a regex to properly extract the message content
+	msgPattern := `"msg":\s*"(.*)"`
+	re := regexp.MustCompile(msgPattern)
+	matches := re.FindStringSubmatch(line)
+	
+	if len(matches) < 2 {
+		return ""
+	}
+
+	// Extract the message content
+	msg := matches[1]
+	
+	// Replace escaped newlines with actual newlines
+	msg = strings.ReplaceAll(msg, "\\n", "\n")
+	// Replace escaped quotes
+	msg = strings.ReplaceAll(msg, "\\\"", "\"")
+
+	return msg
 }
 
 // formatDuration formats a duration into a human-readable string
