@@ -181,11 +181,10 @@ schema:
       desc: Opt-in to allow automatic DNS fixes. Only modifies DNS if broken and external DNS works. Creates backups and auto-rolls back on failure
       section: "⚙️ Advanced Configuration"
 
-    DNSMASQ:
-      type: bool
-      default: false
-      desc: Install dnsmasq to allow use of local OIDC server. Requires FIX_DNS=true and DOMAIN to be set
-      applicable: when(FIRST_NODE == true)
+    DNS_SERVERS:
+      type: seq
+      default: []
+      desc: Custom DNS servers for RKE2 cluster. If set, these nameservers will be written to /etc/rancher/rke2/resolv.conf instead of copying host DNS. Format as YAML list (e.g., ["8.8.8.8", "1.1.1.1"])
       section: "⚙️ Advanced Configuration"
 
     CF_VALUES:

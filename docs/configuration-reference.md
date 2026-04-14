@@ -134,37 +134,21 @@ Configuration sources in priority order (highest to lowest):
   - Known DNS issues preventing apt updates: Set to `true`
 - **⚠️ Warning**: When enabled, will overwrite `/etc/resolv.conf` with Google/Cloudflare DNS if local DNS is detected as broken
 
-#### DNSMASQ
-- **Type**: Boolean
-- **Default**: `false`
-- **Description**: **Opt-in** flag to configure dnsmasq for local DNS resolution (first node only). Provides DNS resolution for `cluster.local` (Kubernetes) and custom domains. Requires `FIX_DNS: true` to take effect.
-- **Values**: `true` | `false`
-- **Example**: `DNSMASQ: true`
-- **Requirements**: 
-  - `FIX_DNS: true` (required)
-  - `FIRST_NODE: true` (automatic, only applies to first node)
-  - `DOMAIN` must be set (required for dnsmasq configuration)
-- **Behavior When Enabled**:
-  - Disables systemd-resolved (with state saved for rollback)
-  - Configures dnsmasq to resolve `{DOMAIN}` to node IP
-  - Forwards `cluster.local` queries to Kubernetes CoreDNS (10.243.0.10)
-  - Falls back to external DNS (4.4.4.4, 1.1.1.1) for other queries
-  - Makes `/etc/resolv.conf` point to `127.0.0.1` (localhost)
-  - Makes `/etc/resolv.conf` immutable after successful verification
-  - Tests configuration before committing changes
-  - Full automatic rollback on any failure
-- **Safety Features**:
-  - Creates backup at `/etc/resolv.conf.pre-dnsmasq-<timestamp>`
-  - Validates dnsmasq configuration before starting service
-  - Tests DNS resolution through dnsmasq before making permanent
-  - Automatic rollback restores: original resolv.conf, systemd-resolved state, and disables dnsmasq
-  - Clear error messages on failure
-- **When Disabled** (`false`, default): No DNS service configuration, uses system defaults
+#### DNS_SERVERS
+- **Type**: Sequence (List)
+- **Default**: `[]` (empty list)
+- **Description**: Custom DNS servers for RKE2 cluster. When provided, these nameservers will be written directly to `/etc/rancher/rke2/resolv.conf` instead of copying host DNS configuration. This allows explicit control over cluster DNS resolution.
+- **Format**: YAML list of IP addresses
+- **Example**: `DNS_SERVERS: ["8.8.8.8", "1.1.1.1", "208.67.222.222"]`
+- **Behavior**:
+  - **When Empty** (`[]`, default): Copies host DNS configuration to RKE2, with systemd-resolved detection and fallback logic
+  - **When Set**: Writes only the specified nameservers to `/etc/rancher/rke2/resolv.conf`, bypassing host DNS entirely
 - **Use Cases**:
-  - Need local resolution for Keycloak/ingress domains: Set to `true`
-  - Air-gapped clusters requiring custom domain resolution: Set to `true`
-  - Standard deployments with external DNS: Leave `false` (default)
-- **⚠️ Warning**: Significantly changes DNS configuration on the system. Only enable if you need local DNS for cluster domains.
+  - Air-gapped environments requiring specific DNS servers: Set custom servers
+  - Corporate networks with mandatory DNS servers: Set required servers
+  - Performance optimization with preferred DNS providers: Set fastest servers
+  - Standard deployments: Leave empty (default) to use host DNS
+- **⚠️ Note**: When set, completely ignores host DNS configuration for the cluster
 
 #### USE_CERT_MANAGER
 - **Type**: Boolean
@@ -353,7 +337,6 @@ CERT_MANAGER_EMAIL: "admin@example.com"
 
 # Network and DNS (opt-in for safety)
 FIX_DNS: false        # Set to true only if DNS is known to be broken
-DNSMASQ: false        # Set to true (with FIX_DNS) for local cluster DNS
 
 # Integration
 CLUSTERFORGE_RELEASE: "v1.2.3"
@@ -475,24 +458,25 @@ DOMAIN: "cluster.example.com"
 
 # Enable DNS fixes (only if DNS is known to be broken)
 FIX_DNS: true         # Allows automatic DNS repair if broken
-DNSMASQ: false        # Keep false unless you need local cluster DNS
 
 USE_CERT_MANAGER: true
 CERT_MANAGER_EMAIL: "admin@example.com"
 ```
 
-### First Node with Custom Domain Resolution (dnsmasq)
+### First Node with Custom DNS Servers
 ```yaml
 FIRST_NODE: true
 GPU_NODE: false
-DOMAIN: "cluster.local.example.com"
+DOMAIN: "cluster.example.com"
 
-# Enable DNS management for local domain resolution
-FIX_DNS: true         # Required for dnsmasq configuration
-DNSMASQ: true         # Enables local DNS for cluster.local and custom domain
+# Use specific DNS servers instead of copying host DNS
+DNS_SERVERS:
+  - "8.8.8.8"        # Google Public DNS
+  - "1.1.1.1"        # Cloudflare DNS  
+  - "208.67.222.222" # OpenDNS
 
-USE_CERT_MANAGER: false
-CERT_OPTION: "generate"
+USE_CERT_MANAGER: true
+CERT_MANAGER_EMAIL: "admin@example.com"
 ```
 
 ### Small Cluster with ArgoCD (GitOps)

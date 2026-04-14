@@ -572,35 +572,32 @@ FIX_DNS: true
 - ❌ Corporate networks with internal DNS (may break internal resolution)
 - ❌ Working systemd-resolved configurations (leave disabled)
 
-#### DNSMASQ Option
+#### DNS_SERVERS Option
 
-**Problem**: Need local DNS resolution for cluster domains (e.g., `cluster.local`, custom ingress domains).
+**Problem**: Need explicit control over cluster DNS servers (e.g., corporate networks, air-gapped environments).
 
-**Solution**: Enable dnsmasq for local DNS management:
+**Solution**: Specify custom DNS servers:
 ```yaml
-FIX_DNS: true      # Required
-DNSMASQ: true      # Enables dnsmasq
-DOMAIN: "cluster.example.com"  # Required for dnsmasq
+DNS_SERVERS:
+  - "10.0.1.1"      # Corporate DNS server
+  - "10.0.1.2"      # Backup corporate DNS
+  - "8.8.8.8"       # External fallback (if allowed)
 ```
 
-**Behavior when enabled:**
-- Only applies to first node
-- Disables systemd-resolved (state saved for rollback)
-- Configures dnsmasq to resolve custom domain to node IP
-- Forwards `cluster.local` queries to Kubernetes CoreDNS (10.243.0.10)
-- Falls back to external DNS (4.4.4.4, 1.1.1.1) for other queries
-- Points `/etc/resolv.conf` to localhost (127.0.0.1)
-- Makes `/etc/resolv.conf` immutable after successful verification
-- Creates backup at `/etc/resolv.conf.pre-dnsmasq-<timestamp>`
-- Automatic complete rollback on any failure
-
-**⚠️ Warning:** Significantly changes DNS configuration. Only enable if you need local cluster DNS.
+**Behavior when set:**
+- Writes specified nameservers directly to `/etc/rancher/rke2/resolv.conf`
+- Bypasses all host DNS detection and copying logic
+- Provides explicit control over cluster DNS resolution
+- No automatic fallbacks or host DNS discovery
 
 **When to use:**
-- ✅ Air-gapped clusters requiring custom domain resolution
-- ✅ Local resolution for Keycloak/ingress domains
-- ❌ Standard deployments with external DNS (leave disabled)
-- ❌ When you don't need local domain resolution
+- ✅ Corporate networks with mandatory DNS servers
+- ✅ Air-gapped environments with specific DNS requirements  
+- ✅ Performance optimization with preferred DNS providers
+- ✅ Consistent DNS across all cluster nodes
+- ❌ Standard deployments (leave empty to use intelligent host DNS detection)
+
+**⚠️ Note**: When `DNS_SERVERS` is set, it completely overrides host DNS configuration for the cluster. Ensure the specified servers are reachable and functional.
 
 #### Manual DNS Recovery
 
@@ -608,7 +605,7 @@ If DNS was modified and you need to restore original configuration:
 
 ```bash
 # Find backup files
-ls -la /etc/resolv.conf.backup-* /etc/resolv.conf.pre-dnsmasq-*
+ls -la /etc/resolv.conf.backup-*
 
 # Restore from backup (use most recent timestamp)
 sudo chattr -i /etc/resolv.conf  # Remove immutable flag if present
