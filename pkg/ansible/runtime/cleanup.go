@@ -92,10 +92,12 @@ func CleanupLonghornMounts() error {
 	exec.Command("iscsiadm", "-m", "node", "--op=delete").Run()
 
 	// Step 3: Graceful TERM then KILL of Longhorn processes in dependency order
+	// Use exact binary name matching to avoid killing unrelated processes.
+	// Longhorn binaries have these exact names in /proc/*/comm.
 	longhornProcs := []string{"longhorn-engine", "longhorn-instance-manager", "longhorn-manager"}
 	anyRunning := false
 	for _, proc := range longhornProcs {
-		if exec.Command("pgrep", "-f", proc).Run() == nil {
+		if exec.Command("pgrep", "-x", proc).Run() == nil {
 			anyRunning = true
 			break
 		}
@@ -103,13 +105,13 @@ func CleanupLonghornMounts() error {
 	if anyRunning {
 		fmt.Println("   🛑 Stopping Longhorn processes (TERM)...")
 		for _, proc := range longhornProcs {
-			exec.Command("pkill", "-TERM", "-f", proc).Run()
+			exec.Command("pkill", "-TERM", "-x", proc).Run()
 		}
 		time.Sleep(5 * time.Second)
 		// Only KILL if some processes survived TERM
 		stillRunning := false
 		for _, proc := range longhornProcs {
-			if exec.Command("pgrep", "-f", proc).Run() == nil {
+			if exec.Command("pgrep", "-x", proc).Run() == nil {
 				stillRunning = true
 				break
 			}
@@ -117,7 +119,7 @@ func CleanupLonghornMounts() error {
 		if stillRunning {
 			fmt.Println("      ⚡ Force killing remaining Longhorn processes (KILL)...")
 			for _, proc := range longhornProcs {
-				exec.Command("pkill", "-KILL", "-f", proc).Run()
+				exec.Command("pkill", "-KILL", "-x", proc).Run()
 			}
 		}
 	} else {
@@ -429,9 +431,10 @@ func GenerateCleanupTasks(clusterDisks string, premountedDisks string) []map[str
 				"failed_when": false,
 			},
 			// Step 3: Stop Longhorn processes gracefully in dependency order
+			// Use -x for exact binary name matching to avoid killing unrelated processes
 			{
 				"name":        "Gracefully stop Longhorn processes (TERM)",
-				"shell":       "pkill -TERM -f longhorn-engine 2>/dev/null || true; pkill -TERM -f longhorn-instance-manager 2>/dev/null || true; pkill -TERM -f longhorn-manager 2>/dev/null || true",
+				"shell":       "pkill -TERM -x longhorn-engine 2>/dev/null || true; pkill -TERM -x longhorn-instance-manager 2>/dev/null || true; pkill -TERM -x longhorn-manager 2>/dev/null || true",
 				"failed_when": false,
 			},
 			{
@@ -441,7 +444,7 @@ func GenerateCleanupTasks(clusterDisks string, premountedDisks string) []map[str
 			},
 			{
 				"name":        "Force kill remaining Longhorn processes (KILL)",
-				"shell":       "pkill -KILL -f longhorn-engine 2>/dev/null || true; pkill -KILL -f longhorn-instance-manager 2>/dev/null || true; pkill -KILL -f longhorn-manager 2>/dev/null || true",
+				"shell":       "pkill -KILL -x longhorn-engine 2>/dev/null || true; pkill -KILL -x longhorn-instance-manager 2>/dev/null || true; pkill -KILL -x longhorn-manager 2>/dev/null || true",
 				"failed_when": false,
 			},
 			// Step 4: Stop RKE2 so no new mounts are created
