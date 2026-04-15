@@ -78,6 +78,10 @@ func formatYAMLLine(key string, value any) string {
 	case bool:
 		return fmt.Sprintf("%s: %t", key, v)
 	case string:
+		// Always quote CLUSTER_LISTEN_IP for consistency
+		if key == "CLUSTER_LISTEN_IP" {
+			return fmt.Sprintf("%s: \"%s\"", key, escapeString(v))
+		}
 		// Quote strings if they contain special characters OR are empty
 		if needsQuotes(v) || v == "" {
 			return fmt.Sprintf("%s: \"%s\"", key, escapeString(v))

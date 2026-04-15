@@ -69,6 +69,14 @@ schema:
       applicable: when(FIRST_NODE == false)
       section: "🔗 Additional Node Configuration"
 
+    CLUSTER_LISTEN_IP:
+      type: clusterListenIp
+      desc: "Network IP specification for cluster binding. Supports exact IP (192.168.1.100) or subnet CIDR (192.168.1.0/24). Overrides auto-detection for multi-homed systems."
+      section: "⚙️ Advanced Configuration"
+      examples:
+        - "192.168.1.100"
+        - "192.168.1.0/24"
+
     # 💾 Storage Configuration
     NO_DISKS_FOR_CLUSTER:
       type: bool
@@ -319,6 +327,50 @@ types:
         - "192.168.1"       # incomplete
         - "192.168.1.1/24"  # CIDR notation
         - "example.com"     # domain
+
+  cidr:
+    type: str
+    pattern: ^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)/(3[0-2]|[12]?[0-9])$|^$
+    desc: Valid IPv4 CIDR notation (network/prefix)
+    errorMessage: Valid IPv4 CIDR format xxx.xxx.xxx.xxx/yy (IP address with prefix length 0-32)
+    examples:
+      valid:
+        - "192.168.1.0/24"
+        - "10.0.0.0/8"
+        - "172.16.0.0/16"
+        - "192.168.1.100/32"
+        - "0.0.0.0/0"
+        - "10.100.50.0/28"
+        - "172.31.0.0/20"
+      invalid:
+        - "192.168.1.100"     # missing prefix
+        - "192.168.1.0/33"    # invalid prefix (>32)
+        - "256.0.0.0/24"      # invalid IP
+        - "192.168.1.0/-1"    # negative prefix
+        - "192.168.1.0/24/8"  # double prefix
+        - "192.168.1.0 /24"   # space
+        - "192.168.1.0/ab"    # non-numeric prefix
+
+  clusterListenIp:
+    type: str
+    pattern: ^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$|^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)/(3[0-2]|[12]?[0-9])$|^$
+    desc: IPv4 address or CIDR notation for cluster network binding
+    errorMessage: Must be valid IPv4 address (192.168.1.100) or CIDR notation (192.168.1.0/24)
+    examples:
+      valid:
+        - "192.168.1.100"       # exact IP
+        - "192.168.1.0/24"      # CIDR subnet
+        - "10.0.0.0/8"          # large network
+        - "172.16.0.0/16"       # private network
+        - "127.0.0.1"           # localhost
+        - "0.0.0.0/0"           # all networks
+      invalid:
+        - "256.0.0.1"           # invalid IP
+        - "192.168.1.0/33"      # invalid CIDR prefix
+        - "192.168.1"           # incomplete IP
+        - "192.168.1.0/"        # missing prefix
+        - "not-an-ip"           # non-IP string
+        - "192.168.1.0/24/8"    # double prefix
 
   url:
     type: str

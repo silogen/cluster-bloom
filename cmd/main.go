@@ -15,18 +15,19 @@ import (
 )
 
 var (
-	Version      string // Set via ldflags during build
-	port         int
-	playbookName string
-	dryRun       bool
-	tags         string
-	destroyData  bool
-	forceCleanup bool
-	extraVars  []string
-	verbose    bool
-	configFile string
-	export      bool
-	showVersion bool
+	Version         string // Set via ldflags during build
+	port            int
+	playbookName    string
+	dryRun          bool
+	tags            string
+	destroyData     bool
+	forceCleanup    bool
+	extraVars       []string
+	verbose         bool
+	configFile      string
+	export          bool
+	showVersion     bool
+	clusterListenIP string
 )
 
 func init() {
@@ -250,6 +251,7 @@ imports (roles, tasks, vars) within that directory tree work as expected.`,
 	cliCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Run in check mode without making changes")
 	cliCmd.Flags().StringVar(&tags, "tags", "", "Run only tasks with specific tags (e.g., cleanup, validate, storage)")
 	cliCmd.Flags().BoolVar(&destroyData, "destroy-data", false, "⚠️  DANGER: Wipes cluster (RKE2 uninstall, Longhorn cleanup, disk wipe). Shows disk preview before confirmation. Equivalent to running bloom cleanup then redeploying.")
+	cliCmd.Flags().StringVar(&clusterListenIP, "cluster-listen-ip", "", "IP address or CIDR for cluster binding (e.g., 192.168.1.100 or 192.168.1.0/24)")
 	cliCmd.Flags().BoolVar(&export, "export", false, "Export generated playbook to stdout instead of executing it")
 
 	// Add run command flags
@@ -290,7 +292,12 @@ func runAnsible(configFile string) {
 		os.Exit(1)
 	}
 
-	// Validate config (before injecting CLI flags)
+	// Inject CLI flag values into config (CLI flags override file values)
+	if clusterListenIP != "" {
+		cfg["CLUSTER_LISTEN_IP"] = clusterListenIP
+	}
+
+	// Validate config (after injecting CLI flags)
 	errors := config.Validate(cfg)
 	if len(errors) > 0 {
 		fmt.Fprintln(os.Stderr, "Configuration validation errors:")

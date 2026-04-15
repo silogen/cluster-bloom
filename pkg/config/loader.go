@@ -35,15 +35,17 @@ func applyDefaults(config *Config) error {
 		return fmt.Errorf("load schema: %w", err)
 	}
 
-	// Apply defaults for any missing keys
+	// Apply defaults and environment variables for any missing keys
 	for _, arg := range args {
-		if arg.Default == nil {
-			continue
-		}
-
-		// Check if the key exists in config, if not set the default
+		// Check if the key exists in config
 		if _, exists := (*config)[arg.Key]; !exists {
-			(*config)[arg.Key] = arg.Default
+			// Check for environment variable first
+			if envVal := os.Getenv(arg.Key); envVal != "" {
+				(*config)[arg.Key] = envVal
+			} else if arg.Default != nil {
+				// Apply default if no environment variable
+				(*config)[arg.Key] = arg.Default
+			}
 		}
 	}
 

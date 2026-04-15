@@ -14,9 +14,9 @@ func TestLoadSchema(t *testing.T) {
 		t.Fatal("LoadSchema() returned no arguments")
 	}
 
-	// Check that we have expected number of fields (32 fields in schema including CLUSTER_SIZE)
-	if len(args) != 32 {
-		t.Errorf("Expected 32 arguments, got %d", len(args))
+	// Check that we have expected number of fields (33 fields in schema including CLUSTER_SIZE and CLUSTER_LISTEN_IP)
+	if len(args) != 33 {
+		t.Errorf("Expected 33 arguments, got %d", len(args))
 	}
 
 	// Verify critical fields are present
