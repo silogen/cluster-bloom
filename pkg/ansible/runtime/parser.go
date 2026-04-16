@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -93,18 +94,29 @@ func normalizeStatus(status string) TaskStatus {
 // extractBriefMessage extracts a brief human-readable message from Ansible output
 func extractBriefMessage(fullMsg string) string {
 	// Try to extract msg field from JSON
+	// Use a regex that handles escaped characters including \" and \n
 	if strings.Contains(fullMsg, `"msg":`) {
-		msgRegex := regexp.MustCompile(`"msg":\s*"([^"]+)"`)
+		// Match "msg": "..." where ... can contain escaped quotes and newlines
+		msgRegex := regexp.MustCompile(`"msg":\s*"((?:[^"\\]|\\.)*)"`)
 		if matches := msgRegex.FindStringSubmatch(fullMsg); len(matches) > 1 {
-			return matches[1]
+			msg := matches[1]
+			// Unescape the string to convert \n to actual newlines, \" to quotes, etc.
+			if unquoted, err := strconv.Unquote(`"` + msg + `"`); err == nil {
+				return unquoted
+			}
+			return msg
 		}
 	}
 
 	// Try to extract stderr or stdout
 	if strings.Contains(fullMsg, `"stderr":`) {
-		stderrRegex := regexp.MustCompile(`"stderr":\s*"([^"]+)"`)
+		stderrRegex := regexp.MustCompile(`"stderr":\s*"((?:[^"\\]|\\.)*)"`)
 		if matches := stderrRegex.FindStringSubmatch(fullMsg); len(matches) > 1 {
 			msg := matches[1]
+			// Unescape the string to convert \n to actual newlines
+			if unquoted, err := strconv.Unquote(`"` + msg + `"`); err == nil {
+				msg = unquoted
+			}
 			if len(msg) > 100 {
 				msg = msg[:97] + "..."
 			}
