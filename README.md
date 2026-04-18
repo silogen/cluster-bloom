@@ -137,8 +137,8 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | CLUSTERFORGE_RELEASE | ClusterForge version to deploy. Accepts version tags (e.g. `v2.0.2`), full release URLs, `latest` (fetches newest GitHub release via API), `none`, or `""` to skip | `latest` |
 | CONTROL_PLANE | Set to true if this node should be a control plane node | false, only applies when FIRST_NODE is false |
 | DOMAIN | The domain name for the cluster (e.g., "cluster.example.com") (required). | "" |
+| DNS_SERVERS | Custom DNS servers for RKE2 cluster. If set, these nameservers will be written to /etc/rancher/rke2/resolv.conf instead of copying host DNS. Format as YAML list (e.g., ["8.8.8.8", "1.1.1.1"]) | [] |
 | FIX_DNS | **Opt-in** to allow automatic DNS fixes. Only modifies DNS if broken and external DNS works. Creates backups and auto-rolls back on failure. | false |
-| DNSMASQ | **Opt-in** to configure dnsmasq for local DNS (first node only). Requires FIX_DNS=true and DOMAIN to be set. Provides cluster.local resolution. | false |
 | FIRST_NODE | Set to true if this is the first node in the cluster | true |
 | GPU_NODE | Set to true if this node has GPUs | true |
 | JOIN_TOKEN | The token used to join additional nodes to the cluster | |

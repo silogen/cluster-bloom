@@ -33,12 +33,10 @@
     #          WARNING: Will overwrite /etc/resolv.conf if DNS is detected as broken
     FIX_DNS: false
     
-    # DNSMASQ: Set to true (along with FIX_DNS) to configure dnsmasq on first node
-    #          Provides local DNS resolution for cluster.local and custom domains
-    #          Disables systemd-resolved and makes /etc/resolv.conf point to 127.0.0.1
-    #          Requires FIX_DNS: true to take effect
-    #          WARNING: Significantly changes DNS configuration on the system
-    DNSMASQ: false
+    # DNS_SERVERS: Custom DNS servers for RKE2 cluster
+    #              If set, these nameservers will be written to /etc/rancher/rke2/resolv.conf
+    #              instead of copying host DNS. Format as YAML list (e.g., ["8.8.8.8", "1.1.1.1"])
+    DNS_SERVERS: []
     
     INSTALL_ARGOCD: true
     ARGOCD_VERSION: "v2.14.11"
