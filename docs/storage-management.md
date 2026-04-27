@@ -170,6 +170,55 @@ Before requiring confirmation, both paths display a preview table:
 
 **Example**: with `CLUSTER_PREMOUNTED_DISKS: /mnt/disk0` and 6 CLUSTER_DISKS, the range `/mnt/disk1`–`/mnt/disk6` is chosen (index 0 is reserved). If a prior deployment used `/mnt/disk11`–`/mnt/disk16` those fstab entries are removed by cleanup before the new index is calculated.
 
+### RANCHER_DISK Configuration
+
+The `RANCHER_DISK` parameter allows operators to specify a dedicated device for `/var/lib/rancher` storage, primarily designed for GPU worker nodes with intensive workloads that benefit from dedicated fast storage for kubelet and container runtime data.
+
+**Key Features**:
+- **Dedicated Storage**: Provides dedicated fast storage for `/var/lib/rancher` directory
+- **Direct Mount**: Device is formatted and mounted directly at `/var/lib/rancher`
+- **Automatic Setup**: Bloom handles device formatting, mounting, and fstab configuration
+- **Backup Safety**: Automatically moves existing `/var/lib/rancher` to timestamped backup before configuration
+
+**Configuration**:
+```yaml
+RANCHER_DISK: /dev/nvme2n1
+```
+
+**Requirements**:
+1. Device path must start with `/dev/` (e.g., `/dev/nvme2n1`, `/dev/sdb2`)
+2. Device must exist and not be already mounted
+3. Minimum 100GB available space (500GB recommended)
+4. Cannot be used with `NO_DISKS_FOR_CLUSTER: true`
+
+**Implementation Details**:
+- Formats device with ext4 filesystem
+- Mounts directly at `/var/lib/rancher`
+- Adds fstab entry: `UUID=<device-uuid> /var/lib/rancher ext4 defaults,nofail 0 2`
+- Tagged as: `# managed by cluster-bloom rancher-disk`
+
+**Node Type Recommendations**:
+
+#### GPU Worker Nodes (Primary Use Case)
+- **Heavy GPU Workloads**: Highly recommended for nodes running intensive GPU applications
+- **Large Container Images**: Benefits from dedicated fast storage for image pulls and caching
+- **Extensive Logging**: GPU workloads often generate large logs that benefit from dedicated storage
+- **High Container Churn**: Nodes with frequent container creation/deletion benefit from dedicated kubelet storage
+
+#### Control Plane Nodes (Optional)
+- **First Node** (`FIRST_NODE: true`): Can use RANCHER_DISK for dedicated RKE2 bootstrap and etcd storage
+- **Additional Control Plane** (`FIRST_NODE: false, CONTROL_PLANE: true`): Can use RANCHER_DISK for etcd replicas and server components  
+- **Large Clusters**: May improve HA performance with 3+ control plane nodes
+
+#### CPU Worker Nodes (Optional)
+- **High I/O Workloads**: Consider RANCHER_DISK for nodes with high container runtime activity
+- **Standard Workloads**: Default `/var/lib/rancher` location usually sufficient
+
+**Backup and Cleanup Behavior**:
+- **Setup**: Moves existing `/var/lib/rancher` to `/var/lib/rancher.backup.TIMESTAMP` before mounting new device
+- **Cleanup**: Unmounts `/var/lib/rancher` and removes fstab entry
+- **Restore**: Automatically restores backup directory if it exists during cleanup
+- **Device Preservation**: Underlying device is preserved (no reformatting during cleanup)
 
 ## Architecture
 

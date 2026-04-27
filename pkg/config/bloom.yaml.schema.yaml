@@ -106,7 +106,7 @@ schema:
       type: str
       pattern: ^/dev/[a-zA-Z0-9]+$|^$
       default: ""
-      desc: Device path for dedicated /var/lib/rancher storage. Bloom will format and mount this device automatically.
+      desc: Device path for dedicated /var/lib/rancher storage. Primarily for GPU worker nodes with heavy workloads. Bloom will format and mount this device automatically.
       section: "💾 Storage Configuration"
       examples:
         - "/dev/nvme2n1"
