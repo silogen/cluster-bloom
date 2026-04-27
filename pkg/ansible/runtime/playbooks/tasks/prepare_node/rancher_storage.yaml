@@ -1,40 +1,25 @@
 ---
-# Purpose: Setup dedicated storage for /var/lib/rancher when RANCHER_DISK is specified
+# Purpose: Setup dedicated storage for /var/lib/rancher when RANCHER_DISK device is specified
+# Similar to CLUSTER_DISKS processing - formats and mounts raw device automatically
 
-- name: Handle RANCHER_DISK configuration
+- name: Handle RANCHER_DISK device configuration
   when: RANCHER_DISK is defined and RANCHER_DISK != ""
   block:
-    - name: Validate RANCHER_DISK is an absolute path
+    - name: Validate RANCHER_DISK is a device path
       fail:
-        msg: "RANCHER_DISK must be an absolute path starting with /"
-      when: not RANCHER_DISK.startswith('/')
+        msg: "RANCHER_DISK must be a device path starting with /dev/ (e.g., /dev/sdb2)"
+      when: not RANCHER_DISK.startswith('/dev/')
 
-    - name: Check if RANCHER_DISK is mounted
-      shell: mountpoint -q {{ RANCHER_DISK }}
-      register: rancher_disk_mounted
+    - name: Check if RANCHER_DISK device is already mounted
+      shell: "mount | grep -q '^{{ RANCHER_DISK }}' && echo 'mounted' || echo 'unmounted'"
+      register: rancher_device_mount_status
+      changed_when: false
       failed_when: false
-      changed_when: false
 
-    - name: Verify RANCHER_DISK is mounted
+    - name: Fail if RANCHER_DISK device is already mounted
       fail:
-        msg: "RANCHER_DISK {{ RANCHER_DISK }} is not mounted. Please mount the storage device first."
-      when: rancher_disk_mounted.rc != 0
-
-    - name: Check if RANCHER_DISK has sufficient space
-      shell: df -BG {{ RANCHER_DISK }} | awk 'NR==2 {print $4}' | sed 's/G//'
-      register: rancher_disk_space
-      changed_when: false
-
-    - name: Warn about insufficient space on RANCHER_DISK
-      debug:
-        msg: "WARNING: {{ RANCHER_DISK }} has {{ rancher_disk_space.stdout }}GB available, recommended 500GB for RKE2 data"
-      when: rancher_disk_space.stdout | int < 500
-
-    - name: Create /var/lib/rancher if it doesn't exist
-      file:
-        path: /var/lib/rancher
-        state: directory
-        mode: "0755"
+        msg: "RANCHER_DISK device {{ RANCHER_DISK }} is already mounted. Please unmount it first."
+      when: rancher_device_mount_status.stdout == 'mounted'
 
     - name: Check if /var/lib/rancher has existing data
       find:
@@ -46,7 +31,6 @@
       shell: |
         if [ "$(ls -A /var/lib/rancher 2>/dev/null)" ]; then
           mv /var/lib/rancher /var/lib/rancher.backup.$(date +%Y%m%d_%H%M%S)
-          mkdir -p /var/lib/rancher
           echo "Backed up existing /var/lib/rancher data"
         fi
       when: existing_rancher_data.matched > 0
@@ -57,36 +41,57 @@
         msg: "{{ rancher_backup_result.stdout }}"
       when: existing_rancher_data.matched > 0 and rancher_backup_result.stdout is defined
 
-    - name: Create rancher data directory on custom mount
+    - name: Create /var/lib/rancher directory
       file:
-        path: "{{ RANCHER_DISK }}/rancher-data"
+        path: /var/lib/rancher
         state: directory
         mode: "0755"
 
-    - name: Get UUID of RANCHER_DISK filesystem
-      shell: findmnt -n -o UUID {{ RANCHER_DISK }}
+    - name: Format RANCHER_DISK with ext4 (if not already formatted)
+      shell: |
+        if ! blkid {{ RANCHER_DISK }} | grep -q ext4; then
+          wipefs -a {{ RANCHER_DISK }}
+          mkfs.ext4 -F -F {{ RANCHER_DISK }}
+          echo "formatted"
+        else
+          echo "already-ext4"
+        fi
+      register: rancher_disk_format_result
+
+    - name: Display formatting result
+      debug:
+        msg: "RANCHER_DISK {{ RANCHER_DISK }}: {{ rancher_disk_format_result.stdout }}"
+
+    - name: Get UUID for RANCHER_DISK
+      shell: blkid -s UUID -o value {{ RANCHER_DISK }}
       register: rancher_disk_uuid
       changed_when: false
 
-    - name: Add bind mount entry to fstab for /var/lib/rancher
+    - name: Add RANCHER_DISK mount entry to fstab
       lineinfile:
         path: /etc/fstab
-        line: "{{ RANCHER_DISK }}/rancher-data /var/lib/rancher none bind,defaults 0 0 {{ bloom_rancher_fstab_tag }}"
+        line: "UUID={{ rancher_disk_uuid.stdout }} /var/lib/rancher ext4 defaults,nofail 0 2 {{ bloom_rancher_fstab_tag }}"
         insertbefore: "^# # # end of AMD Enterprise AI cluster-bloom"
         state: present
 
-    - name: Mount /var/lib/rancher to custom path
-      mount:
-        path: /var/lib/rancher
-        src: "{{ RANCHER_DISK }}/rancher-data"
-        fstype: none
-        opts: bind,defaults
-        state: mounted
+    - name: Mount RANCHER_DISK directly to /var/lib/rancher
+      shell: mount /var/lib/rancher
+      changed_when: true
 
-    - name: Verify mount is successful
+    - name: Verify /var/lib/rancher mount is successful
       shell: mountpoint -q /var/lib/rancher
       changed_when: false
 
+    - name: Check available space on RANCHER_DISK
+      shell: df -BG /var/lib/rancher | awk 'NR==2 {print $4}' | sed 's/G//'
+      register: rancher_disk_space
+      changed_when: false
+
+    - name: Warn about insufficient space on RANCHER_DISK
+      debug:
+        msg: "WARNING: RANCHER_DISK has {{ rancher_disk_space.stdout }}GB available, recommended 500GB for RKE2 data"
+      when: rancher_disk_space.stdout | int < 500
+
     - name: Display successful configuration
       debug:
-        msg: "✅ Successfully configured /var/lib/rancher to use {{ RANCHER_DISK }}/rancher-data"
+        msg: "✅ Successfully mounted RANCHER_DISK {{ RANCHER_DISK }} directly to /var/lib/rancher"

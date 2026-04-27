@@ -104,14 +104,14 @@ schema:
 
     RANCHER_DISK:
       type: str
-      pattern: ^/[a-zA-Z0-9._\-\/]+$|^$
+      pattern: ^/dev/[a-zA-Z0-9]+$|^$
       default: ""
-      desc: Custom mount path for /var/lib/rancher directory. When specified, /var/lib/rancher will be bind-mounted to this location.
+      desc: Device path for dedicated /var/lib/rancher storage. Bloom will format and mount this device automatically.
       section: "💾 Storage Configuration"
       examples:
-        - "/mnt/rancher"
-        - "/data/rancher" 
-        - "/storage/cluster-data"
+        - "/dev/nvme2n1"
+        - "/dev/sdb2"
+        - "/dev/vdc"
 
      # 🔒 SSL/TLS Configuration
     ADDITIONAL_TLS_SAN_URLS:

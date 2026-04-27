@@ -577,8 +577,8 @@ func GenerateCleanupTasks(clusterDisks string, premountedDisks string, rancherDi
 					"failed_when": false,
 				},
 				{
-					"name":        "Clean rancher data from custom disk",
-					"shell":       fmt.Sprintf("rm -rf %s/rancher-data/* 2>/dev/null || true", rancherDisk),
+					"name":        "Remove RANCHER_DISK fstab entry",
+					"shell":       "sed -i '/UUID=.*\\/var\\/lib\\/rancher.*# managed by cluster-bloom rancher-disk/d' /etc/fstab",
 					"failed_when": false,
 				},
 				{
@@ -677,13 +677,12 @@ func CleanupRancherDisk(rancherDisk string) error {
 		fmt.Println("      ✓ Removed fstab entry")
 	}
 	
-	// Clean rancher data from custom disk
-	rancherDataPath := fmt.Sprintf("%s/rancher-data", rancherDisk)
-	fmt.Printf("   🗑️  Cleaning rancher data from %s...\n", rancherDataPath)
-	if _, err := exec.Command("rm", "-rf", rancherDataPath+"/*").CombinedOutput(); err != nil {
-		fmt.Printf("      ⚠️  Warning: Failed to clean rancher data: %v\n", err)
+	// Clean RANCHER_DISK device fstab entry  
+	fmt.Println("   📝 Removing RANCHER_DISK fstab entry...")
+	if _, err := exec.Command("bash", "-c", fmt.Sprintf("sed -i '/UUID=.*\\/var\\/lib\\/rancher.*%s/d' /etc/fstab", "# managed by cluster-bloom rancher-disk")).CombinedOutput(); err != nil {
+		fmt.Printf("      ⚠️  Warning: Failed to clean RANCHER_DISK fstab entry: %v\n", err)
 	} else {
-		fmt.Printf("      ✓ Cleaned rancher data from %s\n", rancherDataPath)
+		fmt.Println("      ✓ Removed RANCHER_DISK fstab entry")
 	}
 	
 	// Restore original /var/lib/rancher if backup exists
@@ -928,12 +927,11 @@ premountedLines = append(premountedLines, fmt.Sprintf("    ✓  %-18s — %d blo
 }
 
 if rancherDisk != "" {
-	rancherDataPath := fmt.Sprintf("%s/rancher-data", rancherDisk)
-	if _, err := os.Stat(rancherDataPath); err == nil {
-		bloom, _ := inspectDirContents(rancherDataPath)
+	if _, err := os.Stat("/var/lib/rancher"); err == nil {
+		bloom, _ := inspectDirContents("/var/lib/rancher")
 		if len(bloom) > 0 {
-			fmt.Println("\n  RANCHER_DISK — /var/lib/rancher data cleaned, bind mount removed:")
-			fmt.Printf("    ✓  %-18s — %d rancher artifact(s) removed\n", rancherDataPath, len(bloom))
+			fmt.Println("\n  RANCHER_DISK — /var/lib/rancher will be reformatted:")
+			fmt.Printf("    ⚠️  %-18s — %d rancher artifact(s) will be LOST\n", "/var/lib/rancher", len(bloom))
 		}
 	}
 }

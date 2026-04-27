@@ -32,30 +32,31 @@
         - rancher_partition_size.stdout | int < 100
         - not SKIP_RANCHER_PARTITION_CHECK | default(false)
 
-- name: Validate RANCHER_DISK configuration
+- name: Validate RANCHER_DISK device configuration
   when: RANCHER_DISK is defined and RANCHER_DISK != ""
   block:
-    - name: Verify custom rancher disk is mounted
-      shell: mountpoint -q {{ RANCHER_DISK }}
-      register: custom_rancher_mounted
+    - name: Check if RANCHER_DISK device exists
+      stat:
+        path: "{{ RANCHER_DISK }}"
+      register: rancher_disk_stat
+
+    - name: Fail if RANCHER_DISK device does not exist
+      fail:
+        msg: "RANCHER_DISK device {{ RANCHER_DISK }} does not exist. Please verify the device path."
+      when: not rancher_disk_stat.stat.exists
+
+    - name: Check if RANCHER_DISK device is already mounted
+      shell: "mount | grep -q '^{{ RANCHER_DISK }}' && echo 'mounted' || echo 'unmounted'"
+      register: rancher_device_mounted
       failed_when: false
       changed_when: false
 
-    - name: Fail if RANCHER_DISK is not mounted
-      fail:
-        msg: "RANCHER_DISK {{ RANCHER_DISK }} is not mounted. Please ensure the storage device is mounted before running bloom."
-      when: custom_rancher_mounted.rc != 0
-
-    - name: Get available space on RANCHER_DISK
-      shell: df -BG {{ RANCHER_DISK }} | awk 'NR==2 {print $4}' | sed 's/G//'
-      register: custom_rancher_space
-      changed_when: false
-
-    - name: Display custom disk space information
+    - name: Warn if RANCHER_DISK device is already mounted
       debug:
-        msg: "✅ RANCHER_DISK {{ RANCHER_DISK }} has {{ custom_rancher_space.stdout }}GB available space"
+        msg: "⚠️  WARNING: RANCHER_DISK device {{ RANCHER_DISK }} is already mounted. Bloom will skip formatting but continue processing."
+      when: rancher_device_mounted.stdout == 'mounted'
 
-    - name: Warn about insufficient space on custom disk
+    - name: Display RANCHER_DISK device information
       debug:
-        msg: "⚠️  WARNING: RANCHER_DISK has only {{ custom_rancher_space.stdout }}GB available, recommended 500GB for RKE2"
-      when: custom_rancher_space.stdout | int < 500
+        msg: "✅ RANCHER_DISK device {{ RANCHER_DISK }} found and ready for processing"
+      when: rancher_device_mounted.stdout == 'unmounted'
