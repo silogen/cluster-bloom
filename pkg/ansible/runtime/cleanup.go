@@ -838,11 +838,11 @@ return start
 
 // parseManagedFstabMounts returns mount points of bloom-managed (non-premounted) fstab entries.
 func parseManagedFstabMounts() []string {
-data, err := os.ReadFile("/etc/fstab")
-if err != nil {
-return nil
-}
-var mounts []string
+	data, err := os.ReadFile("/etc/fstab")
+	if err != nil {
+		return nil
+	}
+	var mounts []string
 	for _, line := range strings.Split(string(data), "\n") {
 		if strings.Contains(line, "# managed by cluster-bloom") &&
 			!strings.Contains(line, "# premounted by cluster-bloom") &&
@@ -853,26 +853,119 @@ var mounts []string
 			}
 		}
 	}
-return mounts
+	return mounts
+}
+
+// discoverAllBloomStorage auto-discovers all bloom-managed storage from fstab
+// Returns comma-separated device paths for clusterDisks, premountedDisks, and rancherDisk
+func discoverAllBloomStorage() (clusterDisks, premountedDisks, rancherDisk string) {
+	data, err := os.ReadFile("/etc/fstab")
+	if err != nil {
+		return "", "", ""
+	}
+	
+	var clusterDiskPaths []string
+	var premountedPaths []string
+	
+	for _, line := range strings.Split(string(data), "\n") {
+		if !strings.Contains(line, "# managed by cluster-bloom") {
+			continue
+		}
+		
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		
+		if strings.Contains(line, "rancher-disk") {
+			rancherDisk = extractDeviceFromFstabLine(line)
+		} else if strings.Contains(line, "premounted") {
+			premountedPaths = append(premountedPaths, fields[1])
+		} else {
+			// Regular cluster disk - extract device path
+			devicePath := extractDeviceFromFstabLine(line)
+			if devicePath != "" {
+				clusterDiskPaths = append(clusterDiskPaths, devicePath)
+			}
+		}
+	}
+	
+	clusterDisks = strings.Join(clusterDiskPaths, ",")
+	premountedDisks = strings.Join(premountedPaths, ",")
+	return
+}
+
+// extractDeviceFromFstabLine extracts the device path from a fstab line
+// Handles both UUID= format and direct device paths
+func extractDeviceFromFstabLine(line string) string {
+	fields := strings.Fields(line)
+	if len(fields) == 0 {
+		return ""
+	}
+	
+	device := fields[0]
+	
+	// Handle UUID=... format
+	if strings.HasPrefix(device, "UUID=") {
+		uuid := strings.TrimPrefix(device, "UUID=")
+		if devicePath := resolveUUIDToDevice(uuid); devicePath != "" {
+			return devicePath
+		}
+	}
+	
+	// Return device path directly if it starts with /dev/
+	if strings.HasPrefix(device, "/dev/") {
+		return device
+	}
+	
+	return ""
+}
+
+// resolveUUIDToDevice resolves a UUID to its corresponding device path
+func resolveUUIDToDevice(uuid string) string {
+	// Use blkid to resolve UUID to device path
+	if output, err := exec.Command("blkid", "-U", uuid).Output(); err == nil {
+		return strings.TrimSpace(string(output))
+	}
+	return ""
+}
+
+// shouldAutoDiscover determines if we should auto-discover storage parameters
+// Returns true if all storage parameters are empty (no config provided)
+func shouldAutoDiscover(clusterDisks, premountedDisks, rancherDisk string) bool {
+	return clusterDisks == "" && premountedDisks == "" && rancherDisk == ""
 }
 
 // PrintDiskWipePreview prints a preview of bloom-managed mounts to be wiped and
 // the future mount range to be pre-cleaned, before the user confirms cleanup.
 func PrintDiskWipePreview(clusterDisks, premountedDisks, rancherDisk string) {
-managed := parseManagedFstabMounts()
+	// Auto-discover storage if no config parameters provided
+	if shouldAutoDiscover(clusterDisks, premountedDisks, rancherDisk) {
+		discoveredCD, discoveredPD, discoveredRD := discoverAllBloomStorage()
+		clusterDisks = discoveredCD
+		premountedDisks = discoveredPD
+		rancherDisk = discoveredRD
+		
+		// Show discovery info if anything was found
+		if clusterDisks != "" || premountedDisks != "" || rancherDisk != "" {
+			fmt.Println("ℹ️  Auto-discovered bloom-managed storage from fstab")
+		}
+	}
+	
+	managed := parseManagedFstabMounts()
 
-var future []string
-n := countClusterDisksStr(clusterDisks)
-if n > 0 {
-start := calculateFutureDiskStart(clusterDisks, premountedDisks, n)
-for i := 0; i < n; i++ {
-future = append(future, fmt.Sprintf("/mnt/disk%d", start+i))
-}
-}
+	var future []string
+	n := countClusterDisksStr(clusterDisks)
+	if n > 0 {
+		start := calculateFutureDiskStart(clusterDisks, premountedDisks, n)
+		for i := 0; i < n; i++ {
+			future = append(future, fmt.Sprintf("/mnt/disk%d", start+i))
+		}
+	}
 
-if len(managed) == 0 && len(future) == 0 {
-return
-}
+	if len(managed) == 0 && len(future) == 0 {
+		return
+	}
 
 sep := strings.Repeat("─", 62)
 fmt.Printf("\n%s\n", sep)
