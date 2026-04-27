@@ -922,11 +922,25 @@ premountedLines = append(premountedLines, fmt.Sprintf("    ✓  %-18s — %d blo
 
 if rancherDisk != "" {
 	if _, err := os.Stat("/var/lib/rancher"); err == nil {
-		bloom, _ := inspectDirContents("/var/lib/rancher")
-		if len(bloom) > 0 {
-			fmt.Println("\n  RANCHER_DISK — /var/lib/rancher will be reformatted:")
-			fmt.Printf("    ⚠️  %-18s — %d rancher artifact(s) will be LOST\n", "/var/lib/rancher", len(bloom))
+		bloom, user := inspectDirContents("/var/lib/rancher")
+		fmt.Println("\n  RANCHER_DISK — /var/lib/rancher will be wiped clean:")
+		switch {
+		case len(user) > 0:
+			if len(user) > 5 {
+				fmt.Printf("    ⚠️  %-18s — %d rancher item(s), ⚠️  %d user file(s) will be LOST\n",
+					"/var/lib/rancher", len(bloom), len(user))
+			} else {
+				fmt.Printf("    ⚠️  %-18s — %d rancher item(s), ⚠️  %d user file(s) will be LOST: %s\n",
+					"/var/lib/rancher", len(bloom), len(user), strings.Join(user, ", "))
+			}
+		case len(bloom) > 0:
+			fmt.Printf("    ✓  %-18s — rancher state only (%d item(s))\n", "/var/lib/rancher", len(bloom))
+		default:
+			fmt.Printf("    ✓  %-18s — empty\n", "/var/lib/rancher")
 		}
+	} else {
+		fmt.Println("\n  RANCHER_DISK — /var/lib/rancher will be wiped clean:")
+		fmt.Printf("    ✓  %-18s — directory will be created\n", "/var/lib/rancher")
 	}
 }
 
