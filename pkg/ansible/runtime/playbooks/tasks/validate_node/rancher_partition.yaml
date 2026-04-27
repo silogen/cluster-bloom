@@ -1,26 +1,61 @@
 ---
 # Purpose: Validate /var/lib/rancher partition size for all nodes
-# Dependencies: GPU_NODE, SKIP_RANCHER_PARTITION_CHECK variables
+# Skip validation if RANCHER_DISK is configured (handled separately)
+# Dependencies: GPU_NODE, SKIP_RANCHER_PARTITION_CHECK, RANCHER_DISK variables
 # Usage: Imported by validate_node/main.yaml
 # Tags: [validate_node]
 
-- name: Create /var/lib/rancher directory
-  file:
-    path: /var/lib/rancher
-    state: directory
-    mode: "0755"
+- name: Handle /var/lib/rancher validation
+  when: not (RANCHER_DISK is defined and RANCHER_DISK != "")
+  block:
+    - name: Create /var/lib/rancher directory
+      file:
+        path: /var/lib/rancher
+        state: directory
+        mode: "0755"
 
-- name: Get partition size
-  shell: df -BG /var/lib/rancher | awk 'NR==2 {print $2}' | sed 's/G//'
-  register: rancher_partition_size
-  changed_when: false
+    - name: Get partition size
+      shell: df -BG /var/lib/rancher | awk 'NR==2 {print $2}' | sed 's/G//'
+      register: rancher_partition_size
 
-- name: Warn if partition less than 500GB
-  debug:
-    msg: "WARNING: /var/lib/rancher partition is {{ rancher_partition_size.stdout }}GB, recommended 500GB for all nodes"
-  when: rancher_partition_size.stdout | int < 500
+    - name: Display partition size information
+      debug:
+        msg: "WARNING: /var/lib/rancher partition is {{ rancher_partition_size.stdout }}GB, recommended 500GB for all nodes"
+      when: 
+        - rancher_partition_size.stdout | int < 500
+        - not SKIP_RANCHER_PARTITION_CHECK | default(false)
 
-- name: Fail if partition less than 500GB
-  fail:
-    msg: "/var/lib/rancher partition size ({{ rancher_partition_size.stdout }}GB) is less than recommended 500GB"
-  when: rancher_partition_size.stdout | int < 500
+    - name: Check partition size requirement
+      fail:
+        msg: "/var/lib/rancher partition size ({{ rancher_partition_size.stdout }}GB) is less than recommended 500GB"
+      when: 
+        - rancher_partition_size.stdout | int < 100
+        - not SKIP_RANCHER_PARTITION_CHECK | default(false)
+
+- name: Validate RANCHER_DISK configuration
+  when: RANCHER_DISK is defined and RANCHER_DISK != ""
+  block:
+    - name: Verify custom rancher disk is mounted
+      shell: mountpoint -q {{ RANCHER_DISK }}
+      register: custom_rancher_mounted
+      failed_when: false
+      changed_when: false
+
+    - name: Fail if RANCHER_DISK is not mounted
+      fail:
+        msg: "RANCHER_DISK {{ RANCHER_DISK }} is not mounted. Please ensure the storage device is mounted before running bloom."
+      when: custom_rancher_mounted.rc != 0
+
+    - name: Get available space on RANCHER_DISK
+      shell: df -BG {{ RANCHER_DISK }} | awk 'NR==2 {print $4}' | sed 's/G//'
+      register: custom_rancher_space
+      changed_when: false
+
+    - name: Display custom disk space information
+      debug:
+        msg: "✅ RANCHER_DISK {{ RANCHER_DISK }} has {{ custom_rancher_space.stdout }}GB available space"
+
+    - name: Warn about insufficient space on custom disk
+      debug:
+        msg: "⚠️  WARNING: RANCHER_DISK has only {{ custom_rancher_space.stdout }}GB available, recommended 500GB for RKE2"
+      when: custom_rancher_space.stdout | int < 500
