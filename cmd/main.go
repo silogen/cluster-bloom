@@ -1117,6 +1117,11 @@ func runClusterCleanup(cfg config.Config) {
 		errors = append(errors, fmt.Errorf("Premounted disk cleanup: %w", err))
 	}
 
+	// Step 4.5: Clean RANCHER_DISK configuration — unmount bind mount and clean data
+	if err := runtime.CleanupRancherDisk(rancherDisk); err != nil {
+		errors = append(errors, fmt.Errorf("RANCHER_DISK cleanup: %w", err))
+	}
+
 	// Step 5: Clean Disks — strips fstab entries and wipes CLUSTER_DISKS
 	if err := runtime.CleanupBloomDisks(clusterDisks); err != nil {
 		errors = append(errors, fmt.Errorf("Disk cleanup: %w", err))

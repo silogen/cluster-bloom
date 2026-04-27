@@ -560,6 +560,37 @@ func GenerateCleanupTasks(clusterDisks string, premountedDisks string, rancherDi
 		cleanupTasks = append(cleanupTasks, premountedCleanupTask)
 	}
 
+	// RANCHER_DISK cleanup — unmount bind mount and clean fstab entry
+	if rancherDisk != "" {
+		rancherDiskCleanupTask := map[string]any{
+			"name": "Clean RANCHER_DISK configuration",
+			"tags": []string{"cleanup", "destroy-data", "storage"},
+			"block": []map[string]any{
+				{
+					"name":        "Unmount /var/lib/rancher bind mount",
+					"shell":       "umount /var/lib/rancher 2>/dev/null || true",
+					"failed_when": false,
+				},
+				{
+					"name":        "Remove RANCHER_DISK fstab entry",
+					"shell":       "sed -i '/# managed by cluster-bloom rancher-disk/d' /etc/fstab",
+					"failed_when": false,
+				},
+				{
+					"name":        "Clean rancher data from custom disk",
+					"shell":       fmt.Sprintf("rm -rf %s/rancher-data/* 2>/dev/null || true", rancherDisk),
+					"failed_when": false,
+				},
+				{
+					"name":        "Restore original /var/lib/rancher if backup exists", 
+					"shell":       "if [ -d /var/lib/rancher.backup.* ]; then rm -rf /var/lib/rancher; mv $(ls -d /var/lib/rancher.backup.* | head -1) /var/lib/rancher; fi",
+					"failed_when": false,
+				},
+			},
+		}
+		cleanupTasks = append(cleanupTasks, rancherDiskCleanupTask)
+	}
+
 	finalTask := map[string]any{
 		"name": "Cleanup completion summary",
 		"debug": map[string]any{
@@ -619,6 +650,58 @@ func CleanupPremountedDisks(premountedDisks string) error {
 		fmt.Printf("   ✓ Cleaned contents of %s\n", mp)
 	}
 	fmt.Println("   ✅ Premounted disk cleanup completed")
+	return nil
+}
+
+// CleanupRancherDisk unmounts the RANCHER_DISK bind mount and cleans the data directory
+func CleanupRancherDisk(rancherDisk string) error {
+	if rancherDisk == "" {
+		fmt.Println("   No RANCHER_DISK configured - skipping")
+		return nil
+	}
+	fmt.Println("💾 Cleaning RANCHER_DISK configuration...")
+	
+	// Unmount /var/lib/rancher bind mount
+	fmt.Println("   ⏏️  Unmounting /var/lib/rancher bind mount...")
+	if _, err := exec.Command("umount", "/var/lib/rancher").CombinedOutput(); err != nil {
+		fmt.Printf("      ⚠️  Warning: Failed to unmount /var/lib/rancher: %v\n", err)
+	} else {
+		fmt.Println("      ✓ Successfully unmounted /var/lib/rancher")
+	}
+	
+	// Remove fstab entry
+	fmt.Println("   📝 Removing RANCHER_DISK fstab entry...")
+	if _, err := exec.Command("sed", "-i", "/# managed by cluster-bloom rancher-disk/d", "/etc/fstab").CombinedOutput(); err != nil {
+		fmt.Printf("      ⚠️  Warning: Failed to clean fstab entry: %v\n", err)
+	} else {
+		fmt.Println("      ✓ Removed fstab entry")
+	}
+	
+	// Clean rancher data from custom disk
+	rancherDataPath := fmt.Sprintf("%s/rancher-data", rancherDisk)
+	fmt.Printf("   🗑️  Cleaning rancher data from %s...\n", rancherDataPath)
+	if _, err := exec.Command("rm", "-rf", rancherDataPath+"/*").CombinedOutput(); err != nil {
+		fmt.Printf("      ⚠️  Warning: Failed to clean rancher data: %v\n", err)
+	} else {
+		fmt.Printf("      ✓ Cleaned rancher data from %s\n", rancherDataPath)
+	}
+	
+	// Restore original /var/lib/rancher if backup exists
+	fmt.Println("   🔄 Checking for /var/lib/rancher backup to restore...")
+	if backups, err := exec.Command("bash", "-c", "ls -d /var/lib/rancher.backup.* 2>/dev/null | head -1").Output(); err == nil && len(strings.TrimSpace(string(backups))) > 0 {
+		backup := strings.TrimSpace(string(backups))
+		fmt.Printf("   📦 Restoring backup from %s...\n", backup)
+		exec.Command("rm", "-rf", "/var/lib/rancher").Run()
+		if _, err := exec.Command("mv", backup, "/var/lib/rancher").CombinedOutput(); err != nil {
+			fmt.Printf("      ⚠️  Warning: Failed to restore backup: %v\n", err)
+		} else {
+			fmt.Printf("      ✓ Restored backup to /var/lib/rancher\n")
+		}
+	} else {
+		fmt.Println("      ℹ️  No backup found to restore")
+	}
+	
+	fmt.Println("   ✅ RANCHER_DISK cleanup completed")
 	return nil
 }
 
@@ -767,15 +850,16 @@ if err != nil {
 return nil
 }
 var mounts []string
-for _, line := range strings.Split(string(data), "\n") {
-if strings.Contains(line, "# managed by cluster-bloom") &&
-!strings.Contains(line, "# premounted by cluster-bloom") {
-fields := strings.Fields(line)
-if len(fields) >= 2 {
-mounts = append(mounts, fields[1])
-}
-}
-}
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.Contains(line, "# managed by cluster-bloom") &&
+			!strings.Contains(line, "# premounted by cluster-bloom") &&
+			!strings.Contains(line, "# managed by cluster-bloom rancher-disk") {
+			fields := strings.Fields(line)
+			if len(fields) >= 2 {
+				mounts = append(mounts, fields[1])
+			}
+		}
+	}
 return mounts
 }
 
@@ -834,13 +918,24 @@ bloom, _ := inspectDirContents(mp)
 if len(bloom) > 0 {
 premountedLines = append(premountedLines, fmt.Sprintf("    ✓  %-18s — %d bloom artifact(s) removed (filesystem preserved)", mp, len(bloom)))
 }
+	}
+	if len(premountedLines) > 0 {
+		fmt.Println("\n  Premounted disks — bloom artifacts cleaned, filesystem kept:")
+		for _, line := range premountedLines {
+			fmt.Println(line)
+		}
+	}
 }
-if len(premountedLines) > 0 {
-fmt.Println("\n  Premounted disks — bloom artifacts cleaned, filesystem kept:")
-for _, line := range premountedLines {
-fmt.Println(line)
-}
-}
+
+if rancherDisk != "" {
+	rancherDataPath := fmt.Sprintf("%s/rancher-data", rancherDisk)
+	if _, err := os.Stat(rancherDataPath); err == nil {
+		bloom, _ := inspectDirContents(rancherDataPath)
+		if len(bloom) > 0 {
+			fmt.Println("\n  RANCHER_DISK — /var/lib/rancher data cleaned, bind mount removed:")
+			fmt.Printf("    ✓  %-18s — %d rancher artifact(s) removed\n", rancherDataPath, len(bloom))
+		}
+	}
 }
 
 if len(future) > 0 {
