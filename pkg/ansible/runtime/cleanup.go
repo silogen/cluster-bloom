@@ -582,8 +582,8 @@ func GenerateCleanupTasks(clusterDisks string, premountedDisks string, rancherDi
 					"failed_when": false,
 				},
 				{
-					"name":        "Restore original /var/lib/rancher if backup exists", 
-					"shell":       "if [ -d /var/lib/rancher.backup.* ]; then rm -rf /var/lib/rancher; mv $(ls -d /var/lib/rancher.backup.* | head -1) /var/lib/rancher; fi",
+					"name":        "Create clean /var/lib/rancher directory", 
+					"shell":       "rm -rf /var/lib/rancher && mkdir -p /var/lib/rancher",
 					"failed_when": false,
 				},
 			},
@@ -685,19 +685,13 @@ func CleanupRancherDisk(rancherDisk string) error {
 		fmt.Println("      ✓ Removed RANCHER_DISK fstab entry")
 	}
 	
-	// Restore original /var/lib/rancher if backup exists
-	fmt.Println("   🔄 Checking for /var/lib/rancher backup to restore...")
-	if backups, err := exec.Command("bash", "-c", "ls -d /var/lib/rancher.backup.* 2>/dev/null | head -1").Output(); err == nil && len(strings.TrimSpace(string(backups))) > 0 {
-		backup := strings.TrimSpace(string(backups))
-		fmt.Printf("   📦 Restoring backup from %s...\n", backup)
-		exec.Command("rm", "-rf", "/var/lib/rancher").Run()
-		if _, err := exec.Command("mv", backup, "/var/lib/rancher").CombinedOutput(); err != nil {
-			fmt.Printf("      ⚠️  Warning: Failed to restore backup: %v\n", err)
-		} else {
-			fmt.Printf("      ✓ Restored backup to /var/lib/rancher\n")
-		}
+	// Create clean /var/lib/rancher directory
+	fmt.Println("   📁 Creating clean /var/lib/rancher directory...")
+	exec.Command("rm", "-rf", "/var/lib/rancher").Run()
+	if _, err := exec.Command("mkdir", "-p", "/var/lib/rancher").CombinedOutput(); err != nil {
+		fmt.Printf("      ⚠️  Warning: Failed to create /var/lib/rancher: %v\n", err)
 	} else {
-		fmt.Println("      ℹ️  No backup found to restore")
+		fmt.Printf("      ✓ Created clean /var/lib/rancher directory\n")
 	}
 	
 	fmt.Println("   ✅ RANCHER_DISK cleanup completed")

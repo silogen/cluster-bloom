@@ -21,25 +21,10 @@
         msg: "RANCHER_DISK device {{ RANCHER_DISK }} is already mounted. Please unmount it first."
       when: rancher_device_mount_status.stdout == 'mounted'
 
-    - name: Check if /var/lib/rancher has existing data
-      find:
-        paths: /var/lib/rancher
-        patterns: "*"
-      register: existing_rancher_data
-
-    - name: Backup existing /var/lib/rancher data
-      shell: |
-        if [ "$(ls -A /var/lib/rancher 2>/dev/null)" ]; then
-          mv /var/lib/rancher /var/lib/rancher.backup.$(date +%Y%m%d_%H%M%S)
-          echo "Backed up existing /var/lib/rancher data"
-        fi
-      when: existing_rancher_data.matched > 0
-      register: rancher_backup_result
-
-    - name: Display backup information
-      debug:
-        msg: "{{ rancher_backup_result.stdout }}"
-      when: existing_rancher_data.matched > 0 and rancher_backup_result.stdout is defined
+    - name: Remove existing /var/lib/rancher directory for clean setup
+      file:
+        path: /var/lib/rancher
+        state: absent
 
     - name: Create /var/lib/rancher directory
       file:

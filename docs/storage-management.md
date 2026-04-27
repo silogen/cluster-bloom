@@ -178,7 +178,7 @@ The `RANCHER_DISK` parameter allows operators to specify a dedicated device for 
 - **Dedicated Storage**: Provides dedicated fast storage for `/var/lib/rancher` directory
 - **Direct Mount**: Device is formatted and mounted directly at `/var/lib/rancher`
 - **Automatic Setup**: Bloom handles device formatting, mounting, and fstab configuration
-- **Backup Safety**: Automatically moves existing `/var/lib/rancher` to timestamped backup before configuration
+- **Clean Deployment**: Removes existing `/var/lib/rancher` for fresh cluster setup
 
 **Configuration**:
 ```yaml
@@ -214,10 +214,10 @@ RANCHER_DISK: /dev/nvme2n1
 - **High I/O Workloads**: Consider RANCHER_DISK for nodes with high container runtime activity
 - **Standard Workloads**: Default `/var/lib/rancher` location usually sufficient
 
-**Backup and Cleanup Behavior**:
-- **Setup**: Moves existing `/var/lib/rancher` to `/var/lib/rancher.backup.TIMESTAMP` before mounting new device
+**Setup and Cleanup Behavior**:
+- **Setup**: Removes existing `/var/lib/rancher` directory for clean deployment and mounts dedicated device
 - **Cleanup**: Unmounts `/var/lib/rancher` and removes fstab entry
-- **Restore**: Automatically restores backup directory if it exists during cleanup
+- **Fresh Start**: Creates clean `/var/lib/rancher` directory after cleanup
 - **Device Preservation**: Underlying device is preserved (no reformatting during cleanup)
 
 ## Architecture
