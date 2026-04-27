@@ -102,6 +102,17 @@ schema:
       desc: Skip /var/lib/rancher partition size check
       section: "💾 Storage Configuration"
 
+    RANCHER_DISK:
+      type: str
+      pattern: ^/[a-zA-Z0-9._\-\/]+$|^$
+      default: ""
+      desc: Custom mount path for /var/lib/rancher directory. When specified, /var/lib/rancher will be bind-mounted to this location.
+      section: "💾 Storage Configuration"
+      examples:
+        - "/mnt/rancher"
+        - "/data/rancher" 
+        - "/storage/cluster-data"
+
      # 🔒 SSL/TLS Configuration
     ADDITIONAL_TLS_SAN_URLS:
       type: seq
@@ -521,3 +532,4 @@ constraints:
   # CLUSTER_DISKS and CLUSTER_PREMOUNTED_DISKS may be used together.
   - mutually_exclusive: [NO_DISKS_FOR_CLUSTER, CLUSTER_DISKS]
   - mutually_exclusive: [NO_DISKS_FOR_CLUSTER, CLUSTER_PREMOUNTED_DISKS]
+  - mutually_exclusive: [NO_DISKS_FOR_CLUSTER, RANCHER_DISK]

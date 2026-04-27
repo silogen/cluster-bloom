@@ -368,7 +368,7 @@ func unmountClusterDisks(clusterDisks string) error {
 }
 
 // GenerateCleanupTasks creates Ansible tasks equivalent to the cleanup functions above
-func GenerateCleanupTasks(clusterDisks string, premountedDisks string) []map[string]any {
+func GenerateCleanupTasks(clusterDisks string, premountedDisks string, rancherDisk string) []map[string]any {
 	var cleanupTasks []map[string]any
 
 	// Main cleanup block task
@@ -781,7 +781,7 @@ return mounts
 
 // PrintDiskWipePreview prints a preview of bloom-managed mounts to be wiped and
 // the future mount range to be pre-cleaned, before the user confirms cleanup.
-func PrintDiskWipePreview(clusterDisks, premountedDisks string) {
+func PrintDiskWipePreview(clusterDisks, premountedDisks, rancherDisk string) {
 managed := parseManagedFstabMounts()
 
 var future []string
