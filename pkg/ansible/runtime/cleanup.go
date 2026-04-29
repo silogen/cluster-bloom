@@ -976,31 +976,27 @@ func detectLegacyRancherMount() (device string, isLegacy bool) {
 		return "", false // Not a block device mount
 	}
 	
-	// Step 3: Check fstab for this mount point
+	// Step 3: Check fstab for this mount point to determine if it's bloom-managed
 	data, err := os.ReadFile("/etc/fstab")
 	if err != nil {
-		return "", false // Can't read fstab
+		// If we can't read fstab but have a block device mount, consider it legacy
+		return source, true
 	}
 	
-	// Step 4: Find fstab entry and check for bloom comments
-	var fstabEntries []string
+	// Step 4: Check if there's an existing bloom-managed entry
 	for _, line := range strings.Split(string(data), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) >= 2 && fields[1] == "/var/lib/rancher" {
-			fstabEntries = append(fstabEntries, line)
-			// Check if this entry is NOT bloom-managed
-			if !strings.Contains(line, "# managed by cluster-bloom") {
-				// Warn about multiple entries if found
-				if len(fstabEntries) > 1 {
-					fmt.Printf("⚠️  Warning: Found %d fstab entries for /var/lib/rancher\n", len(fstabEntries))
-					fmt.Println("   Using currently mounted source for cleanup.")
-				}
-				return source, true // Legacy manual mount detected
+			// Check if this entry IS bloom-managed
+			if strings.Contains(line, "# managed by cluster-bloom") {
+				return "", false // Found bloom-managed entry, not legacy
 			}
 		}
 	}
 	
-	return "", false // No legacy mount detected
+	// Step 5: If we reach here, we have an active mount but no bloom-managed fstab entry
+	// This is either a legacy manual mount or an orphaned mount from previous cleanup
+	return source, true // Consider any unmanaged mount as legacy
 }
 
 // resolveDevicePathFromSource converts mount source (UUID= or /dev/) to consistent device path
