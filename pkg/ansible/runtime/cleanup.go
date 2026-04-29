@@ -1263,7 +1263,7 @@ func unmountPriorLonghornDisks() error {
 			// Check for legacy RANCHER_DISK entry
 			fields := strings.Fields(line)
 			if len(fields) >= 2 && fields[1] == "/var/lib/rancher" {
-				if legacyDevice, isLegacy := detectLegacyRancherMount(); isLegacy {
+				if _, isLegacy := detectLegacyRancherMount(); isLegacy {
 					// This is a legacy mount, should be handled by CleanupRancherDisk()
 					// Skip adding to cleanLines (will be removed from fstab)
 					fmt.Printf("      ⏏️  Found legacy /var/lib/rancher entry: %s\n", fields[0])
