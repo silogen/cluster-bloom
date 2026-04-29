@@ -892,6 +892,25 @@ func discoverAllBloomStorage() (clusterDisks, premountedDisks, rancherDisk strin
 	
 	clusterDisks = strings.Join(clusterDiskPaths, ",")
 	premountedDisks = strings.Join(premountedPaths, ",")
+	
+	// NEW: Legacy detection if no bloom-managed RANCHER_DISK found
+	if rancherDisk == "" {
+		if legacyDevice, isLegacy := detectLegacyRancherMount(); isLegacy {
+			rancherDisk = resolveDevicePathFromSource(legacyDevice)
+			
+			// Show warning about legacy mount detection
+			fmt.Println("⚠️  LEGACY MOUNT DETECTED:")
+			fmt.Printf("   Found manually-mounted /var/lib/rancher → %s\n", legacyDevice)
+			fmt.Println("   This mount was created outside of bloom management.")
+			fmt.Println("   It will be included in cleanup preview.")
+			fmt.Println()
+			fmt.Println("💡 Migration Tip:")
+			fmt.Printf("   To manage this disk with bloom, add to your bloom.yaml:\n")
+			fmt.Printf("   RANCHER_DISK: %s\n", rancherDisk)
+			fmt.Println()
+		}
+	}
+	
 	return
 }
 
@@ -928,6 +947,62 @@ func resolveUUIDToDevice(uuid string) string {
 		return strings.TrimSpace(string(output))
 	}
 	return ""
+}
+
+// detectLegacyRancherMount detects manually mounted /var/lib/rancher without bloom tags
+// Returns device source and whether it's a legacy manual mount
+func detectLegacyRancherMount() (device string, isLegacy bool) {
+	// Step 1: Check if /var/lib/rancher is mounted to a device
+	output, err := exec.Command("findmnt", "-n", "-o", "SOURCE", "/var/lib/rancher").Output()
+	if err != nil {
+		return "", false // Not mounted or error
+	}
+	
+	source := strings.TrimSpace(string(output))
+	
+	// Step 2: Only consider block device mounts (not bind mounts, NFS, etc.)
+	if !strings.HasPrefix(source, "/dev/") && !strings.HasPrefix(source, "UUID=") {
+		return "", false // Not a block device mount
+	}
+	
+	// Step 3: Check fstab for this mount point
+	data, err := os.ReadFile("/etc/fstab")
+	if err != nil {
+		return "", false // Can't read fstab
+	}
+	
+	// Step 4: Find fstab entry and check for bloom comments
+	var fstabEntries []string
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[1] == "/var/lib/rancher" {
+			fstabEntries = append(fstabEntries, line)
+			// Check if this entry is NOT bloom-managed
+			if !strings.Contains(line, "# managed by cluster-bloom") {
+				// Warn about multiple entries if found
+				if len(fstabEntries) > 1 {
+					fmt.Printf("⚠️  Warning: Found %d fstab entries for /var/lib/rancher\n", len(fstabEntries))
+					fmt.Println("   Using currently mounted source for cleanup.")
+				}
+				return source, true // Legacy manual mount detected
+			}
+		}
+	}
+	
+	return "", false // No legacy mount detected
+}
+
+// resolveDevicePathFromSource converts mount source (UUID= or /dev/) to consistent device path
+func resolveDevicePathFromSource(source string) string {
+	if strings.HasPrefix(source, "UUID=") {
+		uuid := strings.TrimPrefix(source, "UUID=")
+		if devicePath := resolveUUIDToDevice(uuid); devicePath != "" {
+			return devicePath
+		}
+		fmt.Printf("⚠️  Warning: Could not resolve UUID %s to device path\n", uuid)
+		return source // Keep UUID format if resolution fails
+	}
+	return source // Already a device path
 }
 
 // shouldAutoDiscover determines if we should auto-discover storage parameters
@@ -1014,26 +1089,58 @@ premountedLines = append(premountedLines, fmt.Sprintf("    ✓  %-18s — %d blo
 }
 
 if rancherDisk != "" {
-	if _, err := os.Stat("/var/lib/rancher"); err == nil {
-		bloom, user := inspectDirContents("/var/lib/rancher")
-		fmt.Println("\n  RANCHER_DISK — /var/lib/rancher will be wiped clean:")
-		switch {
-		case len(user) > 0:
-			if len(user) > 5 {
-				fmt.Printf("    ⚠️  %-18s — %d rancher item(s), ⚠️  %d user file(s) will be LOST\n",
-					"/var/lib/rancher", len(bloom), len(user))
-			} else {
-				fmt.Printf("    ⚠️  %-18s — %d rancher item(s), ⚠️  %d user file(s) will be LOST: %s\n",
-					"/var/lib/rancher", len(bloom), len(user), strings.Join(user, ", "))
+	// Check if this is a legacy mount for different preview display
+	if legacyDevice, isLegacy := detectLegacyRancherMount(); isLegacy && legacyDevice != "" {
+		// Legacy-specific preview
+		if _, err := os.Stat("/var/lib/rancher"); err == nil {
+			bloom, user := inspectDirContents("/var/lib/rancher")
+			fmt.Println("\n  RANCHER_DISK — /var/lib/rancher (LEGACY MANUAL MOUNT):")
+			switch {
+			case len(user) > 0:
+				fmt.Printf("    ⚠️  %-18s — manually mounted, will be unmounted\n", "/var/lib/rancher")
+				fmt.Printf("    ⚠️  %-18s — fstab entry will be removed\n", rancherDisk)
+				if len(user) > 5 {
+					fmt.Printf("    ⚠️  %-18s — %d rancher + %d user file(s) will be LOST\n", "RKE2 data", len(bloom), len(user))
+				} else {
+					fmt.Printf("    ⚠️  %-18s — %d rancher + %d user file(s) will be LOST: %s\n", "RKE2 data", len(bloom), len(user), strings.Join(user, ", "))
+				}
+			case len(bloom) > 0:
+				fmt.Printf("    ⚠️  %-18s — manually mounted, will be unmounted\n", "/var/lib/rancher")
+				fmt.Printf("    ⚠️  %-18s — fstab entry will be removed\n", rancherDisk)
+				fmt.Printf("    ⚠️  %-18s — %d rancher artifact(s) will be LOST\n", "RKE2 data", len(bloom))
+			default:
+				fmt.Printf("    ⚠️  %-18s — manually mounted, will be unmounted\n", "/var/lib/rancher")
+				fmt.Printf("    ⚠️  %-18s — fstab entry will be removed\n", rancherDisk)
+				fmt.Printf("    ✓  %-18s — empty\n", "RKE2 data")
 			}
-		case len(bloom) > 0:
-			fmt.Printf("    ✓  %-18s — rancher state only (%d item(s))\n", "/var/lib/rancher", len(bloom))
-		default:
-			fmt.Printf("    ✓  %-18s — empty\n", "/var/lib/rancher")
+		} else {
+			fmt.Println("\n  RANCHER_DISK — /var/lib/rancher (LEGACY MANUAL MOUNT):")
+			fmt.Printf("    ⚠️  %-18s — manually mounted, will be unmounted\n", "/var/lib/rancher")
+			fmt.Printf("    ⚠️  %-18s — fstab entry will be removed\n", rancherDisk)
 		}
 	} else {
-		fmt.Println("\n  RANCHER_DISK — /var/lib/rancher will be wiped clean:")
-		fmt.Printf("    ✓  %-18s — directory will be created\n", "/var/lib/rancher")
+		// Regular bloom-managed RANCHER_DISK preview
+		if _, err := os.Stat("/var/lib/rancher"); err == nil {
+			bloom, user := inspectDirContents("/var/lib/rancher")
+			fmt.Println("\n  RANCHER_DISK — /var/lib/rancher will be wiped clean:")
+			switch {
+			case len(user) > 0:
+				if len(user) > 5 {
+					fmt.Printf("    ⚠️  %-18s — %d rancher item(s), ⚠️  %d user file(s) will be LOST\n",
+						"/var/lib/rancher", len(bloom), len(user))
+				} else {
+					fmt.Printf("    ⚠️  %-18s — %d rancher item(s), ⚠️  %d user file(s) will be LOST: %s\n",
+						"/var/lib/rancher", len(bloom), len(user), strings.Join(user, ", "))
+				}
+			case len(bloom) > 0:
+				fmt.Printf("    ✓  %-18s — rancher state only (%d item(s))\n", "/var/lib/rancher", len(bloom))
+			default:
+				fmt.Printf("    ✓  %-18s — empty\n", "/var/lib/rancher")
+			}
+		} else {
+			fmt.Println("\n  RANCHER_DISK — /var/lib/rancher will be wiped clean:")
+			fmt.Printf("    ✓  %-18s — directory will be created\n", "/var/lib/rancher")
+		}
 	}
 }
 
