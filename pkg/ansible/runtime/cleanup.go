@@ -669,20 +669,31 @@ func CleanupRancherDisk(rancherDisk string) error {
 		fmt.Println("      ✓ Successfully unmounted /var/lib/rancher")
 	}
 	
-	// Remove fstab entry
-	fmt.Println("   📝 Removing RANCHER_DISK fstab entry...")
-	if _, err := exec.Command("sed", "-i", "/# managed by cluster-bloom rancher-disk/d", "/etc/fstab").CombinedOutput(); err != nil {
-		fmt.Printf("      ⚠️  Warning: Failed to clean fstab entry: %v\n", err)
+	// Handle legacy vs bloom-managed cleanup differently
+	if isLegacyRancherMount(rancherDisk) {
+		// Legacy cleanup - remove ANY /var/lib/rancher entry
+		fmt.Println("   📝 Removing legacy /var/lib/rancher fstab entry...")
+		if _, err := exec.Command("sed", "-i", "/\\/var\\/lib\\/rancher/d", "/etc/fstab").CombinedOutput(); err != nil {
+			fmt.Printf("      ⚠️  Warning: Failed to clean legacy fstab entry: %v\n", err)
+		} else {
+			fmt.Println("      ✓ Removed legacy fstab entry")
+		}
 	} else {
-		fmt.Println("      ✓ Removed fstab entry")
-	}
-	
-	// Clean RANCHER_DISK device fstab entry  
-	fmt.Println("   📝 Removing RANCHER_DISK fstab entry...")
-	if _, err := exec.Command("bash", "-c", fmt.Sprintf("sed -i '/UUID=.*\\/var\\/lib\\/rancher.*%s/d' /etc/fstab", "# managed by cluster-bloom rancher-disk")).CombinedOutput(); err != nil {
-		fmt.Printf("      ⚠️  Warning: Failed to clean RANCHER_DISK fstab entry: %v\n", err)
-	} else {
-		fmt.Println("      ✓ Removed RANCHER_DISK fstab entry")
+		// Existing bloom-managed cleanup logic
+		fmt.Println("   📝 Removing RANCHER_DISK fstab entry...")
+		if _, err := exec.Command("sed", "-i", "/# managed by cluster-bloom rancher-disk/d", "/etc/fstab").CombinedOutput(); err != nil {
+			fmt.Printf("      ⚠️  Warning: Failed to clean fstab entry: %v\n", err)
+		} else {
+			fmt.Println("      ✓ Removed fstab entry")
+		}
+		
+		// Clean RANCHER_DISK device fstab entry  
+		fmt.Println("   📝 Removing RANCHER_DISK fstab entry...")
+		if _, err := exec.Command("bash", "-c", fmt.Sprintf("sed -i '/UUID=.*\\/var\\/lib\\/rancher.*%s/d' /etc/fstab", "# managed by cluster-bloom rancher-disk")).CombinedOutput(); err != nil {
+			fmt.Printf("      ⚠️  Warning: Failed to clean RANCHER_DISK fstab entry: %v\n", err)
+		} else {
+			fmt.Println("      ✓ Removed RANCHER_DISK fstab entry")
+		}
 	}
 	
 	// Create clean /var/lib/rancher directory
@@ -1005,6 +1016,18 @@ func resolveDevicePathFromSource(source string) string {
 	return source // Already a device path
 }
 
+// isLegacyRancherMount checks if the given device is a legacy manual mount
+func isLegacyRancherMount(device string) bool {
+	legacyDevice, isLegacy := detectLegacyRancherMount()
+	if !isLegacy {
+		return false
+	}
+	// Resolve both to device paths for comparison
+	resolvedLegacy := resolveDevicePathFromSource(legacyDevice)
+	resolvedDevice := resolveDevicePathFromSource(device)
+	return resolvedLegacy == resolvedDevice
+}
+
 // shouldAutoDiscover determines if we should auto-discover storage parameters
 // Returns true if all storage parameters are empty (no config provided)
 func shouldAutoDiscover(clusterDisks, premountedDisks, rancherDisk string) bool {
@@ -1237,6 +1260,16 @@ func unmountPriorLonghornDisks() error {
 			}
 			// Don't add this line to cleanLines (removes it from fstab)
 		} else {
+			// Check for legacy RANCHER_DISK entry
+			fields := strings.Fields(line)
+			if len(fields) >= 2 && fields[1] == "/var/lib/rancher" {
+				if legacyDevice, isLegacy := detectLegacyRancherMount(); isLegacy {
+					// This is a legacy mount, should be handled by CleanupRancherDisk()
+					// Skip adding to cleanLines (will be removed from fstab)
+					fmt.Printf("      ⏏️  Found legacy /var/lib/rancher entry: %s\n", fields[0])
+					continue
+				}
+			}
 			cleanLines = append(cleanLines, line)
 		}
 	}
