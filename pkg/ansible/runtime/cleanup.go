@@ -815,11 +815,13 @@ func CleanupPremountedDisks(premountedDisks string) error {
 
 // CleanupRancherDisk unmounts the RANCHER_DISK bind mount and cleans the data directory
 func CleanupRancherDisk(rancherDisk string) error {
-	if rancherDisk == "" {
-		fmt.Println("   No RANCHER_DISK configured - skipping")
+	// Always check actual mount status, regardless of config
+	if !isVarLibRancherMounted() {
+		fmt.Println("   /var/lib/rancher is not mounted - skipping")
 		return nil
 	}
-	fmt.Println("💾 Cleaning RANCHER_DISK configuration...")
+	
+	fmt.Println("💾 Found mounted /var/lib/rancher - proceeding with cleanup...")
 	
 	// Unmount /var/lib/rancher bind mount
 	fmt.Println("   ⏏️  Unmounting /var/lib/rancher bind mount...")
@@ -864,8 +866,10 @@ func CleanupRancherDisk(rancherDisk string) error {
 		fmt.Println("      ✅ /var/lib/rancher is no longer mounted")
 	}
 	
-	// Handle legacy vs bloom-managed cleanup differently
-	if isLegacyRancherMount(rancherDisk) {
+	// Handle fstab cleanup based on discovery, not config
+	entryType := detectFstabEntryType("/var/lib/rancher")
+	switch entryType {
+	case "legacy":
 		// Legacy cleanup - remove ANY /var/lib/rancher entry
 		fmt.Println("   📝 Removing legacy /var/lib/rancher fstab entry...")
 		if _, err := exec.Command("sed", "-i", "/\\/var\\/lib\\/rancher/d", "/etc/fstab").CombinedOutput(); err != nil {
@@ -873,22 +877,23 @@ func CleanupRancherDisk(rancherDisk string) error {
 		} else {
 			fmt.Println("      ✓ Removed legacy fstab entry")
 		}
-	} else {
-		// Existing bloom-managed cleanup logic
-		fmt.Println("   📝 Removing RANCHER_DISK fstab entry...")
+	case "bloom-managed":
+		// Bloom-managed cleanup - remove entries with bloom tags
+		fmt.Println("   📝 Removing bloom-managed /var/lib/rancher fstab entry...")
 		if _, err := exec.Command("sed", "-i", "/# managed by cluster-bloom rancher-disk/d", "/etc/fstab").CombinedOutput(); err != nil {
-			fmt.Printf("      ⚠️  Warning: Failed to clean fstab entry: %v\n", err)
+			fmt.Printf("      ⚠️  Warning: Failed to clean bloom-managed fstab entry: %v\n", err)
 		} else {
-			fmt.Println("      ✓ Removed fstab entry")
+			fmt.Println("      ✓ Removed bloom-managed fstab entry")
 		}
 		
-		// Clean RANCHER_DISK device fstab entry  
-		fmt.Println("   📝 Removing RANCHER_DISK fstab entry...")
-		if _, err := exec.Command("bash", "-c", fmt.Sprintf("sed -i '/UUID=.*\\/var\\/lib\\/rancher.*%s/d' /etc/fstab", "# managed by cluster-bloom rancher-disk")).CombinedOutput(); err != nil {
-			fmt.Printf("      ⚠️  Warning: Failed to clean RANCHER_DISK fstab entry: %v\n", err)
+		// Also clean UUID-based entries for bloom-managed disks
+		if _, err := exec.Command("bash", "-c", "sed -i '/UUID=.*\\/var\\/lib\\/rancher.*# managed by cluster-bloom rancher-disk/d' /etc/fstab").CombinedOutput(); err != nil {
+			fmt.Printf("      ⚠️  Warning: Failed to clean UUID fstab entry: %v\n", err)
 		} else {
-			fmt.Println("      ✓ Removed RANCHER_DISK fstab entry")
+			fmt.Println("      ✓ Removed UUID fstab entry")
 		}
+	case "none":
+		fmt.Println("   ℹ️  No /var/lib/rancher fstab entry found")
 	}
 	
 	// Create clean /var/lib/rancher directory
@@ -1205,6 +1210,32 @@ func resolveDevicePathFromSource(source string) string {
 		return source // Keep UUID format if resolution fails
 	}
 	return source // Already a device path
+}
+
+// isVarLibRancherMounted checks if /var/lib/rancher is currently mounted
+func isVarLibRancherMounted() bool {
+	output, err := exec.Command("findmnt", "-n", "/var/lib/rancher").Output()
+	return err == nil && len(strings.TrimSpace(string(output))) > 0
+}
+
+// detectFstabEntryType determines what type of fstab entry exists for /var/lib/rancher
+func detectFstabEntryType(mountPoint string) string {
+	data, err := os.ReadFile("/etc/fstab")
+	if err != nil {
+		return "none"
+	}
+	
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[1] == mountPoint {
+			if strings.Contains(line, "# managed by cluster-bloom") {
+				return "bloom-managed"
+			}
+			return "legacy"
+		}
+	}
+	
+	return "none"
 }
 
 // isLegacyRancherMount checks if the given device is a legacy manual mount

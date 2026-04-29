@@ -1123,7 +1123,8 @@ func runClusterCleanup(cfg config.Config) {
 	}
 
 	// Step 4.5: Clean RANCHER_DISK configuration — unmount bind mount and clean data
-	if err := runtime.CleanupRancherDisk(rancherDisk); err != nil {
+	// Always call - let function decide based on actual mount status
+	if err := runtime.CleanupRancherDisk(""); err != nil {
 		errors = append(errors, fmt.Errorf("RANCHER_DISK cleanup: %w", err))
 	}
 
