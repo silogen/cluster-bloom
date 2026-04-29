@@ -663,10 +663,45 @@ func CleanupRancherDisk(rancherDisk string) error {
 	
 	// Unmount /var/lib/rancher bind mount
 	fmt.Println("   ⏏️  Unmounting /var/lib/rancher bind mount...")
-	if _, err := exec.Command("sudo", "umount", "-lf", "/var/lib/rancher").CombinedOutput(); err != nil {
-		fmt.Printf("      ⚠️  Warning: Failed to unmount /var/lib/rancher: %v\n", err)
+	
+	// Check current mount status before unmount
+	mountCheckOutput, _ := exec.Command("mount").CombinedOutput()
+	if strings.Contains(string(mountCheckOutput), "/var/lib/rancher") {
+		fmt.Println("      📍 /var/lib/rancher is currently mounted")
+		
+		// Check what processes are using it
+		lsofOutput, lsofErr := exec.Command("lsof", "+D", "/var/lib/rancher").CombinedOutput()
+		if lsofErr == nil && len(strings.TrimSpace(string(lsofOutput))) > 0 {
+			fmt.Printf("      👀 Processes using /var/lib/rancher:\n%s\n", string(lsofOutput))
+		} else {
+			fmt.Println("      👀 No processes found using /var/lib/rancher")
+		}
+	} else {
+		fmt.Println("      📍 /var/lib/rancher is not currently mounted")
+		return nil
+	}
+	
+	// Attempt unmount with detailed logging
+	umountOutput, umountErr := exec.Command("sudo", "umount", "-lf", "/var/lib/rancher").CombinedOutput()
+	fmt.Printf("      🔧 Unmount command output: %s\n", string(umountOutput))
+	
+	if umountErr != nil {
+		fmt.Printf("      ⚠️  Warning: Failed to unmount /var/lib/rancher: %v\n", umountErr)
+		fmt.Printf("      🔍 Error details: %s\n", string(umountOutput))
+		
+		// Try to get more details about why it failed
+		fuserOutput, _ := exec.Command("fuser", "-mv", "/var/lib/rancher").CombinedOutput()
+		fmt.Printf("      🔍 Processes blocking unmount (fuser): %s\n", string(fuserOutput))
 	} else {
 		fmt.Println("      ✓ Successfully unmounted /var/lib/rancher")
+	}
+	
+	// Verify unmount was successful
+	mountCheckAfter, _ := exec.Command("mount").CombinedOutput()
+	if strings.Contains(string(mountCheckAfter), "/var/lib/rancher") {
+		fmt.Println("      ❌ /var/lib/rancher is still mounted after unmount attempt")
+	} else {
+		fmt.Println("      ✅ /var/lib/rancher is no longer mounted")
 	}
 	
 	// Handle legacy vs bloom-managed cleanup differently
