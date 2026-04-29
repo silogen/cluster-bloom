@@ -663,7 +663,7 @@ func CleanupRancherDisk(rancherDisk string) error {
 	
 	// Unmount /var/lib/rancher bind mount
 	fmt.Println("   ⏏️  Unmounting /var/lib/rancher bind mount...")
-	if _, err := exec.Command("umount", "/var/lib/rancher").CombinedOutput(); err != nil {
+	if _, err := exec.Command("sudo", "umount", "-lf", "/var/lib/rancher").CombinedOutput(); err != nil {
 		fmt.Printf("      ⚠️  Warning: Failed to unmount /var/lib/rancher: %v\n", err)
 	} else {
 		fmt.Println("      ✓ Successfully unmounted /var/lib/rancher")
