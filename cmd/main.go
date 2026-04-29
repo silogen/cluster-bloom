@@ -1103,6 +1103,11 @@ func runClusterCleanup(cfg config.Config) {
 		errors = append(errors, fmt.Errorf("RKE2 uninstall: %w", err))
 	}
 
+	// Step 2.5: Wait for RKE2/kubelet processes to fully terminate before proceeding
+	if err := runtime.WaitForRKE2ProcessesToStop(); err != nil {
+		fmt.Printf("   ⚠️  Warning: %v - continuing with cleanup anyway\n", err)
+	}
+
 	// Step 3: Pre-clean bloom artifacts from directories in the future mount range,
 	// leaving user files intact. Done before fstab is rewritten so mounts are still valid.
 	if err := runtime.PrecleanFutureMountPoints(clusterDisks, premountedDisks); err != nil {

@@ -236,6 +236,166 @@ func UninstallRKE2() error {
 	return nil
 }
 
+// WaitForRKE2ProcessesToStop intelligently waits for RKE2/kubelet processes to fully terminate
+func WaitForRKE2ProcessesToStop() error {
+	fmt.Println("🔍 Verifying RKE2/kubelet processes have terminated...")
+	
+	maxAttempts := 30 // Maximum retries, not time-based
+	retryInterval := time.Second
+	
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		allClear := true
+		issues := []string{}
+		
+		// 1. Check for running processes
+		if runningProcs := checkRunningRKE2Processes(); len(runningProcs) > 0 {
+			allClear = false
+			if attempt == 0 || attempt%10 == 0 {
+				issues = append(issues, fmt.Sprintf("Running processes: %v", runningProcs))
+			}
+		}
+		
+		// 2. Check systemd services
+		if activeServices := checkSystemdServices(); len(activeServices) > 0 {
+			allClear = false
+			if attempt == 0 {
+				issues = append(issues, fmt.Sprintf("Active systemd services: %v", activeServices))
+			}
+		}
+		
+		// 3. Check file handles on /var/lib/rancher  
+		if busyProcesses := checkFileHandles("/var/lib/rancher"); len(busyProcesses) > 0 {
+			allClear = false
+			if attempt == 0 || attempt%5 == 0 {
+				issues = append(issues, fmt.Sprintf("Processes using /var/lib/rancher: %v", busyProcesses))
+			}
+		}
+		
+		// 4. Check container runtime activity
+		if containerCount := checkRunningContainers(); containerCount > 0 {
+			allClear = false
+			if attempt == 0 {
+				issues = append(issues, fmt.Sprintf("Running containers: %d", containerCount))
+			}
+		}
+		
+		if allClear {
+			fmt.Println("   ✅ RKE2/kubelet processes fully terminated and filesystem released")
+			return nil
+		}
+		
+		// Show status on first attempt and periodically
+		if attempt == 0 {
+			fmt.Println("   ⏳ Waiting for RKE2 components to fully terminate:")
+			for _, issue := range issues {
+				fmt.Printf("      - %s\n", issue)
+			}
+		} else if attempt%10 == 0 {
+			fmt.Printf("   ⏳ Still waiting... (attempt %d/%d)\n", attempt, maxAttempts)
+			for _, issue := range issues {
+				fmt.Printf("      - %s\n", issue)
+			}
+		}
+		
+		time.Sleep(retryInterval)
+	}
+	
+	return fmt.Errorf("RKE2 components did not fully terminate after %d attempts", maxAttempts)
+}
+
+// checkRunningRKE2Processes returns list of RKE2-related process info
+func checkRunningRKE2Processes() []string {
+	processPatterns := []string{"rke2", "kubelet", "containerd-shim", "k3s"}
+	var runningProcesses []string
+	
+	for _, pattern := range processPatterns {
+		cmd := exec.Command("pgrep", "-f", pattern)
+		output, err := cmd.CombinedOutput()
+		
+		if err == nil && len(strings.TrimSpace(string(output))) > 0 {
+			pidsStr := strings.TrimSpace(string(output))
+			pids := strings.Fields(pidsStr)
+			
+			for _, pid := range pids {
+				if strings.TrimSpace(pid) != "" {
+					psCmd := exec.Command("ps", "-p", pid, "-o", "comm", "--no-headers")
+					psOutput, psErr := psCmd.CombinedOutput()
+					if psErr == nil {
+						processName := strings.TrimSpace(string(psOutput))
+						runningProcesses = append(runningProcesses, fmt.Sprintf("%s(%s)", processName, pid))
+					}
+				}
+			}
+		}
+	}
+	
+	return runningProcesses
+}
+
+// checkSystemdServices returns list of active RKE2 systemd services
+func checkSystemdServices() []string {
+	services := []string{"rke2-server", "rke2-agent"}
+	var activeServices []string
+	
+	for _, service := range services {
+		cmd := exec.Command("systemctl", "is-active", service)
+		output, err := cmd.CombinedOutput()
+		
+		if err == nil {
+			status := strings.TrimSpace(string(output))
+			if status == "active" || status == "activating" {
+				activeServices = append(activeServices, service)
+			}
+		}
+	}
+	
+	return activeServices
+}
+
+// checkFileHandles returns processes that have open file handles on the given path
+func checkFileHandles(path string) []string {
+	cmd := exec.Command("lsof", "+D", path)
+	output, err := cmd.CombinedOutput()
+	
+	if err != nil {
+		return nil // lsof not available or no open files
+	}
+	
+	lines := strings.Split(string(output), "\n")
+	var busyProcesses []string
+	processMap := make(map[string]bool)
+	
+	for _, line := range lines {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[0] != "COMMAND" {
+			processInfo := fmt.Sprintf("%s(%s)", fields[0], fields[1])
+			if !processMap[processInfo] {
+				busyProcesses = append(busyProcesses, processInfo)
+				processMap[processInfo] = true
+			}
+		}
+	}
+	
+	return busyProcesses
+}
+
+// checkRunningContainers returns number of running containers (if crictl available)
+func checkRunningContainers() int {
+	cmd := exec.Command("crictl", "ps", "--quiet")
+	output, err := cmd.CombinedOutput()
+	
+	if err != nil {
+		return 0 // crictl not available or no containers
+	}
+	
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	if len(lines) == 1 && lines[0] == "" {
+		return 0
+	}
+	
+	return len(lines)
+}
+
 // CleanupBloomDisks removes bloom-managed disks and cleans up disk state
 func CleanupBloomDisks(clusterDisks string) error {
 	fmt.Println("💽 Cleaning bloom-managed disks...")
