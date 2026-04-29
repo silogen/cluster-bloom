@@ -329,7 +329,7 @@ func runAnsible(configFile string) {
 	mode := runtime.OutputClean
 
 	// Run the playbook
-	exitCode, err := runtime.RunPlaybook(cfg, playbookName, dryRun, tags, mode)
+	exitCode, err := runtime.RunPlaybook(cfg, playbookName, dryRun, tags, mode, Version)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -362,7 +362,7 @@ func runPlaybookDirect(playbookPath string) {
 
 	allVars = append(allVars, extraVars...)
 
-	exitCode, err := runtime.RunPlaybookDirect(playbookPath, dryRun, tags, allVars, mode)
+	exitCode, err := runtime.RunPlaybookDirect(playbookPath, dryRun, tags, allVars, mode, Version)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

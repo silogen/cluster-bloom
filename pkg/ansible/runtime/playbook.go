@@ -44,7 +44,7 @@ func backupLogFile(workDir string) error {
 	return nil
 }
 
-func RunPlaybook(config map[string]any, playbookName string, dryRun bool, tags string, outputMode OutputMode) (int, error) {
+func RunPlaybook(config map[string]any, playbookName string, dryRun bool, tags string, outputMode OutputMode, version string) (int, error) {
 	workDir, err := getWorkDir()
 	if err != nil {
 		return 1, err
@@ -64,7 +64,7 @@ func RunPlaybook(config map[string]any, playbookName string, dryRun bool, tags s
 	extraVars := ConfigToAnsibleVars(config)
 	playbookPath := filepath.Join(playbookDir, playbookName)
 
-	return RunPlaybookDirect(playbookPath, dryRun, tags, extraVars, outputMode)
+	return RunPlaybookDirect(playbookPath, dryRun, tags, extraVars, outputMode, version)
 }
 
 func extractEmbeddedPlaybooks(destDir string) error {
@@ -93,7 +93,7 @@ func extractEmbeddedPlaybooks(destDir string) error {
 	})
 }
 
-func RunPlaybookDirect(playbookPath string, dryRun bool, tags string, extraVars []string, outputMode OutputMode) (int, error) {
+func RunPlaybookDirect(playbookPath string, dryRun bool, tags string, extraVars []string, outputMode OutputMode, version string) (int, error) {
 	absPath, err := filepath.Abs(playbookPath)
 	if err != nil {
 		return 1, fmt.Errorf("resolve playbook path: %w", err)
@@ -140,6 +140,7 @@ func RunPlaybookDirect(playbookPath string, dryRun bool, tags string, extraVars 
 		return 1, fmt.Errorf("get current directory: %w", err)
 	}
 	extraArgs = append(extraArgs, "-e", fmt.Sprintf(`{"BLOOM_DIR": "%s"}`, cwd))
+	extraArgs = append(extraArgs, "-e", fmt.Sprintf(`{"BLOOM_VERSION": "%s"}`, version))
 
 	exitCode := RunContainer(rootfs, playbookDir, playbookName, extraArgs, dryRun, tags, outputMode)
 	return exitCode, nil
