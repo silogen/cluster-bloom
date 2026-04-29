@@ -915,7 +915,7 @@ func discoverAllBloomStorage() (clusterDisks, premountedDisks, rancherDisk strin
 			fmt.Println("   This mount was created outside of bloom management.")
 			fmt.Println("   It will be included in cleanup preview.")
 			fmt.Println()
-			fmt.Println("💡 Migration Tip:")
+			fmt.Println("💡 Future Guidance:")
 			fmt.Printf("   To manage this disk with bloom, add to your bloom.yaml:\n")
 			fmt.Printf("   RANCHER_DISK: %s\n", rancherDisk)
 			fmt.Println()
