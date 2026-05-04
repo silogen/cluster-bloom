@@ -277,13 +277,42 @@ func CleanupBloomDisks(clusterDisks string) error {
 		}
 	}
 
+	// Force unmount all CLUSTER_DISKS devices again to ensure they're released
+	// This is critical before wipefs to prevent I/O errors
+	fmt.Println("   ⏏️  Final unmount pass for cluster disks...")
+	for device := range strings.SplitSeq(clusterDisks, ",") {
+		device = strings.TrimSpace(device)
+		if device == "" {
+			continue
+		}
+		// Attempt multiple unmount passes to ensure device is fully released
+		for i := 0; i < 3; i++ {
+			exec.Command("umount", "-lf", device).Run()
+			exec.Command("umount", "-f", device).Run()
+		}
+	}
+
+	// CRITICAL: Wait for kernel to fully flush pending I/O and release devices
+	// Without this delay, wipefs can cause catastrophic I/O errors on busy systems
+	fmt.Println("   ⏳ Waiting for kernel to release devices (10s)...")
+	time.Sleep(10 * time.Second)
+
 	// Wipe and reformat every CLUSTER_DISKS device
+	// Only proceed if device is confirmed unmounted to prevent system corruption
 	fmt.Println("   🧹 Wiping and formatting cluster disks...")
 	for device := range strings.SplitSeq(clusterDisks, ",") {
 		device = strings.TrimSpace(device)
 		if device == "" {
 			continue
 		}
+
+		// Verify device is not mounted before wiping
+		checkOut, _ := exec.Command("findmnt", "--source", device, "--noheadings").Output()
+		if strings.TrimSpace(string(checkOut)) != "" {
+			fmt.Printf("      ⚠️  SKIPPING %s: still mounted at: %s\n", device, strings.TrimSpace(string(checkOut)))
+			continue
+		}
+
 		if _, err := exec.Command("wipefs", "-a", device).CombinedOutput(); err != nil {
 			fmt.Printf("      ⚠️  Warning: wipefs failed on %s: %v\n", device, err)
 		} else {
