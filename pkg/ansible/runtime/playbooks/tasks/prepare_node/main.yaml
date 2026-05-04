@@ -24,8 +24,13 @@
 
 - name: Prepare bloom fstab section markers
   include_tasks: fstab_markers.yaml
-  when: not NO_DISKS_FOR_CLUSTER and (CLUSTER_DISKS != "" or CLUSTER_PREMOUNTED_DISKS != "")
+  when: not NO_DISKS_FOR_CLUSTER and (CLUSTER_DISKS != "" or CLUSTER_PREMOUNTED_DISKS != "" or (RANCHER_DISK is defined and RANCHER_DISK != ""))
   tags: [storage, prep_node]
+
+- name: Setup custom rancher storage path
+  include_tasks: rancher_storage.yaml
+  when: RANCHER_DISK is defined and RANCHER_DISK != ""
+  tags: [storage, rancher, prep_node]
 
 - name: Prepare Longhorn Disks
   include_tasks: storage.yaml

@@ -236,6 +236,7 @@ func UninstallRKE2() error {
 	return nil
 }
 
+
 // CleanupBloomDisks removes bloom-managed disks and cleans up disk state
 func CleanupBloomDisks(clusterDisks string) error {
 	fmt.Println("💽 Cleaning bloom-managed disks...")
@@ -397,7 +398,7 @@ func unmountClusterDisks(clusterDisks string) error {
 }
 
 // GenerateCleanupTasks creates Ansible tasks equivalent to the cleanup functions above
-func GenerateCleanupTasks(clusterDisks string, premountedDisks string) []map[string]any {
+func GenerateCleanupTasks(clusterDisks string, premountedDisks string, rancherDisk string) []map[string]any {
 	var cleanupTasks []map[string]any
 
 	// Main cleanup block task
@@ -589,6 +590,37 @@ func GenerateCleanupTasks(clusterDisks string, premountedDisks string) []map[str
 		cleanupTasks = append(cleanupTasks, premountedCleanupTask)
 	}
 
+	// RANCHER_DISK cleanup — unmount bind mount and clean fstab entry
+	if rancherDisk != "" {
+		rancherDiskCleanupTask := map[string]any{
+			"name": "Clean RANCHER_DISK configuration",
+			"tags": []string{"cleanup", "destroy-data", "storage"},
+			"block": []map[string]any{
+				{
+					"name":        "Unmount /var/lib/rancher bind mount",
+					"shell":       "umount /var/lib/rancher 2>/dev/null || true",
+					"failed_when": false,
+				},
+				{
+					"name":        "Remove RANCHER_DISK fstab entry",
+					"shell":       "sed -i '/# managed by cluster-bloom rancher-disk/d' /etc/fstab",
+					"failed_when": false,
+				},
+				{
+					"name":        "Remove RANCHER_DISK fstab entry",
+					"shell":       "sed -i '/UUID=.*\\/var\\/lib\\/rancher.*# managed by cluster-bloom rancher-disk/d' /etc/fstab",
+					"failed_when": false,
+				},
+				{
+					"name":        "Create clean /var/lib/rancher directory", 
+					"shell":       "rm -rf /var/lib/rancher && mkdir -p /var/lib/rancher",
+					"failed_when": false,
+				},
+			},
+		}
+		cleanupTasks = append(cleanupTasks, rancherDiskCleanupTask)
+	}
+
 	finalTask := map[string]any{
 		"name": "Cleanup completion summary",
 		"debug": map[string]any{
@@ -648,6 +680,145 @@ func CleanupPremountedDisks(premountedDisks string) error {
 		fmt.Printf("   ✓ Cleaned contents of %s\n", mp)
 	}
 	fmt.Println("   ✅ Premounted disk cleanup completed")
+	return nil
+}
+
+// CleanupRancherDisk unmounts the RANCHER_DISK bind mount and cleans the data directory
+func CleanupRancherDisk(rancherDisk string) error {
+	// Always check actual mount status, regardless of config
+	if !isVarLibRancherMounted() {
+		fmt.Println("   /var/lib/rancher is not mounted - skipping")
+		return nil
+	}
+	
+	fmt.Println("💾 Found mounted /var/lib/rancher - proceeding with cleanup...")
+	
+	// Detect device for wipe/reformat
+	fmt.Println("   🔍 Detecting device for /var/lib/rancher...")
+	
+	var devicePath string
+	
+	// Try to get device from current mount
+	if device := getDeviceFromCurrentMount("/var/lib/rancher"); device != "" {
+		devicePath = device
+		fmt.Printf("      📍 Found mounted device: %s\n", devicePath)
+	} else if device := getDeviceFromFstabEntry("/var/lib/rancher"); device != "" {
+		devicePath = device  
+		fmt.Printf("      📋 Found device from fstab: %s\n", devicePath)
+	} else {
+		fmt.Println("      ⚠️  Could not detect device - will skip wipe/reformat")
+	}
+	
+	// Unmount /var/lib/rancher bind mount
+	fmt.Println("   ⏏️  Unmounting /var/lib/rancher bind mount...")
+	
+	// Check current mount status before unmount
+	mountCheckOutput, _ := exec.Command("mount").CombinedOutput()
+	if strings.Contains(string(mountCheckOutput), "/var/lib/rancher") {
+		fmt.Println("      📍 /var/lib/rancher is currently mounted")
+		
+		// Check what processes are using it
+		lsofOutput, lsofErr := exec.Command("lsof", "+D", "/var/lib/rancher").CombinedOutput()
+		if lsofErr == nil && len(strings.TrimSpace(string(lsofOutput))) > 0 {
+			fmt.Printf("      👀 Processes using /var/lib/rancher:\n%s\n", string(lsofOutput))
+		} else {
+			fmt.Println("      👀 No processes found using /var/lib/rancher")
+		}
+	} else {
+		fmt.Println("      📍 /var/lib/rancher is not currently mounted")
+		return nil
+	}
+	
+	// Attempt unmount with detailed logging
+	umountOutput, umountErr := exec.Command("sudo", "umount", "-lf", "/var/lib/rancher").CombinedOutput()
+	fmt.Printf("      🔧 Unmount command output: %s\n", string(umountOutput))
+	
+	if umountErr != nil {
+		fmt.Printf("      ⚠️  Warning: Failed to unmount /var/lib/rancher: %v\n", umountErr)
+		fmt.Printf("      🔍 Error details: %s\n", string(umountOutput))
+		
+		// Try to get more details about why it failed
+		fuserOutput, _ := exec.Command("fuser", "-mv", "/var/lib/rancher").CombinedOutput()
+		fmt.Printf("      🔍 Processes blocking unmount (fuser): %s\n", string(fuserOutput))
+	} else {
+		fmt.Println("      ✓ Successfully unmounted /var/lib/rancher")
+	}
+	
+	// Verify unmount was successful
+	mountCheckAfter, _ := exec.Command("mount").CombinedOutput()
+	if strings.Contains(string(mountCheckAfter), "/var/lib/rancher") {
+		fmt.Println("      ❌ /var/lib/rancher is still mounted after unmount attempt")
+	} else {
+		fmt.Println("      ✅ /var/lib/rancher is no longer mounted")
+	}
+	
+	// Wipe and reformat the device (like CLUSTER_DISKS)
+	if devicePath != "" {
+		fmt.Printf("   🧹 Wiping and reformatting device %s...\n", devicePath)
+		
+		// Wipe filesystem signatures  
+		fmt.Printf("      🗑️  Wiping filesystem signatures on %s\n", devicePath)
+		if output, err := exec.Command("wipefs", "-a", devicePath).CombinedOutput(); err != nil {
+			fmt.Printf("      ⚠️  Warning: Failed to wipe %s: %v\n", devicePath, err)
+			fmt.Printf("      🔍 Wipefs output: %s\n", string(output))
+		} else {
+			fmt.Printf("      ✓ Successfully wiped %s\n", devicePath)
+		}
+		
+		// Create fresh ext4 filesystem
+		fmt.Printf("      🔨 Creating fresh ext4 filesystem on %s\n", devicePath)  
+		if output, err := exec.Command("mkfs.ext4", "-F", devicePath).CombinedOutput(); err != nil {
+			fmt.Printf("      ⚠️  Warning: Failed to format %s: %v\n", devicePath, err)
+			fmt.Printf("      🔍 Mkfs output: %s\n", string(output))
+		} else {
+			fmt.Printf("      ✓ Successfully formatted %s as ext4\n", devicePath)
+		}
+		
+		fmt.Printf("   ✅ Device %s completely wiped and reformatted\n", devicePath)
+	} else {
+		fmt.Println("   ℹ️  No device detected - skipping wipe/reformat")
+	}
+	
+	// Handle fstab cleanup based on discovery, not config
+	entryType := detectFstabEntryType("/var/lib/rancher")
+	switch entryType {
+	case "legacy":
+		// Legacy cleanup - remove ANY /var/lib/rancher entry
+		fmt.Println("   📝 Removing legacy /var/lib/rancher fstab entry...")
+		if _, err := exec.Command("sed", "-i", "/\\/var\\/lib\\/rancher/d", "/etc/fstab").CombinedOutput(); err != nil {
+			fmt.Printf("      ⚠️  Warning: Failed to clean legacy fstab entry: %v\n", err)
+		} else {
+			fmt.Println("      ✓ Removed legacy fstab entry")
+		}
+	case "bloom-managed":
+		// Bloom-managed cleanup - remove entries with bloom tags
+		fmt.Println("   📝 Removing bloom-managed /var/lib/rancher fstab entry...")
+		if _, err := exec.Command("sed", "-i", "/# managed by cluster-bloom rancher-disk/d", "/etc/fstab").CombinedOutput(); err != nil {
+			fmt.Printf("      ⚠️  Warning: Failed to clean bloom-managed fstab entry: %v\n", err)
+		} else {
+			fmt.Println("      ✓ Removed bloom-managed fstab entry")
+		}
+		
+		// Also clean UUID-based entries for bloom-managed disks
+		if _, err := exec.Command("bash", "-c", "sed -i '/UUID=.*\\/var\\/lib\\/rancher.*# managed by cluster-bloom rancher-disk/d' /etc/fstab").CombinedOutput(); err != nil {
+			fmt.Printf("      ⚠️  Warning: Failed to clean UUID fstab entry: %v\n", err)
+		} else {
+			fmt.Println("      ✓ Removed UUID fstab entry")
+		}
+	case "none":
+		fmt.Println("   ℹ️  No /var/lib/rancher fstab entry found")
+	}
+	
+	// Create clean /var/lib/rancher directory
+	fmt.Println("   📁 Creating clean /var/lib/rancher directory...")
+	exec.Command("rm", "-rf", "/var/lib/rancher").Run()
+	if _, err := exec.Command("mkdir", "-p", "/var/lib/rancher").CombinedOutput(); err != nil {
+		fmt.Printf("      ⚠️  Warning: Failed to create /var/lib/rancher: %v\n", err)
+	} else {
+		fmt.Printf("      ✓ Created clean /var/lib/rancher directory\n")
+	}
+	
+	fmt.Println("   ✅ RANCHER_DISK cleanup completed")
 	return nil
 }
 
@@ -791,40 +962,291 @@ return start
 
 // parseManagedFstabMounts returns mount points of bloom-managed (non-premounted) fstab entries.
 func parseManagedFstabMounts() []string {
-data, err := os.ReadFile("/etc/fstab")
-if err != nil {
-return nil
+	data, err := os.ReadFile("/etc/fstab")
+	if err != nil {
+		return nil
+	}
+	var mounts []string
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.Contains(line, "# managed by cluster-bloom") &&
+			!strings.Contains(line, "# premounted by cluster-bloom") &&
+			!strings.Contains(line, "# managed by cluster-bloom rancher-disk") {
+			fields := strings.Fields(line)
+			if len(fields) >= 2 {
+				mounts = append(mounts, fields[1])
+			}
+		}
+	}
+	return mounts
 }
-var mounts []string
-for _, line := range strings.Split(string(data), "\n") {
-if strings.Contains(line, "# managed by cluster-bloom") &&
-!strings.Contains(line, "# premounted by cluster-bloom") {
-fields := strings.Fields(line)
-if len(fields) >= 2 {
-mounts = append(mounts, fields[1])
+
+// discoverAllBloomStorage auto-discovers all bloom-managed storage from fstab
+// Returns comma-separated device paths for clusterDisks, premountedDisks, and rancherDisk
+func discoverAllBloomStorage() (clusterDisks, premountedDisks, rancherDisk string) {
+	data, err := os.ReadFile("/etc/fstab")
+	if err != nil {
+		return "", "", ""
+	}
+	
+	var clusterDiskPaths []string
+	var premountedPaths []string
+	
+	for _, line := range strings.Split(string(data), "\n") {
+		if !strings.Contains(line, "# managed by cluster-bloom") {
+			continue
+		}
+		
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		
+		if strings.Contains(line, "rancher-disk") {
+			rancherDisk = extractDeviceFromFstabLine(line)
+		} else if strings.Contains(line, "premounted") {
+			premountedPaths = append(premountedPaths, fields[1])
+		} else {
+			// Regular cluster disk - extract device path
+			devicePath := extractDeviceFromFstabLine(line)
+			if devicePath != "" {
+				clusterDiskPaths = append(clusterDiskPaths, devicePath)
+			}
+		}
+	}
+	
+	clusterDisks = strings.Join(clusterDiskPaths, ",")
+	premountedDisks = strings.Join(premountedPaths, ",")
+	
+	// NEW: Legacy detection if no bloom-managed RANCHER_DISK found
+	if rancherDisk == "" {
+		if legacyDevice, isLegacy := detectLegacyRancherMount(); isLegacy {
+			rancherDisk = resolveDevicePathFromSource(legacyDevice)
+			
+			// Show warning about legacy mount detection
+			fmt.Println("⚠️  LEGACY MOUNT DETECTED:")
+			fmt.Printf("   Found manually-mounted /var/lib/rancher → %s\n", legacyDevice)
+			fmt.Println("   This mount was created outside of bloom management.")
+			fmt.Println("   It will be included in cleanup preview.")
+			fmt.Println()
+			fmt.Println("💡 Future Guidance:")
+			fmt.Printf("   To manage this disk with bloom, add to your bloom.yaml:\n")
+			fmt.Printf("   RANCHER_DISK: %s\n", rancherDisk)
+			fmt.Println()
+		}
+	}
+	
+	return
 }
+
+// extractDeviceFromFstabLine extracts the device path from a fstab line
+// Handles both UUID= format and direct device paths
+func extractDeviceFromFstabLine(line string) string {
+	fields := strings.Fields(line)
+	if len(fields) == 0 {
+		return ""
+	}
+	
+	device := fields[0]
+	
+	// Handle UUID=... format
+	if strings.HasPrefix(device, "UUID=") {
+		uuid := strings.TrimPrefix(device, "UUID=")
+		if devicePath := resolveUUIDToDevice(uuid); devicePath != "" {
+			return devicePath
+		}
+	}
+	
+	// Return device path directly if it starts with /dev/
+	if strings.HasPrefix(device, "/dev/") {
+		return device
+	}
+	
+	return ""
 }
+
+// resolveUUIDToDevice resolves a UUID to its corresponding device path
+func resolveUUIDToDevice(uuid string) string {
+	// Use blkid to resolve UUID to device path
+	if output, err := exec.Command("blkid", "-U", uuid).Output(); err == nil {
+		return strings.TrimSpace(string(output))
+	}
+	return ""
 }
-return mounts
+
+// detectLegacyRancherMount detects manually mounted /var/lib/rancher without bloom tags
+// Returns device source and whether it's a legacy manual mount
+func detectLegacyRancherMount() (device string, isLegacy bool) {
+	// Step 1: Check if /var/lib/rancher is mounted to a device
+	output, err := exec.Command("findmnt", "-n", "-o", "SOURCE", "/var/lib/rancher").Output()
+	if err != nil {
+		return "", false // Not mounted or error
+	}
+	
+	source := strings.TrimSpace(string(output))
+	
+	// Step 2: Only consider block device mounts (not bind mounts, NFS, etc.)
+	if !strings.HasPrefix(source, "/dev/") && !strings.HasPrefix(source, "UUID=") {
+		return "", false // Not a block device mount
+	}
+	
+	// Step 3: Check fstab for this mount point to determine if it's bloom-managed
+	data, err := os.ReadFile("/etc/fstab")
+	if err != nil {
+		// If we can't read fstab but have a block device mount, consider it legacy
+		return source, true
+	}
+	
+	// Step 4: Check if there's an existing bloom-managed entry
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[1] == "/var/lib/rancher" {
+			// Check if this entry IS bloom-managed
+			if strings.Contains(line, "# managed by cluster-bloom") {
+				return "", false // Found bloom-managed entry, not legacy
+			}
+		}
+	}
+	
+	// Step 5: If we reach here, we have an active mount but no bloom-managed fstab entry
+	// This is either a legacy manual mount or an orphaned mount from previous cleanup
+	return source, true // Consider any unmanaged mount as legacy
+}
+
+// resolveDevicePathFromSource converts mount source (UUID= or /dev/) to consistent device path
+func resolveDevicePathFromSource(source string) string {
+	if strings.HasPrefix(source, "UUID=") {
+		uuid := strings.TrimPrefix(source, "UUID=")
+		if devicePath := resolveUUIDToDevice(uuid); devicePath != "" {
+			return devicePath
+		}
+		fmt.Printf("⚠️  Warning: Could not resolve UUID %s to device path\n", uuid)
+		return source // Keep UUID format if resolution fails
+	}
+	return source // Already a device path
+}
+
+// isVarLibRancherMounted checks if /var/lib/rancher is currently mounted
+func isVarLibRancherMounted() bool {
+	output, err := exec.Command("findmnt", "-n", "/var/lib/rancher").Output()
+	return err == nil && len(strings.TrimSpace(string(output))) > 0
+}
+
+// detectFstabEntryType determines what type of fstab entry exists for /var/lib/rancher
+func detectFstabEntryType(mountPoint string) string {
+	data, err := os.ReadFile("/etc/fstab")
+	if err != nil {
+		return "none"
+	}
+	
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[1] == mountPoint {
+			if strings.Contains(line, "# managed by cluster-bloom") {
+				return "bloom-managed"
+			}
+			return "legacy"
+		}
+	}
+	
+	return "none"
+}
+
+// getDeviceFromCurrentMount gets device currently/recently mounted at path
+func getDeviceFromCurrentMount(mountPath string) string {
+	output, err := exec.Command("findmnt", "-n", "-o", "SOURCE", mountPath).Output()
+	if err != nil {
+		return "" // Not currently mounted
+	}
+	
+	source := strings.TrimSpace(string(output))
+	return resolveSourceToBlockDevice(source) // Handle UUID= format
+}
+
+// getDeviceFromFstabEntry gets device from fstab entry for mount point
+func getDeviceFromFstabEntry(mountPath string) string {
+	data, err := os.ReadFile("/etc/fstab")
+	if err != nil {
+		return ""
+	}
+	
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[1] == mountPath {
+			return resolveSourceToBlockDevice(fields[0]) // Handle UUID= format
+		}
+	}
+	
+	return ""
+}
+
+// resolveSourceToBlockDevice converts UUID=/dev/ to actual block device path
+func resolveSourceToBlockDevice(source string) string {
+	if strings.HasPrefix(source, "UUID=") {
+		uuid := strings.TrimPrefix(source, "UUID=")
+		// Resolve UUID to /dev/sdX device path
+		output, err := exec.Command("blkid", "-U", uuid).Output()
+		if err != nil {
+			return ""
+		}
+		return strings.TrimSpace(string(output))
+	}
+	
+	// Already a device path (/dev/sdb2)
+	if strings.HasPrefix(source, "/dev/") {
+		return source
+	}
+	
+	return ""
+}
+
+// isLegacyRancherMount checks if the given device is a legacy manual mount
+func isLegacyRancherMount(device string) bool {
+	legacyDevice, isLegacy := detectLegacyRancherMount()
+	if !isLegacy {
+		return false
+	}
+	// Resolve both to device paths for comparison
+	resolvedLegacy := resolveDevicePathFromSource(legacyDevice)
+	resolvedDevice := resolveDevicePathFromSource(device)
+	return resolvedLegacy == resolvedDevice
+}
+
+// shouldAutoDiscover determines if we should auto-discover storage parameters
+// Returns true if all storage parameters are empty (no config provided)
+func shouldAutoDiscover(clusterDisks, premountedDisks, rancherDisk string) bool {
+	return clusterDisks == "" && premountedDisks == "" && rancherDisk == ""
 }
 
 // PrintDiskWipePreview prints a preview of bloom-managed mounts to be wiped and
 // the future mount range to be pre-cleaned, before the user confirms cleanup.
-func PrintDiskWipePreview(clusterDisks, premountedDisks string) {
-managed := parseManagedFstabMounts()
+func PrintDiskWipePreview(clusterDisks, premountedDisks, rancherDisk string) {
+	// Auto-discover storage if no config parameters provided
+	if shouldAutoDiscover(clusterDisks, premountedDisks, rancherDisk) {
+		discoveredCD, discoveredPD, discoveredRD := discoverAllBloomStorage()
+		clusterDisks = discoveredCD
+		premountedDisks = discoveredPD
+		rancherDisk = discoveredRD
+		
+		// Show discovery info if anything was found
+		if clusterDisks != "" || premountedDisks != "" || rancherDisk != "" {
+			fmt.Println("ℹ️  Auto-discovered bloom-managed storage from fstab")
+		}
+	}
+	
+	managed := parseManagedFstabMounts()
 
-var future []string
-n := countClusterDisksStr(clusterDisks)
-if n > 0 {
-start := calculateFutureDiskStart(clusterDisks, premountedDisks, n)
-for i := 0; i < n; i++ {
-future = append(future, fmt.Sprintf("/mnt/disk%d", start+i))
-}
-}
+	var future []string
+	n := countClusterDisksStr(clusterDisks)
+	if n > 0 {
+		start := calculateFutureDiskStart(clusterDisks, premountedDisks, n)
+		for i := 0; i < n; i++ {
+			future = append(future, fmt.Sprintf("/mnt/disk%d", start+i))
+		}
+	}
 
-if len(managed) == 0 && len(future) == 0 {
-return
-}
+	if len(managed) == 0 && len(future) == 0 {
+		return
+	}
 
 sep := strings.Repeat("─", 62)
 fmt.Printf("\n%s\n", sep)
@@ -863,13 +1285,69 @@ bloom, _ := inspectDirContents(mp)
 if len(bloom) > 0 {
 premountedLines = append(premountedLines, fmt.Sprintf("    ✓  %-18s — %d bloom artifact(s) removed (filesystem preserved)", mp, len(bloom)))
 }
+	}
+	if len(premountedLines) > 0 {
+		fmt.Println("\n  Premounted disks — bloom artifacts cleaned, filesystem kept:")
+		for _, line := range premountedLines {
+			fmt.Println(line)
+		}
+	}
 }
-if len(premountedLines) > 0 {
-fmt.Println("\n  Premounted disks — bloom artifacts cleaned, filesystem kept:")
-for _, line := range premountedLines {
-fmt.Println(line)
-}
-}
+
+if rancherDisk != "" {
+	// Check if this is a legacy mount for different preview display
+	if legacyDevice, isLegacy := detectLegacyRancherMount(); isLegacy && legacyDevice != "" {
+		// Legacy-specific preview
+		if _, err := os.Stat("/var/lib/rancher"); err == nil {
+			bloom, user := inspectDirContents("/var/lib/rancher")
+			fmt.Println("\n  RANCHER_DISK — /var/lib/rancher (LEGACY MANUAL MOUNT):")
+			switch {
+			case len(user) > 0:
+				fmt.Printf("    ⚠️  %-18s — manually mounted, will be unmounted\n", "/var/lib/rancher")
+				fmt.Printf("    ⚠️  %-18s — fstab entry will be removed\n", rancherDisk)
+				if len(user) > 5 {
+					fmt.Printf("    ⚠️  %-18s — %d rancher + %d user file(s) will be LOST\n", "RKE2 data", len(bloom), len(user))
+				} else {
+					fmt.Printf("    ⚠️  %-18s — %d rancher + %d user file(s) will be LOST: %s\n", "RKE2 data", len(bloom), len(user), strings.Join(user, ", "))
+				}
+			case len(bloom) > 0:
+				fmt.Printf("    ⚠️  %-18s — manually mounted, will be unmounted\n", "/var/lib/rancher")
+				fmt.Printf("    ⚠️  %-18s — fstab entry will be removed\n", rancherDisk)
+				fmt.Printf("    ⚠️  %-18s — %d rancher artifact(s) will be LOST\n", "RKE2 data", len(bloom))
+			default:
+				fmt.Printf("    ⚠️  %-18s — manually mounted, will be unmounted\n", "/var/lib/rancher")
+				fmt.Printf("    ⚠️  %-18s — fstab entry will be removed\n", rancherDisk)
+				fmt.Printf("    ✓  %-18s — empty\n", "RKE2 data")
+			}
+		} else {
+			fmt.Println("\n  RANCHER_DISK — /var/lib/rancher (LEGACY MANUAL MOUNT):")
+			fmt.Printf("    ⚠️  %-18s — manually mounted, will be unmounted\n", "/var/lib/rancher")
+			fmt.Printf("    ⚠️  %-18s — fstab entry will be removed\n", rancherDisk)
+		}
+	} else {
+		// Regular bloom-managed RANCHER_DISK preview
+		if _, err := os.Stat("/var/lib/rancher"); err == nil {
+			bloom, user := inspectDirContents("/var/lib/rancher")
+			fmt.Println("\n  RANCHER_DISK — /var/lib/rancher will be wiped clean:")
+			switch {
+			case len(user) > 0:
+				if len(user) > 5 {
+					fmt.Printf("    ⚠️  %-18s — %d rancher item(s), ⚠️  %d user file(s) will be LOST\n",
+						"/var/lib/rancher", len(bloom), len(user))
+				} else {
+					fmt.Printf("    ⚠️  %-18s — %d rancher item(s), ⚠️  %d user file(s) will be LOST: %s\n",
+						"/var/lib/rancher", len(bloom), len(user), strings.Join(user, ", "))
+				}
+			case len(bloom) > 0:
+				fmt.Printf("    ✓  %-18s — rancher state only (%d item(s))\n", "/var/lib/rancher", len(bloom))
+			default:
+				fmt.Printf("    ✓  %-18s — empty\n", "/var/lib/rancher")
+			}
+		} else {
+			fmt.Println("\n  RANCHER_DISK — /var/lib/rancher will be wiped clean:")
+			fmt.Printf("    ✓  %-18s — directory will be created\n", "/var/lib/rancher")
+		}
+	}
 }
 
 if len(future) > 0 {
@@ -965,6 +1443,16 @@ func unmountPriorLonghornDisks() error {
 			}
 			// Don't add this line to cleanLines (removes it from fstab)
 		} else {
+			// Check for legacy RANCHER_DISK entry
+			fields := strings.Fields(line)
+			if len(fields) >= 2 && fields[1] == "/var/lib/rancher" {
+				if _, isLegacy := detectLegacyRancherMount(); isLegacy {
+					// This is a legacy mount, should be handled by CleanupRancherDisk()
+					// Skip adding to cleanLines (will be removed from fstab)
+					fmt.Printf("      ⏏️  Found legacy /var/lib/rancher entry: %s\n", fields[0])
+					continue
+				}
+			}
 			cleanLines = append(cleanLines, line)
 		}
 	}

@@ -102,6 +102,17 @@ schema:
       desc: Skip /var/lib/rancher partition size check
       section: "💾 Storage Configuration"
 
+    RANCHER_DISK:
+      type: str
+      pattern: ^/dev/[a-zA-Z0-9]+$|^$
+      default: ""
+      desc: Device path for dedicated /var/lib/rancher storage. Primarily for GPU worker nodes with heavy workloads. Bloom will format and mount this device automatically.
+      section: "💾 Storage Configuration"
+      examples:
+        - "/dev/nvme2n1"
+        - "/dev/sdb2"
+        - "/dev/vdc"
+
      # 🔒 SSL/TLS Configuration
     ADDITIONAL_TLS_SAN_URLS:
       type: seq
@@ -521,3 +532,4 @@ constraints:
   # CLUSTER_DISKS and CLUSTER_PREMOUNTED_DISKS may be used together.
   - mutually_exclusive: [NO_DISKS_FOR_CLUSTER, CLUSTER_DISKS]
   - mutually_exclusive: [NO_DISKS_FOR_CLUSTER, CLUSTER_PREMOUNTED_DISKS]
+  - mutually_exclusive: [NO_DISKS_FOR_CLUSTER, RANCHER_DISK]

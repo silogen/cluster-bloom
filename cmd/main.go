@@ -194,8 +194,12 @@ By default, this command requires confirmation before proceeding. Use --force to
 			if p, ok := cfg["CLUSTER_PREMOUNTED_DISKS"].(string); ok {
 				premountedDisks = p
 			}
+			rancherDisk := ""
+			if r, ok := cfg["RANCHER_DISK"].(string); ok {
+				rancherDisk = r
+			}
 			// Show disk wipe preview before asking for confirmation
-			runtime.PrintDiskWipePreview(clusterDisks, premountedDisks)
+			runtime.PrintDiskWipePreview(clusterDisks, premountedDisks, rancherDisk)
 			// Check if force flag is used to bypass confirmation
 			if !forceCleanup {
 				if !confirmCleanupOperation() {
@@ -921,8 +925,16 @@ func prependCleanupTasks(playbook any, cfg config.Config) error {
 		}
 	}
 
+	// Extract RANCHER_DISK from config
+	rancherDisk := ""
+	if rd, exists := cfg["RANCHER_DISK"]; exists && rd != nil {
+		if rdStr, ok := rd.(string); ok {
+			rancherDisk = rdStr
+		}
+	}
+
 	// Use the DRY cleanup task generator from runtime package
-	cleanupTasks := runtime.GenerateCleanupTasks(clusterDisks, premountedDisks)
+	cleanupTasks := runtime.GenerateCleanupTasks(clusterDisks, premountedDisks, rancherDisk)
 
 	// Prepend cleanup tasks to the existing playbook tasks
 	if playsList, ok := playbook.([]any); ok && len(playsList) > 0 {
@@ -964,8 +976,14 @@ func confirmDestructiveOperation(cfg config.Config) bool {
 			premountedDisks = pmStr
 		}
 	}
+	rancherDisk := ""
+	if r, exists := cfg["RANCHER_DISK"]; exists && r != nil {
+		if rdStr, ok := r.(string); ok {
+			rancherDisk = rdStr
+		}
+	}
 	// Show the same disk wipe preview as the standalone cleanup command
-	runtime.PrintDiskWipePreview(clusterDisks, premountedDisks)
+	runtime.PrintDiskWipePreview(clusterDisks, premountedDisks, rancherDisk)
 	fmt.Println()
 
 	// Read user input
@@ -1066,7 +1084,15 @@ func runClusterCleanup(cfg config.Config) {
 		}
 	}
 
-	fmt.Printf("   ⚙️  Config: CLUSTER_DISKS=%q, CLUSTER_PREMOUNTED_DISKS=%q\n", clusterDisks, premountedDisks)
+	// Extract RANCHER_DISK from config
+	rancherDisk := ""
+	if rd, exists := cfg["RANCHER_DISK"]; exists && rd != nil {
+		if rdStr, ok := rd.(string); ok {
+			rancherDisk = rdStr
+		}
+	}
+
+	fmt.Printf("   ⚙️  Config: CLUSTER_DISKS=%q, CLUSTER_PREMOUNTED_DISKS=%q, RANCHER_DISK=%q\n", clusterDisks, premountedDisks, rancherDisk)
 	// Step 1: Clean Longhorn Mounts (equivalent to CleanLonghornMountsStep)
 	if err := runtime.CleanupLonghornMounts(); err != nil {
 		errors = append(errors, fmt.Errorf("Longhorn cleanup: %w", err))
@@ -1076,6 +1102,8 @@ func runClusterCleanup(cfg config.Config) {
 	if err := runtime.UninstallRKE2(); err != nil {
 		errors = append(errors, fmt.Errorf("RKE2 uninstall: %w", err))
 	}
+
+	// Step 2.5: Process validation removed - config-independent cleanup proven sufficient
 
 	// Step 3: Pre-clean bloom artifacts from directories in the future mount range,
 	// leaving user files intact. Done before fstab is rewritten so mounts are still valid.
@@ -1089,6 +1117,12 @@ func runClusterCleanup(cfg config.Config) {
 	// scan which may fail. Running here while fstab is intact guarantees the mount works.
 	if err := runtime.CleanupPremountedDisks(premountedDisks); err != nil {
 		errors = append(errors, fmt.Errorf("Premounted disk cleanup: %w", err))
+	}
+
+	// Step 4.5: Clean RANCHER_DISK configuration — unmount bind mount and clean data
+	// Always call - let function decide based on actual mount status
+	if err := runtime.CleanupRancherDisk(""); err != nil {
+		errors = append(errors, fmt.Errorf("RANCHER_DISK cleanup: %w", err))
 	}
 
 	// Step 5: Clean Disks — strips fstab entries and wipes CLUSTER_DISKS

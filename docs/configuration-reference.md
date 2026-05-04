@@ -316,6 +316,22 @@ Configuration sources in priority order (highest to lowest):
 - **Values**: `true` | `false`
 - **Example**: `SKIP_RANCHER_PARTITION_CHECK: true`
 
+#### RANCHER_DISK
+- **Type**: String (device path)
+- **Default**: None  
+- **Description**: Device path for dedicated `/var/lib/rancher` storage. Primarily for GPU worker nodes with intensive workloads. Bloom will format and mount this device automatically.
+- **Example**: `RANCHER_DISK: "/dev/nvme2n1"`
+- **Requirements**: 
+  - Must be a raw device path starting with `/dev/`
+  - Device must exist and not be already mounted
+  - Recommended 500GB+ available space
+  - Mutually exclusive with `NO_DISKS_FOR_CLUSTER`
+- **Primary Use Case**: **GPU worker nodes** with intensive workloads that benefit from dedicated fast storage for kubelet and container runtime data
+- **Node Type Usage**: 
+  - **GPU Worker Nodes** (Primary): Recommended for nodes with heavy GPU workloads, large container images, and extensive logging
+  - **Control Plane Nodes** (Optional): Can be used for dedicated RKE2 control plane storage if desired
+  - **CPU Worker Nodes** (Optional): May benefit nodes with high container churn or large log volumes
+
 ## Configuration File Format
 
 ### YAML Configuration File (bloom.yaml)
@@ -500,6 +516,27 @@ CLUSTER_SIZE: small
 CLUSTER_DISKS: /dev/vdc1
 INSTALL_ARGOCD: false
 CLUSTERFORGE_RELEASE: none
+```
+
+### High-Performance GPU Worker Node (Primary Use Case)
+```yaml
+FIRST_NODE: false
+CONTROL_PLANE: false
+GPU_NODE: true
+CLUSTER_DISKS: "/dev/nvme0n1,/dev/nvme1n1"
+RANCHER_DISK: "/dev/nvme2n1"
+SERVER_IP: "192.168.1.100"
+JOIN_TOKEN: "K10..."
+```
+
+### First Node with Optional Dedicated Storage
+```yaml
+FIRST_NODE: true
+GPU_NODE: true
+DOMAIN: "cluster.example.com"
+CERT_OPTION: "generate"
+CLUSTER_DISKS: "/dev/nvme0n1,/dev/nvme1n1"
+RANCHER_DISK: "/dev/nvme2n1"  # Optional for control plane
 ```
 
 ### Testing/Development Configuration

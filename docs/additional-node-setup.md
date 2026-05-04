@@ -15,6 +15,36 @@ Follow this sequence for proper cluster setup:
 
 ---
 
+## Recommended Large Cluster Storage Architecture
+
+For optimal large cluster performance with GPU workloads, use dedicated storage separation:
+
+### Example GPU-Heavy Cluster Setup
+
+```yaml
+# First Control Plane Node
+FIRST_NODE: true
+CLUSTER_DISKS: /dev/nvme0n1          # Application storage (Longhorn)
+# RANCHER_DISK optional for control plane
+
+# GPU Worker Nodes (High-Performance) - repeat for each worker
+FIRST_NODE: false
+CONTROL_PLANE: false
+GPU_NODE: true
+CLUSTER_DISKS: /dev/nvme0n1          # Application storage
+RANCHER_DISK: /dev/nvme1n1           # Dedicated /var/lib/rancher for GPU workloads
+JOIN_TOKEN: <token>
+SERVER_IP: <first-node-ip>
+```
+
+**Benefits:**
+- **GPU worker nodes** get dedicated fast storage for intensive workloads
+- Separates heavy kubelet/container data from application storage
+- Better performance for nodes with large container images and logs
+- Control plane nodes can optionally use RANCHER_DISK if desired
+
+---
+
 ## Step 1: First Control Plane Node Setup
 
 Start by setting up your first control plane node with bloom. This node will serve as the foundation of your cluster.
@@ -122,6 +152,21 @@ echo 'CLUSTER_DISKS: /dev/nvme0n1,/dev/nvme1n1' >> bloom.yaml
 - bloom will handle partitioning and formatting
 - Value format: comma-separated device paths (e.g., `/dev/nvme0n1,/dev/nvme1n1`)
 
+**Option C — Dedicated /var/lib/rancher Storage** (`RANCHER_DISK`):
+
+- **Primary use**: GPU worker nodes with intensive container workloads
+- Provides dedicated fast storage for kubelet and container runtime data
+- Improves performance for nodes with heavy GPU workloads and large logs
+- Can also be used on control plane nodes if dedicated RKE2 storage is desired
+- Can be combined with CLUSTER_DISKS/CLUSTER_PREMOUNTED_DISKS
+- Value format: single device path (e.g., `/dev/nvme2n1`)
+
+```bash
+echo 'RANCHER_DISK: /dev/nvme2n1' >> bloom.yaml
+```
+Use to dedicate a separate disk for `/var/lib/rancher` directory.
+**Highly recommended for GPU worker nodes** with heavy workloads.
+
 ### Run bloom
 
 ```bash
@@ -165,6 +210,7 @@ This step configures cluster-wide services, networking, and other essential comp
 | **CPU Control Plane** | `echo -e 'CLUSTER_SIZE: large\nCONTROL_PLANE: true\nGPU_NODE: false\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml` |
 | **GPU Control Plane** | `echo -e 'CLUSTER_SIZE: large\nCONTROL_PLANE: true\nGPU_NODE: true\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml` |
 | **GPU Worker Node** | `echo -e 'CLUSTER_SIZE: large\nCONTROL_PLANE: false\nGPU_NODE: true\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml` |
+
 | **CPU Worker Node** | `echo -e 'CLUSTER_SIZE: large\nCONTROL_PLANE: false\nGPU_NODE: false\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml` |
 
 ### Storage Options
@@ -174,6 +220,8 @@ This step configures cluster-wide services, networking, and other essential comp
 | Pre-mounted disk | `echo 'CLUSTER_PREMOUNTED_DISKS: /mnt/disk0' >> bloom.yaml` |
 | Single raw disk | `echo 'CLUSTER_DISKS: /dev/nvme0n1' >> bloom.yaml` |
 | Multiple raw disks | `echo 'CLUSTER_DISKS: /dev/nvme0n1,/dev/nvme1n1' >> bloom.yaml` |
+| No rancher disk for gpu worker | `echo 'CLUSTER_DISKS: /dev/nvme0n1' >> bloom.yaml` |
+| With rancher disk for gpu worker | `echo -e 'CLUSTER_DISKS: /dev/nvme0n1\nRANCHER_DISK: /dev/nvme2n1' >> bloom.yaml` |
 
 ### Setup Order
 
