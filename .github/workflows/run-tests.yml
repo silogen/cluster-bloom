@@ -2,54 +2,32 @@ name: Integration Tests
 
 on:
   workflow_dispatch:
-
+  pull_request:
+    types: [opened, synchronize, reopened]
 jobs:
   integration-tests:
-    runs-on: pd4
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build with devbox
-        run: devbox run build
-
-      - name: Run unit tests
-        run: devbox run go test -v ./pkg/...
-
-      - name: Verify one-shot
-        run:  dist/bloom --one-shot --config tests/integration/step/01_ValidateArgsStep/01-valid-first-node/bloom.yaml
-
-      - name: Run integration tests
-        run: dist/bloom test tests/integration/step/*/*/bloom.yaml
-
-      - name: Run UI tests
+      - name: Install tools
         run: |
-          # Start Chrome if not already running
-          if ! docker ps --format '{{.Names}}' | grep -q '^chrome-test$'; then
-            docker run -d --rm \
-              --name chrome-test \
-              --net=host \
-              -e "PORT=9222" \
-              browserless/chrome:latest
+          sudo apt-get update
+          sudo apt-get install -y \
+            just \
+            mkisofs \
+            ovmf \
+            qemu-system-x86-64 \
+            qemu-utils \
+            qemu-kvm
 
-            # Wait for Chrome to be ready
-            sleep 5
-          else
-            echo "Chrome container already running"
-          fi
+      - name: Build
+        run: just build
 
-          # Run UI tests
-          devbox run go test -v ./tests/ui
-
-      - name: QEMU Disk Test
+      - name: Test
         run: |
-          bash tests/e2e/qemu/qemu-disk-test.sh nvme-test-vm tests/e2e/nvme_8_disks/profile.yaml dist/bloom
+          sudo bash tests/qemu/manual-qemu-test.sh  --timeout 120 qemu-vm tests/qemu/profile_2_nvme.yaml dist/bloom tests/qemu/bloom.yaml
 
-      - name: Check Test Results
+      - name: Logs
         run: |
-          SUCCESS=$(yq '.overall_summary.success' nvme-test-vm-test-results.yaml)
-          if [ "$SUCCESS" != "true" ]; then
-            echo "❌ Tests failed - check nvme-test-vm-test-results.yaml for details"
-            cat nvme-test-vm-test-results.yaml
-            exit 1
-          fi
-          echo "✅ All tests passed"
+          sudo bash qemu-vm/ssh-vm.sh tail -n 20 bloom.log

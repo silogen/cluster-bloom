@@ -1,11 +1,56 @@
 #!/bin/bash
 set -e
 
+# Default timeout value (seconds)
+BOOT_TIMEOUT=120
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --timeout)
+            BOOT_TIMEOUT="$2"
+            # Validate timeout is a positive integer
+            if ! [[ "$BOOT_TIMEOUT" =~ ^[0-9]+$ ]] || [ "$BOOT_TIMEOUT" -le 0 ]; then
+                echo "ERROR: --timeout must be a positive integer (seconds)"
+                exit 1
+            fi
+            shift 2
+            ;;
+        --help|-h)
+            echo "Usage: $0 [--timeout SECONDS] <vm-name> <profile-yaml> <bloom-binary-path> <bloom-config>"
+            echo ""
+            echo "Options:"
+            echo "  --timeout SECONDS    VM boot timeout in seconds (default: 120)"
+            echo "                       If timeout is exceeded, startup logs will be displayed"
+            echo "  --help, -h          Show this help message"
+            echo ""
+            echo "Arguments:"
+            echo "  vm-name             Name for the VM instance"
+            echo "  profile-yaml        Path to VM profile YAML file"
+            echo "  bloom-binary-path   Path to bloom binary to test"
+            echo "  bloom-config        Path to bloom configuration file"
+            echo ""
+            echo "Example:"
+            echo "  $0 --timeout 180 qemu-test-vm ./vm-profile.yaml ./cluster-bloom bloom.yaml"
+            echo ""
+            exit 0
+            ;;
+        -*)
+            echo "ERROR: Unknown option $1"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
+
 # Check if required arguments are provided
 if [ $# -lt 4 ]; then
     echo "ERROR: Insufficient arguments"
-    echo "Usage: $0 <vm-name> <profile-yaml> <bloom-binary-path> <bloom-config>"
-    echo "Example: $0 qemu-test-vm ./vm-profile.yaml ./cluster-bloom bloom.yaml"
+    echo "Usage: $0 [--timeout SECONDS] <vm-name> <profile-yaml> <bloom-binary-path> <bloom-config>"
+    echo "Use --help for detailed usage information"
     echo ""
     exit 1
 fi
@@ -246,10 +291,10 @@ $QEMU_DISK_ARGS  -netdev user,id=net0,hostfwd=tcp::2222-:22 \\
 
 VM_PID=\$!
 echo "VM started with PID \$VM_PID"
-echo "Waiting for login prompt (timeout: 2 minutes)..."
+echo "Waiting for login prompt (timeout: $BOOT_TIMEOUT seconds)..."
 
 elapsed=0
-while [ \$elapsed -lt 120 ]; do
+while [ \$elapsed -lt $BOOT_TIMEOUT ]; do
   if grep -q "$VM_NAME login:" "\$SCRIPT_DIR/startup.log" 2>/dev/null; then
     echo "✓ VM is ready! (login prompt found after \${elapsed}s)"
     exit 0
@@ -258,8 +303,27 @@ while [ \$elapsed -lt 120 ]; do
   elapsed=\$((elapsed + 2))
 done
 
-echo "✓ Timeout reached (2 minutes). VM may still be booting."
-echo "Check logs: tail -f \$SCRIPT_DIR/startup.log"
+echo "✓ Timeout reached ($BOOT_TIMEOUT seconds). VM may still be booting."
+echo ""
+if [ -f "\$SCRIPT_DIR/startup.log" ]; then
+  LOG_SIZE=\$(wc -l < "\$SCRIPT_DIR/startup.log" 2>/dev/null || echo 0)
+  echo "=== VM Startup Logs (showing last 50 lines of \$LOG_SIZE total) ==="
+  echo ""
+  tail -n 50 "\$SCRIPT_DIR/startup.log"
+  echo ""
+  echo "=== End of Startup Logs ==="
+  echo ""
+  if [ \$LOG_SIZE -gt 50 ]; then
+    echo "Note: Only showing last 50 lines. Full log has \$LOG_SIZE lines."
+    echo "View full log: cat \$SCRIPT_DIR/startup.log"
+  fi
+else
+  echo "=== No startup log found ==="
+  echo "Expected log file: \$SCRIPT_DIR/startup.log"
+  echo "VM may not have started properly."
+fi
+echo ""
+echo "To continue monitoring: tail -f \$SCRIPT_DIR/startup.log"
 STARTEOF
 
 chmod +x "$VM_NAME/start-vm.sh"
@@ -276,7 +340,7 @@ chmod +x "$VM_NAME/stop-vm.sh"
 cat > "$VM_NAME/ssh-vm.sh" << EOF
 #!/bin/bash
 cd "\$(dirname "\$0")"
-ssh -i qemu-login -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -p 2222 ubuntu@localhost
+ssh -i qemu-login -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -p 2222 ubuntu@localhost \$@
 EOF
 
 chmod +x "$VM_NAME/ssh-vm.sh"
