@@ -7,7 +7,7 @@
     - name: Process CLUSTER_DISKS string into disk list
       set_fact:
         cluster_disks_raw: "{{ CLUSTER_DISKS.split(',') | map('trim') | select('!=', '') | list }}"
-      when: CLUSTER_DISKS is defined and CLUSTER_DISKS != ""
+      when: CLUSTER_DISKS is defined and CLUSTER_DISKS is string and CLUSTER_DISKS != ""
 
     - name: Build indexed mount paths for CLUSTER_DISKS
       set_fact:
