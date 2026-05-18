@@ -105,6 +105,23 @@ Configuration sources in priority order (highest to lowest):
 - **Mutually Exclusive With**: `DISABLED_STEPS`
 - **Use Case**: Targeted operations or troubleshooting
 
+### Container Registry Configuration
+
+#### DOCKERHUB_USER
+- **Type**: String
+- **Default**: `""` (empty — unauthenticated pulls)
+- **Description**: DockerHub username for authenticated image pulls. Authenticating removes the anonymous pull rate limit (typically 100 pulls/6h per IP). Must be set together with `DOCKERHUB_TOKEN`.
+- **Required With**: `DOCKERHUB_TOKEN`
+- **Example**: `DOCKERHUB_USER: "myusername"`
+
+#### DOCKERHUB_TOKEN
+- **Type**: String
+- **Default**: `""` (empty — unauthenticated pulls)
+- **Description**: DockerHub personal access token for authenticated image pulls. Written to `/etc/rancher/rke2/registries.yaml` (mode `0600`, root-owned) before RKE2 starts, so no restart is needed. Must be set together with `DOCKERHUB_USER`.
+- **Required With**: `DOCKERHUB_USER`
+- **Example**: `DOCKERHUB_TOKEN: "dckr_pat_xxxxxxxxxxxx"`
+- **Note**: Use a token with Read-only scope from [hub.docker.com/settings/personal-access-tokens](https://hub.docker.com/settings/personal-access-tokens)
+
 ### Domain and Certificate Configuration
 
 #### DOMAIN
@@ -421,6 +438,7 @@ sudo ./bloom --config bloom.yaml --domain custom.example.com
 - `CONTROL_PLANE: true` requires `FIRST_NODE: false`
 - `CERT_MANAGER_EMAIL` required when `USE_CERT_MANAGER: true`
 - `TLS_CERT` and `TLS_KEY` required when `CERT_OPTION: "existing"`
+- `DOCKERHUB_TOKEN` required when `DOCKERHUB_USER` is set (and vice versa)
 
 ## Common Configuration Scenarios
 
@@ -545,6 +563,20 @@ FIRST_NODE: true
 GPU_NODE: false
 NO_DISKS_FOR_CLUSTER: true
 DISABLED_STEPS: "install-longhorn,install-metallb,install-clusterforge"
+```
+
+### First Node with DockerHub Credentials (Avoiding Rate Limits)
+```yaml
+FIRST_NODE: true
+GPU_NODE: false
+DOMAIN: "cluster.example.com"
+CERT_OPTION: generate
+CLUSTER_DISKS: "/dev/nvme0n1"
+CLUSTERFORGE_RELEASE: none
+
+# DockerHub authenticated pulls — avoids anonymous rate limits
+DOCKERHUB_USER: "myusername"
+DOCKERHUB_TOKEN: "dckr_pat_xxxxxxxxxxxx"
 ```
 
 ## Environment Variable Mapping
