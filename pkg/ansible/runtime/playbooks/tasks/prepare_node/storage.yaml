@@ -6,7 +6,8 @@
 
 - name: Convert CLUSTER_DISKS from comma-separated string to list
   set_fact:
-    cluster_disks_list: "{{ CLUSTER_DISKS.split(',') if CLUSTER_DISKS is string and CLUSTER_DISKS != '' else (CLUSTER_DISKS if CLUSTER_DISKS is sequence else []) }}"
+    cluster_disks_list: "{{ CLUSTER_DISKS.split(',') if CLUSTER_DISKS is string and CLUSTER_DISKS | trim != '' else (CLUSTER_DISKS if CLUSTER_DISKS is not string and CLUSTER_DISKS is iterable else []) }}"
+ 
 
 - name: Collect reserved disk indexes from fstab (premounted) and CLUSTER_PREMOUNTED_DISKS config
   shell: |
