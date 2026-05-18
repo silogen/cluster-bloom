@@ -17,6 +17,10 @@
   include_tasks: prepare_rke2.yaml
   tags: [deploy_cluster]
 
+- name: Configure Docker Registry Credentials
+  include_tasks: docker_registry.yaml
+  tags: [docker_registry, deploy_cluster]
+
 - name: Generate SSL/TLS Certificates
   include_tasks: certificates.yaml
   tags: [certificates, deploy_cluster]

@@ -177,6 +177,19 @@ func Validate(cfg Config) []string {
 		}
 	}
 
+	// Companion validation: DOCKERHUB_USER and DOCKERHUB_TOKEN must be set together
+	dockerUser, userExists := cfg["DOCKERHUB_USER"]
+	dockerToken, tokenExists := cfg["DOCKERHUB_TOKEN"]
+	userSet := userExists && dockerUser != nil && dockerUser != ""
+	tokenSet := tokenExists && dockerToken != nil && dockerToken != ""
+	if userSet != tokenSet {
+		if userSet {
+			errors = append(errors, "DOCKERHUB_TOKEN is required when DOCKERHUB_USER is set")
+		} else {
+			errors = append(errors, "DOCKERHUB_USER is required when DOCKERHUB_TOKEN is set")
+		}
+	}
+
 	// Special validation for ADDITIONAL_TLS_SAN_URLS (critical security check)
 	if tlsSans, exists := cfg["ADDITIONAL_TLS_SAN_URLS"]; exists && tlsSans != nil {
 		var domains []string

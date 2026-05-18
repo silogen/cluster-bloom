@@ -155,12 +155,13 @@ func mapDependencies(required, applicable string) string {
 // sortArguments sorts arguments by section order and then by key
 func sortArguments(args []Argument) {
 	sectionOrder := map[string]int{
-		"📋 Basic Configuration":          0,
-		"🔗 Additional Node Configuration": 1,
-		"💾 Storage Configuration":        2,
-		"🔒 SSL/TLS Configuration":        3,
-		"⚙️ Advanced Configuration":       4,
-		"💻 Command Line Options":         5,
+		"📋 Basic Configuration":            0,
+		"🔗 Additional Node Configuration":  1,
+		"💾 Storage Configuration":          2,
+		"🐳 Container Registry Configuration": 3,
+		"🔒 SSL/TLS Configuration":          4,
+		"⚙️ Advanced Configuration":         5,
+		"💻 Command Line Options":           6,
 	}
 
 	// Simple bubble sort (good enough for ~26 items)
