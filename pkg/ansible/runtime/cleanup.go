@@ -281,7 +281,7 @@ func CleanupBloomDisks(clusterDisks string) error {
 	// Force unmount all CLUSTER_DISKS devices again to ensure they're released
 	// This is critical before wipefs to prevent I/O errors
 	fmt.Println("   ⏏️  Final unmount pass for cluster disks...")
-	for device := range strings.SplitSeq(clusterDisks, ",") {
+	for _, device := range strings.Split(clusterDisks, ",") {
 		device = strings.TrimSpace(device)
 		if device == "" {
 			continue
@@ -301,9 +301,25 @@ func CleanupBloomDisks(clusterDisks string) error {
 	// Wipe and reformat every CLUSTER_DISKS device
 	// Only proceed if device is confirmed unmounted to prevent system corruption
 	fmt.Println("   🧹 Wiping and formatting cluster disks...")
-	for device := range strings.SplitSeq(clusterDisks, ",") {
+	for _, device := range strings.Split(clusterDisks, ",") {
 		device = strings.TrimSpace(device)
 		if device == "" {
+			continue
+		}
+
+		// CRITICAL SAFETY CHECK: Never wipe nvme0n1 or sda - typically root disks
+		if strings.Contains(device, "nvme0n1") || device == "/dev/sda" {
+			fmt.Printf("      🛑 BLOCKED: Refusing to wipe %s (likely root disk)\n", device)
+			continue
+		}
+
+		// Check if device contains root filesystem or boot partition
+		lsblkOut, _ := exec.Command("lsblk", "-no", "MOUNTPOINT", device).Output()
+		mountPoints := strings.TrimSpace(string(lsblkOut))
+		if strings.Contains(mountPoints, "/\n") || strings.HasPrefix(mountPoints, "/") ||
+		   strings.Contains(mountPoints, "/boot") || strings.Contains(mountPoints, "/var") ||
+		   strings.Contains(mountPoints, "/usr") || strings.Contains(mountPoints, "/etc") {
+			fmt.Printf("      🛑 BLOCKED: %s contains critical mount points: %s\n", device, strings.ReplaceAll(mountPoints, "\n", ", "))
 			continue
 		}
 
@@ -1276,7 +1292,7 @@ fmt.Printf("    ✓  %-18s — empty\n", mp)
 
 if premountedDisks != "" {
 var premountedLines []string
-for p := range strings.SplitSeq(premountedDisks, ",") {
+for _, p := range strings.Split(premountedDisks, ",") {
 mp := strings.TrimSpace(p)
 if mp == "" {
 continue
