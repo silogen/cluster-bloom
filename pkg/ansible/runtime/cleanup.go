@@ -299,7 +299,7 @@ func CleanupBloomDisks(clusterDisks string) error {
 	time.Sleep(10 * time.Second)
 
 	// Wipe and reformat every CLUSTER_DISKS device
-	// Only proceed if device is confirmed unmounted to prevent system corruption
+	// Only proceed if device is confirmed safe to wipe - no critical system mounts
 	fmt.Println("   🧹 Wiping and formatting cluster disks...")
 	for _, device := range strings.Split(clusterDisks, ",") {
 		device = strings.TrimSpace(device)
@@ -307,23 +307,42 @@ func CleanupBloomDisks(clusterDisks string) error {
 			continue
 		}
 
-		// CRITICAL SAFETY CHECK: Never wipe nvme0n1 or sda - typically root disks
-		if strings.Contains(device, "nvme0n1") || device == "/dev/sda" {
-			fmt.Printf("      🛑 BLOCKED: Refusing to wipe %s (likely root disk)\n", device)
+		// CRITICAL SAFETY: Check if this device or any of its partitions contain critical system mounts
+		// Use lsblk to inspect the entire device tree (device + all partitions)
+		lsblkOut, err := exec.Command("lsblk", "-no", "MOUNTPOINT", device).CombinedOutput()
+		if err != nil {
+			fmt.Printf("      ⚠️  SKIPPING %s: failed to check mount points: %v\n", device, err)
 			continue
 		}
 
-		// Check if device contains root filesystem or boot partition
-		lsblkOut, _ := exec.Command("lsblk", "-no", "MOUNTPOINT", device).Output()
 		mountPoints := strings.TrimSpace(string(lsblkOut))
-		if strings.Contains(mountPoints, "/\n") || strings.HasPrefix(mountPoints, "/") ||
-		   strings.Contains(mountPoints, "/boot") || strings.Contains(mountPoints, "/var") ||
-		   strings.Contains(mountPoints, "/usr") || strings.Contains(mountPoints, "/etc") {
-			fmt.Printf("      🛑 BLOCKED: %s contains critical mount points: %s\n", device, strings.ReplaceAll(mountPoints, "\n", ", "))
+		lines := strings.Split(mountPoints, "\n")
+
+		// Check each mount point for critical system paths
+		hasCriticalMount := false
+		var criticalMounts []string
+		for _, mp := range lines {
+			mp = strings.TrimSpace(mp)
+			if mp == "" {
+				continue
+			}
+			// Block devices mounted at critical system paths
+			if mp == "/" || mp == "/boot" || mp == "/boot/efi" ||
+			   strings.HasPrefix(mp, "/usr") || strings.HasPrefix(mp, "/etc") ||
+			   strings.HasPrefix(mp, "/bin") || strings.HasPrefix(mp, "/sbin") ||
+			   strings.HasPrefix(mp, "/lib") {
+				hasCriticalMount = true
+				criticalMounts = append(criticalMounts, mp)
+			}
+		}
+
+		if hasCriticalMount {
+			fmt.Printf("      🛑 BLOCKED: %s contains critical system mounts: %s\n",
+				device, strings.Join(criticalMounts, ", "))
 			continue
 		}
 
-		// Verify device is not mounted before wiping
+		// Additional check: verify device itself is not mounted
 		checkOut, _ := exec.Command("findmnt", "--source", device, "--noheadings").Output()
 		if strings.TrimSpace(string(checkOut)) != "" {
 			fmt.Printf("      ⚠️  SKIPPING %s: still mounted at: %s\n", device, strings.TrimSpace(string(checkOut)))
@@ -360,6 +379,18 @@ func CleanupBloomDisks(clusterDisks string) error {
 	for scanner.Scan() {
 		fields := strings.Fields(scanner.Text())
 		if len(fields) == 3 && strings.HasPrefix(fields[0], "sd") && fields[1] == "disk" && fields[2] == "" {
+			// CRITICAL SAFETY: Verify this disk doesn't have any partitions with critical mounts
+			// Even if the base disk shows unmounted, partitions might be mounted
+			devicePath := "/dev/" + fields[0]
+			lsblkCheck, _ := exec.Command("lsblk", "-no", "MOUNTPOINT", devicePath).CombinedOutput()
+			allMountPoints := strings.TrimSpace(string(lsblkCheck))
+
+			// If any partition has a mount point, don't delete the device
+			if allMountPoints != "" {
+				fmt.Printf("      🛑 BLOCKED: /dev/%s has mounted partitions, refusing to delete\n", fields[0])
+				continue
+			}
+
 			deleteCmd := exec.Command("sudo", "tee", "/sys/block/"+fields[0]+"/device/delete")
 			deleteCmd.Stdin = strings.NewReader("1\n")
 			if err := deleteCmd.Run(); err != nil {
