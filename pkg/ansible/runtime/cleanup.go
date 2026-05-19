@@ -240,6 +240,15 @@ func UninstallRKE2() error {
 // CleanupBloomDisks removes bloom-managed disks and cleans up disk state
 func CleanupBloomDisks(clusterDisks string) error {
 	fmt.Println("💽 Cleaning bloom-managed disks...")
+	fmt.Printf("   🔍 DEBUG: CLUSTER_DISKS parameter: %q\n", clusterDisks)
+
+	// Parse and show individual devices
+	devices := strings.Split(clusterDisks, ",")
+	fmt.Printf("   🔍 DEBUG: Parsed %d devices from CLUSTER_DISKS:\n", len(devices))
+	for i, dev := range devices {
+		trimmed := strings.TrimSpace(dev)
+		fmt.Printf("      [%d] %q (trimmed: %q)\n", i, dev, trimmed)
+	}
 
 	// Enter critical section for disk operations
 	EnterCriticalSection("disk cleanup and fstab modification")
@@ -286,8 +295,10 @@ func CleanupBloomDisks(clusterDisks string) error {
 		if device == "" {
 			continue
 		}
+		fmt.Printf("      🔍 DEBUG: Unmounting device: %s\n", device)
 		// Attempt multiple unmount passes to ensure device is fully released
 		for i := 0; i < 3; i++ {
+			fmt.Printf("      🔍 DEBUG: unmount pass %d/3 for %s\n", i+1, device)
 			exec.Command("umount", "-lf", device).Run()
 			exec.Command("umount", "-f", device).Run()
 		}
@@ -307,15 +318,20 @@ func CleanupBloomDisks(clusterDisks string) error {
 			continue
 		}
 
+		fmt.Printf("      🔍 DEBUG: Processing device: %s\n", device)
+
 		// CRITICAL SAFETY: Check if this device or any of its partitions contain critical system mounts
 		// Use lsblk to inspect the entire device tree (device + all partitions)
+		fmt.Printf("      🔍 DEBUG: Running: lsblk -no MOUNTPOINT %s\n", device)
 		lsblkOut, err := exec.Command("lsblk", "-no", "MOUNTPOINT", device).CombinedOutput()
 		if err != nil {
 			fmt.Printf("      ⚠️  SKIPPING %s: failed to check mount points: %v\n", device, err)
+			fmt.Printf("      🔍 DEBUG: lsblk output: %s\n", string(lsblkOut))
 			continue
 		}
 
 		mountPoints := strings.TrimSpace(string(lsblkOut))
+		fmt.Printf("      🔍 DEBUG: lsblk mount points output:\n%s\n", mountPoints)
 		lines := strings.Split(mountPoints, "\n")
 
 		// Check each mount point for critical system paths
@@ -339,21 +355,31 @@ func CleanupBloomDisks(clusterDisks string) error {
 		if hasCriticalMount {
 			fmt.Printf("      🛑 BLOCKED: %s contains critical system mounts: %s\n",
 				device, strings.Join(criticalMounts, ", "))
+			fmt.Printf("      🔍 DEBUG: Skipping wipefs/mkfs for %s due to critical mounts\n", device)
 			continue
 		}
 
+		fmt.Printf("      🔍 DEBUG: No critical mounts found on %s\n", device)
+
 		// Additional check: verify device itself is not mounted
+		fmt.Printf("      🔍 DEBUG: Running: findmnt --source %s --noheadings\n", device)
 		checkOut, _ := exec.Command("findmnt", "--source", device, "--noheadings").Output()
 		if strings.TrimSpace(string(checkOut)) != "" {
 			fmt.Printf("      ⚠️  SKIPPING %s: still mounted at: %s\n", device, strings.TrimSpace(string(checkOut)))
 			continue
 		}
 
-		if _, err := exec.Command("wipefs", "-a", device).CombinedOutput(); err != nil {
+		fmt.Printf("      🔍 DEBUG: Device %s is not mounted, safe to wipe\n", device)
+		fmt.Printf("      ⚡ EXECUTING: wipefs -a %s\n", device)
+
+		if wipOut, err := exec.Command("wipefs", "-a", device).CombinedOutput(); err != nil {
 			fmt.Printf("      ⚠️  Warning: wipefs failed on %s: %v\n", device, err)
+			fmt.Printf("      🔍 DEBUG: wipefs output: %s\n", string(wipOut))
 		} else {
 			fmt.Printf("      ✓ Wiped %s\n", device)
 		}
+
+		fmt.Printf("      ⚡ EXECUTING: mkfs.ext4 -F %s\n", device)
 		if out, err := exec.Command("mkfs.ext4", "-F", device).CombinedOutput(); err != nil {
 			fmt.Printf("      ⚠️  Warning: mkfs.ext4 failed on %s: %v\n%s\n", device, err, out)
 		} else {
