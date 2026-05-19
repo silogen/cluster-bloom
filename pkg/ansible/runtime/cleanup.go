@@ -309,6 +309,23 @@ func CleanupBloomDisks(clusterDisks string) error {
 	fmt.Println("   ⏳ Waiting for kernel to release devices (10s)...")
 	time.Sleep(10 * time.Second)
 
+	// CRITICAL SANITY CHECK: Verify system binaries still exist before proceeding with destructive operations
+	// If rm, mount, or ls are missing, the system is already corrupted - abort immediately
+	fmt.Println("   🔒 Pre-flight system health check...")
+	criticalBinaries := []string{"/usr/bin/ls", "/bin/mount", "/bin/umount", "/sbin/wipefs", "/sbin/mkfs.ext4"}
+	for _, binary := range criticalBinaries {
+		if _, err := os.Stat(binary); os.IsNotExist(err) {
+			return fmt.Errorf("CRITICAL: System binary %s is missing - system may already be corrupted, ABORTING disk operations", binary)
+		}
+	}
+	fmt.Println("      ✓ System binaries intact")
+
+	// Verify /etc/fstab is readable (if corrupted, abort)
+	if _, err := os.ReadFile("/etc/fstab"); err != nil {
+		return fmt.Errorf("CRITICAL: Cannot read /etc/fstab (%v) - system may be corrupted, ABORTING disk operations", err)
+	}
+	fmt.Println("      ✓ /etc/fstab is readable")
+
 	// Wipe and reformat every CLUSTER_DISKS device
 	// Only proceed if device is confirmed safe to wipe - no critical system mounts
 	fmt.Println("   🧹 Wiping and formatting cluster disks...")
@@ -401,6 +418,8 @@ func CleanupBloomDisks(clusterDisks string) error {
 		return fmt.Errorf("lsblk command failed: %w", err)
 	}
 
+	fmt.Printf("   🔍 DEBUG: lsblk output for device deletion check:\n%s\n", string(output))
+
 	scanner = bufio.NewScanner(strings.NewReader(string(output)))
 	for scanner.Scan() {
 		fields := strings.Fields(scanner.Text())
@@ -408,8 +427,18 @@ func CleanupBloomDisks(clusterDisks string) error {
 			// CRITICAL SAFETY: Verify this disk doesn't have any partitions with critical mounts
 			// Even if the base disk shows unmounted, partitions might be mounted
 			devicePath := "/dev/" + fields[0]
-			lsblkCheck, _ := exec.Command("lsblk", "-no", "MOUNTPOINT", devicePath).CombinedOutput()
+			fmt.Printf("      🔍 DEBUG: Considering deletion of %s (shows unmounted in lsblk)\n", devicePath)
+			fmt.Printf("      🔍 DEBUG: Running: lsblk -no MOUNTPOINT %s\n", devicePath)
+
+			lsblkCheck, lsblkErr := exec.Command("lsblk", "-no", "MOUNTPOINT", devicePath).CombinedOutput()
+			if lsblkErr != nil {
+				fmt.Printf("      🛑 BLOCKED: /dev/%s - lsblk check failed: %v\n", fields[0], lsblkErr)
+				fmt.Printf("      🔍 DEBUG: lsblk error output: %s\n", string(lsblkCheck))
+				continue
+			}
+
 			allMountPoints := strings.TrimSpace(string(lsblkCheck))
+			fmt.Printf("      🔍 DEBUG: lsblk mount points for %s:\n%s\n", devicePath, allMountPoints)
 
 			// If any partition has a mount point, don't delete the device
 			if allMountPoints != "" {
@@ -417,6 +446,7 @@ func CleanupBloomDisks(clusterDisks string) error {
 				continue
 			}
 
+			fmt.Printf("      ⚡ EXECUTING: Device deletion for /dev/%s\n", fields[0])
 			deleteCmd := exec.Command("sudo", "tee", "/sys/block/"+fields[0]+"/device/delete")
 			deleteCmd.Stdin = strings.NewReader("1\n")
 			if err := deleteCmd.Run(); err != nil {
