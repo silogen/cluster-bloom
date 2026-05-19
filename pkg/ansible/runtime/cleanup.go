@@ -290,11 +290,24 @@ func CleanupBloomDisks(clusterDisks string) error {
 	// Force unmount all CLUSTER_DISKS devices again to ensure they're released
 	// This is critical before wipefs to prevent I/O errors
 	fmt.Println("   ⏏️  Final unmount pass for cluster disks...")
-	for _, device := range strings.Split(clusterDisks, ",") {
+
+	// CRITICAL: Build whitelist and validate before unmounting anything
+	clusterDisksList := strings.Split(clusterDisks, ",")
+	var validDevices []string
+	for _, device := range clusterDisksList {
 		device = strings.TrimSpace(device)
-		if device == "" {
-			continue
+		if device != "" {
+			// Ensure device path starts with /dev/
+			if !strings.HasPrefix(device, "/dev/") {
+				fmt.Printf("      🛑 WARNING: Invalid device path %q (must start with /dev/), skipping\n", device)
+				continue
+			}
+			validDevices = append(validDevices, device)
 		}
+	}
+	fmt.Printf("      🔍 DEBUG: Validated %d devices for unmounting: %v\n", len(validDevices), validDevices)
+
+	for _, device := range validDevices {
 		fmt.Printf("      🔍 DEBUG: Unmounting device: %s\n", device)
 		// Attempt multiple unmount passes to ensure device is fully released
 		for i := 0; i < 3; i++ {
@@ -326,6 +339,17 @@ func CleanupBloomDisks(clusterDisks string) error {
 	}
 	fmt.Println("      ✓ /etc/fstab is readable")
 
+	// Build whitelist of allowed devices from CLUSTER_DISKS
+	// CRITICAL: Only devices explicitly in CLUSTER_DISKS can be wiped
+	allowedDevices := make(map[string]bool)
+	for _, device := range strings.Split(clusterDisks, ",") {
+		device = strings.TrimSpace(device)
+		if device != "" {
+			allowedDevices[device] = true
+		}
+	}
+	fmt.Printf("   🔍 DEBUG: Whitelist of allowed devices: %v\n", allowedDevices)
+
 	// Wipe and reformat every CLUSTER_DISKS device
 	// Only proceed if device is confirmed safe to wipe - no critical system mounts
 	fmt.Println("   🧹 Wiping and formatting cluster disks...")
@@ -336,6 +360,12 @@ func CleanupBloomDisks(clusterDisks string) error {
 		}
 
 		fmt.Printf("      🔍 DEBUG: Processing device: %s\n", device)
+
+		// CRITICAL WHITELIST CHECK: Verify device is in CLUSTER_DISKS
+		if !allowedDevices[device] {
+			fmt.Printf("      🛑 BLOCKED: %s is not in CLUSTER_DISKS whitelist, refusing to wipe\n", device)
+			continue
+		}
 
 		// CRITICAL SAFETY: Check if this device or any of its partitions contain critical system mounts
 		// Use lsblk to inspect the entire device tree (device + all partitions)
@@ -411,7 +441,21 @@ func CleanupBloomDisks(clusterDisks string) error {
 	}
 
 	// Delete unmounted disk devices (matching Bloom v1 logic)
+	// CRITICAL: Never delete devices that are in CLUSTER_DISKS - those were just wiped/formatted
 	fmt.Println("   🗑️  Checking for unmounted disks to delete...")
+
+	// Build set of CLUSTER_DISKS device names (e.g., "nvme1n1" from "/dev/nvme1n1")
+	clusterDiskNames := make(map[string]bool)
+	for _, device := range strings.Split(clusterDisks, ",") {
+		device = strings.TrimSpace(device)
+		if device != "" {
+			// Extract device name (remove /dev/ prefix)
+			deviceName := strings.TrimPrefix(device, "/dev/")
+			clusterDiskNames[deviceName] = true
+		}
+	}
+	fmt.Printf("   🔍 DEBUG: CLUSTER_DISKS device names to preserve: %v\n", clusterDiskNames)
+
 	cmd = exec.Command("lsblk", "-nd", "-o", "NAME,TYPE,MOUNTPOINT")
 	output, err = cmd.Output()
 	if err != nil {
@@ -424,9 +468,17 @@ func CleanupBloomDisks(clusterDisks string) error {
 	for scanner.Scan() {
 		fields := strings.Fields(scanner.Text())
 		if len(fields) == 3 && strings.HasPrefix(fields[0], "sd") && fields[1] == "disk" && fields[2] == "" {
+			deviceName := fields[0]
+			devicePath := "/dev/" + deviceName
+
+			// CRITICAL: Never delete devices from CLUSTER_DISKS
+			if clusterDiskNames[deviceName] {
+				fmt.Printf("      🛑 BLOCKED: %s is in CLUSTER_DISKS, refusing to delete\n", devicePath)
+				continue
+			}
+
 			// CRITICAL SAFETY: Verify this disk doesn't have any partitions with critical mounts
 			// Even if the base disk shows unmounted, partitions might be mounted
-			devicePath := "/dev/" + fields[0]
 			fmt.Printf("      🔍 DEBUG: Considering deletion of %s (shows unmounted in lsblk)\n", devicePath)
 			fmt.Printf("      🔍 DEBUG: Running: lsblk -no MOUNTPOINT %s\n", devicePath)
 
