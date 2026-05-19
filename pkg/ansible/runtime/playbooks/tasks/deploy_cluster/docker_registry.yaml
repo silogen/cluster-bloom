@@ -1,0 +1,27 @@
+---
+# Purpose: Configure /etc/rancher/rke2/registries.yaml for DockerHub authenticated pulls
+# Dependencies: DOCKERHUB_USER, DOCKERHUB_TOKEN variables (both optional, must be set together)
+# Usage: Imported by deploy_cluster/main.yaml before RKE2 is started
+# Tags: [docker_registry, deploy_cluster]
+
+- name: Configure DockerHub registry credentials
+  when: DOCKERHUB_USER is defined and DOCKERHUB_USER != "" and DOCKERHUB_TOKEN is defined and DOCKERHUB_TOKEN != ""
+  block:
+    - name: Create RKE2 config directory
+      file:
+        path: /etc/rancher/rke2
+        state: directory
+        mode: "0755"
+
+    - name: Write registries.yaml with DockerHub credentials
+      copy:
+        content: |
+          configs:
+            "docker.io":
+              auth:
+                username: "{{ DOCKERHUB_USER }}"
+                password: "{{ DOCKERHUB_TOKEN }}"
+        dest: /etc/rancher/rke2/registries.yaml
+        mode: "0600"
+        owner: root
+        group: root

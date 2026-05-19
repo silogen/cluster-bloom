@@ -113,6 +113,19 @@ schema:
         - "/dev/sdb2"
         - "/dev/vdc"
 
+    # 🐳 Container Registry Configuration
+    DOCKERHUB_USER:
+      type: str
+      default: ""
+      desc: DockerHub username for authenticated pulls (reduces rate limit errors). Must be set together with DOCKERHUB_TOKEN.
+      section: "🐳 Container Registry Configuration"
+
+    DOCKERHUB_TOKEN:
+      type: str
+      default: ""
+      desc: DockerHub access token for authenticated pulls. Must be set together with DOCKERHUB_USER.
+      section: "🐳 Container Registry Configuration"
+
      # 🔒 SSL/TLS Configuration
     ADDITIONAL_TLS_SAN_URLS:
       type: seq
