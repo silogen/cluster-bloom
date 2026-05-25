@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/silogen/cluster-bloom/pkg/ansible/runtime"
@@ -14,16 +15,19 @@ import (
 )
 
 var (
-	Version      string // Set via ldflags during build
-	port         int
-	playbookName string
-	dryRun       bool
-	tags         string
-	destroyData  bool
-	forceCleanup bool
-	extraVars  []string
-	verbose    bool
-	configFile string
+	Version         string // Set via ldflags during build
+	port            int
+	playbookName    string
+	dryRun          bool
+	tags            string
+	destroyData     bool
+	forceCleanup    bool
+	extraVars       []string
+	verbose         bool
+	configFile      string
+	export          bool
+	showVersion     bool
+	clusterListenIP string
 )
 
 func init() {
@@ -101,6 +105,14 @@ func newRootCmd() *cobra.Command {
 		Short: "Kubernetes Cluster Deployment Tool",
 		Long:  `Bloom - A tool for generating bloom.yaml configurations and deploying Kubernetes clusters.`,
 		Run: func(cmd *cobra.Command, args []string) {
+			if showVersion {
+				if Version != "" {
+					fmt.Printf("%s\n", Version)
+				} else {
+					fmt.Println("dev")
+				}
+				return
+			}
 			// Default action: start webui
 			runWebUI(cmd)
 		},
@@ -131,18 +143,63 @@ func newRootCmd() *cobra.Command {
 	}
 
 	cleanupCmd := &cobra.Command{
-		Use:   "cleanup",
+		Use:   "cleanup [config-file]",
 		Short: "Clean up existing Bloom cluster installation",
 		Long: `Removes RKE2 services, Longhorn mounts, and managed disks from previous Bloom installations.
 
-This command performs the equivalent of Bloom v1 cleanup operations:
-- Stops Longhorn services and unmounts all Longhorn-related storage
-- Executes RKE2 uninstall script to remove RKE2 components  
-- Cleans up bloom-managed disks and removes temp drives
+This command performs the full cluster teardown sequence:
+  1. Best-effort node drain (if cluster is reachable) with ~30s timeout
+     - Uses --force and --disable-eviction to bypass stuck pods
+     - Skips volume detach wait if no Longhorn volumes detected
+  2. Logs out iSCSI sessions and stops Longhorn processes
+  3. Force-unmounts all Longhorn/CSI/kubelet volumes
+  4. Uninstalls RKE2 and removes all RKE2 directories
+  5. Pre-cleans bloom artifacts (pvc-*, replicas, longhorn-disk.cfg) from the future
+     mount range — preserving user files in those directories
+  6. Cleans premounted disk contents (CLUSTER_PREMOUNTED_DISKS) while keeping the
+     filesystem and fstab entry intact
+  7. Removes bloom-managed fstab entries and wipes CLUSTER_DISKS devices
+
+When a config file is provided, CLUSTER_DISKS and CLUSTER_PREMOUNTED_DISKS are read
+from it. Before confirmation, a disk wipe preview is shown:
+  - Bloom-managed mounts to be wiped (with user file warnings)
+  - The future mount range that will be pre-cleaned
+  - User files listed (up to 5), or count shown if more than 5
+  - lost+found folders excluded (ext4 system folder, not user data)
+
+Mount index allocation is fstab- and config-aware: the lowest contiguous range starting
+from index 0 that does not conflict with premounted disk indexes is chosen, ensuring
+CLUSTER_DISKS and CLUSTER_PREMOUNTED_DISKS can coexist without collision.
 
 By default, this command requires confirmation before proceeding. Use --force to skip confirmation.`,
 		Run: func(cmd *cobra.Command, args []string) {
 			checkRootPrivileges("cleanup")
+			// Load config early so the preview can use it before confirmation
+			var cfg config.Config
+			if len(args) > 0 {
+				var err error
+				cfg, err = config.LoadConfig(args[0])
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: could not load config %s: %v\n", args[0], err)
+				} else {
+					fmt.Printf("Using config: %s\n", args[0])
+				}
+			}
+			// Extract disk vars for the preview
+			clusterDisks := ""
+			if d, ok := cfg["CLUSTER_DISKS"].(string); ok {
+				clusterDisks = d
+			}
+			premountedDisks := ""
+			if p, ok := cfg["CLUSTER_PREMOUNTED_DISKS"].(string); ok {
+				premountedDisks = p
+			}
+			rancherDisk := ""
+			if r, ok := cfg["RANCHER_DISK"].(string); ok {
+				rancherDisk = r
+			}
+			// Show disk wipe preview before asking for confirmation
+			runtime.PrintDiskWipePreview(clusterDisks, premountedDisks, rancherDisk)
 			// Check if force flag is used to bypass confirmation
 			if !forceCleanup {
 				if !confirmCleanupOperation() {
@@ -152,8 +209,7 @@ By default, this command requires confirmation before proceeding. Use --force to
 			} else {
 				fmt.Println("🚀 Force cleanup requested - bypassing confirmation")
 			}
-			// For standalone cleanup command, we don't have a config, so pass nil
-			runClusterCleanup(nil)
+			runClusterCleanup(cfg)
 		},
 	}
 
@@ -162,10 +218,18 @@ By default, this command requires confirmation before proceeding. Use --force to
 		Short: "Deploy cluster using configuration file",
 		Long: `Deploy a Kubernetes cluster using the specified configuration file.
 
-Requires a configuration file (typically bloom.yaml).`,
+Requires a configuration file (typically bloom.yaml).
+
+Use --export flag to write a self-contained playbook directory (./bloom-playbook/)
+instead of executing it. The directory contains the root playbook, a bloom-vars.yaml
+file derived from your config, and the tasks/ and manifests/ trees. Run it with:
+  ansible-playbook bloom-playbook/cluster-bloom.yaml
+Example: ./bloom cli bloom.yaml --export`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			checkRootPrivileges("cli")
+			if !export {
+				checkRootPrivileges("cli")
+			}
 			runAnsible(args[0])
 		},
 	}
@@ -187,12 +251,15 @@ imports (roles, tasks, vars) within that directory tree work as expected.`,
 
 	// Add flags
 	rootCmd.PersistentFlags().IntVarP(&port, "port", "p", 62078, "Port for web UI (fails if in use)")
+	rootCmd.Flags().BoolVarP(&showVersion, "version", "v", false, "Show version information")
 
 	// Add CLI command flags
 	cliCmd.Flags().StringVar(&playbookName, "playbook", "cluster-bloom.yaml", "Playbook to run (default: cluster-bloom.yaml)")
 	cliCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Run in check mode without making changes")
 	cliCmd.Flags().StringVar(&tags, "tags", "", "Run only tasks with specific tags (e.g., cleanup, validate, storage)")
-	cliCmd.Flags().BoolVar(&destroyData, "destroy-data", false, "⚠️  DANGER: Permanently destroys ALL cluster data, storage, and disks. Requires interactive confirmation.")
+	cliCmd.Flags().BoolVar(&destroyData, "destroy-data", false, "⚠️  DANGER: Wipes cluster (RKE2 uninstall, Longhorn cleanup, disk wipe). Shows disk preview before confirmation. Equivalent to running bloom cleanup then redeploying.")
+	cliCmd.Flags().StringVar(&clusterListenIP, "cluster-listen-ip", "", "IP address or CIDR for cluster binding (e.g., 192.168.1.100 or 192.168.1.0/24)")
+	cliCmd.Flags().BoolVar(&export, "export", false, "Export the playbook to ./bloom-playbook/ (overwrites if exists) instead of executing it")
 
 	// Add run command flags
 	runCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Run in check mode without making changes")
@@ -232,7 +299,12 @@ func runAnsible(configFile string) {
 		os.Exit(1)
 	}
 
-	// Validate config (before injecting CLI flags)
+	// Inject CLI flag values into config (CLI flags override file values)
+	if clusterListenIP != "" {
+		cfg["CLUSTER_LISTEN_IP"] = clusterListenIP
+	}
+
+	// Validate config (after injecting CLI flags)
 	errors := config.Validate(cfg)
 	if len(errors) > 0 {
 		fmt.Fprintln(os.Stderr, "Configuration validation errors:")
@@ -240,6 +312,19 @@ func runAnsible(configFile string) {
 			fmt.Fprintf(os.Stderr, "  - %s\n", err)
 		}
 		os.Exit(1)
+	}
+
+	// Handle export mode
+	if export {
+		if destroyData {
+			fmt.Fprintln(os.Stderr, "Error: --destroy-data is not supported with --export")
+			os.Exit(1)
+		}
+		if err := exportPlaybook(cfg, playbookName); err != nil {
+			fmt.Fprintf(os.Stderr, "Error exporting playbook: %v\n", err)
+			os.Exit(1)
+		}
+		return
 	}
 
 	// Handle destructive data cleanup if requested
@@ -255,7 +340,7 @@ func runAnsible(configFile string) {
 	mode := runtime.OutputClean
 
 	// Run the playbook
-	exitCode, err := runtime.RunPlaybook(cfg, playbookName, dryRun, tags, mode)
+	exitCode, err := runtime.RunPlaybook(cfg, playbookName, dryRun, tags, mode, Version)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -288,13 +373,96 @@ func runPlaybookDirect(playbookPath string) {
 
 	allVars = append(allVars, extraVars...)
 
-	exitCode, err := runtime.RunPlaybookDirect(playbookPath, dryRun, tags, allVars, mode)
+	exitCode, err := runtime.RunPlaybookDirect(playbookPath, dryRun, tags, allVars, mode, Version)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
 	os.Exit(exitCode)
+}
+
+// exportPlaybook writes a self-contained playbook directory (./bloom-playbook/)
+// containing the root playbook, a vars file derived from cfg, and the task and
+// manifest trees.
+func exportPlaybook(cfg config.Config, playbookName string) error {
+	const outDir = "bloom-playbook"
+
+	if err := os.RemoveAll(outDir); err != nil {
+		return fmt.Errorf("remove existing %s: %w", outDir, err)
+	}
+	if err := os.MkdirAll(outDir, 0755); err != nil {
+		return fmt.Errorf("create %s: %w", outDir, err)
+	}
+
+	if err := runtime.ExtractEmbeddedPlaybooksToDir(outDir); err != nil {
+		return fmt.Errorf("extract playbooks: %w", err)
+	}
+	if err := runtime.ExtractManifests(outDir); err != nil {
+		return fmt.Errorf("extract manifests: %w", err)
+	}
+
+	playbookPath := filepath.Join(outDir, playbookName)
+	if _, err := os.Stat(playbookPath); os.IsNotExist(err) {
+		return fmt.Errorf("playbook not found: %s", playbookName)
+	}
+	playbookContent, err := os.ReadFile(playbookPath)
+	if err != nil {
+		return fmt.Errorf("read playbook: %w", err)
+	}
+	var playbook any
+	if err := yaml.Unmarshal(playbookContent, &playbook); err != nil {
+		return fmt.Errorf("parse playbook: %w", err)
+	}
+	if err := tweakRootPlaybookForExport(playbook); err != nil {
+		return fmt.Errorf("tweak playbook: %w", err)
+	}
+	out, err := yaml.Marshal(playbook)
+	if err != nil {
+		return fmt.Errorf("marshal playbook: %w", err)
+	}
+	if err := os.WriteFile(playbookPath, out, 0644); err != nil {
+		return fmt.Errorf("write playbook: %w", err)
+	}
+
+	varsBytes, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("marshal vars: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(outDir, "bloom-vars.yaml"), varsBytes, 0644); err != nil {
+		return fmt.Errorf("write vars: %w", err)
+	}
+
+	fmt.Fprintf(os.Stderr, "✓ Exported playbook to ./%s/\n", outDir)
+	fmt.Fprintf(os.Stderr, "  Run with: ansible-playbook %s/%s\n", outDir, playbookName)
+	return nil
+}
+
+// tweakRootPlaybookForExport adjusts the first play of the exported playbook so
+// it runs standalone: targets localhost, loads bloom-vars.yaml, and exposes
+// BLOOM_DIR (normally injected at runtime as the working directory).
+func tweakRootPlaybookForExport(playbook any) error {
+	plays, ok := playbook.([]any)
+	if !ok || len(plays) == 0 {
+		return fmt.Errorf("unexpected playbook structure: expected non-empty list of plays")
+	}
+	first, ok := plays[0].(map[string]any)
+	if !ok {
+		return fmt.Errorf("unexpected playbook structure: first play is not a map")
+	}
+
+	first["hosts"] = "localhost"
+
+	existing, _ := first["vars_files"].([]any)
+	first["vars_files"] = append([]any{"bloom-vars.yaml"}, existing...)
+
+	vars, ok := first["vars"].(map[string]any)
+	if !ok {
+		vars = map[string]any{}
+		first["vars"] = vars
+	}
+	vars["BLOOM_DIR"] = "{{ ansible_env.PWD | default(playbook_dir) }}"
+	return nil
 }
 
 // confirmDestructiveOperation prompts the user to confirm the dangerous --destroy-data operation
@@ -304,11 +472,27 @@ func confirmDestructiveOperation(cfg config.Config) bool {
 	fmt.Println("You are about to PERMANENTLY DESTROY:")
 	fmt.Println("• Entire Kubernetes cluster (RKE2 uninstall)")
 	// Show specific devices that will be wiped if CLUSTER_DISKS is configured
-	if clusterDisks, exists := cfg["CLUSTER_DISKS"]; exists && clusterDisks != nil {
-		if disksStr, ok := clusterDisks.(string); ok && disksStr != "" {
+	clusterDisks := ""
+	if d, exists := cfg["CLUSTER_DISKS"]; exists && d != nil {
+		if disksStr, ok := d.(string); ok && disksStr != "" {
+			clusterDisks = disksStr
 			fmt.Printf("• All data on these storage devices: %s\n", disksStr)
 		}
 	}
+	premountedDisks := ""
+	if p, exists := cfg["CLUSTER_PREMOUNTED_DISKS"]; exists && p != nil {
+		if pmStr, ok := p.(string); ok {
+			premountedDisks = pmStr
+		}
+	}
+	rancherDisk := ""
+	if r, exists := cfg["RANCHER_DISK"]; exists && r != nil {
+		if rdStr, ok := r.(string); ok {
+			rancherDisk = rdStr
+		}
+	}
+	// Show the same disk wipe preview as the standalone cleanup command
+	runtime.PrintDiskWipePreview(clusterDisks, premountedDisks, rancherDisk)
 	fmt.Println()
 
 	// Read user input
@@ -388,6 +572,9 @@ func checkRootPrivileges(commandName string) {
 func runClusterCleanup(cfg config.Config) {
 	fmt.Println("🧹 Starting Bloom cluster cleanup...")
 
+	// Initialize signal handling for graceful shutdown
+	runtime.InitSignalHandling()
+
 	var errors []error
 
 	// Extract CLUSTER_DISKS from config
@@ -398,6 +585,23 @@ func runClusterCleanup(cfg config.Config) {
 		}
 	}
 
+	// Extract premounted disks config once for use in steps below
+	premountedDisks := ""
+	if pm, exists := cfg["CLUSTER_PREMOUNTED_DISKS"]; exists && pm != nil {
+		if pmStr, ok := pm.(string); ok {
+			premountedDisks = pmStr
+		}
+	}
+
+	// Extract RANCHER_DISK from config
+	rancherDisk := ""
+	if rd, exists := cfg["RANCHER_DISK"]; exists && rd != nil {
+		if rdStr, ok := rd.(string); ok {
+			rancherDisk = rdStr
+		}
+	}
+
+	fmt.Printf("   ⚙️  Config: CLUSTER_DISKS=%q, CLUSTER_PREMOUNTED_DISKS=%q, RANCHER_DISK=%q\n", clusterDisks, premountedDisks, rancherDisk)
 	// Step 1: Clean Longhorn Mounts (equivalent to CleanLonghornMountsStep)
 	if err := runtime.CleanupLonghornMounts(); err != nil {
 		errors = append(errors, fmt.Errorf("Longhorn cleanup: %w", err))
@@ -408,7 +612,29 @@ func runClusterCleanup(cfg config.Config) {
 		errors = append(errors, fmt.Errorf("RKE2 uninstall: %w", err))
 	}
 
-	// Step 3: Clean Disks (equivalent to CleanDisksStep)
+	// Step 2.5: Process validation removed - config-independent cleanup proven sufficient
+
+	// Step 3: Pre-clean bloom artifacts from directories in the future mount range,
+	// leaving user files intact. Done before fstab is rewritten so mounts are still valid.
+	if err := runtime.PrecleanFutureMountPoints(clusterDisks, premountedDisks); err != nil {
+		errors = append(errors, fmt.Errorf("Future mount pre-clean: %w", err))
+	}
+
+	// Step 4: Clean premounted disk contents BEFORE CleanupBloomDisks strips fstab.
+	// unmountPriorLonghornDisks (called inside CleanupBloomDisks) removes bloom fstab
+	// entries and unmounts the disks; if we run after that, mount falls back to device
+	// scan which may fail. Running here while fstab is intact guarantees the mount works.
+	if err := runtime.CleanupPremountedDisks(premountedDisks); err != nil {
+		errors = append(errors, fmt.Errorf("Premounted disk cleanup: %w", err))
+	}
+
+	// Step 4.5: Clean RANCHER_DISK configuration — unmount bind mount and clean data
+	// Always call - let function decide based on actual mount status
+	if err := runtime.CleanupRancherDisk(""); err != nil {
+		errors = append(errors, fmt.Errorf("RANCHER_DISK cleanup: %w", err))
+	}
+
+	// Step 5: Clean Disks — strips fstab entries and wipes CLUSTER_DISKS
 	if err := runtime.CleanupBloomDisks(clusterDisks); err != nil {
 		errors = append(errors, fmt.Errorf("Disk cleanup: %w", err))
 	}
