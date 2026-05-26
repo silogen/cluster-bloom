@@ -24,7 +24,12 @@
   args:
     creates: /usr/local/bin/helm
 
-- name: Install k9s via snap
-  snap:
-    name: k9s
-    state: present
+- name: Install k9s
+  shell: |
+    K9S_VERSION=$(curl -s https://api.github.com/repos/derailed/k9s/releases/latest | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/')
+    curl -sL "https://github.com/derailed/k9s/releases/download/v${K9S_VERSION}/k9s_Linux_amd64.tar.gz" \
+      | tar xz -C /tmp k9s
+    mv /tmp/k9s /usr/local/bin/k9s
+    chmod 0755 /usr/local/bin/k9s
+  args:
+    creates: /usr/local/bin/k9s
