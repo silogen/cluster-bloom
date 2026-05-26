@@ -199,7 +199,7 @@ spec:
             print_target "Next steps:"
             print_info "1. Proceed with cluster-forge upgrade to deploy kgateway with node targeting"
             print_info "2. Verify kgateway pods schedule on the labeled node:"
-            print_info "   kubectl get pods -n kgateway-system -o wide"
+            print_info "   kubectl get pods -n envoy-gateway-system -o wide"
             print_info "3. Check that LoadBalancer services get IPs from MetalLB:"
             print_info "   kubectl get svc -A --field-selector spec.type=LoadBalancer"
             echo
