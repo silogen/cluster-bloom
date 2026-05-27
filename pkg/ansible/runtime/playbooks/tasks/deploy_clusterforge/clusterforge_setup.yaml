@@ -50,45 +50,33 @@
     git clone --branch {{ clusterforge_version }} --depth 1 {{ CLUSTERFORGE_REPO }} {{ BLOOM_DIR }}/clusterforge/cluster-forge
   when: not (is_release_url | bool)
 
-- name: Clean ClusterForge temporary files
-  file:
-    path: "{{ item }}"
-    state: absent
-  loop:
-  - /tmp/argocd_bootstrap_values.yaml
-  - /tmp/merged_values.yaml
-  - /tmp/argocd_values.yaml
-
 - name: Debug ClusterForge bootstrap variables
   debug:
     msg:
       - "DOMAIN: {{ DOMAIN }}"
       - "CLUSTER_SIZE: {{ CLUSTER_SIZE | default('medium') }}"
       - "BLOOM_DIR: {{ BLOOM_DIR }}"
-      - "CLUSTERFORGE_RELEASE: {{ CLUSTERFORGE_RELEASE }}"
+      - "clusterforge_version: {{ clusterforge_version }}"
 
-- name: Check if bootstrap script exists
-  stat:
-    path: "{{ BLOOM_DIR }}/clusterforge/cluster-forge/scripts/bootstrap.sh"
-  register: bootstrap_script_check
+- name: Check if size-specific values file exists
+  ansible.builtin.stat:
+    path: "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/values_{{ CLUSTER_SIZE | default('medium') }}.yaml"
+  register: size_values_stat
 
-- name: Make bootstrap script executable
-  file:
-    path: "{{ BLOOM_DIR }}/clusterforge/cluster-forge/scripts/bootstrap.sh"
-    mode: '0755'
-  when: bootstrap_script_check.stat.exists
+- name: Create namespaces
+  ansible.builtin.shell: kubectl create namespace {{ item }} --dry-run=client -o yaml | kubectl apply -f -
+  loop: "{{ ['argocd', 'cf-openbao'] if (CLUSTER_SIZE | default('medium')) == 'small' else ['argocd', 'cf-gitea', 'cf-openbao'] }}"
+  changed_when: true
 
-- name: "Run ClusterForge bootstrap: ./bootstrap.sh {{ DOMAIN }} --cluster-size={{ CLUSTER_SIZE | default('medium') }}"
-  shell: |
-    cd {{ BLOOM_DIR }}/clusterforge/cluster-forge/scripts
-    pwd
-    ls -la bootstrap.sh
-    ./bootstrap.sh {{ DOMAIN }} --cluster-size={{ CLUSTER_SIZE | default('medium') }}
-  register: cf_bootstrap
-  environment:
-    KUBECONFIG: /etc/rancher/rke2/rke2.yaml
-  when: bootstrap_script_check.stat.exists
+- name: Bootstrap ArgoCD
+  ansible.builtin.include_tasks: bootstrap_argocd.yaml
 
-- name: Display ClusterForge deployment output
-  debug:
-    msg: "{{ cf_bootstrap.stdout }}"
+- name: Bootstrap OpenBao
+  ansible.builtin.include_tasks: bootstrap_openbao.yaml
+
+- name: Bootstrap Gitea
+  ansible.builtin.include_tasks: bootstrap_gitea.yaml
+  when: (CLUSTER_SIZE | default('medium')) != 'small'
+
+- name: Create ClusterForge parent application
+  ansible.builtin.include_tasks: create_cluster_forge_app.yaml
