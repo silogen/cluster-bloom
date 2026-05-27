@@ -286,6 +286,10 @@ func CleanupBloomDisks(clusterDisks string) error {
 		if device == "" {
 			continue
 		}
+		if isDeviceBacking(device) {
+			fmt.Printf("      🛑 SKIPPING %s: device backs a critical OS mount point\n", device)
+			continue
+		}
 		// Attempt multiple unmount passes to ensure device is fully released
 		for i := 0; i < 3; i++ {
 			exec.Command("umount", "-lf", device).Run()
@@ -365,6 +369,32 @@ func CleanupBloomDisks(clusterDisks string) error {
 	return nil
 }
 
+// criticalMountPoints are OS paths that must never be unmounted during cleanup.
+var criticalMountPoints = []string{"/", "/usr", "/boot", "/var", "/etc", "/run", "/home", "/tmp"}
+
+// isDeviceBacking returns true if the block device (or any of its partitions) backs
+// one of the critical OS mount points. Checked via findmnt --source which matches
+// both the whole device and partition paths (e.g. /dev/nvme0n1 matches /dev/nvme0n1p1).
+func isDeviceBacking(device string) bool {
+	out, err := exec.Command("findmnt", "--source", device, "--noheadings", "-o", "TARGET").Output()
+	if err != nil || strings.TrimSpace(string(out)) == "" {
+		// Also check partitions of this device (e.g. /dev/nvme0n1p*)
+		partOut, _ := exec.Command("bash", "-c",
+			fmt.Sprintf("findmnt --noheadings -o SOURCE,TARGET | awk '$1 ~ /^%s/ {print $2}'",
+				strings.ReplaceAll(device, "/", "\\/"))).Output()
+		out = partOut
+	}
+	for _, mp := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		mp = strings.TrimSpace(mp)
+		for _, critical := range criticalMountPoints {
+			if mp == critical {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // unmountClusterDisks directly unmounts all devices found in CLUSTER_DISKS
 func unmountClusterDisks(clusterDisks string) error {
 	if clusterDisks == "" {
@@ -377,6 +407,13 @@ func unmountClusterDisks(clusterDisks string) error {
 	for _, device := range devices {
 		device = strings.TrimSpace(device)
 		if device == "" {
+			continue
+		}
+
+		// Never unmount a device that backs a critical OS mount point.
+		// This prevents bricking the node if CLUSTER_DISKS accidentally includes the OS disk.
+		if isDeviceBacking(device) {
+			fmt.Printf("      🛑 SKIPPING %s: device backs a critical OS mount point — refusing to unmount\n", device)
 			continue
 		}
 
