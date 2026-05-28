@@ -31,6 +31,7 @@
         - node.longhorn.io/instance-manager=true
       {% endif %}
         - cluster-bloom/gpu-node={{ GPU_NODE | lower }}
+        - cluster-bloom/first-node={{ FIRST_NODE | lower }}
       {% for label in disk_labels | default([]) %}
         - {{ label }}
       {% endfor %}

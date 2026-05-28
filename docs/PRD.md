@@ -98,7 +98,7 @@ Flexible certificate management with three deployment options:
 - Valid for 365 days with 2048-bit RSA encryption
 - Includes wildcard subdomain support
 
-All certificates are stored as Kubernetes secrets in the `kgateway-system` namespace and integrated with the cluster's ingress controller for HTTPS traffic.
+All certificates are stored as Kubernetes secrets in the `envoy-gateway-system` namespace and integrated with the cluster's ingress controller for HTTPS traffic.
 
 **[📄 Certificate Management Details](./certificate-management.md)**
 

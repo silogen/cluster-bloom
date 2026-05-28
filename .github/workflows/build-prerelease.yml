@@ -36,8 +36,8 @@ jobs:
             echo "Found feature or documentation commits:"
             echo "$FEAT_COMMITS"
             
-            # Check if docs/ directory was modified anywhere in the PR/range
-            PRD_MODIFIED=$(git diff --name-only "${BASE_SHA}..HEAD" | grep -E "^docs/" || echo "")
+            # Check if docs/ directory or README.md was modified anywhere in the PR/range
+            PRD_MODIFIED=$(git diff --name-only "${BASE_SHA}..HEAD" | grep -E "^(docs/|README\.md$)" || echo "")
             
             if [[ -z "$PRD_MODIFIED" ]]; then
               echo "❌ ERROR: Found feat:/docs: commits but documentation was not updated"

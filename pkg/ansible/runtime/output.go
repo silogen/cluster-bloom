@@ -206,7 +206,7 @@ func (p *OutputProcessor) PrintSummary() {
 			fmt.Println("Run this command to wait for services to be ready (Ctrl+C to exit early):")
 			fmt.Println()
 			fmt.Println("  # Wait for kgateway pods to be ready")
-			fmt.Println("  kubectl wait --for=condition=ready pod --all -n kgateway-system --timeout=600s && \\")
+			fmt.Println("  kubectl wait --for=condition=ready pod --all -n envoy-gateway-system --timeout=600s && \\")
 			fmt.Println("  # Wait for cluster-auth job to complete (creates initial auth configuration)")
 			fmt.Println("  kubectl wait --for=condition=complete job --all -n cluster-auth --timeout=600s && \\")
 			fmt.Println("  echo ''")
