@@ -1,0 +1,221 @@
+---
+- name: Create temporary directory for Gitea values
+  ansible.builtin.tempfile:
+    state: directory
+    suffix: .gitea-bootstrap
+  register: gitea_temp_dir
+
+- name: Extract Gitea version from values.yaml
+  ansible.builtin.shell: |
+    yq eval '.apps.gitea.path' "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/values.yaml" | cut -d'/' -f2
+  register: gitea_version
+  changed_when: false
+
+- name: Copy base values to temp directory
+  ansible.builtin.copy:
+    src: "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/values.yaml"
+    dest: "{{ gitea_temp_dir.path }}/complete_values.yaml"
+    remote_src: true
+
+- name: Fill in domain placeholder
+  ansible.builtin.shell: |
+    yq eval ".global.domain = \"{{ DOMAIN }}\"" -i "{{ gitea_temp_dir.path }}/complete_values.yaml"
+  changed_when: false
+
+- name: Fill in cluster size placeholder
+  ansible.builtin.shell: |
+    yq eval ".global.clusterSize = \"values_{{ CLUSTER_SIZE }}.yaml\"" -i "{{ gitea_temp_dir.path }}/complete_values.yaml"
+  changed_when: false
+
+- name: Fill in target revision placeholder
+  ansible.builtin.shell: |
+    yq eval ".clusterForge.targetRevision = \"{{ clusterforge_version }}\"" -i "{{ gitea_temp_dir.path }}/complete_values.yaml"
+  changed_when: false
+
+- name: Merge with size-specific values
+  ansible.builtin.shell: |
+    yq eval-all 'select(fileIndex == 0) * select(fileIndex == 1)' \
+      "{{ gitea_temp_dir.path }}/complete_values.yaml" \
+      "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/values_{{ CLUSTER_SIZE }}.yaml" > \
+      "{{ gitea_temp_dir.path }}/complete_values_merged.yaml"
+    mv "{{ gitea_temp_dir.path }}/complete_values_merged.yaml" \
+       "{{ gitea_temp_dir.path }}/complete_values.yaml"
+  when: size_values_stat.stat.exists
+  changed_when: false
+
+- name: Create initial-cf-values ConfigMap
+  ansible.builtin.shell: |
+    kubectl create configmap initial-cf-values \
+      --from-file=initial-cf-values={{ gitea_temp_dir.path }}/complete_values.yaml \
+      --namespace cf-gitea \
+      --dry-run=client -o yaml | kubectl apply -f -
+  changed_when: true
+
+- name: Generate Gitea admin password
+  ansible.builtin.shell: openssl rand -hex 16
+  register: gitea_admin_password
+  changed_when: false
+  no_log: true
+
+- name: Create Gitea admin credentials secret
+  ansible.builtin.shell: |
+    kubectl create secret generic gitea-admin-credentials \
+      --from-literal=username=silogen-admin \
+      --from-literal=password={{ gitea_admin_password.stdout | quote }} \
+      --namespace cf-gitea \
+      --dry-run=client -o yaml | kubectl apply -f -
+  no_log: true
+  changed_when: true
+
+- name: Extract Gitea values from base values file
+  ansible.builtin.shell: |
+    yq eval '.apps.gitea.valuesObject' "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/values.yaml" > "{{ gitea_temp_dir.path }}/gitea_values.yaml"
+  changed_when: false
+
+- name: Extract Gitea size-specific values
+  when: size_values_stat.stat.exists
+  block:
+    - name: Check if Gitea section exists in size values
+      ansible.builtin.shell: |
+        yq eval '.apps.gitea' "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/values_{{ CLUSTER_SIZE }}.yaml" >/dev/null 2>&1 && [ "$(yq eval '.apps.gitea' "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/values_{{ CLUSTER_SIZE }}.yaml")" != "null" ]
+      register: gitea_size_check
+      failed_when: false
+      changed_when: false
+
+    - name: Extract Gitea size values
+      ansible.builtin.shell: |
+        yq eval '.apps.gitea.valuesObject' "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/values_{{ CLUSTER_SIZE }}.yaml" > "{{ gitea_temp_dir.path }}/gitea_size_values.yaml"
+      when: gitea_size_check.rc == 0
+      changed_when: false
+
+    - name: Create empty Gitea size values placeholder
+      ansible.builtin.copy:
+        content: "# No Gitea section in size-specific values\n"
+        dest: "{{ gitea_temp_dir.path }}/gitea_size_values.yaml"
+      when: gitea_size_check.rc != 0
+
+- name: Create empty size values if no size file
+  ansible.builtin.copy:
+    content: "# No size-specific values\n"
+    dest: "{{ gitea_temp_dir.path }}/gitea_size_values.yaml"
+  when: not size_values_stat.stat.exists
+
+- name: Deploy Gitea using Helm template
+  ansible.builtin.shell: |
+    helm template --release-name gitea \
+      {{ BLOOM_DIR }}/clusterforge/cluster-forge/sources/gitea/{{ gitea_version.stdout }} \
+      --namespace cf-gitea \
+      -f "{{ gitea_temp_dir.path }}/gitea_values.yaml" \
+      -f "{{ gitea_temp_dir.path }}/gitea_size_values.yaml" \
+      --set gitea.config.server.ROOT_URL="https://gitea.{{ DOMAIN }}/" \
+      --kube-version={{ KUBE_VERSION | default('1.33') }} | \
+    kubectl apply -f -
+  changed_when: true
+
+- name: Wait for Gitea deployment to be ready
+  ansible.builtin.command: |
+    kubectl rollout status deploy/gitea -n cf-gitea --timeout={{ DEFAULT_TIMEOUT | default('5m') }}
+  changed_when: false
+
+- name: Build Helm arguments for Gitea init job
+  ansible.builtin.set_fact:
+    gitea_init_helm_args:
+      - "--release-name"
+      - "gitea-init"
+      - "{{ BLOOM_DIR }}/clusterforge/cluster-forge/scripts/init-gitea-job"
+      - "--set"
+      - "clusterSize=values_{{ CLUSTER_SIZE }}.yaml"
+      - "--set"
+      - "domain={{ DOMAIN }}"
+      - "--set"
+      - "targetRevision={{ clusterforge_version }}"
+      - "--kube-version={{ KUBE_VERSION | default('1.33') }}"
+
+- name: Add AIRM image repository if specified
+  ansible.builtin.set_fact:
+    gitea_init_helm_args: "{{ gitea_init_helm_args + ['--set', 'airmImageRepository=' + AIRM_IMAGE_REPOSITORY] }}"
+  when: AIRM_IMAGE_REPOSITORY | default('') | length > 0
+
+- name: Add AIWB-only flag if enabled
+  ansible.builtin.set_fact:
+    gitea_init_helm_args: "{{ gitea_init_helm_args + ['--set', 'aiwbOnly=true'] }}"
+  when: AIWB_ONLY | default(false) | bool
+
+- name: Create disabled apps values file if needed
+  when: DISABLED_APPS | default('') | length > 0
+  block:
+    - name: Create temp file for disabled apps
+      ansible.builtin.tempfile:
+        state: file
+        suffix: .disabled-apps.yaml
+      register: disabled_apps_file
+
+    - name: Write disabled apps to file
+      ansible.builtin.copy:
+        content: |
+          disabledApps: "{{ DISABLED_APPS }}"
+        dest: "{{ disabled_apps_file.path }}"
+
+    - name: Add disabled apps file to helm args
+      ansible.builtin.set_fact:
+        gitea_init_helm_args: "{{ gitea_init_helm_args + ['--values', disabled_apps_file.path] }}"
+
+- name: Check if Gitea init job already completed
+  ansible.builtin.command: |
+    kubectl get job gitea-init-job -n cf-gitea -o jsonpath='{.status.succeeded}'
+  register: gitea_job_status
+  failed_when: false
+  changed_when: false
+
+- name: Skip job creation if already completed
+  ansible.builtin.set_fact:
+    skip_gitea_job: "{{ gitea_job_status.rc == 0 and gitea_job_status.stdout | int > 0 }}"
+
+- name: Delete existing incomplete Gitea init job
+  ansible.builtin.command: |
+    kubectl delete job gitea-init-job -n cf-gitea --ignore-not-found
+  when: not skip_gitea_job and gitea_job_status.rc == 0
+  changed_when: true
+
+- name: Deploy Gitea init job
+  ansible.builtin.shell: |
+    helm template {{ gitea_init_helm_args | join(' ') }} | kubectl apply -f -
+  when: not skip_gitea_job
+  changed_when: true
+
+- name: Wait for Gitea init job to complete
+  ansible.builtin.command: |
+    kubectl wait --for=condition=complete --timeout=300s job/gitea-init-job -n cf-gitea
+  when: not skip_gitea_job
+  changed_when: false
+  register: gitea_job_wait
+  failed_when: false
+
+- name: Check for job failure
+  when: not skip_gitea_job and gitea_job_wait.rc != 0
+  block:
+    - name: Get failed pod logs
+      ansible.builtin.shell: |
+        kubectl logs job/gitea-init-job -n cf-gitea --tail=50
+      register: gitea_job_logs
+      failed_when: false
+      changed_when: false
+
+    - name: Display job failure information
+      ansible.builtin.fail:
+        msg: |
+          Gitea init job failed!
+          Logs:
+          {{ gitea_job_logs.stdout }}
+
+- name: Clean up disabled apps temp file
+  ansible.builtin.file:
+    path: "{{ disabled_apps_file.path }}"
+    state: absent
+  when: disabled_apps_file is defined and disabled_apps_file.path is defined
+
+- name: Clean up Gitea temporary directory
+  ansible.builtin.file:
+    path: "{{ gitea_temp_dir.path }}"
+    state: absent
+  when: gitea_temp_dir.path is defined

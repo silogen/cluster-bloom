@@ -1,0 +1,81 @@
+---
+- name: Create temporary directory for ArgoCD values
+  ansible.builtin.tempfile:
+    state: directory
+    suffix: .argocd-bootstrap
+  register: argocd_temp_dir
+
+- name: Extract ArgoCD version from values.yaml
+  ansible.builtin.shell: |
+    yq eval '.apps.argocd.path' "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/values.yaml" | cut -d'/' -f2
+  register: argocd_version
+  changed_when: false
+
+- name: Create ArgoCD bootstrap values file
+  ansible.builtin.copy:
+    content: |
+      global:
+        domain: argocd.{{ DOMAIN }}
+    dest: "{{ argocd_temp_dir.path }}/argocd_bootstrap_values.yaml"
+
+- name: Extract ArgoCD values from base values file
+  ansible.builtin.shell: |
+    yq eval '.apps.argocd.valuesObject' "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/values.yaml" >> "{{ argocd_temp_dir.path }}/argocd_bootstrap_values.yaml"
+  changed_when: false
+
+- name: Merge size-specific ArgoCD values if available
+  when: size_values_stat.stat.exists
+  block:
+    - name: Check if ArgoCD section exists in size values
+      ansible.builtin.shell: |
+        yq eval '.apps.argocd.valuesObject // ""' "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/values_{{ CLUSTER_SIZE }}.yaml" | grep -q .
+      register: argocd_size_check
+      failed_when: false
+      changed_when: false
+
+    - name: Merge ArgoCD size values
+      ansible.builtin.shell: |
+        yq eval '.apps.argocd.valuesObject' "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/values_{{ CLUSTER_SIZE }}.yaml" | \
+        yq eval-all 'select(fileIndex == 0) * select(fileIndex == 1)' \
+          "{{ argocd_temp_dir.path }}/argocd_bootstrap_values.yaml" - > \
+          "{{ argocd_temp_dir.path }}/argocd_bootstrap_values_merged.yaml"
+        mv "{{ argocd_temp_dir.path }}/argocd_bootstrap_values_merged.yaml" \
+           "{{ argocd_temp_dir.path }}/argocd_bootstrap_values.yaml"
+      when: argocd_size_check.rc == 0
+      changed_when: false
+
+- name: Deploy ArgoCD using Helm template
+  ansible.builtin.shell: |
+    helm template --release-name argocd \
+      {{ BLOOM_DIR }}/clusterforge/cluster-forge/sources/argocd/{{ argocd_version.stdout }} \
+      --namespace argocd \
+      --values "{{ argocd_temp_dir.path }}/argocd_bootstrap_values.yaml" \
+      --kube-version={{ KUBE_VERSION | default('1.33') }} | \
+    kubectl apply --server-side --field-manager=argocd-controller --force-conflicts -f -
+  changed_when: true
+
+- name: Wait for ArgoCD application controller
+  ansible.builtin.command: |
+    kubectl rollout status statefulset/argocd-application-controller -n argocd --timeout={{ DEFAULT_TIMEOUT | default('5m') }}
+  changed_when: false
+
+- name: Wait for ArgoCD applicationset controller
+  ansible.builtin.command: |
+    kubectl rollout status deploy/argocd-applicationset-controller -n argocd --timeout={{ DEFAULT_TIMEOUT | default('5m') }}
+  changed_when: false
+
+- name: Wait for ArgoCD redis
+  ansible.builtin.command: |
+    kubectl rollout status deploy/argocd-redis -n argocd --timeout={{ DEFAULT_TIMEOUT | default('5m') }}
+  changed_when: false
+
+- name: Wait for ArgoCD repo server
+  ansible.builtin.command: |
+    kubectl rollout status deploy/argocd-repo-server -n argocd --timeout={{ DEFAULT_TIMEOUT | default('5m') }}
+  changed_when: false
+
+- name: Clean up ArgoCD temporary directory
+  ansible.builtin.file:
+    path: "{{ argocd_temp_dir.path }}"
+    state: absent
+  when: argocd_temp_dir.path is defined
