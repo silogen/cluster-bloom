@@ -79,7 +79,7 @@
 - name: Deploy OpenBao init job
   ansible.builtin.shell: |
     helm template --release-name openbao-init \
-      {{ BLOOM_DIR }}/clusterforge/cluster-forge/scripts/init-openbao-job \
+      {{ BLOOM_DIR }}/clusterforge/cluster-forge/sources/openbao-init-job/0.1.0 \
       -f "{{ openbao_temp_dir.path }}/openbao_values.yaml" \
       --set domain="{{ DOMAIN }}" \
       --kube-version={{ KUBE_VERSION | default('1.33') }} | \
