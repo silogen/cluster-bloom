@@ -84,7 +84,15 @@ jobs:
           EXTRA_ARGS="--latest=false --prerelease"
           # For pull requests, use a test version
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            NEW_VERSION="pr-${{ github.head_ref }}"
+            # Read the branch name via $GITHUB_HEAD_REF (bash variable expansion at
+            # runtime) rather than ${{ github.head_ref }} (Actions template
+            # substitution before bash parses the script). The latter would let a
+            # PR from a fork with a branch name like  foo`id`  execute arbitrary
+            # code on the runner; bash variable expansion treats the value as a
+            # literal string. The //\//- swap is unrelated to security — it just
+            # makes the value safe as a filename suffix in `cp dist/bloom-$VERSION`.
+            SAFE_REF="${GITHUB_HEAD_REF//\//-}"
+            NEW_VERSION="pr-${SAFE_REF}"
           elif [[ "${{ github.event_name }}" == "release" ]]; then
             # Use the tag from the release event
             NEW_VERSION="${{ github.event.release.tag_name }}"
