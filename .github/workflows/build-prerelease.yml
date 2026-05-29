@@ -80,6 +80,11 @@ jobs:
 
       - name: Calculate new version and args
         id: version
+        env:
+          # Route untrusted/contextual values through env vars instead of ${{ }}
+          # template substitution to avoid shell-injection via tag/branch names.
+          RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
+          SEMVER_NEXT: ${{ steps.semver.outputs.next }}
         run: |
           EXTRA_ARGS="--latest=false --prerelease"
           # For pull requests, use a test version
@@ -95,7 +100,7 @@ jobs:
             NEW_VERSION="pr-${SAFE_REF}"
           elif [[ "${{ github.event_name }}" == "release" ]]; then
             # Use the tag from the release event
-            NEW_VERSION="${{ github.event.release.tag_name }}"
+            NEW_VERSION="$RELEASE_TAG_NAME"
             # Determine if it's a prerelease based on the release settings
             if [[ "${{ github.event.release.prerelease }}" == "true" ]]; then
               EXTRA_ARGS="--latest=false --prerelease"
@@ -110,8 +115,8 @@ jobs:
             fi
             
             # Try to use semver action output, fallback to manual increment
-            if [[ -n "${{ steps.semver.outputs.next }}" ]]; then
-              NEW_VERSION="${{ steps.semver.outputs.next }}"
+            if [[ -n "$SEMVER_NEXT" ]]; then
+              NEW_VERSION="$SEMVER_NEXT"
             else
               # No conventional commits found - increment patch version
               LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
