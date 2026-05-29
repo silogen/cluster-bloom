@@ -382,10 +382,14 @@ jwt:
 ### GitHub Actions Workflow
 
 #### Build and Release
+- Triggered by `release.yml` on published releases (primary) or manual dispatch
 - Devbox-based build environment
-- Multi-architecture support
-- Automated binary creation
-- Release asset upload
+- Automated binary creation and release asset upload
+- See `.github/workflows/README.md` for workflow responsibilities
+
+#### Pull Request Validation
+- `pull-request-checks.yml`: documentation sync and build smoke test
+- `integration-tests.yml`: QEMU integration tests
 
 #### Version Management
 - Git tag-based versioning

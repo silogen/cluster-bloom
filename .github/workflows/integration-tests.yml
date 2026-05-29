@@ -1,5 +1,8 @@
 name: Integration Tests
 
+# QEMU-based integration tests. PR validation (build + docs sync) runs in
+# pull-request-checks.yml. See .github/workflows/README.md for the full map.
+
 on:
   workflow_dispatch:
   pull_request:

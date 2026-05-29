@@ -286,10 +286,14 @@ See [VALIDATION.md](VALIDATION.md) for complete validation documentation.
 ### CI/CD Pipeline
 
 **Automated Release Workflow**
-- **GitHub Release Trigger**: Workflow automatically runs when a release is published
+- **Release published trigger**: The `release.yml` workflow runs when a draft release is published (or a release is published directly)
 - **Tag-based Versioning**: Release tag (e.g., `v1.0.0`) is used for binary version injection
 - **Artifact Upload**: Built binaries automatically attach to the GitHub release
 - **Prerelease Detection**: Automatically detects and respects prerelease status from GitHub release settings
+
+**Pull Request Validation**
+- **pull-request-checks.yml**: Documentation sync validation and devbox build smoke test
+- **integration-tests.yml**: QEMU integration tests
 
 **Build Process**
 - **Devbox Build System**: Consistent, reproducible development environment
@@ -300,8 +304,10 @@ See [VALIDATION.md](VALIDATION.md) for complete validation documentation.
 1. Draft a new release in GitHub with desired tag (e.g., `v1.0.0-beta` or `v1.0.0`)
 2. Optionally mark as prerelease for non-production versions
 3. Publish the release
-4. Build workflow automatically triggers, builds binaries, and uploads artifacts
+4. The Release workflow automatically builds binaries and uploads artifacts
 5. Release is ready with downloadable binaries within minutes
+
+See [.github/workflows/README.md](../.github/workflows/README.md) for the full workflow map.
 
 ## Testing and Quality Assurance
 

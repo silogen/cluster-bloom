@@ -1,0 +1,112 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      is_prerelease:
+        description: 'Mark the release as a prerelease'
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      new_version: ${{ steps.version.outputs.new_version }}
+      extra_args: ${{ steps.version.outputs.extra_args }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get next version
+        if: github.event_name == 'workflow_dispatch'
+        id: semver
+        continue-on-error: true
+        uses: ietf-tools/semver-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          maxTagsToFetch: 100
+          skipInvalidTags: true
+          patchAll: true
+
+      - name: Calculate version and release flags
+        id: version
+        env:
+          RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
+          RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
+          SEMVER_NEXT: ${{ steps.semver.outputs.next }}
+        run: |
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            NEW_VERSION="$RELEASE_TAG_NAME"
+            if [[ "$RELEASE_PRERELEASE" == "true" ]]; then
+              EXTRA_ARGS="--latest=false --prerelease"
+            else
+              EXTRA_ARGS="--latest=false"
+            fi
+          else
+            if [[ "${{ github.event.inputs.is_prerelease }}" == "true" ]]; then
+              EXTRA_ARGS="--latest=false --prerelease"
+            else
+              EXTRA_ARGS="--latest=false"
+            fi
+
+            if [[ -n "$SEMVER_NEXT" ]]; then
+              NEW_VERSION="$SEMVER_NEXT"
+            else
+              LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+              echo "Latest tag: $LATEST_TAG"
+
+              VERSION_PART=$(echo "$LATEST_TAG" | sed 's/^v//' | sed 's/+.*//')
+              IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION_PART"
+
+              PATCH=$((PATCH + 1))
+              NEW_VERSION="v${MAJOR}.${MINOR}.${PATCH}"
+              echo "No conventional commits found, incrementing patch version to: $NEW_VERSION"
+            fi
+          fi
+
+          echo "Args: ${EXTRA_ARGS}"
+          echo "New version: $NEW_VERSION"
+          echo "new_version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "extra_args=${EXTRA_ARGS}" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub release
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.new_version }}
+          EXTRA_ARGS: ${{ steps.version.outputs.extra_args }}
+        run: |
+          gh release create "$VERSION" $EXTRA_ARGS \
+              --title="ClusterBloom Release $VERSION" \
+              --repo="$GITHUB_REPOSITORY" \
+              --generate-notes || true
+
+  build:
+    needs: [version]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install devbox
+        uses: jetify-com/devbox-install-action@v0.12.0
+
+      - name: Build with devbox
+        env:
+          VERSION: ${{ needs.version.outputs.new_version }}
+        run: |
+          devbox run build -ldflags="-X 'github.com/silogen/cluster-bloom/cmd.Version=$VERSION'"
+          cp dist/bloom "dist/bloom-$VERSION"
+
+      - name: Upload release assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.version.outputs.new_version }}
+        run: |
+          gh release upload "$VERSION" \
+              dist/* \
+              --clobber

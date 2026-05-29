@@ -1,0 +1,61 @@
+name: Pull Request Checks
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+
+jobs:
+  prd-sync-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check PRD.md sync with conventional commits
+        run: |
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+
+          FEAT_COMMITS=$(git log --oneline "${BASE_SHA}..HEAD" | grep -E "^[a-f0-9]+ (feat|docs):" || echo "")
+
+          if [[ -n "$FEAT_COMMITS" ]]; then
+            echo "Found feature or documentation commits:"
+            echo "$FEAT_COMMITS"
+
+            PRD_MODIFIED=$(git diff --name-only "${BASE_SHA}..HEAD" | grep -E "^(docs/|README\.md$)" || echo "")
+
+            if [[ -z "$PRD_MODIFIED" ]]; then
+              echo "❌ ERROR: Found feat:/docs: commits but documentation was not updated"
+              echo ""
+              echo "Commits requiring documentation update:"
+              echo "$FEAT_COMMITS"
+              echo ""
+              echo "Please update documentation in the docs/ directory to reflect these changes."
+              exit 1
+            else
+              echo "✅ Documentation was updated in this PR"
+              echo "Modified documentation files:"
+              echo "$PRD_MODIFIED"
+            fi
+          else
+            echo "✅ No feat:/docs: commits found, PRD sync check not required"
+          fi
+
+  build:
+    needs: [prd-sync-check]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install devbox
+        uses: jetify-com/devbox-install-action@v0.12.0
+
+      - name: Build with devbox
+        run: |
+          # Use GITHUB_HEAD_REF at runtime instead of github.head_ref template
+          # substitution to avoid shell injection from untrusted fork branch names.
+          SAFE_REF="${GITHUB_HEAD_REF//\//-}"
+          VERSION="pr-${SAFE_REF}"
+          echo "Building PR validation binary with version: $VERSION"
+          devbox run build -ldflags="-X 'github.com/silogen/cluster-bloom/cmd.Version=$VERSION'"
