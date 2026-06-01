@@ -136,6 +136,8 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | CLUSTER_PREMOUNTED_DISKS | Comma-separated list of absolute disk paths to use for Longhorn | "" |
 | CLUSTERFORGE_RELEASE | ClusterForge version to deploy. Accepts version tags (e.g. `v2.0.2`), full release URLs, `latest` (fetches newest GitHub release via API), `none`, or `""` to skip | `latest` |
 | CONTROL_PLANE | Set to true if this node should be a control plane node | false, only applies when FIRST_NODE is false |
+| DISABLED_STEPS | Comma-separated list of step names to skip during deployment. Mutually exclusive with `ENABLED_STEPS`. | "" |
+| ENABLED_STEPS | Comma-separated list of steps to run (everything else is skipped). Mutually exclusive with `DISABLED_STEPS`. | "" |
 | DOMAIN | The domain name for the cluster (e.g., "cluster.example.com") (required). | "" |
 | DNS_SERVERS | Custom DNS servers for RKE2 cluster. If set, these nameservers will be written to /etc/rancher/rke2/resolv.conf instead of copying host DNS. Format as YAML list (e.g., ["8.8.8.8", "1.1.1.1"]) | [] |
 | FIX_DNS | **Opt-in** to allow automatic DNS fixes. Only modifies DNS if broken and external DNS works. Creates backups and auto-rolls back on failure. | false |
@@ -153,6 +155,7 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | CLUSTERFORGE_REPO | ClusterForge git repository URL for ArgoCD-based deployment | https://github.com/silogen/cluster-forge.git |
 | INSTALL_ARGOCD | Install ArgoCD core for GitOps (small clusters only) | true |
 | PRELOAD_IMAGES | Comma-separated list of container images to preload | docker.io/rocm/pytorch:rocm6.4_ubuntu24.04_py3.12_pytorch_release_2.6.0,docker.io/rocm/vllm:rocm6.4.1_vllm_0.9.0.1_20250605 |
+| RANCHER_DISK | Device path for dedicated `/var/lib/rancher` storage (e.g. `/dev/nvme2n1`). Primarily for GPU worker nodes with heavy workloads. Bloom formats and mounts this device automatically. Mutually exclusive with `NO_DISKS_FOR_CLUSTER`. | "" |
 | RKE2_EXTRA_CONFIG | Additional RKE2 configuration in YAML format | "" |
 | RKE2_INSTALLATION_URL | RKE2 installation script URL | https://get.rke2.io |
 | ROCM_BASE_URL | ROCm base repository URL | https://repo.radeon.com/amdgpu-install/7.1.1/ubuntu/ |
