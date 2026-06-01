@@ -53,6 +53,7 @@
       --kube-version={{ KUBE_VERSION | default('1.33') }} | \
     kubectl apply --server-side --field-manager=argocd-controller --force-conflicts -f -
   changed_when: true
+  when: (CLUSTER_SIZE | default('medium')) != 'small'
 
 - name: Wait for ArgoCD application controller
   ansible.builtin.command: |
