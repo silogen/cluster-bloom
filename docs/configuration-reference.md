@@ -44,6 +44,7 @@ Configuration sources in priority order (highest to lowest):
 - **Description**: Size category for cluster deployment planning
 - **Values**: `small` | `medium` | `large`
 - **Example**: `CLUSTER_SIZE: medium`
+- **Cilium**: `small` and `medium` set `operator.replicas: 1` via RKE2 `HelmChartConfig` on the first node at bootstrap; `large` uses the RKE2 default (2). To scale the operator after adding nodes, see [RKE2 deployment — Scaling cilium-operator](rke2-deployment.md#scaling-cilium-operator-after-install-multi-node--ha)
 
 #### AIM_HARDWARE_FAMILY
 - **Type**: String (comma-separated list)

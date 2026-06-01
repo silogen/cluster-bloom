@@ -1,0 +1,26 @@
+---
+# Purpose: Set Cilium operator replicas to 1 for small/medium clusters (before RKE2 starts)
+# Dependencies: CLUSTER_SIZE
+# Usage: Included by deploy_cluster/main.yaml when FIRST_NODE and CLUSTER_SIZE is small or medium
+# Tags: [deploy_cluster, cilium]
+
+- name: Ensure RKE2 auto-deploy manifests directory exists
+  file:
+    path: /var/lib/rancher/rke2/server/manifests
+    state: directory
+    mode: "0755"
+
+- name: Deploy Cilium HelmChartConfig for small/medium clusters
+  copy:
+    content: |
+      apiVersion: helm.cattle.io/v1
+      kind: HelmChartConfig
+      metadata:
+        name: rke2-cilium
+        namespace: kube-system
+      spec:
+        valuesContent: |-
+          operator:
+            replicas: 1
+    dest: /var/lib/rancher/rke2/server/manifests/rke2-cilium-config.yaml
+    mode: "0644"

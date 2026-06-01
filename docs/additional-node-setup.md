@@ -246,6 +246,9 @@ This step configures cluster-wide services, networking, and other essential comp
 - Ensure you have an odd number of control plane nodes (3, 5, 7, etc.)
 - Add control plane nodes before worker nodes for proper HA setup
 
+**Cilium operator still at 1 replica after adding nodes**
+- Small/medium installs pin the operator to 1 replica at bootstrap. After the cluster is multi-node, scale manually on the first node — see [Scaling cilium-operator after install](rke2-deployment.md#scaling-cilium-operator-after-install-multi-node--ha).
+
 ---
 
 ## Related Documentation
