@@ -4,6 +4,18 @@
 # Usage: Imported by main cluster-bloom.yaml playbook
 # Tags: [deploy_clusterforge]
 
+- name: Build DISABLED_APPS from AIWB_ONLY flag
+  set_fact:
+    DISABLED_APPS: >-
+      {%- set aiwb_disabled = 'airm,airm-infra-cnpg,airm-infra-external-secrets,airm-infra-rabbitmq,kaiwo*,rabbitmq' -%}
+      {%- if DISABLED_APPS | default('') | length > 0 -%}
+        {{ aiwb_disabled }},{{ DISABLED_APPS }}
+      {%- else -%}
+        {{ aiwb_disabled }}
+      {%- endif -%}
+  when: AIWB_ONLY | default(false) | bool
+  tags: [clusterforge, argocd, deploy_clusterforge, deploy_k8s_apps]
+
 - name: Parse ClusterForge Version
   include_tasks: parse_version.yaml
   when: FIRST_NODE and ((CLUSTERFORGE_RELEASE != "none" and CLUSTERFORGE_RELEASE != "") or (CLUSTER_SIZE == "small" and INSTALL_ARGOCD))
