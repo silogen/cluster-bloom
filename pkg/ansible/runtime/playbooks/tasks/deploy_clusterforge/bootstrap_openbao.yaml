@@ -96,6 +96,7 @@
   # If the ExternalSecret hasn't synced yet the role gets no password and CNPG
   # won't retry. Pre-creating these secrets here (after the OpenBao init job)
   # ensures they exist before ArgoCD ever applies the CNPG Cluster resource.
+  when: not (AIWB_ONLY | default(false) | bool)
   block:
     - name: Get OpenBao root token
       ansible.builtin.shell: |
