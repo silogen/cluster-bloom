@@ -1,0 +1,160 @@
+---
+- name: Create temporary directory for OpenBao values
+  ansible.builtin.tempfile:
+    state: directory
+    suffix: .openbao-bootstrap
+  register: openbao_temp_dir
+
+- name: Extract OpenBao version from values.yaml
+  ansible.builtin.shell: |
+    yq eval '.apps.openbao.path' "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/values.yaml" | cut -d'/' -f2
+  register: openbao_version
+  changed_when: false
+
+- name: Extract OpenBao values from base values file
+  ansible.builtin.shell: |
+    yq eval '.apps.openbao.valuesObject' "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/values.yaml" > "{{ openbao_temp_dir.path }}/openbao_values.yaml"
+  changed_when: false
+
+- name: Extract OpenBao size-specific values
+  when: size_values_stat.stat.exists
+  block:
+    - name: Check if OpenBao section exists in size values
+      ansible.builtin.shell: |
+        yq eval 'has("apps") and .apps.openbao' "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/values_{{ CLUSTER_SIZE }}.yaml" | grep -q true
+      register: openbao_size_check
+      failed_when: false
+      changed_when: false
+
+    - name: Extract OpenBao size values
+      ansible.builtin.shell: |
+        yq eval '.apps.openbao.valuesObject' "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/values_{{ CLUSTER_SIZE }}.yaml" > "{{ openbao_temp_dir.path }}/openbao_size_values.yaml"
+      when: openbao_size_check.rc == 0
+      changed_when: false
+
+    - name: Create empty OpenBao size values placeholder
+      ansible.builtin.copy:
+        content: "# No OpenBao section in size-specific values\n"
+        dest: "{{ openbao_temp_dir.path }}/openbao_size_values.yaml"
+      when: openbao_size_check.rc != 0
+
+- name: Create empty size values if no size file
+  ansible.builtin.copy:
+    content: "# No size-specific values\n"
+    dest: "{{ openbao_temp_dir.path }}/openbao_size_values.yaml"
+  when: not size_values_stat.stat.exists
+
+- name: Deploy OpenBao using Helm template
+  ansible.builtin.shell: |
+    helm template --release-name openbao \
+      {{ BLOOM_DIR }}/clusterforge/cluster-forge/sources/openbao/{{ openbao_version.stdout }} \
+      --namespace cf-openbao \
+      -f "{{ openbao_temp_dir.path }}/openbao_values.yaml" \
+      -f "{{ openbao_temp_dir.path }}/openbao_size_values.yaml" \
+      --set ui.enabled=true \
+      --kube-version={{ KUBE_VERSION | default('1.33') }} | \
+    kubectl apply --server-side --field-manager=argocd-controller --force-conflicts -f -
+  changed_when: true
+
+- name: Wait for OpenBao pod to be running
+  ansible.builtin.command: |
+    kubectl wait --for=jsonpath='{.status.phase}'=Running pod/openbao-0 -n cf-openbao --timeout=100s
+  changed_when: false
+
+- name: Create initial OpenBao secrets manager ConfigMap
+  ansible.builtin.shell: |
+    cat {{ BLOOM_DIR }}/clusterforge/cluster-forge/sources/openbao-config/0.1.0/templates/openbao-secret-manager-cm.yaml | \
+      sed "s|name: openbao-secret-manager-scripts|name: openbao-secret-manager-scripts-init|g" | \
+      kubectl apply -f -
+  changed_when: true
+
+- name: Create initial OpenBao secrets definitions
+  ansible.builtin.shell: |
+    cat {{ BLOOM_DIR }}/clusterforge/cluster-forge/sources/openbao-config/0.1.0/templates/openbao-secret-definitions.yaml | \
+      sed "s|{{ '{{' }} .Values.domain {{ '}}' }}|{{ DOMAIN }}|g" | \
+      sed "s|name: openbao-secrets-config|name: openbao-secrets-init-config|g" | \
+      kubectl apply -f -
+  changed_when: true
+
+- name: Deploy OpenBao init job
+  ansible.builtin.shell: |
+    helm template --release-name openbao-init \
+      {{ BLOOM_DIR }}/clusterforge/cluster-forge/sources/openbao-init-job/0.1.0 \
+      -f "{{ openbao_temp_dir.path }}/openbao_values.yaml" \
+      --set domain="{{ DOMAIN }}" \
+      --kube-version={{ KUBE_VERSION | default('1.33') }} | \
+    kubectl apply -f -
+  changed_when: true
+
+- name: Wait for OpenBao init job to complete
+  ansible.builtin.command: |
+    kubectl wait --for=condition=complete --timeout=300s job/openbao-init-job -n cf-openbao
+  changed_when: false
+
+- name: Pre-seed CNPG user secrets from OpenBao
+  # CNPG's managed-roles reconciler runs once at instance-manager startup.
+  # If the ExternalSecret hasn't synced yet the role gets no password and CNPG
+  # won't retry. Pre-creating these secrets here (after the OpenBao init job)
+  # ensures they exist before ArgoCD ever applies the CNPG Cluster resource.
+  when: not (AIWB_ONLY | default(false) | bool)
+  block:
+    - name: Get OpenBao root token
+      ansible.builtin.shell: |
+        kubectl get secret openbao-keys -n cf-openbao -o jsonpath='{.data.root_token}' | base64 -d
+      register: openbao_root_token
+      changed_when: false
+      no_log: true
+
+    - name: Read airm CNPG user password from OpenBao
+      ansible.builtin.shell: |
+        kubectl exec openbao-0 -n cf-openbao -- \
+          env BAO_TOKEN={{ openbao_root_token.stdout | quote }} \
+          bao kv get -field=value secrets/airm-cnpg-user-password
+      register: airm_cnpg_password
+      changed_when: false
+      no_log: true
+
+    - name: Read aiwb CNPG user password from OpenBao
+      ansible.builtin.shell: |
+        kubectl exec openbao-0 -n cf-openbao -- \
+          env BAO_TOKEN={{ openbao_root_token.stdout | quote }} \
+          bao kv get -field=value secrets/aiwb-cnpg-user-password
+      register: aiwb_cnpg_password
+      changed_when: false
+      no_log: true
+
+    - name: Create airm namespace for secret pre-seeding
+      ansible.builtin.shell: |
+        kubectl create namespace airm --dry-run=client -o yaml | kubectl apply -f -
+      changed_when: true
+
+    - name: Create aiwb namespace for secret pre-seeding
+      ansible.builtin.shell: |
+        kubectl create namespace aiwb --dry-run=client -o yaml | kubectl apply -f -
+      changed_when: true
+
+    - name: Pre-create airm-cnpg-user secret
+      ansible.builtin.shell: |
+        kubectl create secret generic airm-cnpg-user \
+          --from-literal=username=airm_user \
+          --from-literal=password={{ airm_cnpg_password.stdout | quote }} \
+          --namespace airm \
+          --dry-run=client -o yaml | kubectl apply -f -
+      changed_when: true
+      no_log: true
+
+    - name: Pre-create aiwb-cnpg-user secret
+      ansible.builtin.shell: |
+        kubectl create secret generic aiwb-cnpg-user \
+          --from-literal=username=aiwb_user \
+          --from-literal=password={{ aiwb_cnpg_password.stdout | quote }} \
+          --namespace aiwb \
+          --dry-run=client -o yaml | kubectl apply -f -
+      changed_when: true
+      no_log: true
+
+- name: Clean up OpenBao temporary directory
+  ansible.builtin.file:
+    path: "{{ openbao_temp_dir.path }}"
+    state: absent
+  when: openbao_temp_dir.path is defined
