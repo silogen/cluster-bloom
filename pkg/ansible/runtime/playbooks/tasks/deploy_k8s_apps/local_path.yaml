@@ -64,6 +64,17 @@
         CLUSTER_DISK_PATHS: "{{ local_path_dirs }}"
         LOCAL_PATH_NODE_NAME: "{{ current_node_name.stdout }}"
 
+    - name: Wait for local-path-storage namespace (RKE2 deploy controller takes 30-90s to apply manifests)
+      shell: |
+        /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+          wait --for=jsonpath='{.status.phase}=Active' --timeout=300s \
+          namespace/local-path-storage
+      register: ns_wait
+      retries: 3
+      delay: 10
+      until: ns_wait.rc == 0
+      changed_when: false
+
     - name: Wait for local-path-provisioner deployment
       shell: |
         /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
