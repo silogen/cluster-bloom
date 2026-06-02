@@ -60,6 +60,12 @@ schema:
       section: "🔗 Additional Node Configuration"
 
     # 💾 Storage Configuration
+    AIWB_ONLY:
+      type: bool
+      default: false
+      desc: Deploy only AIWB components; implicitly disables airm,airm-infra-*,kaiwo*,rabbitmq and passes aiwbOnly=true to the gitea-init job
+      section: "⚙️ Advanced Configuration"
+
     NO_DISKS_FOR_CLUSTER:
       type: bool
       default: false

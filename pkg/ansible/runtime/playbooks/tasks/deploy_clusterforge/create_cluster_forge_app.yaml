@@ -1,0 +1,32 @@
+---
+- name: Set repository configuration based on cluster size
+  ansible.builtin.set_fact:
+    cf_repo_url: "{{ CLUSTERFORGE_REPO if CLUSTER_SIZE == 'small' else 'http://gitea-http.cf-gitea.svc:3000/cluster-org/cluster-forge.git' }}"
+    enable_external_values: "{{ 'false' if CLUSTER_SIZE == 'small' else 'true' }}"
+    cf_values_repo_url: "{{ 'http://gitea-http.cf-gitea.svc:3000/cluster-org/cluster-values.git' if CLUSTER_SIZE != 'small' else '' }}"
+
+- name: Deploy ClusterForge parent application
+  ansible.builtin.shell: |
+    helm template cluster-forge "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root" \
+      --show-only templates/cluster-forge.yaml \
+      --values "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/values.yaml" \
+      {% if size_values_stat.stat.exists %}--values "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/values_{{ CLUSTER_SIZE }}.yaml" {% endif %}\
+      --set global.clusterSize="values_{{ CLUSTER_SIZE }}.yaml" \
+      --set global.domain="{{ DOMAIN }}" \
+      --set clusterForge.targetRevision="{{ clusterforge_version }}" \
+      --set clusterForge.repoUrl="{{ cf_repo_url }}" \
+      {% if DISABLED_APPS | default('') | length > 0 %}--set disabledApps="{{ DISABLED_APPS }}" \
+      {% endif %}--set externalValues.enabled={{ enable_external_values }} \
+      --set bootstrap.renderSelfReference=true \
+      {% if CLUSTER_SIZE != 'small' %}--set externalValues.repoUrl="{{ cf_values_repo_url }}" \
+      {% endif %}--namespace argocd \
+      --kube-version "{{ KUBE_VERSION | default('1.33') }}" | \
+    kubectl apply -f -
+  changed_when: true
+
+- name: Log ClusterForge application creation
+  ansible.builtin.debug:
+    msg:
+      - "=== ClusterForge Parent App Created ==="
+      - "Target revision: {{ clusterforge_version }}"
+      - "Repo URL: {{ cf_repo_url }}"
