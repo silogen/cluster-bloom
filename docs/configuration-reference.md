@@ -627,6 +627,12 @@ sudo ./bloom cli bloom.yaml --dry-run
 
 # Run specific tags only
 sudo ./bloom cli bloom.yaml --tags "validate_node,prep_node"
+
+# Two-part deployment — deploy infrastructure first, then ClusterForge
+# Part 1: set CLUSTERFORGE_RELEASE: none in bloom.yaml and run the full deployment
+sudo ./bloom cli bloom.yaml
+# Part 2: once all nodes have joined, run the ClusterForge bootstrap separately
+sudo ./bloom cli bloom.yaml --tags deploy_clusterforge
 ```
 
 ### Run Command
