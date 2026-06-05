@@ -274,6 +274,13 @@ sudo ./bloom cli bloom.yaml --dry-run
 # Run specific playbook tags only
 sudo ./bloom cli bloom.yaml --tags "validate_node,prep_node"
 
+# Two-part deployment: infrastructure first, ClusterForge separately
+# Part 1 — deploy the cluster without running ClusterForge bootstrap:
+#   Set CLUSTERFORGE_RELEASE: none in bloom.yaml, then:
+sudo ./bloom cli bloom.yaml
+# Part 2 — once all nodes have joined, run ClusterForge bootstrap:
+sudo ./bloom cli bloom.yaml --tags deploy_clusterforge
+
 # Export with cleanup tasks for existing installations
 ./bloom cli bloom.yaml --export --destroy-data > cleanupPlaybook.yaml
 

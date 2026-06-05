@@ -175,29 +175,20 @@ sudo ./bloom cli bloom.yaml
 
 ---
 
-## Step 4: ClusterForge Configuration
+## Step 4: ClusterForge Bootstrap
 
-After all nodes (control plane and worker nodes) have been added to your cluster, return to your **first control plane node** to complete the cluster setup.
+After all nodes (control plane and worker nodes) have been added to your cluster, return to your **first control plane node** to run the ClusterForge bootstrap.
 
-### Manual ClusterForge Setup
+This is designed as a **two-part deployment**:
 
-Create the clusterforge directory and download the ClusterForge Enterprise AI package:
-
-```bash
-wget -O "./clusterforge.tar.gz" https://github.com/silogen/cluster-forge/releases/download/v2.0.2/release-enterprise-ai-v2.0.2.tar.gz
-tar -xzf "./clusterforge.tar.gz" -C ./clusterforge --no-same-owner
-cd cluster-forge
-```
-
-### Run Bootstrap Script
-
-Execute the bootstrap script to complete the ClusterForge installation:
+- **Part 1** — the initial `bloom cli` run deploys the cluster infrastructure. To defer ClusterForge until all nodes are ready, set `CLUSTERFORGE_RELEASE: none` in your `bloom.yaml` before running it.
+- **Part 2** — once all nodes have joined, run the ClusterForge bootstrap on its own using the `deploy_clusterforge` tag:
 
 ```bash
-./scripts/bootstrap.sh <your-domain> --cluster-size=large
+sudo ./bloom cli bloom.yaml --tags deploy_clusterforge
 ```
 
-This step configures cluster-wide services, networking, and other essential components that require all nodes to be present.
+This step configures cluster-wide services, networking, and other essential components that require all nodes to be present. The same `bloom.yaml` used for the initial deployment is reused — `CLUSTERFORGE_RELEASE` must be set to the desired release (not `none`) when running this step.
 
 ---
 
@@ -244,9 +235,11 @@ This step configures cluster-wide services, networking, and other essential comp
 - For pre-mounted: confirm the path exists with `df -h`
 - For raw disks: confirm the device exists with `lsblk`
 
-**ClusterForge fails to run**
+**ClusterForge bootstrap fails**
 - Ensure all intended nodes have successfully joined the cluster first
-- Verify you're running clusterforge on the first control plane node
+- Verify you are running on the first control plane node
+- Confirm `CLUSTERFORGE_RELEASE` in `bloom.yaml` is set to a valid release (not `none`)
+- Re-run with: `sudo ./bloom cli bloom.yaml --tags deploy_clusterforge`
 - Check cluster status with `kubectl get nodes`
 
 **Cluster not highly available**
