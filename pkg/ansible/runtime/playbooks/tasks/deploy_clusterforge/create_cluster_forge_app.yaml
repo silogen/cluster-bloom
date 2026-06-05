@@ -15,7 +15,8 @@
       --set global.domain="{{ DOMAIN }}" \
       --set clusterForge.targetRevision="{{ clusterforge_version }}" \
       --set clusterForge.repoUrl="{{ cf_repo_url }}" \
-      --set externalValues.enabled={{ enable_external_values }} \
+      {% if DISABLED_APPS | default('') | length > 0 %}--set disabledApps="{{ DISABLED_APPS }}" \
+      {% endif %}--set externalValues.enabled={{ enable_external_values }} \
       --set bootstrap.renderSelfReference=true \
       {% if CLUSTER_SIZE != 'small' %}--set externalValues.repoUrl="{{ cf_values_repo_url }}" \
       {% endif %}--namespace argocd \
