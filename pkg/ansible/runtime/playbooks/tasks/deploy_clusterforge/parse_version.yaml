@@ -4,30 +4,53 @@
 # Usage: Imported by deploy_clusterforge/main.yaml
 # Tags: [clusterforge, deploy_clusterforge]
 
+- name: Use hardcoded default when CLUSTERFORGE_RELEASE is not set
+  set_fact:
+    clusterforge_version: "2-1-1-rc1"
+    cf_is_url: false
+  when: CLUSTERFORGE_RELEASE is not defined or CLUSTERFORGE_RELEASE == ""
+
+- name: Fetch latest release tag from GitHub
+  uri:
+    url: "https://api.github.com/repos/silogen/cluster-forge/releases/latest"
+    return_content: yes
+    headers:
+      Accept: "application/vnd.github+json"
+  register: cf_github_latest
+  when: CLUSTERFORGE_RELEASE is defined and CLUSTERFORGE_RELEASE == "latest"
+
+- name: Set version from GitHub latest release
+  set_fact:
+    clusterforge_version: "{{ cf_github_latest.json.tag_name }}"
+    cf_is_url: false
+  when: CLUSTERFORGE_RELEASE is defined and CLUSTERFORGE_RELEASE == "latest"
+
 - name: Determine if CLUSTERFORGE_RELEASE is a URL
   set_fact:
     cf_is_url: "{{ CLUSTERFORGE_RELEASE.startswith('http') }}"
+  when: CLUSTERFORGE_RELEASE is defined and CLUSTERFORGE_RELEASE not in ["", "latest"]
 
 - name: Parse version from URL
   set_fact:
     clusterforge_version: "{{ CLUSTERFORGE_RELEASE | regex_search('v[0-9]+.[0-9]+.[0-9]+(-[a-zA-Z0-9.]+)?') }}"
-  when: cf_is_url | bool
+  when: CLUSTERFORGE_RELEASE is defined and CLUSTERFORGE_RELEASE not in ["", "latest"] and cf_is_url | bool
+
+- name: Fail if URL version parsing produced no result
+  fail:
+    msg: "Could not parse a version tag from CLUSTERFORGE_RELEASE URL: {{ CLUSTERFORGE_RELEASE }}"
+  when: >
+    CLUSTERFORGE_RELEASE is defined and
+    CLUSTERFORGE_RELEASE not in ["", "latest"] and
+    cf_is_url | bool and
+    (clusterforge_version is not defined or clusterforge_version == "" or clusterforge_version is none)
 
 - name: Use version string directly
   set_fact:
     clusterforge_version: "{{ CLUSTERFORGE_RELEASE }}"
-  when: not (cf_is_url | bool) and CLUSTERFORGE_RELEASE not in ["latest", "none"]
-
-- name: Use default version for latest/none
-  set_fact:
-    clusterforge_version: "main"
-  when: CLUSTERFORGE_RELEASE in ["latest", "none"]
-
-- name: Fallback to main if parsing failed
-  set_fact:
-    clusterforge_version: "main"
-  when: clusterforge_version is not defined or clusterforge_version == "" or clusterforge_version == None
+    cf_is_url: false
+  when: CLUSTERFORGE_RELEASE is defined and CLUSTERFORGE_RELEASE not in ["", "latest"] and not (cf_is_url | bool)
 
 - name: Display parsed ClusterForge version
   debug:
     msg: "Using ClusterForge version: {{ clusterforge_version }}"
+  when: clusterforge_version is defined
