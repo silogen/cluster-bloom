@@ -377,6 +377,22 @@ func TestValidate_ConstraintsFromSchema(t *testing.T) {
 	}
 }
 
+// TestCFReleaseSchemaDefaultIsNotEmptyString guards against the regression where
+// default:"" in the schema caused an absent CLUSTERFORGE_RELEASE key to inject ""
+// into the playbook, which hit the skip gate in deploy_clusterforge/main.yaml and
+// silently skipped ClusterForge. An explicit "" in bloom.yaml is valid (user intent
+// to skip); the schema default must never be "" because that makes absent == skip.
+func TestCFReleaseSchemaDefaultIsNotEmptyString(t *testing.T) {
+	schema := loadSchemaDefinition(t)
+	field, ok := schema.Schema.Mapping["CLUSTERFORGE_RELEASE"]
+	if !ok {
+		t.Fatal("CLUSTERFORGE_RELEASE not found in schema")
+	}
+	if field.Default == "" {
+		t.Error("CLUSTERFORGE_RELEASE schema default must not be \"\" — use the hardcoded version tag so omitting the key deploys ClusterForge at the default version rather than skipping it")
+	}
+}
+
 func TestValidate_UnknownKeyRejected(t *testing.T) {
 	config := Config{
 		"FIRST_NODE":           true,

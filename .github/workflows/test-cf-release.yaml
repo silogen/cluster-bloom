@@ -1,0 +1,51 @@
+name: ClusterForge Release Parsing Tests
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'pkg/ansible/runtime/playbooks/tasks/deploy_clusterforge/**'
+      - 'pkg/config/bloom.yaml.schema.yaml'
+      - 'tests/ansible/**'
+      - '.github/workflows/test-cf-release.yaml'
+
+jobs:
+  ansible-lint:
+    name: Lint deploy_clusterforge tasks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ansible-lint
+        run: pip install ansible ansible-lint
+
+      - name: Lint deploy_clusterforge
+        run: ansible-lint pkg/ansible/runtime/playbooks/tasks/deploy_clusterforge/
+
+  parse-version-tests:
+    name: CLUSTERFORGE_RELEASE parsing unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ansible
+        run: pip install ansible
+
+      - name: Run parse_version scenarios
+        run: |
+          ansible-playbook tests/ansible/test_cf_release_parsing.yaml -v
+
+  schema-regression:
+    name: Schema default regression test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run schema regression test
+        run: go test ./pkg/config/ -run TestCFReleaseSchemaDefaultIsNotEmptyString -v

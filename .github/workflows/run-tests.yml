@@ -24,10 +24,18 @@ jobs:
       - name: Build
         run: just build
 
-      - name: Test
+      - name: Test (CLUSTERFORGE_RELEASE none)
         run: |
-          sudo bash tests/qemu/manual-qemu-test.sh  --timeout 120 qemu-vm tests/qemu/profile_2_nvme.yaml dist/bloom tests/qemu/bloom.yaml
+          sudo bash tests/qemu/manual-qemu-test.sh --timeout 120 qemu-vm tests/qemu/profile_2_nvme.yaml dist/bloom tests/qemu/bloom.yaml
 
-      - name: Logs
+      - name: Logs (CLUSTERFORGE_RELEASE none)
         run: |
           sudo bash qemu-vm/ssh-vm.sh tail -n 20 bloom.log
+
+      - name: Test (CLUSTERFORGE_RELEASE empty string)
+        run: |
+          sudo bash tests/qemu/manual-qemu-test.sh --timeout 120 qemu-vm-cf-empty tests/qemu/profile_2_nvme.yaml dist/bloom tests/qemu/bloom-cf-empty.yaml
+
+      - name: Logs (CLUSTERFORGE_RELEASE empty string)
+        run: |
+          sudo bash qemu-vm-cf-empty/ssh-vm.sh tail -n 20 bloom.log

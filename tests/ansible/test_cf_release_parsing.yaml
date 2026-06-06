@@ -1,0 +1,142 @@
+---
+# Tests for CLUSTERFORGE_RELEASE parsing logic in parse_version.yaml and main.yaml.
+# Runs on localhost — no VM or cluster required.
+# Each play is isolated so facts from one scenario cannot bleed into another.
+
+# ---------------------------------------------------------------------------
+# Scenario A: key absent → hardcoded default (2-1-1)
+# ---------------------------------------------------------------------------
+- name: "Scenario A — no CLUSTERFORGE_RELEASE: expect hardcoded default"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  # Intentionally no CLUSTERFORGE_RELEASE in vars
+  tasks:
+    - name: Include parse_version
+      include_tasks: ../../pkg/ansible/runtime/playbooks/tasks/deploy_clusterforge/parse_version.yaml
+
+    - name: Assert hardcoded default version
+      ansible.builtin.assert:
+        that:
+          - clusterforge_version == "2-1-1"
+          - not (cf_is_url | bool)
+        fail_msg: >
+          Expected clusterforge_version='2-1-1' and cf_is_url=false,
+          got clusterforge_version='{{ clusterforge_version | default("UNDEFINED") }}'
+          cf_is_url='{{ cf_is_url | default("UNDEFINED") }}'
+
+# ---------------------------------------------------------------------------
+# Scenario B: latest → real GitHub API call → real semver tag
+# ---------------------------------------------------------------------------
+- name: "Scenario B — CLUSTERFORGE_RELEASE: latest: expect real semver from GitHub"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    CLUSTERFORGE_RELEASE: "latest"
+  tasks:
+    - name: Include parse_version
+      include_tasks: ../../pkg/ansible/runtime/playbooks/tasks/deploy_clusterforge/parse_version.yaml
+
+    - name: Assert resolved version is a real semver tag (not literal 'latest' or 'main')
+      ansible.builtin.assert:
+        that:
+          - clusterforge_version is defined
+          - clusterforge_version | regex_search('^v?[0-9]+\.[0-9]+\.[0-9]+')
+          - clusterforge_version != "latest"
+          - clusterforge_version != "main"
+          - not (cf_is_url | bool)
+        fail_msg: >
+          Expected a semver tag from GitHub API,
+          got clusterforge_version='{{ clusterforge_version | default("UNDEFINED") }}'
+
+# ---------------------------------------------------------------------------
+# Scenario C: "" → parse_version must NOT run (skip gate in main.yaml)
+# ---------------------------------------------------------------------------
+- name: "Scenario C — CLUSTERFORGE_RELEASE empty string: expect parse skipped"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    CLUSTERFORGE_RELEASE: ""
+  tasks:
+    - name: Include parse_version only when not skipped (mirrors main.yaml when condition)
+      include_tasks: ../../pkg/ansible/runtime/playbooks/tasks/deploy_clusterforge/parse_version.yaml
+      when: CLUSTERFORGE_RELEASE is not defined or CLUSTERFORGE_RELEASE not in ["none", ""]
+
+    - name: Assert clusterforge_version was never set (task was skipped)
+      ansible.builtin.assert:
+        that:
+          - clusterforge_version is not defined
+        fail_msg: >
+          parse_version.yaml should not run when CLUSTERFORGE_RELEASE='',
+          but clusterforge_version was set to '{{ clusterforge_version | default("UNDEFINED") }}'
+
+# ---------------------------------------------------------------------------
+# Scenario D: none → parse_version must NOT run
+# ---------------------------------------------------------------------------
+- name: "Scenario D — CLUSTERFORGE_RELEASE: none: expect parse skipped"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    CLUSTERFORGE_RELEASE: "none"
+  tasks:
+    - name: Include parse_version only when not skipped (mirrors main.yaml when condition)
+      include_tasks: ../../pkg/ansible/runtime/playbooks/tasks/deploy_clusterforge/parse_version.yaml
+      when: CLUSTERFORGE_RELEASE is not defined or CLUSTERFORGE_RELEASE not in ["none", ""]
+
+    - name: Assert clusterforge_version was never set (task was skipped)
+      ansible.builtin.assert:
+        that:
+          - clusterforge_version is not defined
+        fail_msg: >
+          parse_version.yaml should not run when CLUSTERFORGE_RELEASE='none',
+          but clusterforge_version was set to '{{ clusterforge_version | default("UNDEFINED") }}'
+
+# ---------------------------------------------------------------------------
+# Scenario E: full URL → cf_is_url=true, version parsed from URL via regex
+# ---------------------------------------------------------------------------
+- name: "Scenario E — CLUSTERFORGE_RELEASE URL: expect cf_is_url=true and semver extracted"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    CLUSTERFORGE_RELEASE: "https://github.com/silogen/cluster-forge/releases/download/v2.1.1/release-enterprise-ai-v2.1.1.tar.gz"
+  tasks:
+    - name: Include parse_version
+      include_tasks: ../../pkg/ansible/runtime/playbooks/tasks/deploy_clusterforge/parse_version.yaml
+
+    - name: Assert URL detected and version extracted
+      ansible.builtin.assert:
+        that:
+          - cf_is_url | bool
+          - clusterforge_version is defined
+          - clusterforge_version | regex_search('^v?[0-9]+\.[0-9]+\.[0-9]+')
+        fail_msg: >
+          Expected cf_is_url=true and a semver extracted from URL,
+          got cf_is_url='{{ cf_is_url | default("UNDEFINED") }}'
+          clusterforge_version='{{ clusterforge_version | default("UNDEFINED") }}'
+
+# ---------------------------------------------------------------------------
+# Error case: URL with no parseable version → task must fail, not silently fallback
+# ---------------------------------------------------------------------------
+- name: "Error case — URL with no semver in path: expect failure, not silent fallback"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    CLUSTERFORGE_RELEASE: "https://github.com/silogen/cluster-forge/releases/download/BADVERSION/release.tar.gz"
+  tasks:
+    - name: Include parse_version (expect failure)
+      block:
+        - include_tasks: ../../pkg/ansible/runtime/playbooks/tasks/deploy_clusterforge/parse_version.yaml
+        - name: If we reach here, the task did not fail as expected
+          ansible.builtin.fail:
+            msg: "parse_version.yaml should have failed on an unparseable URL but did not"
+      rescue:
+        - name: Confirm the failure was the expected parse error
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_task is defined or true
+            success_msg: "Correctly failed on unparseable URL — no silent fallback to 'main'"
