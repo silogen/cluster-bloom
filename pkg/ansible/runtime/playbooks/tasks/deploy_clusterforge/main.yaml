@@ -18,15 +18,21 @@
 
 - name: Parse ClusterForge Version
   include_tasks: parse_version.yaml
-  when: FIRST_NODE and ((CLUSTERFORGE_RELEASE != "none" and CLUSTERFORGE_RELEASE != "") or (CLUSTER_SIZE == "small" and INSTALL_ARGOCD))
+  when: >
+    FIRST_NODE | bool and
+    (CLUSTERFORGE_RELEASE is not defined or
+     CLUSTERFORGE_RELEASE not in ["none", ""])
   tags: [clusterforge, argocd, deploy_clusterforge, deploy_k8s_apps]
 
 - name: Deploy ClusterForge via ArgoCD (Small Clusters)
   include_tasks: argocd_deploy.yaml
-  when: FIRST_NODE and CLUSTER_SIZE == "small" and INSTALL_ARGOCD
+  when: FIRST_NODE | bool and CLUSTER_SIZE == "small" and INSTALL_ARGOCD | bool
   tags: [clusterforge, argocd, deploy_k8s_apps]
 
 - name: Setup ClusterForge
   include_tasks: clusterforge_setup.yaml
-  when: FIRST_NODE and CLUSTERFORGE_RELEASE != "none" and CLUSTERFORGE_RELEASE != ""
+  when: >
+    FIRST_NODE | bool and
+    CLUSTERFORGE_RELEASE is defined and
+    CLUSTERFORGE_RELEASE not in ["none", ""]
   tags: [clusterforge, deploy_clusterforge]

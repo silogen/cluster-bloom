@@ -16,8 +16,8 @@ schema:
 
     CLUSTERFORGE_RELEASE:
       type: str
-      default: "v2.0.2"
-      desc: ClusterForge version (URL, version tag, 'latest', 'none', or '' to skip). Examples - 'latest', 'v2.0.2', 'https://github.com/silogen/cluster-forge/releases/download/v2.0.2/release.tar.gz', 'none', ''
+      default: "2-1-1-rc1"
+      desc: "ClusterForge release to deploy. Omit to use the hardcoded default (2.1.1). Use 'latest' to fetch the current GitHub latest release. Use 'none' or '' to skip ClusterForge deployment entirely. Alternatively, provide a version tag or full release tarball URL."
       section: "⚙️ Advanced Configuration"
 
     # 📋 Basic Configuration
