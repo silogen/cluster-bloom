@@ -5,7 +5,7 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 jobs:
-  integration-tests:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,18 +24,76 @@ jobs:
       - name: Build
         run: just build
 
+      - name: Upload bloom binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: bloom
+          path: dist/bloom
+
+  test-cf-none:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            just \
+            mkisofs \
+            ovmf \
+            qemu-system-x86-64 \
+            qemu-utils \
+            qemu-kvm
+
+      - name: Download bloom binary
+        uses: actions/download-artifact@v4
+        with:
+          name: bloom
+          path: dist/
+
+      - run: chmod +x dist/bloom
+
       - name: Test (CLUSTERFORGE_RELEASE none)
         run: |
           sudo bash tests/qemu/manual-qemu-test.sh --timeout 120 qemu-vm tests/qemu/profile_2_nvme.yaml dist/bloom tests/qemu/bloom.yaml
 
       - name: Logs (CLUSTERFORGE_RELEASE none)
+        if: always()
         run: |
           sudo bash qemu-vm/ssh-vm.sh tail -n 20 bloom.log
+
+  test-cf-empty:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            just \
+            mkisofs \
+            ovmf \
+            qemu-system-x86-64 \
+            qemu-utils \
+            qemu-kvm
+
+      - name: Download bloom binary
+        uses: actions/download-artifact@v4
+        with:
+          name: bloom
+          path: dist/
+
+      - run: chmod +x dist/bloom
 
       - name: Test (CLUSTERFORGE_RELEASE empty string)
         run: |
           sudo bash tests/qemu/manual-qemu-test.sh --timeout 120 qemu-vm-cf-empty tests/qemu/profile_2_nvme.yaml dist/bloom tests/qemu/bloom-cf-empty.yaml
 
       - name: Logs (CLUSTERFORGE_RELEASE empty string)
+        if: always()
         run: |
           sudo bash qemu-vm-cf-empty/ssh-vm.sh tail -n 20 bloom.log
