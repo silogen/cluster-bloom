@@ -128,7 +128,7 @@
     gitea_init_helm_args:
       - "--release-name"
       - "gitea-init"
-      - "{{ BLOOM_DIR }}/clusterforge/cluster-forge/sources/gitea-init-job/{{ gitea_init_job_version.stdout }}"
+      - "{{ BLOOM_DIR }}/clusterforge/cluster-forge/sources/gitea-init-job/0.1.0"
       - "--set"
       - "clusterSize=values_{{ CLUSTER_SIZE }}.yaml"
       - "--set"

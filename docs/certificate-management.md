@@ -75,7 +75,7 @@ export DOMAIN=cluster.example.com
 
 All TLS certificates are stored as Kubernetes secrets:
 - **Secret Name:** `cluster-tls`
-- **Namespace:** `kgateway-system`
+- **Namespace:** `envoy-gateway-system`
 - **Type:** `kubernetes.io/tls`
 
 The secret contains:

@@ -26,10 +26,10 @@
 - name: Use generated certificates for ingress
   when: not USE_CERT_MANAGER and CERT_OPTION == "generate"
   block:
-    - name: Create kgateway-system namespace
+    - name: Create envoy-gateway-system namespace
       shell: |
         /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
-          create namespace kgateway-system --dry-run=client -o yaml | \
+          create namespace envoy-gateway-system --dry-run=client -o yaml | \
         /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml apply -f -
 
     - name: Check if generated certificates exist
@@ -43,7 +43,7 @@
           create secret tls cluster-tls \
           --cert=/etc/rancher/rke2/certs/tls.crt \
           --key=/etc/rancher/rke2/certs/tls.key \
-          -n kgateway-system \
+          -n envoy-gateway-system \
           --dry-run=client -o yaml | \
         /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml apply -f -
       register: secret_creation_result
@@ -53,10 +53,10 @@
 - name: Use existing certificate
   when: not USE_CERT_MANAGER and CERT_OPTION == "existing"
   block:
-    - name: Create kgateway-system namespace
+    - name: Create envoy-gateway-system namespace
       shell: |
         /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
-          create namespace kgateway-system --dry-run=client -o yaml | \
+          create namespace envoy-gateway-system --dry-run=client -o yaml | \
         /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml apply -f -
 
     - name: Create TLS secret from existing cert
@@ -65,6 +65,6 @@
           create secret tls cluster-tls \
           --cert={{ TLS_CERT }} \
           --key={{ TLS_KEY }} \
-          -n kgateway-system \
+          -n envoy-gateway-system \
           --dry-run=client -o yaml | \
         /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml apply -f -

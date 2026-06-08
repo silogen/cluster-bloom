@@ -136,6 +136,10 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | CLUSTER_PREMOUNTED_DISKS | Comma-separated list of absolute disk paths to use for Longhorn | "" |
 | CLUSTERFORGE_RELEASE | ClusterForge version to deploy. Accepts version tags (e.g. `v2.0.2`), full release URLs, `latest` (fetches newest GitHub release via API), `none`, or `""` to skip | `latest` |
 | CONTROL_PLANE | Set to true if this node should be a control plane node | false, only applies when FIRST_NODE is false |
+| DOCKERHUB_USER | DockerHub username for authenticated pulls (reduces rate limit errors). Must be set together with `DOCKERHUB_TOKEN`. | "" |
+| DOCKERHUB_TOKEN | DockerHub access token for authenticated pulls. Must be set together with `DOCKERHUB_USER`. | "" |
+| DISABLED_STEPS | Comma-separated list of step names to skip during deployment. Mutually exclusive with `ENABLED_STEPS`. | "" |
+| ENABLED_STEPS | Comma-separated list of steps to run (everything else is skipped). Mutually exclusive with `DISABLED_STEPS`. | "" |
 | DOMAIN | The domain name for the cluster (e.g., "cluster.example.com") (required). | "" |
 | DNS_SERVERS | Custom DNS servers for RKE2 cluster. If set, these nameservers will be written to /etc/rancher/rke2/resolv.conf instead of copying host DNS. Format as YAML list (e.g., ["8.8.8.8", "1.1.1.1"]) | [] |
 | FIX_DNS | **Opt-in** to allow automatic DNS fixes. Only modifies DNS if broken and external DNS works. Creates backups and auto-rolls back on failure. | false |
@@ -153,6 +157,7 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | CLUSTERFORGE_REPO | ClusterForge git repository URL for ArgoCD-based deployment | https://github.com/silogen/cluster-forge.git |
 | INSTALL_ARGOCD | Install ArgoCD core for GitOps (small clusters only) | true |
 | PRELOAD_IMAGES | Comma-separated list of container images to preload | docker.io/rocm/pytorch:rocm6.4_ubuntu24.04_py3.12_pytorch_release_2.6.0,docker.io/rocm/vllm:rocm6.4.1_vllm_0.9.0.1_20250605 |
+| RANCHER_DISK | Device path for dedicated `/var/lib/rancher` storage (e.g. `/dev/nvme2n1`). Primarily for GPU worker nodes with heavy workloads. Bloom formats and mounts this device automatically. Mutually exclusive with `NO_DISKS_FOR_CLUSTER`. | "" |
 | RKE2_EXTRA_CONFIG | Additional RKE2 configuration in YAML format | "" |
 | RKE2_INSTALLATION_URL | RKE2 installation script URL | https://get.rke2.io |
 | ROCM_BASE_URL | ROCm base repository URL | https://repo.radeon.com/amdgpu-install/7.1.1/ubuntu/ |
@@ -174,6 +179,23 @@ ADDITIONAL_OIDC_PROVIDERS:
 - **Default behavior**: If `ADDITIONAL_OIDC_PROVIDERS` is skipped, a default OIDC provider will be configured pointing to the internal Keycloak `airm` realm at `https://kc.{DOMAIN}/realms/airm`
 
 For advanced configuration, multiple providers, and troubleshooting, see [docs/oidc-authentication.md](docs/oidc-authentication.md).
+
+### DockerHub Registry Authentication
+
+To avoid anonymous Docker Hub pull rate limits during cluster bootstrap, configure authenticated pulls by setting both credentials in `bloom.yaml`:
+
+```yaml
+DOCKERHUB_USER: "your-dockerhub-username"
+DOCKERHUB_TOKEN: "your-dockerhub-access-token"
+```
+
+**How it works:**
+- Bloom writes `/etc/rancher/rke2/registries.yaml` with the credentials **before** RKE2 starts, so containerd authenticates against `docker.io` from the very first image pull.
+- File permissions are `0600`, owned by root.
+- Both variables must be set together; setting only one fails validation.
+- Use a Docker Hub Personal Access Token (not your account password).
+
+**Leave both empty** to keep pulling anonymously.
 
 ### TLS-SAN Configuration
 
@@ -212,12 +234,12 @@ CLUSTER_LISTEN_IP: "192.168.1.0/24"
 
 **When to use:**
 - **Multi-homed systems**: Servers with multiple network interfaces
-- **Complex networking**: VPN, Docker networks, or overlay networks present  
+- **Complex networking**: VPN, Docker networks, or overlay networks present
 - **Specific requirements**: When you need cluster traffic on a particular interface
 
 **How it works:**
 1. **Priority 1**: If explicit IP specified, validates it exists on system interfaces
-2. **Priority 2**: If CIDR subnet specified, finds first matching IP on system  
+2. **Priority 2**: If CIDR subnet specified, finds first matching IP on system
 3. **Priority 3**: Falls back to default route interface (auto-detection)
 
 **Environment variable support:**
@@ -270,6 +292,13 @@ sudo ./bloom cli bloom.yaml --dry-run
 
 # Run specific playbook tags only
 sudo ./bloom cli bloom.yaml --tags "validate_node,prep_node"
+
+# Two-part deployment: infrastructure first, ClusterForge separately
+# Part 1 — deploy the cluster without running ClusterForge bootstrap:
+#   Set CLUSTERFORGE_RELEASE: none in bloom.yaml, then:
+sudo ./bloom cli bloom.yaml
+# Part 2 — once all nodes have joined, run ClusterForge bootstrap:
+sudo ./bloom cli bloom.yaml --tags deploy_clusterforge
 
 # Export with cleanup tasks for existing installations
 ./bloom cli bloom.yaml --export --destroy-data > cleanupPlaybook.yaml
