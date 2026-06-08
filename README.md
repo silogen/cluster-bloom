@@ -136,6 +136,8 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | CLUSTER_PREMOUNTED_DISKS | Comma-separated list of absolute disk paths to use for Longhorn | "" |
 | CLUSTERFORGE_RELEASE | ClusterForge version to deploy. Accepts version tags (e.g. `v2.0.2`), full release URLs, `latest` (fetches newest GitHub release via API), `none`, or `""` to skip | `latest` |
 | CONTROL_PLANE | Set to true if this node should be a control plane node | false, only applies when FIRST_NODE is false |
+| DOCKERHUB_USER | DockerHub username for authenticated pulls (reduces rate limit errors). Must be set together with `DOCKERHUB_TOKEN`. | "" |
+| DOCKERHUB_TOKEN | DockerHub access token for authenticated pulls. Must be set together with `DOCKERHUB_USER`. | "" |
 | DISABLED_STEPS | Comma-separated list of step names to skip during deployment. Mutually exclusive with `ENABLED_STEPS`. | "" |
 | ENABLED_STEPS | Comma-separated list of steps to run (everything else is skipped). Mutually exclusive with `DISABLED_STEPS`. | "" |
 | DOMAIN | The domain name for the cluster (e.g., "cluster.example.com") (required). | "" |
@@ -178,6 +180,23 @@ ADDITIONAL_OIDC_PROVIDERS:
 
 For advanced configuration, multiple providers, and troubleshooting, see [docs/oidc-authentication.md](docs/oidc-authentication.md).
 
+### DockerHub Registry Authentication
+
+To avoid anonymous Docker Hub pull rate limits during cluster bootstrap, configure authenticated pulls by setting both credentials in `bloom.yaml`:
+
+```yaml
+DOCKERHUB_USER: "your-dockerhub-username"
+DOCKERHUB_TOKEN: "your-dockerhub-access-token"
+```
+
+**How it works:**
+- Bloom writes `/etc/rancher/rke2/registries.yaml` with the credentials **before** RKE2 starts, so containerd authenticates against `docker.io` from the very first image pull.
+- File permissions are `0600`, owned by root.
+- Both variables must be set together; setting only one fails validation.
+- Use a Docker Hub Personal Access Token (not your account password).
+
+**Leave both empty** to keep pulling anonymously.
+
 ### TLS-SAN Configuration
 
 TLS Subject Alternative Names (SANs) allow your Kubernetes API server to be accessed via multiple domain names. Cluster-Bloom automatically configures TLS-SANs for secure remote access to your cluster.
@@ -215,12 +234,12 @@ CLUSTER_LISTEN_IP: "192.168.1.0/24"
 
 **When to use:**
 - **Multi-homed systems**: Servers with multiple network interfaces
-- **Complex networking**: VPN, Docker networks, or overlay networks present  
+- **Complex networking**: VPN, Docker networks, or overlay networks present
 - **Specific requirements**: When you need cluster traffic on a particular interface
 
 **How it works:**
 1. **Priority 1**: If explicit IP specified, validates it exists on system interfaces
-2. **Priority 2**: If CIDR subnet specified, finds first matching IP on system  
+2. **Priority 2**: If CIDR subnet specified, finds first matching IP on system
 3. **Priority 3**: Falls back to default route interface (auto-detection)
 
 **Environment variable support:**
