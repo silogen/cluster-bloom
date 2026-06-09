@@ -41,7 +41,7 @@
     INSTALL_ARGOCD: true
     ARGOCD_VERSION: "v2.14.11"
     CLUSTERFORGE_REPO: "https://github.com/silogen/cluster-forge.git"
-    CLUSTERFORGE_RELEASE: "v2.1.2"
+    CLUSTERFORGE_RELEASE: "v2.1.3"
     BLOOM_DIR: "/tmp/bloom"
     rocm_required_version: "7.1.1"  # single source of truth — update this to change ROCm version
     rocm_deb_build: "70101-1"  # build identifier paired with rocm_required_version
