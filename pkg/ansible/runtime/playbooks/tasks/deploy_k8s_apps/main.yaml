@@ -42,9 +42,17 @@
   when: FIRST_NODE and PRELOAD_IMAGES is defined and PRELOAD_IMAGES != ""
   tags: [images, deploy_k8s_apps]
 
+# Only install standalone ArgoCD core when ClusterForge is NOT being deployed.
+# When CLUSTERFORGE_RELEASE is set, deploy_clusterforge/clusterforge_setup.yaml
+# bootstraps ArgoCD via the argo-helm chart; running both installs ArgoCD twice
+# and the second apply fails on immutable spec.selector fields.
 - name: Setup ArgoCD Core (Small Clusters)
   include_tasks: argocd.yaml
-  when: FIRST_NODE and CLUSTER_SIZE == "small" and INSTALL_ARGOCD
+  when:
+    - FIRST_NODE
+    - CLUSTER_SIZE == "small"
+    - INSTALL_ARGOCD
+    - CLUSTERFORGE_RELEASE in ["none", ""]
   tags: [argocd, deploy_k8s_apps]
 
 - name: Create Bloom ConfigMap
