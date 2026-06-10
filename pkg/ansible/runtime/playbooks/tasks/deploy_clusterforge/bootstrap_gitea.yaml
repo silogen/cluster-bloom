@@ -33,7 +33,7 @@
 
 - name: Fill in AIM hardware family selection
   ansible.builtin.shell: |
-    yq eval ".apps.aim-cluster-model-source.valuesObject.hardwareFamilies = {{ aim_hardware_families_json }}" -i "{{ gitea_temp_dir.path }}/complete_values.yaml"
+    yq eval '.apps.aim-cluster-model-source.valuesObject.hardwareFamilies = {{ aim_hardware_families_json }}' -i "{{ gitea_temp_dir.path }}/complete_values.yaml"
   changed_when: false
 
 - name: Fill in target revision placeholder
