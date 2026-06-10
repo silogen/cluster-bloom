@@ -89,6 +89,10 @@ func TestDomainListPattern(t *testing.T) {
 	testPatternWithExamples(t, "domainList")
 }
 
+func TestHardwareFamilyListPattern(t *testing.T) {
+	testPatternWithExamples(t, "hardwareFamilyList")
+}
+
 func TestIPv4Pattern(t *testing.T) {
 	testPatternWithExamples(t, "ipv4")
 }

@@ -45,6 +45,14 @@ Configuration sources in priority order (highest to lowest):
 - **Values**: `small` | `medium` | `large`
 - **Example**: `CLUSTER_SIZE: medium`
 
+#### AIM_HARDWARE_FAMILY
+- **Type**: String (comma-separated list)
+- **Default**: `""` (empty)
+- **Description**: Selects which AIM model sources cluster-forge installs, by hardware family. Empty installs the full legacy model catalog (no change from previous behavior). When set, only the listed families are installed.
+- **Values**: any comma-separated combination of `cpu`, `epyc`, `instinct`, `radeon` (lowercase, no spaces)
+- **Example**: `AIM_HARDWARE_FAMILY: "epyc,instinct"`
+- **Notes**: `instinct` and `radeon` are GPU families; `cpu` and `epyc` are CPU inference targets. `cpu` and `radeon` are currently placeholders pointing at `ghcr.io` images that require a pull secret this cluster does not provision, so they will fail to pull until a `docker.io` release is published. In a `bloom.yaml` file the value is a normal comma-separated string. cluster-bloom splits it into a list before passing it to cluster-forge, so no comma-escaping is needed at the bloom layer.
+
 ### Cluster Joining Configuration
 
 #### SERVER_IP
