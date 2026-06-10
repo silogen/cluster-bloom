@@ -27,15 +27,6 @@
     yq eval ".global.clusterSize = \"values_{{ CLUSTER_SIZE }}.yaml\"" -i "{{ gitea_temp_dir.path }}/complete_values.yaml"
   changed_when: false
 
-- name: Build AIM hardware family list (JSON array)
-  ansible.builtin.set_fact:
-    aim_hardware_families_json: "{{ AIM_HARDWARE_FAMILY | default('') | split(',') | map('trim') | reject('equalto', '') | list | to_json }}"
-
-- name: Fill in AIM hardware family selection
-  ansible.builtin.shell: |
-    yq eval '.apps.aim-cluster-model-source.valuesObject.hardwareFamilies = {{ aim_hardware_families_json }}' -i "{{ gitea_temp_dir.path }}/complete_values.yaml"
-  changed_when: false
-
 - name: Fill in target revision placeholder
   ansible.builtin.shell: |
     yq eval ".clusterForge.targetRevision = \"{{ clusterforge_version }}\"" -i "{{ gitea_temp_dir.path }}/complete_values.yaml"
@@ -149,6 +140,25 @@
   ansible.builtin.set_fact:
     gitea_init_helm_args: "{{ gitea_init_helm_args + ['--set', 'aiwbOnly=true'] }}"
   when: AIWB_ONLY | default(false) | bool
+
+- name: Create AIM hardware family values file if specified
+  when: AIM_HARDWARE_FAMILY | default('') | length > 0
+  block:
+    - name: Create temp file for AIM hardware family
+      ansible.builtin.tempfile:
+        state: file
+        suffix: .aim-hardware-family.yaml
+      register: aim_hardware_family_file
+
+    - name: Write AIM hardware family to file
+      ansible.builtin.copy:
+        content: |
+          aimHardwareFamily: "{{ AIM_HARDWARE_FAMILY }}"
+        dest: "{{ aim_hardware_family_file.path }}"
+
+    - name: Add AIM hardware family file to helm args
+      ansible.builtin.set_fact:
+        gitea_init_helm_args: "{{ gitea_init_helm_args + ['--values', aim_hardware_family_file.path] }}"
 
 - name: Create disabled apps values file if needed
   when: DISABLED_APPS | default('') | length > 0
