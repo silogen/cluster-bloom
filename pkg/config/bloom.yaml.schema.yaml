@@ -199,18 +199,6 @@ schema:
       applicable: when(GPU_NODE == true)
       section: "⚙️ Advanced Configuration"
 
-    INSTALL_ARGOCD:
-      type: bool
-      default: true
-      desc: Install ArgoCD core for GitOps (small clusters only)
-      section: "⚙️ Advanced Configuration"
-
-    ARGOCD_VERSION:
-      type: str
-      default: v2.14.11
-      desc: ArgoCD version to install
-      section: "⚙️ Advanced Configuration"
-
     CLUSTERFORGE_REPO:
       type: str
       default: https://github.com/silogen/cluster-forge.git

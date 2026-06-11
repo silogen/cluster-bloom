@@ -10,4 +10,3 @@ CERT_OPTION: generate
 PRELOAD_IMAGES: ""
 CLUSTER_SIZE: small
 DNSMASQ: false
-INSTALL_ARGOCD: false

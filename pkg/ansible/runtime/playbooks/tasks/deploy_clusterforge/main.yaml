@@ -21,9 +21,9 @@
   when: FIRST_NODE and CLUSTERFORGE_RELEASE != "none" and CLUSTERFORGE_RELEASE != ""
   tags: [clusterforge, argocd, deploy_clusterforge, deploy_k8s_apps]
 
-# CLUSTERFORGE_RELEASE "none"/"" means ArgoCD only, no ClusterForge. The
-# standalone ArgoCD core install in deploy_k8s_apps/argocd.yaml handles that
-# case. ClusterForge itself is deployed only via clusterforge_setup.yaml below.
+# CLUSTERFORGE_RELEASE "none"/"" deploys nothing, not even ArgoCD. ClusterForge
+# (which bootstraps ArgoCD, Gitea and OpenBao) is deployed only via
+# clusterforge_setup.yaml below, and only when a real release is set.
 - name: Setup ClusterForge
   include_tasks: clusterforge_setup.yaml
   when: FIRST_NODE and CLUSTERFORGE_RELEASE != "none" and CLUSTERFORGE_RELEASE != ""
