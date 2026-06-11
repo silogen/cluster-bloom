@@ -1,0 +1,55 @@
+name: ClusterForge Branch End-to-End Test
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'pkg/ansible/runtime/playbooks/tasks/deploy_clusterforge/**'
+      - 'pkg/config/bloom.yaml.schema.yaml'
+      - '.github/workflows/test-cf-branch.yaml'
+
+jobs:
+  test-cf-branch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            just \
+            mkisofs \
+            ovmf \
+            qemu-system-x86-64 \
+            qemu-utils \
+            qemu-kvm
+
+      - name: Build
+        run: just build
+
+      - name: Write bloom.yaml
+        run: |
+          cat > tests/qemu/bloom-cf-branch.yaml <<EOF
+          CLUSTERFORGE_RELEASE: "${{ github.head_ref || github.ref_name }}"
+          DOMAIN: qemu-test-cf-branch.local
+          FIRST_NODE: true
+          GPU_NODE: false
+          CLUSTER_DISKS: /dev/nvme0n1,/dev/nvme1n1
+          NO_DISKS_FOR_CLUSTER: false
+          USE_CERT_MANAGER: false
+          CERT_OPTION: generate
+          PRELOAD_IMAGES: ""
+          CLUSTER_SIZE: small
+          SKIP_RANCHER_PARTITION_CHECK: true
+          EOF
+
+      - name: Test
+        run: |
+          sudo bash tests/qemu/manual-qemu-test.sh --timeout 120 qemu-vm-cf-branch tests/qemu/profile_2_nvme.yaml dist/bloom tests/qemu/bloom-cf-branch.yaml
+
+      - name: Logs
+        if: always()
+        run: |
+          sudo bash qemu-vm-cf-branch/ssh-vm.sh tail -n 20 bloom.log
