@@ -38,8 +38,6 @@
     #              instead of copying host DNS. Format as YAML list (e.g., ["8.8.8.8", "1.1.1.1"])
     DNS_SERVERS: []
     
-    INSTALL_ARGOCD: true
-    ARGOCD_VERSION: "v2.14.11"
     CLUSTERFORGE_REPO: "https://github.com/silogen/cluster-forge.git"
     CLUSTERFORGE_RELEASE: "latest"
     BLOOM_DIR: "/tmp/bloom"
