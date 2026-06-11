@@ -20,7 +20,10 @@
       -f /tmp/cluster-forge/root/values_{{ CLUSTER_SIZE }}.yaml \
       --set global.domain={{ DOMAIN }} \
       --set clusterForge.targetRevision={{ clusterforge_version }} \
-      --set-json 'apps.aim-cluster-model-source.valuesObject.hardwareFamilies={{ aim_hardware_families_json }}' | \
+      --set-json 'apps.aim-cluster-model-source.valuesObject.hardwareFamilies={{ aim_hardware_families_json }}' \
+      --set 'apps.amd-gpu-operator.path={{ gpu_operator_path }}' \
+      --set 'apps.amd-gpu-operator-config.valuesObject.gpuStackFamily={{ gpu_stack_family_resolved }}' \
+      --set 'apps.amd-gpu-operator-config.valuesObject.driverVersion={{ gpu_deviceconfig_driver_version }}' | \
     /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
       apply --server-side --force-conflicts -f -
 

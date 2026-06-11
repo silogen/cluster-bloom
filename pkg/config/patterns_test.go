@@ -93,6 +93,10 @@ func TestHardwareFamilyListPattern(t *testing.T) {
 	testPatternWithExamples(t, "hardwareFamilyList")
 }
 
+func TestGpuStackFamilyPattern(t *testing.T) {
+	testPatternWithExamples(t, "gpuStackFamily")
+}
+
 func TestIPv4Pattern(t *testing.T) {
 	testPatternWithExamples(t, "ipv4")
 }

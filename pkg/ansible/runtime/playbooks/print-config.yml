@@ -70,6 +70,14 @@
         msg: |
           🎮 GPU Configuration:
             ROCM_BASE_URL: {{ ROCM_BASE_URL | default('NOT SET') }}
+            GPU_STACK_FAMILY: {{ gpu_stack_family_resolved | default(GPU_STACK_FAMILY) | default('instinct') }}
+            Host ROCm: {{ rocm_required_version | default('NOT SET') }} ({{ rocm_deb_build | default('NOT SET') }})
+            GPU Operator: {{ gpu_operator_path | default('NOT SET') }}
+            DeviceConfig ROCm driver: {{ gpu_deviceconfig_driver_version | default('NOT SET') }}
+          {% if gpu_stack_tech_preview | default(false) | bool %}
+            ⚠️  TECH PREVIEW: the {{ gpu_stack_family_resolved | default('radeon') }} Enterprise AI stack
+                (host ROCm + GPU Operator) for this release is a tech preview, not production qualified.
+          {% endif %}
 
     - name: Print RKE2 Configuration
       debug:
