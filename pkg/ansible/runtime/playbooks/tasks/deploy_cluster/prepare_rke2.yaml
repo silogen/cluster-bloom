@@ -251,3 +251,79 @@
     block: "{{ RKE2_EXTRA_CONFIG }}"
     marker: "# {mark} ANSIBLE MANAGED BLOCK - extra config"
   when: RKE2_EXTRA_CONFIG != ""
+
+# kubectl connectivity requires two things in the apiserver config that the
+# rewrite of this playbook dropped:
+#   1. tls-san  -> the API server serving cert must list the names clients use
+#                  (k8s.<DOMAIN> plus any ADDITIONAL_TLS_SAN_URLS), otherwise
+#                  kubectl TLS verification fails.
+#   2. an AuthenticationConfiguration wired in via --authentication-config, so
+#      OIDC logins (kc.<DOMAIN> + any ADDITIONAL_OIDC_PROVIDERS) are accepted.
+# Both are only meaningful on a server node, which is gated on DOMAIN being set.
+- name: Configure TLS SAN and OIDC authentication for kube-apiserver
+  when:
+    - DOMAIN is defined
+    - DOMAIN != ""
+  block:
+    - name: Build TLS SAN list (k8s.<DOMAIN> + ADDITIONAL_TLS_SAN_URLS)
+      set_fact:
+        tls_san_list: >-
+          {{ (['k8s.' + DOMAIN] + (
+                ADDITIONAL_TLS_SAN_URLS if ADDITIONAL_TLS_SAN_URLS is sequence
+                else ADDITIONAL_TLS_SAN_URLS.split(',') if (ADDITIONAL_TLS_SAN_URLS | default('')) | string | length > 0
+                else []))
+             | map('trim') | reject('equalto', '') | reject('search', '[*]') | list }}
+
+    - name: Append tls-san block to RKE2 config
+      blockinfile:
+        path: /etc/rancher/rke2/config.yaml
+        marker: "# {mark} ANSIBLE MANAGED BLOCK - tls-san"
+        block: |
+          tls-san:
+          {% for san in tls_san_list %}
+            - {{ san }}
+          {% endfor %}
+
+    - name: Build OIDC provider list (default kc.<DOMAIN> + ADDITIONAL_OIDC_PROVIDERS)
+      set_fact:
+        oidc_providers: >-
+          {{ [{'url': 'https://kc.' + DOMAIN + '/realms/airm', 'audiences': ['k8s']}]
+             + (ADDITIONAL_OIDC_PROVIDERS | default([])) }}
+
+    - name: Create RKE2 auth config directory
+      file:
+        path: /etc/rancher/rke2/auth
+        state: directory
+        mode: "0755"
+
+    - name: Create AuthenticationConfiguration for kube-apiserver
+      copy:
+        dest: /etc/rancher/rke2/auth/auth-config.yaml
+        mode: "0644"
+        content: |
+          apiVersion: apiserver.config.k8s.io/v1beta1
+          kind: AuthenticationConfiguration
+          jwt:
+          {% for provider in oidc_providers %}
+            - issuer:
+                url: "{{ provider.url }}"
+                audiences:
+          {% for audience in provider.audiences %}
+                  - "{{ audience }}"
+          {% endfor %}
+              claimMappings:
+                username:
+                  claim: preferred_username
+                  prefix: "oidc:"
+                groups:
+                  claim: groups
+                  prefix: "oidc:"
+          {% endfor %}
+
+    - name: Enable AuthenticationConfiguration via kube-apiserver-arg
+      blockinfile:
+        path: /etc/rancher/rke2/config.yaml
+        marker: "# {mark} ANSIBLE MANAGED BLOCK - authentication-config"
+        block: |
+          kube-apiserver-arg:
+            - "--authentication-config=/etc/rancher/rke2/auth/auth-config.yaml"
