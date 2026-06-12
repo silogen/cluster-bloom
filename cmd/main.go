@@ -314,6 +314,13 @@ func runAnsible(configFile string) {
 		os.Exit(1)
 	}
 
+	// Resolve GPU-family stack defaults (host ROCm + GPU Operator + DeviceConfig)
+	// and inject them as ansible vars before export/run.
+	if err := config.ApplyGPUStackVars(cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "Error resolving GPU stack defaults: %v\n", err)
+		os.Exit(1)
+	}
+
 	// Handle export mode
 	if export {
 		if destroyData {
