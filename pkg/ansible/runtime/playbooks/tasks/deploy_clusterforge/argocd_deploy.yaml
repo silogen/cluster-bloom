@@ -9,13 +9,18 @@
     rm -rf /tmp/cluster-forge
     git clone --branch {{ clusterforge_version }} --depth 1 {{ CLUSTERFORGE_REPO }} /tmp/cluster-forge
 
+- name: Build AIM hardware family list (JSON array)
+  set_fact:
+    aim_hardware_families_json: "{{ AIM_HARDWARE_FAMILY | default('') | split(',') | map('trim') | reject('equalto', '') | list | to_json }}"
+
 - name: Template and apply ClusterForge
   shell: |
     /usr/local/bin/helm template cluster-forge /tmp/cluster-forge/root \
       -f /tmp/cluster-forge/root/values.yaml \
       -f /tmp/cluster-forge/root/values_{{ CLUSTER_SIZE }}.yaml \
       --set global.domain={{ DOMAIN }} \
-      --set clusterForge.targetRevision={{ clusterforge_version }} | \
+      --set clusterForge.targetRevision={{ clusterforge_version }} \
+      --set-json 'apps.aim-cluster-model-source.valuesObject.hardwareFamilies={{ aim_hardware_families_json }}' | \
     /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
       apply --server-side --force-conflicts -f -
 

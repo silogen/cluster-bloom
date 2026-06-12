@@ -49,6 +49,12 @@ schema:
       desc: Size category for cluster deployment planning
       section: "📋 Basic Configuration"
 
+    AIM_HARDWARE_FAMILY:
+      type: hardwareFamilyList
+      default: ""
+      desc: "Comma-separated AIM hardware families to install (cpu,epyc,instinct,radeon). Empty = install all (legacy)."
+      section: "📋 Basic Configuration"
+
     # 🔗 Additional Node Configuration
     SERVER_IP:
       type: ipv4
@@ -330,6 +336,26 @@ types:
         - "example.com,,test.com"         # double comma
         - "example_test.com"              # underscore
         - "example.com, https://test.com" # URL in list
+
+  hardwareFamilyList:
+    type: str
+    pattern: ^$|^(cpu|epyc|instinct|radeon)(,(cpu|epyc|instinct|radeon))*$
+    desc: Comma-separated list of AIM hardware families (cpu, epyc, instinct, radeon)
+    errorMessage: Enter comma-separated hardware families from cpu,epyc,instinct,radeon (lowercase, no spaces, no leading/trailing comma)
+    examples:
+      valid:
+        - "instinct"
+        - "epyc,instinct"
+        - "cpu,epyc,instinct,radeon"
+        - ""
+      invalid:
+        - "gpu"                 # not an allowed family
+        - "instinct,gpu"        # second value invalid
+        - "Instinct"            # uppercase
+        - "epyc,"               # trailing comma
+        - ",epyc"               # leading comma
+        - "epyc,,instinct"      # double comma
+        - "epyc, instinct"      # space after comma
 
   ipv4:
     type: str
