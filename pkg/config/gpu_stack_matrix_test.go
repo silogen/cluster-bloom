@@ -60,6 +60,9 @@ func TestInstinctMatchesExistingDefaults(t *testing.T) {
 	if profile.OperatorPath != "amd-gpu-operator/v1.4.1" {
 		t.Errorf("instinct operator path: got %q, want amd-gpu-operator/v1.4.1", profile.OperatorPath)
 	}
+	if profile.OperatorConfigPath != "amd-gpu-operator-config/v1.4.1" {
+		t.Errorf("instinct operator config path: got %q, want amd-gpu-operator-config/v1.4.1", profile.OperatorConfigPath)
+	}
 	if profile.DeviceConfigDriverVersion != "7.0" {
 		t.Errorf("instinct DeviceConfig driver: got %q, want 7.0", profile.DeviceConfigDriverVersion)
 	}
@@ -74,6 +77,9 @@ func TestRadeonSelectsBetaOperator(t *testing.T) {
 	}
 	if profile.OperatorPath != "amd-gpu-operator/v1.5.1-beta.0" {
 		t.Errorf("radeon operator path: got %q, want amd-gpu-operator/v1.5.1-beta.0", profile.OperatorPath)
+	}
+	if profile.OperatorConfigPath != "amd-gpu-operator-config/v1.5.1-beta.0" {
+		t.Errorf("radeon operator config path: got %q, want amd-gpu-operator-config/v1.5.1-beta.0", profile.OperatorConfigPath)
 	}
 }
 
@@ -104,6 +110,9 @@ func TestApplyGPUStackVars(t *testing.T) {
 	}
 	if cfg["gpu_operator_path"] != "amd-gpu-operator/v1.4.1" {
 		t.Errorf("gpu_operator_path: got %v", cfg["gpu_operator_path"])
+	}
+	if cfg["gpu_operator_config_path"] != "amd-gpu-operator-config/v1.4.1" {
+		t.Errorf("gpu_operator_config_path: got %v", cfg["gpu_operator_config_path"])
 	}
 	if cfg["gpu_stack_family_resolved"] != "instinct" {
 		t.Errorf("gpu_stack_family_resolved: got %v", cfg["gpu_stack_family_resolved"])

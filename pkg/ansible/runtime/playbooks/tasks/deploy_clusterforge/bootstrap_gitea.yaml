@@ -173,6 +173,7 @@
         content: |
           gpuStackFamily: "{{ gpu_stack_family_resolved }}"
           gpuOperatorPath: "{{ gpu_operator_path }}"
+          gpuOperatorConfigPath: "{{ gpu_operator_config_path }}"
           gpuDeviceConfigDriverVersion: "{{ gpu_deviceconfig_driver_version }}"
         dest: "{{ gpu_stack_family_file.path }}"
 

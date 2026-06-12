@@ -14,16 +14,18 @@ import "fmt"
 // pins owned here.
 const (
 	// Instinct: the existing qualified defaults (no behavior change).
-	instinctHostRocmVersion  = "7.1.1"
-	instinctHostRocmDebBuild = "70101-1"
-	instinctOperatorPath     = "amd-gpu-operator/v1.4.1"
-	instinctDriverVersion    = "7.0"
+	instinctHostRocmVersion    = "7.1.1"
+	instinctHostRocmDebBuild   = "70101-1"
+	instinctOperatorPath       = "amd-gpu-operator/v1.4.1"
+	instinctOperatorConfigPath = "amd-gpu-operator-config/v1.4.1"
+	instinctDriverVersion      = "7.0"
 
 	// Radeon: ROCm 7.13 tech preview.
-	radeonHostRocmVersion  = "7.13.0"
-	radeonHostRocmDebBuild = "71300-1"
-	radeonOperatorPath     = "amd-gpu-operator/v1.5.1-beta.0"
-	radeonDriverVersion    = "7.13"
+	radeonHostRocmVersion    = "7.13.0"
+	radeonHostRocmDebBuild   = "71300-1"
+	radeonOperatorPath       = "amd-gpu-operator/v1.5.1-beta.0"
+	radeonOperatorConfigPath = "amd-gpu-operator-config/v1.5.1-beta.0"
+	radeonDriverVersion      = "7.13"
 )
 
 // minRadeonRocmMajor / minRadeonRocmMinor express the unsupported-combination
@@ -36,13 +38,15 @@ const (
 
 // StackProfile is the resolved per-family ROCm / GPU Operator stack. Bloom owns
 // host ROCm (the HostRocm* fields drive the ansible amdgpu-install vars) and
-// passes OperatorPath + DeviceConfigDriverVersion through to cluster-forge so
-// the GPU Operator and its DeviceConfig match the same family.
+// passes OperatorPath + OperatorConfigPath + DeviceConfigDriverVersion through
+// to cluster-forge so the GPU Operator, its config chart, and the DeviceConfig
+// all match the same family.
 type StackProfile struct {
 	Family                    string
 	HostRocmVersion           string
 	HostRocmDebBuild          string
 	OperatorPath              string
+	OperatorConfigPath        string
 	DeviceConfigDriverVersion string
 	TechPreview               bool
 }
@@ -59,6 +63,7 @@ func ResolveStackProfile(family string) (StackProfile, error) {
 			HostRocmVersion:           instinctHostRocmVersion,
 			HostRocmDebBuild:          instinctHostRocmDebBuild,
 			OperatorPath:              instinctOperatorPath,
+			OperatorConfigPath:        instinctOperatorConfigPath,
 			DeviceConfigDriverVersion: instinctDriverVersion,
 			TechPreview:               false,
 		}, nil
@@ -68,6 +73,7 @@ func ResolveStackProfile(family string) (StackProfile, error) {
 			HostRocmVersion:           radeonHostRocmVersion,
 			HostRocmDebBuild:          radeonHostRocmDebBuild,
 			OperatorPath:              radeonOperatorPath,
+			OperatorConfigPath:        radeonOperatorConfigPath,
 			DeviceConfigDriverVersion: radeonDriverVersion,
 			TechPreview:               true,
 		}
@@ -103,6 +109,7 @@ func ApplyGPUStackVars(cfg Config) error {
 	cfg["rocm_deb_build"] = profile.HostRocmDebBuild
 	// Forge-bound selections consumed by the deploy_clusterforge tasks.
 	cfg["gpu_operator_path"] = profile.OperatorPath
+	cfg["gpu_operator_config_path"] = profile.OperatorConfigPath
 	cfg["gpu_deviceconfig_driver_version"] = profile.DeviceConfigDriverVersion
 	cfg["gpu_stack_family_resolved"] = profile.Family
 	cfg["gpu_stack_tech_preview"] = profile.TechPreview
