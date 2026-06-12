@@ -65,6 +65,18 @@ func TestInstinctMatchesExistingDefaults(t *testing.T) {
 	}
 }
 
+func TestRadeonSelectsBetaOperator(t *testing.T) {
+	// Radeon must select the v1.5.1-beta.0 tech-preview chart, while the
+	// instinct default stays on the qualified v1.4.1 chart.
+	profile, err := ResolveStackProfile("radeon")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if profile.OperatorPath != "amd-gpu-operator/v1.5.1-beta.0" {
+		t.Errorf("radeon operator path: got %q, want amd-gpu-operator/v1.5.1-beta.0", profile.OperatorPath)
+	}
+}
+
 func TestCheckRadeonSupportedRejectsTooOldRocm(t *testing.T) {
 	// Guards the EAI-6030 unsupported-combination rule: radeon on ROCm 7.2.
 	err := checkRadeonSupported(StackProfile{Family: "radeon", DeviceConfigDriverVersion: "7.2"})

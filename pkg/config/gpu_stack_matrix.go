@@ -6,10 +6,12 @@ import "fmt"
 // GPU Operator chart, and DeviceConfig ROCm-driver versions that move together
 // as one matrix row.
 //
-// TODO(EAI-5906): the radeon row carries placeholder pins until the ROCm 7.13
-// tech-preview GPU Operator build and amdgpu-install package are published.
-// Replace the radeonHostRocm* / radeonOperatorPath / radeonDriverVersion
-// constants with the real strings from EAI-5906 / the ROCm PMO sync.
+// The OperatorPath pins are real: instinct uses the qualified v1.4.1 chart and
+// radeon uses the v1.5.1-beta.0 tech-preview chart, both vendored under
+// cluster-forge sources/amd-gpu-operator. The radeon host ROCm and DeviceConfig
+// driver versions are sourced outside cluster-bloom / cluster-forge (ROCm PMO /
+// EAI-5906); the strings below mirror those values and are not authoritative
+// pins owned here.
 const (
 	// Instinct: the existing qualified defaults (no behavior change).
 	instinctHostRocmVersion  = "7.1.1"
@@ -17,11 +19,11 @@ const (
 	instinctOperatorPath     = "amd-gpu-operator/v1.4.1"
 	instinctDriverVersion    = "7.0"
 
-	// Radeon: ROCm 7.13 tech preview. PLACEHOLDER pins, see TODO above.
-	radeonHostRocmVersion  = "7.13.0"                  // TODO(EAI-5906): real 7.13 TP host ROCm version
-	radeonHostRocmDebBuild = "71300-1"                 // TODO(EAI-5906): real amdgpu-install deb build id
-	radeonOperatorPath     = "amd-gpu-operator/v1.4.1" // TODO(EAI-5906): vendored 7.13 TP operator chart path
-	radeonDriverVersion    = "7.13"                    // TODO(EAI-5906): DeviceConfig driver.version for 7.13 TP
+	// Radeon: ROCm 7.13 tech preview.
+	radeonHostRocmVersion  = "7.13.0"
+	radeonHostRocmDebBuild = "71300-1"
+	radeonOperatorPath     = "amd-gpu-operator/v1.5.1-beta.0"
+	radeonDriverVersion    = "7.13"
 )
 
 // minRadeonRocmMajor / minRadeonRocmMinor express the unsupported-combination
