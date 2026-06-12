@@ -61,6 +61,27 @@
     kubectl wait --for=jsonpath='{.status.phase}'=Running pod/openbao-0 -n cf-openbao --timeout=100s
   changed_when: false
 
+- name: Extract openbao-config valuesObject from base root values
+  ansible.builtin.shell: |
+    yq eval '.apps["openbao-config"].valuesObject // {}' \
+      "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/values.yaml" > \
+      "{{ openbao_temp_dir.path }}/openbao_config_base_values.yaml"
+  changed_when: false
+
+- name: Extract openbao-config valuesObject from size-specific root values
+  ansible.builtin.shell: |
+    yq eval '.apps["openbao-config"].valuesObject // {}' \
+      "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/values_{{ CLUSTER_SIZE | default('medium') }}.yaml" > \
+      "{{ openbao_temp_dir.path }}/openbao_config_size_values.yaml"
+  when: size_values_stat.stat.exists
+  changed_when: false
+
+- name: Placeholder openbao-config overlay when no size values file
+  ansible.builtin.copy:
+    content: "{}\n"
+    dest: "{{ openbao_temp_dir.path }}/openbao_config_size_values.yaml"
+  when: not size_values_stat.stat.exists
+
 - name: Create initial OpenBao secrets manager ConfigMap
   ansible.builtin.shell: |
     cat {{ BLOOM_DIR }}/clusterforge/cluster-forge/sources/openbao-config/0.1.0/templates/openbao-secret-manager-cm.yaml | \
@@ -69,11 +90,19 @@
   changed_when: true
 
 - name: Create initial OpenBao secrets definitions
+  # Must use Helm here: raw template files still contain {{ .Values.minio.* }} (API and
+  # console access key names). Cat+sed only replaced domain and left literals in OpenBao.
   ansible.builtin.shell: |
-    cat {{ BLOOM_DIR }}/clusterforge/cluster-forge/sources/openbao-config/0.1.0/templates/openbao-secret-definitions.yaml | \
-      sed "s|{{ '{{' }} .Values.domain {{ '}}' }}|{{ DOMAIN }}|g" | \
+    helm template openbao-config-init \
+      {{ BLOOM_DIR }}/clusterforge/cluster-forge/sources/openbao-config/0.1.0 \
+      --namespace cf-openbao \
+      --kube-version={{ KUBE_VERSION | default('1.33') }} \
+      -f "{{ openbao_temp_dir.path }}/openbao_config_base_values.yaml" \
+      -f "{{ openbao_temp_dir.path }}/openbao_config_size_values.yaml" \
+      --show-only templates/openbao-secret-definitions.yaml \
+      --set domain={{ DOMAIN | quote }} | \
       sed "s|name: openbao-secrets-config|name: openbao-secrets-init-config|g" | \
-      kubectl apply -f -
+      kubectl apply --server-side --field-manager=argocd-controller --force-conflicts -f -
   changed_when: true
 
 - name: Deploy OpenBao init job
@@ -81,7 +110,7 @@
     helm template --release-name openbao-init \
       {{ BLOOM_DIR }}/clusterforge/cluster-forge/sources/openbao-init-job/0.1.0 \
       -f "{{ openbao_temp_dir.path }}/openbao_values.yaml" \
-      --set domain="{{ DOMAIN }}" \
+      --set domain={{ DOMAIN | quote }} \
       --kube-version={{ KUBE_VERSION | default('1.33') }} | \
     kubectl apply -f -
   changed_when: true
