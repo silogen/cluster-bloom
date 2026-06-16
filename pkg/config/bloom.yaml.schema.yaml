@@ -16,7 +16,7 @@ schema:
 
     CLUSTERFORGE_RELEASE:
       type: str
-      default: "v2.0.2"
+      default: "v2.1.0"
       desc: ClusterForge version (URL, version tag, 'latest', 'none', or '' to skip). Examples - 'latest', 'v2.0.2', 'https://github.com/silogen/cluster-forge/releases/download/v2.0.2/release.tar.gz', 'none', ''
       section: "⚙️ Advanced Configuration"
 
