@@ -107,8 +107,6 @@ func (p *OutputProcessor) processCleanMode(line string) string {
 	if taskInfo, ok := ParseTaskResult(line); ok {
 		if !p.taskSeen && p.currentTask != "" {
 			p.taskSeen = true
-			
-
 
 			// Check if error should be ignored
 			if taskInfo.Status == TaskStatusFailed && IsIgnoredError(line) {
@@ -234,12 +232,12 @@ func (p *OutputProcessor) PrintSummary() {
 			fmt.Println()
 			fmt.Printf("🔧 Gitea - Admin:\n")
 			fmt.Printf("   URL:      https://gitea.%s\n", domain)
-			fmt.Printf("   Username: gitea_admin\n")
-			fmt.Printf("   Password: kubectl -n gitea get secret gitea-admin-credentials -o jsonpath='{.data.password}' | base64 --decode && echo\n")
+			fmt.Printf("   Username: silogen-admin\n")
+			fmt.Printf("   Password: kubectl -n cf-gitea get secret gitea-admin-credentials -o jsonpath='{.data.password}' | base64 --decode && echo\n")
 			fmt.Println()
 			fmt.Printf("🔐 OpenBao - Root Token:\n")
 			fmt.Printf("   URL:      https://openbao.%s\n", domain)
-			fmt.Printf("   Token:    kubectl -n openbao get secret openbao-root-token -o jsonpath='{.data.token}' | base64 --decode && echo\n")
+			fmt.Printf("   Token:    kubectl -n cf-openbao get secret openbao-keys -o jsonpath='{.data.root_token}' | base64 --decode && echo\n")
 			fmt.Println()
 			fmt.Printf("🔑 Keycloak - Admin:\n")
 			fmt.Printf("   URL:      https://kc.%s\n", domain)
@@ -257,14 +255,14 @@ func (p *OutputProcessor) extractJoinInfoMessage(line string) string {
 	msgPattern := `"msg":\s*"(.*)"`
 	re := regexp.MustCompile(msgPattern)
 	matches := re.FindStringSubmatch(line)
-	
+
 	if len(matches) < 2 {
 		return ""
 	}
 
 	// Extract the message content
 	msg := matches[1]
-	
+
 	// Replace escaped newlines with actual newlines
 	msg = strings.ReplaceAll(msg, "\\n", "\n")
 	// Replace escaped quotes
