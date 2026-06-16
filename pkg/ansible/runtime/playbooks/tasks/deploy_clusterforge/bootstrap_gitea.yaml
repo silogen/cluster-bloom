@@ -160,6 +160,27 @@
       ansible.builtin.set_fact:
         gitea_init_helm_args: "{{ gitea_init_helm_args + ['--values', aim_hardware_family_file.path] }}"
 
+- name: Create GPU stack family values file
+  block:
+    - name: Create temp file for GPU stack family
+      ansible.builtin.tempfile:
+        state: file
+        suffix: .gpu-stack-family.yaml
+      register: gpu_stack_family_file
+
+    - name: Write GPU stack family selections to file
+      ansible.builtin.copy:
+        content: |
+          gpuStackFamily: "{{ gpu_stack_family_resolved }}"
+          gpuOperatorPath: "{{ gpu_operator_path }}"
+          gpuOperatorConfigPath: "{{ gpu_operator_config_path }}"
+          gpuDeviceConfigDriverVersion: "{{ gpu_deviceconfig_driver_version }}"
+        dest: "{{ gpu_stack_family_file.path }}"
+
+    - name: Add GPU stack family file to helm args
+      ansible.builtin.set_fact:
+        gitea_init_helm_args: "{{ gitea_init_helm_args + ['--values', gpu_stack_family_file.path] }}"
+
 - name: Create disabled apps values file if needed
   when: DISABLED_APPS | default('') | length > 0
   block:

@@ -53,6 +53,18 @@ Configuration sources in priority order (highest to lowest):
 - **Example**: `AIM_HARDWARE_FAMILY: "epyc,instinct"`
 - **Notes**: `instinct` and `radeon` are GPU families; `cpu` and `epyc` are CPU inference targets. `cpu` and `radeon` are currently placeholders pointing at `ghcr.io` images that require a pull secret this cluster does not provision, so they will fail to pull until a `docker.io` release is published. In a `bloom.yaml` file the value is a normal comma-separated string. cluster-bloom splits it into a list before passing it to cluster-forge, so no comma-escaping is needed at the bloom layer.
 
+#### GPU_STACK_FAMILY
+- **Type**: String (single value)
+- **Default**: `""` (empty, resolves to `instinct`)
+- **Description**: Selects the ROCm + GPU Operator install defaults by GPU family. This is independent of `AIM_HARDWARE_FAMILY` (which selects the AIM model catalog). Empty or `instinct` keeps the current qualified defaults (host ROCm `7.1.1`, GPU Operator `v1.4.1`, DeviceConfig ROCm driver `7.0`), so existing installs are unchanged. `radeon` selects the ROCm 7.13 tech-preview stack.
+- **Values**: `radeon` | `instinct` (lowercase, single value)
+- **Example**: `GPU_STACK_FAMILY: "radeon"`
+- **Notes**:
+  - Single-select by design: host ROCm is one version per node, so a heterogeneous Radeon + Instinct GPU stack cannot be expressed here. The AIM catalog (`AIM_HARDWARE_FAMILY`) can still be heterogeneous.
+  - Selecting `radeon` defaults host ROCm and the GPU Operator to the ROCm 7.13 tech-preview train. These components are tech preview, not production qualified, and bloom prints a notice at install time.
+  - Unsupported combinations (for example a Radeon stack resolving to ROCm 7.2) fail validation before install with an error naming the incompatible component.
+  - The exact ROCm 7.13 tech-preview version strings and the vendored GPU Operator chart are tracked in EAI-5906; until that lands the `radeon` row carries placeholder pins.
+
 ### Cluster Joining Configuration
 
 #### SERVER_IP

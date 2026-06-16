@@ -146,6 +146,7 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | FIX_DNS | **Opt-in** to allow automatic DNS fixes. Only modifies DNS if broken and external DNS works. Creates backups and auto-rolls back on failure. | false |
 | FIRST_NODE | Set to true if this is the first node in the cluster | true |
 | GPU_NODE | Set to true if this node has GPUs | true |
+| GPU_STACK_FAMILY | GPU family that drives ROCm + GPU Operator install defaults (radeon \| instinct). Empty resolves to instinct (current defaults). radeon selects the ROCm 7.13 tech-preview stack. Example: "radeon" | "" |
 | JOIN_TOKEN | The token used to join additional nodes to the cluster | |
 | NO_DISKS_FOR_CLUSTER | Set to true to skip disk-related operations | false |
 | RKE2_VERSION | Specific RKE2 version to install (e.g., "v1.34.1+rke2r1") | "" |

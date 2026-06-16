@@ -6,9 +6,25 @@ ClusterBloom provides automated AMD GPU support through ROCm driver installation
 
 ## Components
 
+### GPU-family install defaults (`GPU_STACK_FAMILY`)
+
+The host ROCm version and the cluster-forge GPU Operator are selected together per GPU family via the `GPU_STACK_FAMILY` flag (`radeon` | `instinct`; empty resolves to `instinct`). The selection is a single qualified matrix row, host ROCm, GPU Operator chart path, and the operator DeviceConfig ROCm driver version move together.
+
+| Family | Host ROCm | GPU Operator path | DeviceConfig ROCm driver | Tech preview |
+|--------|-----------|-------------------|--------------------------|--------------|
+| `instinct` (default) | 7.1.1 / 70101-1 | amd-gpu-operator/v1.4.1 | 7.0 | no |
+| `radeon` | 7.13.x (placeholder) | amd-gpu-operator/v1.4.1 (placeholder) | 7.13 (placeholder) | yes |
+
+Notes:
+- `instinct` reproduces the existing defaults exactly, so existing installs are unchanged.
+- `radeon` selects the ROCm 7.13 tech-preview stack. bloom prints a tech-preview notice at install time, these components are not production qualified for this release.
+- Single-select by design: host ROCm is one version per node. The AIM model catalog (`AIM_HARDWARE_FAMILY`) can still be heterogeneous.
+- Unsupported combinations (e.g. a Radeon stack resolving to ROCm 7.2, which is too old) fail validation before install with an error naming the incompatible component.
+- The real ROCm 7.13 tech-preview version strings and the vendored GPU Operator chart are tracked in EAI-5906; the `radeon` row carries placeholder pins until then.
+
 ### ROCm Installation
 Automated installation of ROCm drivers and runtime components:
-- **Driver Version**: Configurable via `ROCM_BASE_URL` (default: 7.1.1)
+- **Driver Version**: Selected by `GPU_STACK_FAMILY` (default family `instinct` → ROCm 7.1.1); base URL still overridable via `ROCM_BASE_URL`
 - **Components**: amdgpu kernel driver, ROCm runtime, ROCm libraries
 - **Dependencies**: Linux kernel headers, Python setuptools
 - **Installation Method**: amdgpu-install utility from AMD repositories

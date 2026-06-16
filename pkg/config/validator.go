@@ -221,7 +221,29 @@ func Validate(cfg Config) []string {
 	constraintErrors := ValidateConstraints(cfg)
 	errors = append(errors, constraintErrors...)
 
+	// Fail-fast on unsupported GPU stack (family x ROCm x GPU Operator) combos.
+	if gpuStackErr := validateGPUStack(cfg); gpuStackErr != "" {
+		errors = append(errors, gpuStackErr)
+	}
+
 	return errors
+}
+
+// validateGPUStack resolves GPU_STACK_FAMILY against the compatibility matrix
+// and returns a non-empty error string for unsupported combinations. The
+// pattern type already rejects malformed values; this catches family/ROCm/
+// operator combinations marked unsupported in the matrix.
+func validateGPUStack(cfg Config) string {
+	family := ""
+	if v, ok := cfg["GPU_STACK_FAMILY"]; ok && v != nil {
+		if s, isStr := v.(string); isStr {
+			family = s
+		}
+	}
+	if _, err := ResolveStackProfile(family); err != nil {
+		return err.Error()
+	}
+	return ""
 }
 
 func isArgVisible(arg Argument, cfg Config) bool {
