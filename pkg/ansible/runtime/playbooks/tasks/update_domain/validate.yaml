@@ -1,0 +1,120 @@
+---
+# Purpose: Pre-flight validation for domain update
+# Dependencies: NEW_DOMAIN variable
+# Usage: Imported by update-domain.yaml
+
+- name: Display validation header
+  debug:
+    msg:
+      - "🔍 Running pre-flight validation checks..."
+      - ""
+
+- name: Validate domain format
+  assert:
+    that:
+      - NEW_DOMAIN is match('^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$')
+    fail_msg: "❌ Invalid domain format: {{ NEW_DOMAIN }} (must be a valid DNS domain name)"
+    success_msg: "  ✓ Validating new domain format... ✅"
+    quiet: true
+
+- name: Check cluster connectivity
+  command: kubectl cluster-info
+  register: cluster_info
+  failed_when: cluster_info.rc != 0
+  changed_when: false
+
+- name: Display cluster connectivity result
+  debug:
+    msg: "  ✓ Checking cluster connectivity... ✅"
+
+- name: Get current domain from ConfigMap
+  command: kubectl get configmap cluster-domain -n default -o jsonpath='{.data.DOMAIN}'
+  register: current_domain_result
+  failed_when: current_domain_result.stdout == ""
+  changed_when: false
+
+- name: Set current domain fact
+  set_fact:
+    CURRENT_DOMAIN: "{{ current_domain_result.stdout }}"
+
+- name: Display current domain
+  debug:
+    msg: "  ✓ Retrieving current domain... ✅ ({{ CURRENT_DOMAIN }})"
+
+- name: Check if domain is actually changing
+  fail:
+    msg: "New domain {{ NEW_DOMAIN }} is the same as current domain - no change needed"
+  when: CURRENT_DOMAIN == NEW_DOMAIN
+
+- name: Get cert-manager status
+  command: kubectl get configmap cluster-domain -n default -o jsonpath='{.data.use-cert-manager}'
+  register: use_cert_manager_result
+  failed_when: false
+  changed_when: false
+
+- name: Set cert-manager status fact
+  set_fact:
+    USE_CERT_MANAGER: "{{ use_cert_manager_result.stdout == 'true' }}"
+
+- name: Display cert-manager status
+  debug:
+    msg: "  ✓ Checking certificate manager configuration... ✅ ({{ 'cert-manager enabled' if USE_CERT_MANAGER else 'static certificates' }})"
+
+- name: Verify ArgoCD installation
+  command: kubectl get application cluster-forge -n argocd -o jsonpath='{.metadata.name}'
+  register: argocd_check
+  failed_when: argocd_check.stdout != "cluster-forge"
+  changed_when: false
+
+- name: Display ArgoCD verification result
+  debug:
+    msg: "  ✓ Verifying ArgoCD installation... ✅"
+
+- name: Verify OpenBao installation
+  command: kubectl get statefulset openbao -n cf-openbao -o jsonpath='{.status.readyReplicas}'
+  register: openbao_check
+  failed_when: openbao_check.stdout == "" or openbao_check.stdout == "0"
+  changed_when: false
+
+- name: Display OpenBao verification result
+  debug:
+    msg: "  ✓ Verifying OpenBao installation... ✅"
+
+- name: Check for in-progress ArgoCD syncs
+  shell: kubectl get applications -n argocd -o jsonpath='{range .items[?(@.status.sync.status!="Synced")]}{.metadata.name}{"\n"}{end}'
+  register: syncing_apps
+  changed_when: false
+  failed_when: false
+
+- name: Display sync status result
+  debug:
+    msg: "  ✓ Checking for in-progress ArgoCD syncs... {{ '⚠️' if syncing_apps.stdout != '' else '✅' }}"
+
+- name: Warn about in-progress syncs
+  when: syncing_apps.stdout != ""
+  block:
+    - name: Display syncing applications
+      debug:
+        msg:
+          - ""
+          - "Warning: The following ArgoCD applications are not in Synced state:"
+          - "{{ syncing_apps.stdout_lines | map('regex_replace', '^(.*)$', '  - \\1') | list }}"
+          - ""
+          - "Continuing with domain update may interfere with ongoing operations."
+
+    - name: Prompt to continue
+      pause:
+        prompt: "Do you want to continue? [y/N]"
+      register: continue_prompt
+
+    - name: Abort if user declines
+      fail:
+        msg: "Domain update aborted by user"
+      when: continue_prompt.user_input | lower not in ['y', 'yes']
+
+- name: Display validation success
+  debug:
+    msg:
+      - ""
+      - "✅ All pre-flight checks passed!"
+      - ""

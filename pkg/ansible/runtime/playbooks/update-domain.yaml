@@ -1,0 +1,66 @@
+---
+- name: Update cluster-forge domain
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    NEW_DOMAIN: ""           # Required
+    CERT_OPTION: ""          # Required: generate|provide|cert-manager
+    CERT_PATH: ""            # For cert_option=provide
+    KEY_PATH: ""             # For cert_option=provide
+    DRY_RUN: false           # Optional
+    CHECK_DNS_ONLY: false    # Optional
+    KUBECONFIG: ""           # Optional, defaults to ~/.kube/config
+
+  pre_tasks:
+    - name: Set kubeconfig environment variable
+      set_fact:
+        ansible_env: "{{ ansible_env | combine({'KUBECONFIG': KUBECONFIG}) }}"
+      when: KUBECONFIG != ""
+
+    - name: Validate required variables for domain update
+      fail:
+        msg: "NEW_DOMAIN is required"
+      when: NEW_DOMAIN == "" and not CHECK_DNS_ONLY
+
+    - name: Validate CERT_OPTION
+      fail:
+        msg: "CERT_OPTION must be one of: generate, provide, cert-manager"
+      when:
+        - not CHECK_DNS_ONLY
+        - CERT_OPTION not in ['generate', 'provide', 'cert-manager']
+
+    - name: Validate CERT_PATH and KEY_PATH for provided certificates
+      fail:
+        msg: "CERT_PATH and KEY_PATH are required when CERT_OPTION=provide"
+      when:
+        - not CHECK_DNS_ONLY
+        - CERT_OPTION == 'provide'
+        - (CERT_PATH == "" or KEY_PATH == "")
+
+  tasks:
+    - name: DNS check mode
+      when: CHECK_DNS_ONLY
+      import_tasks: tasks/update_domain/dns_check.yaml
+
+    - name: Full domain update
+      when: not CHECK_DNS_ONLY
+      block:
+        - name: Display update header
+          debug:
+            msg:
+              - "🚀 Starting domain update process"
+              - "================================"
+              - ""
+
+        - import_tasks: tasks/update_domain/validate.yaml
+        - import_tasks: tasks/update_domain/certificates.yaml
+        - import_tasks: tasks/update_domain/update_config.yaml
+        - import_tasks: tasks/update_domain/verify.yaml
+
+        - name: Display success message
+          debug:
+            msg:
+              - ""
+              - "✅ Domain update completed successfully!"
+              - ""

@@ -1,0 +1,197 @@
+---
+# Purpose: Update cluster configuration for new domain
+# Dependencies: NEW_DOMAIN, DRY_RUN variables
+# Usage: Imported by update-domain.yaml
+
+- name: Display update summary
+  debug:
+    msg:
+      - "📋 Domain Update Summary"
+      - "========================"
+      - "  Current domain:  {{ CURRENT_DOMAIN }}"
+      - "  New domain:      {{ NEW_DOMAIN }}"
+      - "  Certificate:     {{ CERT_OPTION }}"
+      - "{{ '  Mode:            DRY RUN (no changes will be applied)' if DRY_RUN else '' }}"
+      - ""
+
+- name: Display DNS requirements
+  block:
+    - name: Get LoadBalancer IP
+      shell: >
+        kubectl get service
+        -n envoy-gateway-system
+        -l gateway.envoyproxy.io/owning-gateway-name=https
+        -o jsonpath='{.items[0].status.loadBalancer.ingress[0].ip}'
+      register: lb_ip
+      changed_when: false
+      failed_when: false
+
+    - name: Display DNS configuration requirements
+      debug:
+        msg:
+          - "📡 DNS Configuration Required"
+          - "============================="
+          - ""
+          - "Before the new domain will work, you must update your DNS records:"
+          - ""
+          - "{{ '  A record: *.' + NEW_DOMAIN + ' -> ' + lb_ip.stdout if lb_ip.stdout != '' else '  A record: *.' + NEW_DOMAIN + ' -> <your-loadbalancer-ip>' }}"
+          - "{{ '  A record: k8s.' + NEW_DOMAIN + ' -> ' + lb_ip.stdout if lb_ip.stdout != '' else '  A record: k8s.' + NEW_DOMAIN + ' -> <your-loadbalancer-ip>' }}"
+          - ""
+          - "For silogen.ai domains, you can use kaytoo:"
+          - ""
+          - "{{ '  kaytoo setup_dns_cert --domain ' + NEW_DOMAIN + ' --ip ' + lb_ip.stdout if lb_ip.stdout != '' else '  kaytoo setup_dns_cert --domain ' + NEW_DOMAIN + ' --ip <loadbalancer-ip>' }}"
+          - ""
+          - "================================"
+          - ""
+
+- name: Confirm domain update
+  when: not DRY_RUN
+  block:
+    - name: Prompt for confirmation
+      pause:
+        prompt: "Proceed with domain update? [y/N]"
+      register: update_confirm
+
+    - name: Abort if user declines
+      fail:
+        msg: "Domain update aborted by user"
+      when: update_confirm.user_input | lower not in ['y', 'yes']
+
+    - name: Display proceeding message
+      debug:
+        msg: ""
+
+# ============================================================================
+# Update cluster-domain ConfigMap
+# ============================================================================
+- name: Update cluster-domain ConfigMap
+  block:
+    - name: Display dry-run message for ConfigMap
+      debug:
+        msg: "📝 [DRY RUN] Would update cluster-domain ConfigMap"
+      when: DRY_RUN
+
+    - name: Update ConfigMap in cluster
+      when: not DRY_RUN
+      block:
+        - name: Display ConfigMap update header
+          debug:
+            msg: "📝 Updating cluster-domain ConfigMap..."
+
+        - name: Patch ConfigMap
+          command: >
+            kubectl patch configmap cluster-domain
+            -n default
+            --type=merge
+            -p '{"data":{"DOMAIN":"{{ NEW_DOMAIN }}"}}'
+          register: configmap_result
+
+        - name: Display ConfigMap update result
+          debug:
+            msg: "  ✅ ConfigMap updated"
+
+# ============================================================================
+# Update OpenBao secret
+# ============================================================================
+- name: Update OpenBao secret
+  block:
+    - name: Display dry-run message for OpenBao
+      debug:
+        msg: "🔑 [DRY RUN] Would update OpenBao secret: secrets/cluster-domain"
+      when: DRY_RUN
+
+    - name: Update OpenBao secret in cluster
+      when: not DRY_RUN
+      block:
+        - name: Display OpenBao update header
+          debug:
+            msg: "🔑 Updating OpenBao secret..."
+
+        - name: Update secret via kubectl exec
+          command: >
+            kubectl exec -n cf-openbao openbao-0 --
+            bao kv put secret/cluster-domain value={{ NEW_DOMAIN }}
+          register: openbao_result
+          failed_when: false
+
+        - name: Display OpenBao success
+          debug:
+            msg: "  ✅ OpenBao secret updated"
+          when: openbao_result.rc == 0
+
+        - name: Warn if OpenBao update failed
+          debug:
+            msg:
+              - "  ⚠️  OpenBao update failed. You may need to update manually:"
+              - "  kubectl exec -n cf-openbao openbao-0 -- bao kv put secret/cluster-domain value={{ NEW_DOMAIN }}"
+          when: openbao_result.rc != 0
+
+# ============================================================================
+# Update ArgoCD Application
+# ============================================================================
+- name: Update ArgoCD Application
+  block:
+    - name: Display dry-run message for ArgoCD
+      debug:
+        msg: "🎯 [DRY RUN] Would update ArgoCD Application global.domain parameter"
+      when: DRY_RUN
+
+    - name: Update ArgoCD Application in cluster
+      when: not DRY_RUN
+      block:
+        - name: Display ArgoCD update header
+          debug:
+            msg: "🎯 Updating ArgoCD Application..."
+
+        - name: Patch Application global.domain parameter
+          command: >
+            kubectl patch application cluster-forge
+            -n argocd
+            --type=merge
+            -p '{"spec":{"source":{"helm":{"parameters":[{"name":"global.domain","value":"{{ NEW_DOMAIN }}"}]}}}}'
+          register: argocd_patch_result
+
+        - name: Display ArgoCD update result
+          debug:
+            msg: "  ✅ ArgoCD Application updated"
+
+# ============================================================================
+# Trigger ArgoCD sync
+# ============================================================================
+- name: Trigger ArgoCD sync
+  block:
+    - name: Display dry-run message for sync
+      debug:
+        msg: "🔄 [DRY RUN] Would trigger ArgoCD sync"
+      when: DRY_RUN
+
+    - name: Trigger sync in cluster
+      when: not DRY_RUN
+      block:
+        - name: Display sync header
+          debug:
+            msg:
+              - "🔄 Triggering ArgoCD sync..."
+              - "  ℹ️  This may take several minutes as updates cascade through applications"
+              - ""
+
+        - name: Get current timestamp
+          command: date -u +"%Y-%m-%dT%H:%M:%SZ"
+          register: timestamp
+          changed_when: false
+
+        - name: Annotate Application to trigger hard refresh
+          command: >
+            kubectl patch application cluster-forge
+            -n argocd
+            --type=merge
+            -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard","bloom.domain.update/timestamp":"{{ timestamp.stdout }}"}}}'
+          register: argocd_refresh_result
+
+        - name: Display sync trigger result
+          debug:
+            msg: "  ✅ ArgoCD sync triggered"
+
+- name: Display config update complete
+  debug:
+    msg: ""
