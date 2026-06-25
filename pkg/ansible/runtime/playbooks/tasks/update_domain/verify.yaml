@@ -25,7 +25,7 @@
 
         # Verify ConfigMap
         - name: Verify ConfigMap update
-          command: kubectl get configmap cluster-domain -n default -o jsonpath='{.data.DOMAIN}'
+          command: /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get configmap cluster-domain -n default -o jsonpath='{.data.DOMAIN}'
           register: verify_configmap
           changed_when: false
           failed_when: verify_configmap.stdout != NEW_DOMAIN
@@ -36,7 +36,7 @@
 
         # Verify Gateway (may take time to update)
         - name: Check Gateway configuration
-          command: kubectl get gateway https -n envoy-gateway-system -o jsonpath='{.spec.listeners[0].hostname}'
+          command: /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get gateway https -n envoy-gateway-system -o jsonpath='{.spec.listeners[0].hostname}'
           register: verify_gateway
           changed_when: false
           failed_when: false
@@ -54,7 +54,7 @@
               - "  ℹ️  ArgoCD will now sync all applications with the new domain."
               - "  ℹ️  You can monitor progress with:"
               - ""
-              - "    kubectl get applications -n argocd"
+              - "    /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get applications -n argocd"
               - "    argocd app get cluster-forge"
               - ""
 
@@ -76,6 +76,6 @@
       - "   - AIWB:    https://aiwb.{{ NEW_DOMAIN }}"
       - ""
       - "Monitor ArgoCD sync progress:"
-      - "  kubectl get applications -n argocd"
+      - "  /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get applications -n argocd"
       - "  argocd app list"
       - ""

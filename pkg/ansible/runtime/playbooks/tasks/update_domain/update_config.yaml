@@ -18,7 +18,7 @@
   block:
     - name: Get LoadBalancer IP
       shell: >
-        kubectl get service
+        /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get service
         -n envoy-gateway-system
         -l gateway.envoyproxy.io/owning-gateway-name=https
         -o jsonpath='{.items[0].status.loadBalancer.ingress[0].ip}'
@@ -80,7 +80,7 @@
 
         - name: Patch ConfigMap
           command: >
-            kubectl patch configmap cluster-domain
+            /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml patch configmap cluster-domain
             -n default
             --type=merge
             -p '{"data":{"DOMAIN":"{{ NEW_DOMAIN }}"}}'
@@ -107,9 +107,9 @@
           debug:
             msg: "🔑 Updating OpenBao secret..."
 
-        - name: Update secret via kubectl exec
+        - name: Update secret via /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml exec
           command: >
-            kubectl exec -n cf-openbao openbao-0 --
+            /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml exec -n cf-openbao openbao-0 --
             bao kv put secret/cluster-domain value={{ NEW_DOMAIN }}
           register: openbao_result
           failed_when: false
@@ -123,7 +123,7 @@
           debug:
             msg:
               - "  ⚠️  OpenBao update failed. You may need to update manually:"
-              - "  kubectl exec -n cf-openbao openbao-0 -- bao kv put secret/cluster-domain value={{ NEW_DOMAIN }}"
+              - "  /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml exec -n cf-openbao openbao-0 -- bao kv put secret/cluster-domain value={{ NEW_DOMAIN }}"
           when: openbao_result.rc != 0
 
 # ============================================================================
@@ -145,7 +145,7 @@
 
         - name: Patch Application global.domain parameter
           command: >
-            kubectl patch application cluster-forge
+            /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml patch application cluster-forge
             -n argocd
             --type=merge
             -p '{"spec":{"source":{"helm":{"parameters":[{"name":"global.domain","value":"{{ NEW_DOMAIN }}"}]}}}}'
@@ -182,7 +182,7 @@
 
         - name: Annotate Application to trigger hard refresh
           command: >
-            kubectl patch application cluster-forge
+            /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml patch application cluster-forge
             -n argocd
             --type=merge
             -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard","bloom.domain.update/timestamp":"{{ timestamp.stdout }}"}}}'

@@ -156,11 +156,11 @@
 
             - name: Create cluster-tls secret
               shell: |
-                kubectl create secret tls cluster-tls \
+                /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml create secret tls cluster-tls \
                   --cert={{ FINAL_CERT_PATH }} \
                   --key={{ FINAL_KEY_PATH }} \
                   -n envoy-gateway-system \
-                  --dry-run=client -o yaml | kubectl apply -f -
+                  --dry-run=client -o yaml | /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml apply -f -
               register: secret_update
 
             - name: Display secret update result
@@ -192,7 +192,7 @@
                 msg: "🔐 Updating cert-manager Certificate resource..."
 
             - name: Check if Certificate resource exists
-              command: kubectl get certificate cluster-tls -n envoy-gateway-system -o jsonpath='{.metadata.name}'
+              command: /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get certificate cluster-tls -n envoy-gateway-system -o jsonpath='{.metadata.name}'
               register: cert_exists
               failed_when: false
               changed_when: false
@@ -208,7 +208,7 @@
 
             - name: Patch Certificate resource with new dnsNames
               command: >
-                kubectl patch certificate cluster-tls
+                /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml patch certificate cluster-tls
                 -n envoy-gateway-system
                 --type=merge
                 -p '{"spec":{"dnsNames":["*.{{ NEW_DOMAIN }}","k8s.{{ NEW_DOMAIN }}","kc.{{ NEW_DOMAIN }}"]}}'

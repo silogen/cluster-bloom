@@ -12,7 +12,7 @@
 # Get LoadBalancer IP
 - name: Get expected LoadBalancer IP
   shell: >
-    kubectl get service
+    /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get service
     -n envoy-gateway-system
     -l gateway.envoyproxy.io/owning-gateway-name=https
     -o jsonpath='{.items[0].status.loadBalancer.ingress[0].ip}'
@@ -27,7 +27,7 @@
       debug:
         msg:
           - "⚠️  Could not determine LoadBalancer IP from cluster"
-          - "   Run this command from a machine with kubectl access to the cluster"
+          - "   Run this command from a machine with /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml access to the cluster"
 
     - name: End playbook
       meta: end_play

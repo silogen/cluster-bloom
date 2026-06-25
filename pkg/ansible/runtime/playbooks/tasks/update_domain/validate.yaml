@@ -18,7 +18,7 @@
     quiet: true
 
 - name: Check cluster connectivity
-  command: kubectl cluster-info
+  command: /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml cluster-info
   register: cluster_info
   failed_when: cluster_info.rc != 0
   changed_when: false
@@ -28,7 +28,7 @@
     msg: "  ✓ Checking cluster connectivity... ✅"
 
 - name: Get current domain from ConfigMap
-  command: kubectl get configmap cluster-domain -n default -o jsonpath='{.data.DOMAIN}'
+  command: /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get configmap cluster-domain -n default -o jsonpath='{.data.DOMAIN}'
   register: current_domain_result
   failed_when: current_domain_result.stdout == ""
   changed_when: false
@@ -47,7 +47,7 @@
   when: CURRENT_DOMAIN == NEW_DOMAIN
 
 - name: Get cert-manager status
-  command: kubectl get configmap cluster-domain -n default -o jsonpath='{.data.use-cert-manager}'
+  command: /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get configmap cluster-domain -n default -o jsonpath='{.data.use-cert-manager}'
   register: use_cert_manager_result
   failed_when: false
   changed_when: false
@@ -61,7 +61,7 @@
     msg: "  ✓ Checking certificate manager configuration... ✅ ({{ 'cert-manager enabled' if USE_CERT_MANAGER else 'static certificates' }})"
 
 - name: Verify ArgoCD installation
-  command: kubectl get application cluster-forge -n argocd -o jsonpath='{.metadata.name}'
+  command: /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get application cluster-forge -n argocd -o jsonpath='{.metadata.name}'
   register: argocd_check
   failed_when: argocd_check.stdout != "cluster-forge"
   changed_when: false
@@ -71,7 +71,7 @@
     msg: "  ✓ Verifying ArgoCD installation... ✅"
 
 - name: Verify OpenBao installation
-  command: kubectl get statefulset openbao -n cf-openbao -o jsonpath='{.status.readyReplicas}'
+  command: /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get statefulset openbao -n cf-openbao -o jsonpath='{.status.readyReplicas}'
   register: openbao_check
   failed_when: openbao_check.stdout == "" or openbao_check.stdout == "0"
   changed_when: false
@@ -81,7 +81,7 @@
     msg: "  ✓ Verifying OpenBao installation... ✅"
 
 - name: Check for in-progress ArgoCD syncs
-  shell: kubectl get applications -n argocd -o jsonpath='{range .items[?(@.status.sync.status!="Synced")]}{.metadata.name}{"\n"}{end}'
+  shell: /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get applications -n argocd -o jsonpath='{range .items[?(@.status.sync.status!="Synced")]}{.metadata.name}{"\n"}{end}'
   register: syncing_apps
   changed_when: false
   failed_when: false
