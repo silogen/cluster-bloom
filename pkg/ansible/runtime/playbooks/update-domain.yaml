@@ -1,7 +1,7 @@
 ---
 - name: Update cluster-forge domain
-  hosts: localhost
-  connection: local
+  hosts: all
+  become: yes
   gather_facts: false
   vars:
     NEW_DOMAIN: ""           # Required
