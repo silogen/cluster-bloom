@@ -236,7 +236,7 @@ After successful cluster deployment, ClusterBloom automatically displays credent
 - **AIRM DevUser Login**: URL, username, and kubectl command to retrieve password
   - URL: `https://airmui.<domain>`
   - Username: `devuser@<domain>`
-  - Password retrieval: `kubectl -n keycloak get secret airm-devuser-credentials -o jsonpath='{.data.KEYCLOAK_INITIAL_DEVUSER_PASSWORD}' | base64 --decode`
+  - Password retrieval: `kubectl -n keycloak get secret airm-realm-credentials -o jsonpath='{.data.KEYCLOAK_INITIAL_DEVUSER_PASSWORD}' | base64 --decode`
 
 - **Keycloak Admin Login**: URL, username, and kubectl command to retrieve password
   - URL: `https://kc.<domain>`
