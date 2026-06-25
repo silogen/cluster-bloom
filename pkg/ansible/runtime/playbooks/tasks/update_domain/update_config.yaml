@@ -143,12 +143,16 @@
           debug:
             msg: "🎯 Updating ArgoCD Application..."
 
-        - name: Patch Application global.domain parameter
-          command: >
-            /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml patch application cluster-forge
-            -n argocd
-            --type=merge
-            -p '{"spec":{"source":{"helm":{"parameters":[{"name":"global.domain","value":"{{ NEW_DOMAIN }}"}]}}}}'
+        - name: Get current Application spec
+          command: /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get application cluster-forge -n argocd -o json
+          register: current_app
+          changed_when: false
+
+        - name: Update global.domain parameter in Application spec
+          shell: |
+            echo '{{ current_app.stdout }}' | \
+            jq '.spec.source.helm.parameters = ([.spec.source.helm.parameters[] | select(.name != "global.domain")] + [{"name": "global.domain", "value": "{{ NEW_DOMAIN }}"}])' | \
+            /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml apply -f -
           register: argocd_patch_result
 
         - name: Display ArgoCD update result
