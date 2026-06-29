@@ -136,28 +136,97 @@
         msg: "🎯 [DRY RUN] Would update ArgoCD Application global.domain parameter"
       when: DRY_RUN
 
-    - name: Update ArgoCD Application in cluster
+    - name: Update cluster-values repository via Gitea API
       when: not DRY_RUN
       block:
-        - name: Display ArgoCD update header
+        - name: Display Gitea update header
           debug:
-            msg: "🎯 Updating ArgoCD Application..."
+            msg: "🎯 Updating cluster-values repository..."
 
-        - name: Get current Application spec
-          command: /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get application cluster-forge -n argocd -o json
-          register: current_app
+        - name: Get Gitea admin token
+          command: /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get secret gitea-admin-token -n cf-gitea -o jsonpath='{.data.token}'
+          register: gitea_token_b64
+          changed_when: false
+          no_log: true
+
+        - name: Decode Gitea token
+          set_fact:
+            gitea_token: "{{ gitea_token_b64.stdout | b64decode }}"
+          no_log: true
+
+        - name: Fetch current values.yaml from cluster-values repo via kubectl exec
+          shell: |
+            /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml exec -n cf-gitea deploy/gitea -c gitea -- \
+              curl -s -H "Authorization: token {{ gitea_token }}" \
+              http://gitea-http.cf-gitea.svc:3000/api/v1/repos/cluster-org/cluster-values/contents/values.yaml
+          register: current_values_response
+          changed_when: false
+          no_log: false
+
+        - name: Parse current values response
+          set_fact:
+            current_values_json: "{{ current_values_response.stdout | from_json }}"
+
+        - name: Decode current values.yaml content
+          set_fact:
+            current_values_content: "{{ current_values_json.content | b64decode }}"
+            current_values_sha: "{{ current_values_json.sha }}"
+
+        - name: Create temporary file for values update
+          tempfile:
+            state: file
+            suffix: .values.yaml
+          register: values_temp_file
+
+        - name: Write current values to temp file
+          copy:
+            content: "{{ current_values_content }}"
+            dest: "{{ values_temp_file.path }}"
+
+        - name: Update global.domain in values.yaml
+          shell: |
+            yq eval '.global.domain = "{{ NEW_DOMAIN }}"' -i "{{ values_temp_file.path }}"
           changed_when: false
 
-        - name: Update global.domain parameter in Application spec
-          shell: |
-            echo '{{ current_app.stdout }}' | \
-            jq '.spec.source.helm.parameters = ([.spec.source.helm.parameters[] | select(.name != "global.domain")] + [{"name": "global.domain", "value": "{{ NEW_DOMAIN }}"}])' | \
-            /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml apply -f -
-          register: argocd_patch_result
+        - name: Read updated values content
+          slurp:
+            src: "{{ values_temp_file.path }}"
+          register: updated_values_file
 
-        - name: Display ArgoCD update result
+        - name: Encode updated values to base64
+          set_fact:
+            updated_values_b64: "{{ updated_values_file.content }}"
+
+        - name: Prepare API request body
+          set_fact:
+            gitea_api_body: |
+              {
+                "message": "Update domain to {{ NEW_DOMAIN }}",
+                "content": "{{ updated_values_b64 }}",
+                "sha": "{{ current_values_sha }}",
+                "branch": "main"
+              }
+
+        - name: Commit updated values.yaml to Gitea via kubectl exec
+          shell: |
+            /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml exec -n cf-gitea deploy/gitea -c gitea -- \
+              curl -s -X PUT \
+              -H "Authorization: token {{ gitea_token }}" \
+              -H "Content-Type: application/json" \
+              -d '{{ gitea_api_body | to_json }}' \
+              http://gitea-http.cf-gitea.svc:3000/api/v1/repos/cluster-org/cluster-values/contents/values.yaml
+          register: gitea_commit_result
+          changed_when: false
+          no_log: true
+
+        - name: Clean up temp file
+          file:
+            path: "{{ values_temp_file.path }}"
+            state: absent
+
+        - name: Display Gitea update result
           debug:
-            msg: "  ✅ ArgoCD Application updated"
+            msg: "  ✅ cluster-values repository updated"
 
 # ============================================================================
 # Trigger ArgoCD sync
