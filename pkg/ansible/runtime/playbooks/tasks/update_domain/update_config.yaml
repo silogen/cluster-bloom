@@ -161,7 +161,7 @@
               http://gitea-http.cf-gitea.svc:3000/api/v1/repos/cluster-org/cluster-values/contents/values.yaml
           register: current_values_response
           changed_when: false
-          no_log: false
+          no_log: true
 
         - name: Parse current values response
           set_fact:
@@ -197,15 +197,13 @@
           set_fact:
             updated_values_b64: "{{ updated_values_file.content }}"
 
-        - name: Prepare API request body
+        - name: Prepare API request body as dict
           set_fact:
-            gitea_api_body: |
-              {
-                "message": "Update domain to {{ NEW_DOMAIN }}",
-                "content": "{{ updated_values_b64 }}",
-                "sha": "{{ current_values_sha }}",
-                "branch": "main"
-              }
+            gitea_api_body_dict:
+              message: "Update domain to {{ NEW_DOMAIN }}"
+              content: "{{ updated_values_b64 }}"
+              sha: "{{ current_values_sha }}"
+              branch: "main"
 
         - name: Commit updated values.yaml to Gitea via kubectl exec
           shell: |
@@ -213,11 +211,11 @@
               curl -s -X PUT \
               -H "Authorization: token {{ gitea_token }}" \
               -H "Content-Type: application/json" \
-              -d '{{ gitea_api_body | to_json }}' \
+              -d '{{ gitea_api_body_dict | to_json }}' \
               http://gitea-http.cf-gitea.svc:3000/api/v1/repos/cluster-org/cluster-values/contents/values.yaml
           register: gitea_commit_result
           changed_when: false
-          no_log: true
+          no_log: false
 
         - name: Clean up temp file
           file:
