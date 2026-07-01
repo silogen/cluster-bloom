@@ -75,6 +75,31 @@ Pre-configured with Cilium for advanced networking capabilities:
 - **Service Load Balancing**: eBPF-based load balancing
 - **Network Visibility**: Optional Hubble for observability
 
+For `CLUSTER_SIZE: small` or `medium`, bloom writes `/var/lib/rancher/rke2/server/manifests/rke2-cilium-config.yaml` on the **first node** before RKE2 starts, setting `operator.replicas: 1`. `CLUSTER_SIZE: large` uses the RKE2 chart default (2 replicas). Bloom does not auto-scale the operator when you add nodes later.
+
+#### Scaling cilium-operator after install (multi-node / HA)
+
+When a cluster that was deployed with `CLUSTER_SIZE: small` or `medium` grows beyond one node and you want the default HA operator count (2), run the following on the **bootstrap (first) node** after all nodes have joined:
+
+```bash
+# 1. Remove the single-replica HelmChartConfig bloom applied at install
+sudo rm -f /var/lib/rancher/rke2/server/manifests/rke2-cilium-config.yaml
+
+# 2. Remove the in-cluster HelmChartConfig (if present)
+sudo kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+  delete helmchartconfig rke2-cilium -n kube-system --ignore-not-found
+
+# 3. Scale the operator deployment
+sudo kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+  -n kube-system scale deployment -l name=cilium-operator --replicas=2
+
+# 4. Verify
+sudo kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+  -n kube-system get deployment -l name=cilium-operator
+```
+
+To stay at one operator replica on a single-node cluster, no action is required for small/medium installs.
+
 **Cilium Features Enabled**:
 - Native routing mode or VXLAN overlay (configurable)
 - Kubernetes network policy support
