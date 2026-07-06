@@ -1,0 +1,179 @@
+---
+# Purpose: Update AIRM cluster records with new domain URLs
+# Dependencies: NEW_DOMAIN, DRY_RUN variables
+# Usage: Imported by update_config.yaml
+
+- name: Update AIRM cluster records
+  block:
+    - name: Display dry-run message for AIRM clusters
+      debug:
+        msg: "🔧 [DRY RUN] Would update AIRM cluster records"
+      when: DRY_RUN
+
+    - name: Update AIRM clusters in cluster
+      when: not DRY_RUN
+      block:
+        - name: Display AIRM cluster update header
+          debug:
+            msg: "🔧 Updating AIRM cluster records..."
+
+        - name: Get AIRM admin client credentials from secrets
+          shell: |
+            ADMIN_CLIENT_ID=$(/var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get secret airm-realm-credentials -n keycloak -o jsonpath='{.data.ADMIN_CLIENT_ID}' 2>/dev/null | base64 -d || echo "")
+            ADMIN_CLIENT_SECRET=$(/var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get secret airm-realm-credentials -n keycloak -o jsonpath='{.data.ADMIN_CLIENT_SECRET}' 2>/dev/null | base64 -d || echo "")
+
+            echo "${ADMIN_CLIENT_ID}|${ADMIN_CLIENT_SECRET}"
+          register: airm_admin_client_creds_result
+          changed_when: false
+          no_log: true
+
+        - name: Parse AIRM admin client credentials
+          set_fact:
+            airm_admin_client_id: "{{ airm_admin_client_creds_result.stdout.split('|')[0] }}"
+            airm_admin_client_secret: "{{ airm_admin_client_creds_result.stdout.split('|')[1] }}"
+          no_log: true
+
+        - name: Create ConfigMap with AIRM cluster update script
+          shell: |
+            cat <<'EOF' | /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml apply -f -
+            apiVersion: v1
+            kind: ConfigMap
+            metadata:
+              name: airm-cluster-domain-update
+              namespace: default
+            data:
+              update-clusters.sh: |
+                #!/bin/bash
+                set -e
+
+                KC_URL="http://keycloak.keycloak.svc:8080"
+                AIRM_API_URL="http://airm-api.airm.svc:8000"
+                NEW_DOMAIN="{{ NEW_DOMAIN }}"
+                ADMIN_CLIENT_ID="{{ airm_admin_client_id }}"
+                ADMIN_CLIENT_SECRET="{{ airm_admin_client_secret }}"
+
+                # Get access token for AIRM API
+                echo "Getting Keycloak access token for AIRM API..."
+                ACCESS_TOKEN=$(curl -s -X POST "${KC_URL}/realms/airm/protocol/openid-connect/token" \
+                  -H "Content-Type: application/x-www-form-urlencoded" \
+                  -d "grant_type=client_credentials" \
+                  -d "client_id=${ADMIN_CLIENT_ID}" \
+                  -d "client_secret=${ADMIN_CLIENT_SECRET}" | jq -r '.access_token')
+
+                if [ "$ACCESS_TOKEN" = "null" ] || [ -z "$ACCESS_TOKEN" ]; then
+                  echo "Failed to get access token"
+                  exit 1
+                fi
+
+                echo "Access token obtained successfully"
+
+                # Fetch all clusters
+                echo "Fetching clusters from AIRM API..."
+                CLUSTERS=$(curl -s -X GET "${AIRM_API_URL}/api/clusters" \
+                  -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+                  -H "Content-Type: application/json")
+
+                # Check if we got valid JSON
+                if ! echo "$CLUSTERS" | jq -e . >/dev/null 2>&1; then
+                  echo "Failed to fetch clusters or invalid JSON response"
+                  exit 1
+                fi
+
+                # Extract cluster IDs
+                CLUSTER_IDS=$(echo "$CLUSTERS" | jq -r '.data[]? | .id // empty')
+
+                if [ -z "$CLUSTER_IDS" ]; then
+                  echo "No clusters found or unable to parse cluster IDs"
+                  echo "Response: $CLUSTERS"
+                  exit 0
+                fi
+
+                echo "Found clusters: $(echo "$CLUSTER_IDS" | wc -l)"
+
+                # Update each cluster
+                for CLUSTER_ID in $CLUSTER_IDS; do
+                  echo "Updating cluster: ${CLUSTER_ID}..."
+
+                  # Get current cluster data
+                  CURRENT_CLUSTER=$(curl -s -X GET "${AIRM_API_URL}/api/clusters/${CLUSTER_ID}" \
+                    -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+                    -H "Content-Type: application/json")
+
+                  # Update the URLs
+                  UPDATED_CLUSTER=$(echo "$CURRENT_CLUSTER" | jq \
+                    --arg kube_url "https://k8s.${NEW_DOMAIN}" \
+                    --arg workbench_url "https://aiwbui.${NEW_DOMAIN}" \
+                    '.kubeApiUrl = $kube_url | .workbenchBaseUrl = $workbench_url')
+
+                  # Send PUT request
+                  UPDATE_RESPONSE=$(curl -s -X PUT "${AIRM_API_URL}/api/clusters/${CLUSTER_ID}" \
+                    -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+                    -H "Content-Type: application/json" \
+                    -d "$UPDATED_CLUSTER")
+
+                  if echo "$UPDATE_RESPONSE" | jq -e . >/dev/null 2>&1; then
+                    echo "  ✓ Updated cluster ${CLUSTER_ID}"
+                  else
+                    echo "  ⚠️  Failed to update cluster ${CLUSTER_ID}"
+                    echo "  Response: $UPDATE_RESPONSE"
+                  fi
+                done
+
+                echo "All AIRM clusters updated successfully"
+            EOF
+          changed_when: true
+          no_log: true
+
+        - name: Create Job to update AIRM clusters
+          shell: |
+            cat <<'EOF' | /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml apply -f -
+            apiVersion: batch/v1
+            kind: Job
+            metadata:
+              name: airm-cluster-domain-update
+              namespace: default
+            spec:
+              ttlSecondsAfterFinished: 300
+              template:
+                spec:
+                  restartPolicy: Never
+                  containers:
+                  - name: update-airm-clusters
+                    image: amdenterpriseai/cluster-tool:latest
+                    command: ["/bin/bash", "/scripts/update-clusters.sh"]
+                    volumeMounts:
+                    - name: script
+                      mountPath: /scripts
+                  volumes:
+                  - name: script
+                    configMap:
+                      name: airm-cluster-domain-update
+                      defaultMode: 0755
+            EOF
+          changed_when: true
+
+        - name: Wait for AIRM cluster update job to complete
+          command: /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml wait --for=condition=complete --timeout=60s job/airm-cluster-domain-update -n default
+          register: job_wait
+          changed_when: false
+          failed_when: false
+
+        - name: Get job logs
+          command: /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml logs job/airm-cluster-domain-update -n default
+          register: job_logs
+          changed_when: false
+          failed_when: false
+
+        - name: Display job logs
+          debug:
+            msg: "{{ job_logs.stdout_lines }}"
+          when: job_logs.stdout_lines is defined
+
+        - name: Check job status
+          fail:
+            msg: "AIRM cluster update job failed. Check logs above."
+          when: job_wait.rc != 0
+
+        - name: Display AIRM cluster update result
+          debug:
+            msg: "  ✅ AIRM cluster records updated"
