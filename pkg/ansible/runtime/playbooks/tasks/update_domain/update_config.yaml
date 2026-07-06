@@ -147,12 +147,12 @@
           command: /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get secret gitea-admin-token -n cf-gitea -o jsonpath='{.data.token}'
           register: gitea_token_b64
           changed_when: false
-          no_log: true
+          no_log: false
 
         - name: Decode Gitea token
           set_fact:
             gitea_token: "{{ gitea_token_b64.stdout | b64decode }}"
-          no_log: true
+          no_log: false
 
         - name: Fetch current values.yaml from cluster-values repo via kubectl exec
           shell: |
@@ -161,7 +161,7 @@
               http://gitea-http.cf-gitea.svc:3000/api/v1/repos/cluster-org/cluster-values/contents/values.yaml
           register: current_values_response
           changed_when: false
-          no_log: true
+          no_log: false
 
         - name: Parse current values response
           set_fact:
@@ -225,6 +225,11 @@
         - name: Display Gitea update result
           debug:
             msg: "  ✅ cluster-values repository updated"
+
+# ============================================================================
+# Update Keycloak client redirect URIs
+# ============================================================================
+- import_tasks: update_keycloak.yaml
 
 # ============================================================================
 # Trigger ArgoCD sync
