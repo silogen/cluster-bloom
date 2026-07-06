@@ -110,6 +110,127 @@
                   echo "  ✓ Updated ${CLIENT_ID}"
                 }
 
+                # Function to update post logout redirect URIs for a client
+                update_client_post_logout_uris() {
+                  local CLIENT_ID="$1"
+                  shift
+                  local POST_LOGOUT_URIS=("$@")
+
+                  echo "Updating post logout redirect URIs for: ${CLIENT_ID}..."
+
+                  # Get all clients and find the one with matching clientId
+                  CLIENT_UUID=$(curl -s -X GET \
+                    "${KC_URL}/admin/realms/airm/clients" \
+                    -H "Authorization: Bearer ${KC_TOKEN}" | \
+                    jq -r --arg cid "$CLIENT_ID" '.[] | select(.clientId == $cid) | .id')
+
+                  if [ -z "$CLIENT_UUID" ] || [ "$CLIENT_UUID" = "null" ]; then
+                    echo "  ⚠️  Client ${CLIENT_ID} not found, skipping"
+                    return 0
+                  fi
+
+                  echo "  Found client UUID: ${CLIENT_UUID}"
+
+                  # Get current client configuration
+                  CURRENT_CLIENT=$(curl -s -X GET \
+                    "${KC_URL}/admin/realms/airm/clients/${CLIENT_UUID}" \
+                    -H "Authorization: Bearer ${KC_TOKEN}")
+
+                  # Build post logout URIs as newline-delimited string
+                  POST_LOGOUT_STRING=$(printf '%s\n' "${POST_LOGOUT_URIS[@]}" | sed ':a;N;$!ba;s/\n/\\n/g')
+
+                  # Update client with new post logout redirect URIs
+                  UPDATED_CLIENT=$(echo "$CURRENT_CLIENT" | jq \
+                    --arg uris "$POST_LOGOUT_STRING" \
+                    '.attributes["post.logout.redirect.uris"] = $uris')
+
+                  curl -s -X PUT \
+                    "${KC_URL}/admin/realms/airm/clients/${CLIENT_UUID}" \
+                    -H "Authorization: Bearer ${KC_TOKEN}" \
+                    -H "Content-Type: application/json" \
+                    -d "$UPDATED_CLIENT"
+
+                  echo "  ✓ Updated post logout redirect URIs for ${CLIENT_ID}"
+                }
+
+                # Function to update rootUrl for a client
+                update_client_root_url() {
+                  local CLIENT_ID="$1"
+                  local ROOT_URL="$2"
+
+                  echo "Updating rootUrl for: ${CLIENT_ID}..."
+
+                  # Get all clients and find the one with matching clientId
+                  CLIENT_UUID=$(curl -s -X GET \
+                    "${KC_URL}/admin/realms/airm/clients" \
+                    -H "Authorization: Bearer ${KC_TOKEN}" | \
+                    jq -r --arg cid "$CLIENT_ID" '.[] | select(.clientId == $cid) | .id')
+
+                  if [ -z "$CLIENT_UUID" ] || [ "$CLIENT_UUID" = "null" ]; then
+                    echo "  ⚠️  Client ${CLIENT_ID} not found, skipping"
+                    return 0
+                  fi
+
+                  echo "  Found client UUID: ${CLIENT_UUID}"
+
+                  # Get current client configuration
+                  CURRENT_CLIENT=$(curl -s -X GET \
+                    "${KC_URL}/admin/realms/airm/clients/${CLIENT_UUID}" \
+                    -H "Authorization: Bearer ${KC_TOKEN}")
+
+                  # Update client with new rootUrl
+                  UPDATED_CLIENT=$(echo "$CURRENT_CLIENT" | jq \
+                    --arg url "$ROOT_URL" \
+                    '.rootUrl = $url')
+
+                  curl -s -X PUT \
+                    "${KC_URL}/admin/realms/airm/clients/${CLIENT_UUID}" \
+                    -H "Authorization: Bearer ${KC_TOKEN}" \
+                    -H "Content-Type: application/json" \
+                    -d "$UPDATED_CLIENT"
+
+                  echo "  ✓ Updated rootUrl for ${CLIENT_ID}"
+                }
+
+                # Function to update adminUrl for a client
+                update_client_admin_url() {
+                  local CLIENT_ID="$1"
+                  local ADMIN_URL="$2"
+
+                  echo "Updating adminUrl for: ${CLIENT_ID}..."
+
+                  # Get all clients and find the one with matching clientId
+                  CLIENT_UUID=$(curl -s -X GET \
+                    "${KC_URL}/admin/realms/airm/clients" \
+                    -H "Authorization: Bearer ${KC_TOKEN}" | \
+                    jq -r --arg cid "$CLIENT_ID" '.[] | select(.clientId == $cid) | .id')
+
+                  if [ -z "$CLIENT_UUID" ] || [ "$CLIENT_UUID" = "null" ]; then
+                    echo "  ⚠️  Client ${CLIENT_ID} not found, skipping"
+                    return 0
+                  fi
+
+                  echo "  Found client UUID: ${CLIENT_UUID}"
+
+                  # Get current client configuration
+                  CURRENT_CLIENT=$(curl -s -X GET \
+                    "${KC_URL}/admin/realms/airm/clients/${CLIENT_UUID}" \
+                    -H "Authorization: Bearer ${KC_TOKEN}")
+
+                  # Update client with new adminUrl
+                  UPDATED_CLIENT=$(echo "$CURRENT_CLIENT" | jq \
+                    --arg url "$ADMIN_URL" \
+                    '.adminUrl = $url')
+
+                  curl -s -X PUT \
+                    "${KC_URL}/admin/realms/airm/clients/${CLIENT_UUID}" \
+                    -H "Authorization: Bearer ${KC_TOKEN}" \
+                    -H "Content-Type: application/json" \
+                    -d "$UPDATED_CLIENT"
+
+                  echo "  ✓ Updated adminUrl for ${CLIENT_ID}"
+                }
+
                 # Check client IDs, add minio, gitea and argocd..
 
                 # Update AIRM UI Client (fixed UUID-based clientId)
@@ -125,6 +246,15 @@
                 echo "Updating Argocd Client..."
                 update_client "argocd" \
                   "https://argocd.${NEW_DOMAIN}/*"
+
+                update_client_post_logout_uris "argocd" \
+                  "https://argocd.${NEW_DOMAIN}/auth/callback"
+
+                update_client_root_url "argocd" \
+                  "https://argocd.${NEW_DOMAIN}"                  
+
+                update_client_admin_url "argocd" \
+                "https://argocd.${NEW_DOMAIN}"
 
                 # Update Gitea Client 
                 echo "Updating Gitea Client..."
