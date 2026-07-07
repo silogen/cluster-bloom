@@ -50,9 +50,9 @@
                 set -e
 
                 KC_URL="http://keycloak.keycloak.svc:8080"
-                AIRM_API_URL="http://airm-api.airm.svc:8000"
+                AIRM_API_URL="http://airm-api.airm.svc:80"
                 NEW_DOMAIN="{{ NEW_DOMAIN }}"
-                OLD_DOMAIN="{{ OLD_DOMAIN }}"
+                CURRENT_DOMAIN="{{ CURRENT_DOMAIN }}"
                 UI_CLIENT_ID="354a0fa1-35ac-4a6d-9c4d-d661129c2cd0"
                 UI_CLIENT_SECRET="{{ airm_ui_client_secret }}"
                 USER_PASSWORD="{{ airm_user_password }}"
@@ -64,7 +64,7 @@
                   -d "grant_type=password" \
                   -d "client_id=${UI_CLIENT_ID}" \
                   -d "client_secret=${UI_CLIENT_SECRET}" \
-                  -d "username=devuser@${OLD_DOMAIN}" \
+                  -d "username=devuser@${CURRENT_DOMAIN}" \
                   -d "password=${USER_PASSWORD}" | jq -r '.access_token')
 
                 if [ "$ACCESS_TOKEN" = "null" ] || [ -z "$ACCESS_TOKEN" ]; then
