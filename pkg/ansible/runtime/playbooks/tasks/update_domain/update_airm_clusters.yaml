@@ -101,13 +101,8 @@
                 for CLUSTER_ID in $CLUSTER_IDS; do
                   echo "Updating cluster: ${CLUSTER_ID}..."
 
-                  # Get current cluster data
-                  CURRENT_CLUSTER=$(curl -s -X GET "${AIRM_API_URL}/v1/clusters/${CLUSTER_ID}" \
-                    -H "Authorization: Bearer ${ACCESS_TOKEN}" \
-                    -H "Content-Type: application/json")
-
                   # Update the URLs
-                  UPDATED_CLUSTER=$(echo "$CURRENT_CLUSTER" | jq \
+                  CLUSTER_PATCH=$(echo "{}" | jq \
                     --arg kube_url "https://k8s.${NEW_DOMAIN}" \
                     --arg workbench_url "https://aiwbui.${NEW_DOMAIN}" \
                     '.kubeApiUrl = $kube_url | .workbenchBaseUrl = $workbench_url')
@@ -116,7 +111,7 @@
                   UPDATE_RESPONSE=$(curl -s -X PUT "${AIRM_API_URL}/v1/clusters/${CLUSTER_ID}" \
                     -H "Authorization: Bearer ${ACCESS_TOKEN}" \
                     -H "Content-Type: application/json" \
-                    -d "$UPDATED_CLUSTER")
+                    -d "$CLUSTER_PATCH")
 
                   if echo "$UPDATE_RESPONSE" | jq -e . >/dev/null 2>&1; then
                     echo "  ✓ Updated cluster ${CLUSTER_ID}"
