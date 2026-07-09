@@ -1,4 +1,7 @@
 # ClusterBloom
+> [!IMPORTANT]
+> #### *Instructions for installing the AMD Enterprise AI reference stack (for most users) are [here](https://enterprise-ai.docs.amd.com/en/latest/platform-infrastructure/on-premises-installation.html)*
+
 **ClusterBloom** is a tool for deploying and configuring Kubernetes clusters using RKE2, with specialized support for AMD GPU environments. It automates the process of setting up multi-node clusters, configuring storage with Longhorn, and integrating with various tools and services.
 
 
@@ -9,14 +12,6 @@
 - Disk management and Longhorn storage integration
 - Multi-node cluster support with easy node joining
 - ClusterForge integration
-
-## Prerequisites
-
-- Ubuntu (supported versions checked at runtime)
-- Sufficient disk space (500GB+ recommended for root partition, 2TB+ for workloads)
-- NVMe drives for optimal storage configuration
-- ROCm-compatible AMD GPUs (for GPU nodes) - **ROCm 7.1.1 required**
-- Root/sudo access
 
 ## Getting Started
 
