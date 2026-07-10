@@ -57,7 +57,7 @@ Configuration sources in priority order (highest to lowest):
 #### GPU_STACK_FAMILY
 - **Type**: String (single value)
 - **Default**: `""` (empty, resolves to `instinct`)
-- **Description**: Selects the ROCm + GPU Operator install defaults by GPU family. This is independent of `AIM_HARDWARE_FAMILY` (which selects the AIM model catalog). Empty or `instinct` keeps the current qualified defaults (host ROCm `7.1.1`, GPU Operator `v1.4.1`, DeviceConfig ROCm driver `7.0`), so existing installs are unchanged. `radeon` selects the ROCm 7.13 tech-preview stack.
+- **Description**: Selects the ROCm + GPU Operator install defaults by GPU family. This is independent of `AIM_HARDWARE_FAMILY` (which selects the AIM model catalog). Empty or `instinct` keeps the current qualified defaults (host ROCm `7.2.3`, GPU Operator `v1.4.1`, DeviceConfig ROCm driver `7.0`), so existing installs are unchanged. `radeon` selects the ROCm 7.13 tech-preview stack.
 - **Values**: `radeon` | `instinct` (lowercase, single value)
 - **Example**: `GPU_STACK_FAMILY: "radeon"`
 - **Notes**:

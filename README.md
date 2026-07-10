@@ -155,8 +155,8 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | RANCHER_DISK | Device path for dedicated `/var/lib/rancher` storage (e.g. `/dev/nvme2n1`). Primarily for GPU worker nodes with heavy workloads. Bloom formats and mounts this device automatically. Mutually exclusive with `NO_DISKS_FOR_CLUSTER`. | "" |
 | RKE2_EXTRA_CONFIG | Additional RKE2 configuration in YAML format | "" |
 | RKE2_INSTALLATION_URL | RKE2 installation script URL | https://get.rke2.io |
-| ROCM_BASE_URL | ROCm base repository URL | https://repo.radeon.com/amdgpu-install/7.1.1/ubuntu/ |
-| ROCM_DEB_PACKAGE | ROCm DEB package name | amdgpu-install_7.1.1.70101-1_all.deb |
+| ROCM_BASE_URL | ROCm base repository URL | https://repo.radeon.com/amdgpu-install/7.2.3/ubuntu/ |
+| ROCM_DEB_PACKAGE | ROCm DEB package name | amdgpu-install_7.2.3.70203-1_all.deb |
 
 ### OIDC Configuration Examples
 
