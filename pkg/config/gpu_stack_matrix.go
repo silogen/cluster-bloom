@@ -14,8 +14,8 @@ import "fmt"
 // pins owned here.
 const (
 	// Instinct: the existing qualified defaults (no behavior change).
-	instinctHostRocmVersion    = "7.1.1"
-	instinctHostRocmDebBuild   = "70101-1"
+	instinctHostRocmVersion    = "7.2.3"
+	instinctHostRocmDebBuild   = "70203-1"
 	instinctOperatorPath       = "amd-gpu-operator/v1.4.1"
 	instinctOperatorConfigPath = "amd-gpu-operator-config/v1.4.1"
 	instinctDriverVersion      = "7.0"

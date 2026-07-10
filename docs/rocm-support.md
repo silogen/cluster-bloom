@@ -12,19 +12,19 @@ The host ROCm version and the cluster-forge GPU Operator are selected together p
 
 | Family | Host ROCm | GPU Operator path | DeviceConfig ROCm driver | Tech preview |
 |--------|-----------|-------------------|--------------------------|--------------|
-| `instinct` (default) | 7.1.1 / 70101-1 | amd-gpu-operator/v1.4.1 | 7.0 | no |
-| `radeon` | 7.13.0 | amd-gpu-operator/v1.4.1 | 7.13.0 | yes |
+| `instinct` (default) | 7.2.3 / 70203-1 | amd-gpu-operator/v1.4.1 | 7.2 | no |
+| `radeon` | 7.13.0 | amd-gpu-operator/v1.4.1 | 7.13 | yes |
 
 Notes:
 - `instinct` reproduces the existing defaults exactly, so existing installs are unchanged.
 - `radeon` selects the ROCm 7.13 tech-preview stack. bloom prints a tech-preview notice at install time, these components are not production qualified for this release.
 - Single-select by design: host ROCm is one version per node. The AIM model catalog (`AIM_HARDWARE_FAMILY`) can still be heterogeneous.
-- Unsupported combinations (e.g. a Radeon stack resolving to ROCm 7.2, which is too old) fail validation before install with an error naming the incompatible component.
+- Unsupported combinations (e.g. a Radeon stack resolving to ROCm 7.2.0, which is too old) fail validation before install with an error naming the incompatible component.
 - The real ROCm 7.13 tech-preview version strings and the vendored GPU Operator chart are tracked in EAI-5906; the `radeon` row carries placeholder pins until then.
 
 ### ROCm Installation
 Automated installation of ROCm drivers and runtime components:
-- **Driver Version**: Selected by `GPU_STACK_FAMILY` (default family `instinct` → ROCm 7.1.1); base URL still overridable via `ROCM_BASE_URL`
+- **Driver Version**: Selected by `GPU_STACK_FAMILY` (default family `instinct` → ROCm 7.2.3); base URL still overridable via `ROCM_BASE_URL`
 - **Components**: amdgpu kernel driver, ROCm runtime, ROCm libraries
 - **Dependencies**: Linux kernel headers, Python setuptools
 - **Installation Method**: amdgpu-install utility from AMD repositories
@@ -65,7 +65,7 @@ amd-smi list --json
 
 ### Version Verification
 Ensures correct ROCm version is installed:
-- **Supported Version**: ROCm 7.1.1 exactly
+- **Supported Version**: ROCm 7.2.3 exactly
 - **Version Check**: Validates installed version matches requirements
 - **Out-of-Date Detection**: Identifies 6.x versions requiring upgrade
 - **Unsupported Warning**: Flags 7.2+ versions not yet supported
@@ -78,33 +78,33 @@ amd-smi
 
 # Example output:
 # +------------------------------------------------------------------------------+
-# | AMD-SMI 26.0.2+39589fda  amdgpu version: 6.14.14  ROCm version: 7.1.1    |
+# | AMD-SMI 26.0.2+39589fda  amdgpu version: 6.14.14  ROCm version: 7.2.3    |
 # +------------------------------------------------------------------------------+
 
-# Expected: ROCm version: 7.1.1
+# Expected: ROCm version: 7.2.3
 ```
 
 **Version Status Guide**:
-- ✅ **7.1.1** - Correct, required and fully supported
-- ⚠️ **Other** - Version mismatch: WARNING issued; install 7.1.1
+- ✅ **7.2.3** - Correct, required and fully supported
+- ⚠️ **Other** - Version mismatch: WARNING issued; install 7.2.3
 
-**Install ROCm 7.1.1**:
+**Install ROCm 7.2.3**:
 ```bash
 # 1. Remove old installation
 sudo amdgpu-uninstall
 sudo apt remove --purge amdgpu-install
 
-# 2. Reinstall with 7.1.1
+# 2. Reinstall with 7.2.3
 CODENAME=$(grep VERSION_CODENAME /etc/os-release | cut -d= -f2)
-wget https://repo.radeon.com/amdgpu-install/7.1.1/ubuntu/$CODENAME/amdgpu-install_7.1.1.70002-1_all.deb
-sudo apt install -y ./amdgpu-install_7.1.1.70002-1_all.deb
+wget https://repo.radeon.com/amdgpu-install/7.2.3/ubuntu/$CODENAME/amdgpu-install_7.2.3.70002-1_all.deb
+sudo apt install -y ./amdgpu-install_7.2.3.70002-1_all.deb
 sudo amdgpu-install --usecase=rocm,dkms --yes
 
 # 3. Reboot and verify
 sudo reboot
 # After reboot, check version in header:
 amd-smi
-# Should show: ROCm version: 7.1.1
+# Should show: ROCm version: 7.2.3
 ```
 
 ### Device Rules

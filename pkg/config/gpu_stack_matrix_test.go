@@ -51,11 +51,11 @@ func TestInstinctMatchesExistingDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if profile.HostRocmVersion != "7.1.1" {
-		t.Errorf("instinct host ROCm: got %q, want 7.1.1", profile.HostRocmVersion)
+	if profile.HostRocmVersion != "7.2.3" {
+		t.Errorf("instinct host ROCm: got %q, want 7.2.3", profile.HostRocmVersion)
 	}
-	if profile.HostRocmDebBuild != "70101-1" {
-		t.Errorf("instinct deb build: got %q, want 70101-1", profile.HostRocmDebBuild)
+	if profile.HostRocmDebBuild != "70203-1" {
+		t.Errorf("instinct deb build: got %q, want 70203-1", profile.HostRocmDebBuild)
 	}
 	if profile.OperatorPath != "amd-gpu-operator/v1.4.1" {
 		t.Errorf("instinct operator path: got %q, want amd-gpu-operator/v1.4.1", profile.OperatorPath)
@@ -105,8 +105,8 @@ func TestApplyGPUStackVars(t *testing.T) {
 	if err := ApplyGPUStackVars(cfg); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg["rocm_required_version"] != "7.1.1" {
-		t.Errorf("rocm_required_version: got %v, want 7.1.1", cfg["rocm_required_version"])
+	if cfg["rocm_required_version"] != "7.2.3" {
+		t.Errorf("rocm_required_version: got %v, want 7.2.3", cfg["rocm_required_version"])
 	}
 	if cfg["gpu_operator_path"] != "amd-gpu-operator/v1.4.1" {
 		t.Errorf("gpu_operator_path: got %v", cfg["gpu_operator_path"])
