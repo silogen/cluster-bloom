@@ -4,12 +4,13 @@
   become: yes
   gather_facts: false
   vars:
-    NEW_DOMAIN: ""           # Required
+    NEW_DOMAIN: ""           # Required (unless TLS_ONLY)
     CERT_OPTION: ""          # Required: generate|provide|cert-manager
     CERT_PATH: ""            # For cert_option=provide
     KEY_PATH: ""             # For cert_option=provide
     DRY_RUN: false           # Optional
     CHECK_DNS_ONLY: false    # Optional
+    TLS_ONLY: false          # Optional - update only TLS certificates
     KUBECONFIG: ""           # Optional, defaults to ~/.kube/config
 
   pre_tasks:
@@ -21,7 +22,7 @@
     - name: Validate required variables for domain update
       fail:
         msg: "NEW_DOMAIN is required"
-      when: NEW_DOMAIN == "" and not CHECK_DNS_ONLY
+      when: NEW_DOMAIN == "" and not CHECK_DNS_ONLY and not TLS_ONLY
 
     - name: Validate CERT_OPTION
       fail:
@@ -43,8 +44,44 @@
       when: CHECK_DNS_ONLY
       import_tasks: tasks/update_domain/dns_check.yaml
 
+    - name: TLS-only update
+      when: not CHECK_DNS_ONLY and TLS_ONLY
+      block:
+        - name: Display TLS update header
+          debug:
+            msg:
+              - "🔒 Starting TLS certificate update"
+              - "===================================="
+              - ""
+
+        - name: Get current domain for TLS update
+          when: NEW_DOMAIN == ""
+          block:
+            - name: Retrieve current domain from ConfigMap
+              command: /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get configmap cluster-domain -n default -o jsonpath='{.data.DOMAIN}'
+              register: current_domain_tls_result
+              failed_when: current_domain_tls_result.stdout == ""
+              changed_when: false
+
+            - name: Set NEW_DOMAIN to current domain
+              set_fact:
+                NEW_DOMAIN: "{{ current_domain_tls_result.stdout }}"
+
+            - name: Display domain for TLS update
+              debug:
+                msg: "  ℹ️  Using current domain: {{ NEW_DOMAIN }}"
+
+        - import_tasks: tasks/update_domain/certificates.yaml
+
+        - name: Display TLS success message
+          debug:
+            msg:
+              - ""
+              - "✅ TLS certificates updated successfully!"
+              - ""
+
     - name: Full domain update
-      when: not CHECK_DNS_ONLY
+      when: not CHECK_DNS_ONLY and not TLS_ONLY
       block:
         - name: Display update header
           debug:

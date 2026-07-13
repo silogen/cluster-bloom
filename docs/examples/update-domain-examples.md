@@ -1,6 +1,6 @@
 # Domain Update Examples
 
-This document provides practical examples for updating the domain in cluster-forge installations.
+This document provides practical examples for updating the domain or the TLS certificates in cluster-forge installations.
 
 ## Example 1: Development Environment with Self-Signed Certificates
 
@@ -8,7 +8,7 @@ This document provides practical examples for updating the domain in cluster-for
 
 ```bash
 # Update domain with auto-generated certificate
-./bloom update-domain \
+./bloom update \
   --new-domain test.local \
   --cert-option generate
 
@@ -46,7 +46,7 @@ ls -l /secure/certs/
 openssl x509 -in /secure/certs/prod.company.com.crt -noout -text | grep DNS
 
 # Preview the changes
-./bloom update-domain \
+./bloom update \
   --new-domain prod.company.com \
   --cert-option provide \
   --cert-path /secure/certs/prod.company.com.crt \
@@ -54,7 +54,7 @@ openssl x509 -in /secure/certs/prod.company.com.crt -noout -text | grep DNS
   --dry-run
 
 # Apply the update
-./bloom update-domain \
+./bloom update \
   --new-domain prod.company.com \
   --cert-option provide \
   --cert-path /secure/certs/prod.company.com.crt \
@@ -82,7 +82,7 @@ openssl x509 -in /secure/certs/prod.company.com.crt -noout -text | grep DNS
 kubectl get certificate cluster-tls -n envoy-gateway-system
 
 # Update domain (cert-manager will issue new certificate automatically)
-./bloom update-domain \
+./bloom update \
   --new-domain app.example.com \
   --cert-option cert-manager
 
@@ -103,32 +103,43 @@ kubectl get certificate cluster-tls -n envoy-gateway-system -o yaml
 
 ---
 
-## Example 4: Silogen.ai Domain with kaytoo Integration
+## Example 4: Update TLS Certificates Only
 
-**Scenario:** Using kaytoo to automate DNS and certificate setup for silogen.ai domains.
+**Scenario:** Your certificate is expiring soon but the domain remains the same.
 
 ```bash
-# Step 1: Get the LoadBalancer IP
-kubectl get svc -n envoy-gateway-system \
-  -l gateway.envoyproxy.io/owning-gateway-name=https \
-  -o jsonpath='{.items[0].status.loadBalancer.ingress[0].ip}'
-# Output: 203.0.113.50
+# Option 1: Generate new self-signed certificate
+./bloom update --cert-option generate
 
-# Step 2: Use kaytoo to setup DNS and get Let's Encrypt cert
-kaytoo setup_dns_cert \
-  --domain app.silogen.ai \
-  --ip 203.0.113.50
-
-# Step 3: Once kaytoo completes, extract the certificate from 1Password
-# (kaytoo stores it there automatically)
-
-# Step 4: Update bloom with the new domain and certificate
-./bloom update-domain \
-  --new-domain app.silogen.ai \
+# Option 2: Provide new certificate from your CA
+./bloom update \
   --cert-option provide \
-  --cert-path /tmp/letsencrypt-cert.pem \
-  --key-path /tmp/letsencrypt-key.pem
+  --cert-path /secure/certs/renewed-cert.crt \
+  --key-path /secure/certs/renewed-key.key
+
+# Option 3: Use cert-manager to issue new certificate
+./bloom update --cert-option cert-manager
+
+# The tool will:
+# 1. Validate cluster connectivity
+# 2. Update TLS certificates (cluster-tls secret)
+# 3. Restart gateway pods to pick up new certificate
+# 4. Skip all domain configuration updates
 ```
+
+**After completion:**
+1. Verify new certificate is active:
+   ```bash
+   # Check certificate expiration
+   kubectl get secret cluster-tls -n envoy-gateway-system -o jsonpath='{.data.tls\.crt}' | \
+     base64 -d | openssl x509 -noout -enddate
+   
+   # Test HTTPS endpoint
+   curl -vI https://argocd.your-domain.com 2>&1 | grep "expire date"
+   ```
+2. No DNS changes required
+3. No ArgoCD sync needed (domain configuration unchanged)
+4. Services remain accessible at existing URLs
 
 ---
 
@@ -140,7 +151,7 @@ kaytoo setup_dns_cert \
 # First, update your DNS records manually
 # Then verify they're propagating correctly
 
-./bloom update-domain --check-dns new.example.com
+./bloom update --check-dns new.example.com
 
 # Output will show:
 # ✅ Checking argocd.new.example.com... ✅ (203.0.113.50)
@@ -159,7 +170,7 @@ kaytoo setup_dns_cert \
 
 ```bash
 # Run the update-domain command again with the original domain
-./bloom update-domain \
+./bloom update \
   --new-domain original.example.com \
   --cert-option generate
 
@@ -182,7 +193,7 @@ kaytoo setup_dns_cert \
 # Notify users of upcoming change
 
 # Step 3: Run dry-run to verify
-./bloom update-domain \
+./bloom update \
   --new-domain prod.company.com \
   --cert-option provide \
   --cert-path /certs/prod.crt \
@@ -190,7 +201,7 @@ kaytoo setup_dns_cert \
   --dry-run
 
 # Step 4: Execute during maintenance window
-./bloom update-domain \
+./bloom update \
   --new-domain prod.company.com \
   --cert-option provide \
   --cert-path /certs/prod.crt \
@@ -250,7 +261,7 @@ dig argocd.new-domain.com
 nslookup k8s.new-domain.com
 
 # Check DNS propagation
-./bloom update-domain --check-dns new-domain.com
+./bloom update --check-dns new-domain.com
 
 # Update local DNS for testing
 sudo echo "192.168.1.100 argocd.new-domain.com" >> /etc/hosts

@@ -13,21 +13,30 @@ var (
 	certPath     string
 	keyPath      string
 	checkDNSOnly bool
-	dryRunDomain bool
+	dryRunUpdate bool
 )
 
-func newUpdateDomainCmd() *cobra.Command {
+func newUpdateCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "update-domain",
-		Short: "Update the domain for an existing cluster-forge installation",
-		Long: `Update the domain name for an existing cluster-forge installation.
+		Use:   "update",
+		Short: "Update domain and/or TLS certificates for an existing cluster-forge installation",
+		Long: `Update the domain name and/or TLS certificates for an existing cluster-forge installation.
 
-This command updates:
+You can update:
+  - Both domain and TLS certificates (provide --new-domain)
+  - Just TLS certificates (omit --new-domain)
+
+When updating domain, this command updates:
   - TLS certificates (cluster-tls secret)
   - cluster-domain ConfigMap
   - OpenBao domain secret
-  - ArgoCD Application global.domain parameter
-  - All dependent HTTPRoutes and TLSRoutes (via ArgoCD sync)
+  - cluster-values repository (GitOps source)
+  - Keycloak client redirect URIs
+  - AIRM cluster records
+  - ArgoCD Application (triggers sync)
+
+When updating only TLS, this command updates:
+  - TLS certificates (cluster-tls secret)
 
 Certificate options:
   - generate: Generate new self-signed certificates
@@ -38,16 +47,24 @@ DNS updates must be performed manually. The command will display required DNS ch
 
 Examples:
   # Update domain with generated certificates
-  bloom update-domain --new-domain new.example.com --cert-option generate
+  bloom update --new-domain new.example.com --cert-option generate
 
   # Update domain with provided certificates
-  bloom update-domain --new-domain new.example.com \
+  bloom update --new-domain new.example.com \
     --cert-option provide \
     --cert-path /path/to/cert.pem \
     --key-path /path/to/key.pem
 
+  # Update only TLS certificates (no domain change)
+  bloom update --cert-option generate
+
+  # Update only TLS with provided certificate
+  bloom update --cert-option provide \
+    --cert-path /path/to/cert.pem \
+    --key-path /path/to/key.pem
+
   # Check DNS configuration for a domain
-  bloom update-domain --check-dns new.example.com`,
+  bloom update --check-dns new.example.com`,
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			// Validation
 			if checkDNSOnly {
@@ -57,10 +74,7 @@ Examples:
 				return nil
 			}
 
-			if newDomain == "" {
-				return fmt.Errorf("--new-domain is required")
-			}
-
+			// cert-option is always required
 			if certOption == "" {
 				return fmt.Errorf("--cert-option is required (generate|provide|cert-manager)")
 			}
@@ -83,27 +97,34 @@ Examples:
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Determine if we're updating domain or just TLS
+			tlsOnly := newDomain == ""
+
 			// Build config map for Ansible
 			cfg := map[string]any{
 				"NEW_DOMAIN":     newDomain,
 				"CERT_OPTION":    certOption,
 				"CERT_PATH":      certPath,
 				"KEY_PATH":       keyPath,
-				"DRY_RUN":        dryRunDomain,
+				"DRY_RUN":        dryRunUpdate,
 				"CHECK_DNS_ONLY": checkDNSOnly,
+				"TLS_ONLY":       tlsOnly,
 			}
 
 			// Run the Ansible playbook
 			exitCode, err := runtime.RunPlaybook(
 				cfg,
 				"update-domain.yaml",
-				dryRunDomain,
+				dryRunUpdate,
 				"",
 				runtime.OutputClean,
 				Version,
 			)
 
 			if exitCode != 0 {
+				if tlsOnly {
+					return fmt.Errorf("TLS update failed with exit code %d", exitCode)
+				}
 				return fmt.Errorf("domain update failed with exit code %d", exitCode)
 			}
 
@@ -111,12 +132,12 @@ Examples:
 		},
 	}
 
-	cmd.Flags().StringVar(&newDomain, "new-domain", "", "New domain name for the cluster (required)")
+	cmd.Flags().StringVar(&newDomain, "new-domain", "", "New domain name for the cluster (optional - omit to update only TLS)")
 	cmd.Flags().StringVar(&certOption, "cert-option", "", "Certificate option: generate|provide|cert-manager (required)")
 	cmd.Flags().StringVar(&certPath, "cert-path", "", "Path to certificate file (required with --cert-option=provide)")
 	cmd.Flags().StringVar(&keyPath, "key-path", "", "Path to private key file (required with --cert-option=provide)")
 	cmd.Flags().BoolVar(&checkDNSOnly, "check-dns", false, "Only check DNS configuration for the specified domain")
-	cmd.Flags().BoolVar(&dryRunDomain, "dry-run", false, "Show what would be changed without applying updates")
+	cmd.Flags().BoolVar(&dryRunUpdate, "dry-run", false, "Show what would be changed without applying updates")
 
 	return cmd
 }
