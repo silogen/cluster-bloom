@@ -12,8 +12,8 @@ The host ROCm version and the cluster-forge GPU Operator are selected together p
 
 | Family | Host ROCm | GPU Operator path | DeviceConfig ROCm driver | Tech preview |
 |--------|-----------|-------------------|--------------------------|--------------|
-| `instinct` (default) | 7.2.3 / 70203-1 | amd-gpu-operator/v1.4.1 | 7.2 | no |
-| `radeon` | 7.13.0 | amd-gpu-operator/v1.4.1 | 7.13 | yes |
+| `instinct` (default) | 7.2.3 / 70203-1 | amd-gpu-operator/v1.4.1 | 7.0 | no |
+| `radeon` | 7.13.0 | amd-gpu-operator/v1.5.1-beta.0 | 7.13 | yes |
 
 Notes:
 - `instinct` reproduces the existing defaults exactly, so existing installs are unchanged.
