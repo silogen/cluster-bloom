@@ -80,6 +80,29 @@
   debug:
     msg: "  ✓ Verifying OpenBao installation... ✅"
 
+- name: Verify domain-dependent services
+  when: not CHECK_DNS_ONLY and not TLS_ONLY
+  block:
+    - name: Verify Keycloak is ready
+      command: /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get deployment keycloak -n keycloak -o jsonpath='{.status.readyReplicas}'
+      register: keycloak_check
+      failed_when: keycloak_check.stdout == "" or keycloak_check.stdout == "0"
+      changed_when: false
+
+    - name: Display Keycloak verification result
+      debug:
+        msg: "  ✓ Verifying Keycloak... ✅ ({{ keycloak_check.stdout }} ready)"
+
+    - name: Verify AIRM API is ready
+      command: /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get deployment airm-api -n airm -o jsonpath='{.status.readyReplicas}'
+      register: airm_api_check
+      failed_when: airm_api_check.stdout == "" or airm_api_check.stdout == "0"
+      changed_when: false
+
+    - name: Display AIRM API verification result
+      debug:
+        msg: "  ✓ Verifying AIRM API... ✅ ({{ airm_api_check.stdout }} ready)"
+
 - name: Check for in-progress ArgoCD syncs
   shell: /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get applications -n argocd -o jsonpath='{range .items[?(@.status.sync.status!="Synced")]}{.metadata.name}{"\n"}{end}'
   register: syncing_apps
