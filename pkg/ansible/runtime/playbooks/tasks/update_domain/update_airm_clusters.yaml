@@ -25,7 +25,11 @@
             # Get user password from airm-user-credentials in airm namespace
             USER_PASSWORD=$(/var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get secret airm-user-credentials -n airm -o jsonpath='{.data.USER_PASSWORD}' 2>/dev/null | base64 -d || echo "")
 
-            echo "${UI_CLIENT_SECRET}|${USER_PASSWORD}"
+            # Get admin client credentials from airm-realm-credentials in keycloak namespace
+            ADMIN_CLIENT_ID=$(/var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get secret airm-realm-credentials -n keycloak -o jsonpath='{.data.ADMIN_CLIENT_ID}' 2>/dev/null | base64 -d || echo "")
+            ADMIN_CLIENT_SECRET=$(/var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get secret airm-realm-credentials -n keycloak -o jsonpath='{.data.ADMIN_CLIENT_SECRET}' 2>/dev/null | base64 -d || echo "")
+
+            echo "${UI_CLIENT_SECRET}|${USER_PASSWORD}|${ADMIN_CLIENT_ID}|${ADMIN_CLIENT_SECRET}"
           register: airm_keycloak_creds_result
           changed_when: false
           no_log: true
@@ -34,6 +38,8 @@
           set_fact:
             airm_ui_client_secret: "{{ airm_keycloak_creds_result.stdout.split('|')[0] }}"
             airm_user_password: "{{ airm_keycloak_creds_result.stdout.split('|')[1] }}"
+            airm_admin_client_id: "{{ airm_keycloak_creds_result.stdout.split('|')[2] }}"
+            airm_admin_client_secret: "{{ airm_keycloak_creds_result.stdout.split('|')[3] }}"
           no_log: true
 
         - name: Create ConfigMap with AIRM cluster update script
@@ -52,23 +58,54 @@
                 KC_URL="http://keycloak.keycloak.svc:8080"
                 AIRM_API_URL="http://airm-api.airm.svc:80"
                 NEW_DOMAIN="{{ NEW_DOMAIN }}"
-                CURRENT_DOMAIN="{{ CURRENT_DOMAIN }}"
                 UI_CLIENT_ID="354a0fa1-35ac-4a6d-9c4d-d661129c2cd0"
                 UI_CLIENT_SECRET="{{ airm_ui_client_secret }}"
                 USER_PASSWORD="{{ airm_user_password }}"
+                ADMIN_CLIENT_ID="{{ airm_admin_client_id }}"
+                ADMIN_CLIENT_SECRET="{{ airm_admin_client_secret }}"
 
-                # Get access token for AIRM API using password grant
+                # Get admin token to query Keycloak for actual devuser username
+                echo "Getting Keycloak admin token..."
+                ADMIN_TOKEN=$(curl -s -X POST "${KC_URL}/realms/airm/protocol/openid-connect/token" \
+                  -H "Content-Type: application/x-www-form-urlencoded" \
+                  -d "grant_type=client_credentials" \
+                  -d "client_id=${ADMIN_CLIENT_ID}" \
+                  -d "client_secret=${ADMIN_CLIENT_SECRET}" | jq -r '.access_token')
+
+                if [ "$ADMIN_TOKEN" = "null" ] || [ -z "$ADMIN_TOKEN" ]; then
+                  echo "Failed to get admin token for user query"
+                  exit 1
+                fi
+
+                echo "Admin token obtained successfully"
+
+                # Get devuser by hardcoded ID (defined in keycloak realm template)
+                echo "Retrieving devuser from Keycloak..."
+                DEVUSER_ID="487590ed-165c-44d5-b686-1aff81cca298"
+                DEVUSER_USERNAME=$(curl -s -X GET \
+                  "${KC_URL}/admin/realms/airm/users/${DEVUSER_ID}" \
+                  -H "Authorization: Bearer ${ADMIN_TOKEN}" | \
+                  jq -r '.username // empty')
+
+                if [ -z "$DEVUSER_USERNAME" ]; then
+                  echo "Failed to retrieve devuser (ID: ${DEVUSER_ID})"
+                  exit 1
+                fi
+
+                echo "Found devuser: ${DEVUSER_USERNAME}"
+
+                # Get access token for AIRM API using password grant with actual username
                 echo "Getting Keycloak access token for AIRM API..."
                 ACCESS_TOKEN=$(curl -s -X POST "${KC_URL}/realms/airm/protocol/openid-connect/token" \
                   -H "Content-Type: application/x-www-form-urlencoded" \
                   -d "grant_type=password" \
                   -d "client_id=${UI_CLIENT_ID}" \
                   -d "client_secret=${UI_CLIENT_SECRET}" \
-                  -d "username=devuser@${CURRENT_DOMAIN}" \
+                  -d "username=${DEVUSER_USERNAME}" \
                   -d "password=${USER_PASSWORD}" | jq -r '.access_token')
 
                 if [ "$ACCESS_TOKEN" = "null" ] || [ -z "$ACCESS_TOKEN" ]; then
-                  echo "Failed to get access token"
+                  echo "Failed to get access token for AIRM API"
                   exit 1
                 fi
 
