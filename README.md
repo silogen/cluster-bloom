@@ -150,15 +150,13 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | TLS_CERT | Path to TLS certificate file for ingress (required if CERT_OPTION is 'existing') | "" |
 | TLS_KEY | Path to TLS private key file for ingress (required if CERT_OPTION is 'existing') | "" |
 | USE_CERT_MANAGER | Use cert-manager with Let's Encrypt for automatic TLS certificates | false |
-| ARGOCD_VERSION | ArgoCD version to install | v2.14.11 |
 | CLUSTERFORGE_REPO | ClusterForge git repository URL for ArgoCD-based deployment | https://github.com/silogen/cluster-forge.git |
-| INSTALL_ARGOCD | Install ArgoCD core for GitOps (small clusters only) | true |
 | PRELOAD_IMAGES | Comma-separated list of container images to preload | docker.io/rocm/pytorch:rocm6.4_ubuntu24.04_py3.12_pytorch_release_2.6.0,docker.io/rocm/vllm:rocm6.4.1_vllm_0.9.0.1_20250605 |
 | RANCHER_DISK | Device path for dedicated `/var/lib/rancher` storage (e.g. `/dev/nvme2n1`). Primarily for GPU worker nodes with heavy workloads. Bloom formats and mounts this device automatically. Mutually exclusive with `NO_DISKS_FOR_CLUSTER`. | "" |
 | RKE2_EXTRA_CONFIG | Additional RKE2 configuration in YAML format | "" |
 | RKE2_INSTALLATION_URL | RKE2 installation script URL | https://get.rke2.io |
-| ROCM_BASE_URL | ROCm base repository URL | https://repo.radeon.com/amdgpu-install/7.1.1/ubuntu/ |
-| ROCM_DEB_PACKAGE | ROCm DEB package name | amdgpu-install_7.1.1.70101-1_all.deb |
+| ROCM_BASE_URL | ROCm base repository URL | https://repo.radeon.com/amdgpu-install/7.2.3/ubuntu/ |
+| ROCM_DEB_PACKAGE | ROCm DEB package name | amdgpu-install_7.2.3.70203-1_all.deb |
 
 ### OIDC Configuration Examples
 

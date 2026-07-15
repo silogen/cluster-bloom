@@ -1,6 +1,6 @@
 ---
 # Purpose: Coordinates Kubernetes applications deployment
-# Dependencies: INSTALL_ARGOCD, ARGOCD_VERSION, and other K8s app variables
+# Dependencies: CLUSTER_SIZE, DOMAIN, and other K8s app variables
 # Usage: Imported by main cluster-bloom.yaml playbook
 # Tags: [deploy_k8s_apps]
 
@@ -42,19 +42,10 @@
   when: FIRST_NODE and PRELOAD_IMAGES is defined and PRELOAD_IMAGES != ""
   tags: [images, deploy_k8s_apps]
 
-# Only install standalone ArgoCD core when ClusterForge is NOT being deployed.
-# When CLUSTERFORGE_RELEASE is set, deploy_clusterforge/clusterforge_setup.yaml
-# bootstraps ArgoCD via the argo-helm chart; running both installs ArgoCD twice
-# and the second apply fails on immutable spec.selector fields.
-- name: Setup ArgoCD Core (Small Clusters)
-  include_tasks: argocd.yaml
-  when:
-    - FIRST_NODE
-    - CLUSTER_SIZE == "small"
-    - INSTALL_ARGOCD
-    - CLUSTERFORGE_RELEASE in ["none", ""]
-  tags: [argocd, deploy_k8s_apps]
-
+# ArgoCD is bootstrapped only as part of ClusterForge (see
+# deploy_clusterforge/clusterforge_setup.yaml). CLUSTERFORGE_RELEASE "none"/""
+# deploys nothing, not even ArgoCD, so there is deliberately no standalone
+# ArgoCD install here.
 - name: Create Bloom ConfigMap
   include_tasks: bloom_config.yaml
   when: FIRST_NODE
