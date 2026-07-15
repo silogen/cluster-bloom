@@ -16,7 +16,7 @@ var (
 	dryRunUpdate bool
 )
 
-func newUpdateCmd() *cobra.Command {
+func updateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "update",
 		Short: "Update domain and/or TLS certificates for an existing cluster-forge installation",

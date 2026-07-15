@@ -277,7 +277,7 @@ imports (roles, tasks, vars) within that directory tree work as expected.`,
 	rootCmd.AddCommand(runCmd)
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(cleanupCmd)
-	rootCmd.AddCommand(newUpdateCmd())
+	rootCmd.AddCommand(updateCmd())
 
 	return rootCmd
 }
