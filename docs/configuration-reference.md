@@ -148,7 +148,7 @@ Configuration sources in priority order (highest to lowest):
 #### DOMAIN
 - **Type**: String (domain name)
 - **Default**: None
-- **Description**: Domain name for cluster ingress configuration
+- **Description**: Domain name for cluster ingress configuration. Required for first node. Also needed when joining as a control-plane node (for TLS SAN and OIDC configuration).
 - **Example**: `DOMAIN: "cluster.example.com"`
 
 ### Network and DNS Configuration
@@ -205,10 +205,10 @@ Configuration sources in priority order (highest to lowest):
 #### CERT_OPTION
 - **Type**: String
 - **Default**: None
-- **Description**: Certificate handling when cert-manager is disabled
+- **Description**: Certificate option when cert-manager is disabled (first node only)
 - **Values**: `existing` | `generate`
 - **Example**: `CERT_OPTION: "existing"`
-- **Applies When**: `USE_CERT_MANAGER: false`
+- **Applies When**: `USE_CERT_MANAGER: false` and `FIRST_NODE: true`
 
 #### TLS_CERT
 - **Type**: String (file path)

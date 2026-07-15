@@ -299,13 +299,15 @@ ADDITIONAL_OIDC_PROVIDERS:
     audiences: ["k8s"]
 ```
 
-**Configuration Generation Pipeline**:
+**Configuration Generation Pipeline** (applies to all control-plane nodes):
 1. **Default Provider Generation**: Auto-create `https://kc.{DOMAIN}/realms/airm` with audience `k8s`
 2. **Provider Validation**: Validate HTTPS URLs and audience format for additional providers
 3. **Certificate Fetching**: Retrieve SSL certificates for each OIDC provider
 4. **Authentication Configuration**: Generate `/etc/rancher/rke2/auth/auth-config.yaml` with all providers
 5. **RKE2 Integration**: Configure kube-apiserver to use authentication configuration file
 6. **Service Restart**: Trigger RKE2 server restart with new authentication configuration
+
+Each control-plane node runs its own kube-apiserver and needs OIDC configuration.
 
 **RKE2 Integration**:
 Generated configuration for `/etc/rancher/rke2/config.yaml`:

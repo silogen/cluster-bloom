@@ -7,12 +7,14 @@ ClusterBloom provides comprehensive OIDC (OpenID Connect) authentication support
 ## Default Provider Behavior
 
 ### Automatic Configuration
-When you configure a `DOMAIN` setting, ClusterBloom automatically sets up a default OIDC provider:
+When you configure a `DOMAIN` setting, ClusterBloom automatically sets up a default OIDC provider on all control-plane nodes:
 
 - **Provider URL**: `https://kc.{DOMAIN}/realms/airm`
 - **Client ID**: `k8s`
 - **Username Claim**: `preferred_username`
 - **Groups Claim**: `groups`
+
+Each control-plane node runs its own kube-apiserver and needs OIDC configuration.
 
 ### Example Default Configuration
 ```yaml
@@ -22,7 +24,7 @@ DOMAIN: "cluster.example.com"
 # Audience: k8s
 ```
 
-**Generated RKE2 Configuration**:
+**Generated RKE2 Configuration** (written to `/etc/rancher/rke2/config.yaml` on all control-plane nodes):
 ```yaml
 kube-apiserver-arg:
   - "--authentication-config=/etc/rancher/rke2/auth/auth-config.yaml"

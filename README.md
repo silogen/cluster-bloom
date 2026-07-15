@@ -136,7 +136,7 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | DOCKERHUB_TOKEN | DockerHub access token for authenticated pulls. Must be set together with `DOCKERHUB_USER`. | "" |
 | DISABLED_STEPS | Comma-separated list of step names to skip during deployment. Mutually exclusive with `ENABLED_STEPS`. | "" |
 | ENABLED_STEPS | Comma-separated list of steps to run (everything else is skipped). Mutually exclusive with `DISABLED_STEPS`. | "" |
-| DOMAIN | The domain name for the cluster (e.g., "cluster.example.com") (required). | "" |
+| DOMAIN | The domain name for the cluster (e.g., "cluster.example.com"). Required for first node. Also needed when joining as a control-plane node. | "" |
 | DNS_SERVERS | Custom DNS servers for RKE2 cluster. If set, these nameservers will be written to /etc/rancher/rke2/resolv.conf instead of copying host DNS. Format as YAML list (e.g., ["8.8.8.8", "1.1.1.1"]) | [] |
 | FIX_DNS | **Opt-in** to allow automatic DNS fixes. Only modifies DNS if broken and external DNS works. Creates backups and auto-rolls back on failure. | false |
 | FIRST_NODE | Set to true if this is the first node in the cluster | true |

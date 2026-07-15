@@ -30,9 +30,9 @@ Automated OIDC provider configuration for Kubernetes API server authentication:
 - **Default Provider**: Auto-configured `https://kc.{DOMAIN}/realms/airm` with audience `k8s`
 - **Multiple Providers**: Support for additional OIDC providers via `ADDITIONAL_OIDC_PROVIDERS`
 - **Audience Configuration**: Configurable client IDs per provider
-- **RKE2 Integration**: Automatic kube-apiserver configuration
+- **RKE2 Integration**: Automatic kube-apiserver configuration on all control-plane nodes
 
-**OIDC Configuration**:
+**OIDC Configuration** (written to `/etc/rancher/rke2/config.yaml` on all control-plane nodes):
 ```yaml
 # Generated automatically when DOMAIN is set
 kube-apiserver-arg:
