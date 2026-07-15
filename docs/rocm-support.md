@@ -81,7 +81,11 @@ amd-smi
 # | AMD-SMI 26.0.2+39589fda  amdgpu version: 6.14.14  ROCm version: 7.2.3    |
 # +------------------------------------------------------------------------------+
 
-# Expected: ROCm version: 7.2.3
+# Expected: ROCm version: 7.2.3 (instinct) or 7.13.0 (radeon)
+
+# Fallback: read version file (layout depends on ROCm stream)
+cat /opt/rocm/.info/version                    # legacy (e.g. 7.2.3)
+cat /opt/rocm/core-7.13/.info/version          # ROCm 7.13 Core SDK (radeon)
 ```
 
 **Version Status Guide**:

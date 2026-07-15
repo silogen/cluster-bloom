@@ -117,6 +117,12 @@ func TestApplyGPUStackVars(t *testing.T) {
 	if cfg["gpu_stack_family_resolved"] != "instinct" {
 		t.Errorf("gpu_stack_family_resolved: got %v", cfg["gpu_stack_family_resolved"])
 	}
+	if cfg["rocm_version_exact_required"] != false {
+		t.Errorf("rocm_version_exact_required: got %v, want false", cfg["rocm_version_exact_required"])
+	}
+	if cfg["rocm_instinct_min_patch"] != 3 {
+		t.Errorf("rocm_instinct_min_patch: got %v, want 3", cfg["rocm_instinct_min_patch"])
+	}
 }
 
 func TestApplyGPUStackVarsEmptyDefaultsInstinct(t *testing.T) {
@@ -126,5 +132,55 @@ func TestApplyGPUStackVarsEmptyDefaultsInstinct(t *testing.T) {
 	}
 	if cfg["gpu_stack_family_resolved"] != "instinct" {
 		t.Errorf("empty family should resolve to instinct, got %v", cfg["gpu_stack_family_resolved"])
+	}
+}
+
+func TestHostRocmVersionAcceptableInstinct(t *testing.T) {
+	tests := []struct {
+		version string
+		want    bool
+	}{
+		{version: "7.2.3", want: true},
+		{version: "7.2.4", want: true},
+		{version: "7.2.10", want: true},
+		{version: "7.2.2", want: false},
+		{version: "7.13.0", want: false},
+		{version: "7.3.0", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.version, func(t *testing.T) {
+			ok, err := HostRocmVersionAcceptable("instinct", tt.version, "7.2.3")
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if ok != tt.want {
+				t.Errorf("HostRocmVersionAcceptable(instinct, %q) = %v, want %v", tt.version, ok, tt.want)
+			}
+		})
+	}
+}
+
+func TestHostRocmVersionAcceptableRadeon(t *testing.T) {
+	tests := []struct {
+		version string
+		want    bool
+	}{
+		{version: "7.13.0", want: true},
+		{version: "7.13.1", want: true},
+		{version: "7.13.4", want: true},
+		{version: "7.12.9", want: false},
+		{version: "7.14.0", want: false},
+		{version: "7.2.4", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.version, func(t *testing.T) {
+			ok, err := HostRocmVersionAcceptable("radeon", tt.version, "7.13.0")
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if ok != tt.want {
+				t.Errorf("HostRocmVersionAcceptable(radeon, %q) = %v, want %v", tt.version, ok, tt.want)
+			}
+		})
 	}
 }
