@@ -13,100 +13,11 @@
   stat:
     path: /opt/rocm/bin/rocm-smi
   register: rocm_smi_check
-  when: not amd_smi_check.stat.exists
 
-- name: Set ROCm tool path
+- name: Set ROCm tool presence
   set_fact:
+    rocm_tools_present: "{{ amd_smi_check.stat.exists or rocm_smi_check.stat.exists }}"
     rocm_tool: "{{ '/opt/rocm/bin/amd-smi' if amd_smi_check.stat.exists else '/opt/rocm/bin/rocm-smi' }}"
-    rocm_installed: "{{ amd_smi_check.stat.exists or rocm_smi_check.stat.exists }}"
-
-- name: Get Ubuntu codename
-  shell: grep VERSION_CODENAME /etc/os-release | cut -d= -f2
-  register: ubuntu_codename
-  changed_when: false
-
-- name: Get kernel version
-  shell: uname -r
-  register: kernel_version
-  changed_when: false
-
-- name: Install kernel headers and modules
-  apt:
-    name:
-      - "linux-headers-{{ kernel_version.stdout }}"
-      - "linux-modules-extra-{{ kernel_version.stdout }}"
-      - python3-setuptools
-      - python3-wheel
-    state: present
-  when: not rocm_installed
-  environment:
-    DEBIAN_FRONTEND: noninteractive
-    NEEDRESTART_MODE: a
-    NEEDRESTART_SUSPEND: "1"
-
-- name: Download amdgpu-install package
-  get_url:
-    url: "{{ rocm_base_url }}/{{ ubuntu_codename.stdout }}/{{ rocm_deb_package }}"
-    dest: "/tmp/{{ rocm_deb_package }}"
-    mode: "0644"
-  when: not rocm_installed
-
-- name: Install amdgpu-install package
-  apt:
-    deb: "/tmp/{{ rocm_deb_package }}"
-    state: present
-  when: not rocm_installed
-  environment:
-    DEBIAN_FRONTEND: noninteractive
-
-- name: Install ROCm
-  shell: amdgpu-install --usecase=rocm,dkms --yes
-  when: not rocm_installed
-  environment:
-    DEBIAN_FRONTEND: noninteractive
-
-- name: Load amdgpu module
-  modprobe:
-    name: amdgpu
-    state: present
-
-- name: Verify GPUs with amd-smi (ROCm 7.x)
-  shell: /opt/rocm/bin/amd-smi list --json | jq -r '.[] | .card'
-  register: amd_smi_output
-  changed_when: false
-  when: amd_smi_check.stat.exists
-  failed_when: false
-
-- name: Verify GPUs with rocm-smi (fallback)
-  shell: /opt/rocm/bin/rocm-smi -i --json | jq -r '.[] | .["Device Name"]' | sort | uniq -c
-  register: rocm_smi_output
-  changed_when: false
-  when: not amd_smi_check.stat.exists
-  failed_when: false
-
-- name: Display detected GPUs (amd-smi)
-  debug:
-    msg: "ROCm Devices:\n{{ amd_smi_output.stdout }}"
-  when: amd_smi_check.stat.exists
-
-- name: Display detected GPUs (rocm-smi)
-  debug:
-    msg: "ROCm Devices:\n{{ rocm_smi_output.stdout }}"
-  when: not amd_smi_check.stat.exists
-
-- name: Validate GPU detection (amd-smi)
-  fail:
-    msg: "No GPUs detected by amd-smi"
-  when: 
-    - amd_smi_check.stat.exists
-    - amd_smi_output.stdout == "" or amd_smi_output.rc != 0
-
-- name: Validate GPU detection (rocm-smi)
-  fail:
-    msg: "No GPUs detected by rocm-smi"
-  when:
-    - not amd_smi_check.stat.exists
-    - rocm_smi_output.stdout == ""
 
 - name: Get ROCm version from amd-smi header
   shell: "/opt/rocm/bin/amd-smi | head -2 | grep 'ROCm version' | sed -n 's/.*ROCm version: \\([0-9][0-9.]*\\).*/\\1/p'"
@@ -132,7 +43,7 @@
   failed_when: false
   when: not amd_smi_check.stat.exists or rocm_version_output.rc != 0 or rocm_version_output.stdout == ""
 
-- name: Read ROCm version from file (fallback)
+- name: Read ROCm version from file
   slurp:
     src: "{{ rocm_version_file_path.stdout | trim }}"
   register: rocm_version_file
@@ -141,21 +52,10 @@
     - rocm_version_file_path.rc == 0
     - rocm_version_file_path.stdout | trim != ""
 
-- name: Fail when ROCm version cannot be determined
-  fail:
-    msg: >-
-      Could not determine ROCm version: amd-smi header parse failed and no
-      .info/version file found under /opt/rocm (checked legacy, core, and
-      core-* layouts). For ROCm 7.13+, expect
-      /opt/rocm/core-7.13/.info/version.
-  when:
-    - not amd_smi_check.stat.exists or rocm_version_output.rc != 0 or rocm_version_output.stdout == ""
-    - rocm_version_file_path.rc != 0 or rocm_version_file_path.stdout | trim == ""
-
 - name: Set ROCm version fact (amd-smi)
   set_fact:
     rocm_version: "{{ rocm_version_output.stdout | trim }}"
-  when: 
+  when:
     - amd_smi_check.stat.exists
     - rocm_version_output.rc == 0
     - rocm_version_output.stdout != ""
@@ -165,14 +65,148 @@
     rocm_version: "{{ rocm_version_file.content | b64decode | trim }}"
   when:
     - not amd_smi_check.stat.exists or rocm_version_output.rc != 0 or rocm_version_output.stdout == ""
+    - rocm_version_file_path is defined
     - rocm_version_file_path.rc == 0
     - rocm_version_file_path.stdout | trim != ""
+
+- name: Normalize detected ROCm version
+  set_fact:
+    rocm_version_normalized: "{{ rocm_version | regex_replace('^([0-9]+\\.[0-9]+\\.[0-9]+).*', '\\1') }}"
+    rocm_required_normalized: "{{ rocm_required_version | regex_replace('^([0-9]+\\.[0-9]+\\.[0-9]+).*', '\\1') }}"
+  when: rocm_version is defined and rocm_version | trim != ""
+
+- name: Normalize required ROCm version
+  set_fact:
+    rocm_required_normalized: "{{ rocm_required_version | regex_replace('^([0-9]+\\.[0-9]+\\.[0-9]+).*', '\\1') }}"
+  when: rocm_required_normalized is not defined
+
+- name: Initialize ROCm version acceptability
+  set_fact:
+    rocm_version_acceptable: false
+
+- name: Set instinct ROCm version acceptability (7.2.x patch >= min)
+  set_fact:
+    rocm_version_acceptable: true
+  when:
+    - gpu_stack_family_resolved | default('instinct') != 'radeon'
+    - rocm_version_normalized is defined
+    - rocm_version_normalized.split('.') | length >= 3
+    - rocm_version_normalized.split('.')[0] == '7'
+    - rocm_version_normalized.split('.')[1] == '2'
+    - (rocm_version_normalized.split('.')[2] | int) >= (rocm_instinct_min_patch | default(3) | int)
+
+- name: Set radeon ROCm version acceptability (required train, patch >= min)
+  set_fact:
+    rocm_version_acceptable: true
+  when:
+    - gpu_stack_family_resolved | default('instinct') == 'radeon'
+    - rocm_version_normalized is defined
+    - rocm_required_normalized is defined
+    - rocm_version_normalized.split('.') | length >= 3
+    - rocm_required_normalized.split('.') | length >= 3
+    - rocm_version_normalized.split('.')[0] == rocm_required_normalized.split('.')[0]
+    - rocm_version_normalized.split('.')[1] == rocm_required_normalized.split('.')[1]
+    - (rocm_version_normalized.split('.')[2] | int) >= (rocm_required_normalized.split('.')[2] | int)
+
+- name: Decide if ROCm install is needed
+  set_fact:
+    rocm_needs_install: "{{ not (rocm_tools_present | bool or (rocm_version is defined and rocm_version | trim != '' and rocm_version_acceptable | bool)) }}"
+
+- name: Get Ubuntu codename
+  shell: grep VERSION_CODENAME /etc/os-release | cut -d= -f2
+  register: ubuntu_codename
+  changed_when: false
+  when: rocm_needs_install | bool
+
+- name: Get kernel version
+  shell: uname -r
+  register: kernel_version
+  changed_when: false
+  when: rocm_needs_install | bool
+
+- name: Install kernel headers and modules
+  apt:
+    name:
+      - "linux-headers-{{ kernel_version.stdout }}"
+      - "linux-modules-extra-{{ kernel_version.stdout }}"
+      - python3-setuptools
+      - python3-wheel
+    state: present
+  when: rocm_needs_install | bool
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+    NEEDRESTART_MODE: a
+    NEEDRESTART_SUSPEND: "1"
+
+- name: Download amdgpu-install package
+  get_url:
+    url: "{{ rocm_base_url }}/{{ ubuntu_codename.stdout }}/{{ rocm_deb_package }}"
+    dest: "/tmp/{{ rocm_deb_package }}"
+    mode: "0644"
+  when: rocm_needs_install | bool
+
+- name: Install amdgpu-install package
+  apt:
+    deb: "/tmp/{{ rocm_deb_package }}"
+    state: present
+  when: rocm_needs_install | bool
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+
+- name: Install ROCm
+  shell: amdgpu-install --usecase=rocm,dkms --yes
+  when: rocm_needs_install | bool
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+
+- name: Load amdgpu module
+  modprobe:
+    name: amdgpu
+    state: present
+
+- name: Verify GPUs with amd-smi (ROCm 7.x)
+  shell: /opt/rocm/bin/amd-smi list --json | jq -r '.[] | "GPU \(.gpu) \(.bdf)"'
+  register: amd_smi_output
+  changed_when: false
+  when: amd_smi_check.stat.exists
+  failed_when: false
+
+- name: Verify GPUs with rocm-smi (fallback)
+  shell: /opt/rocm/bin/rocm-smi -i --json | jq -r '.[] | .["Device Name"]' | sort | uniq -c
+  register: rocm_smi_output
+  changed_when: false
+  when: not amd_smi_check.stat.exists
+  failed_when: false
+
+- name: Display detected GPUs (amd-smi)
+  debug:
+    msg: "ROCm Devices:\n{{ amd_smi_output.stdout }}"
+  when: amd_smi_check.stat.exists
+
+- name: Display detected GPUs (rocm-smi)
+  debug:
+    msg: "ROCm Devices:\n{{ rocm_smi_output.stdout }}"
+  when: not amd_smi_check.stat.exists
+
+- name: Validate GPU detection (amd-smi)
+  fail:
+    msg: "No GPUs detected by amd-smi"
+  when:
+    - amd_smi_check.stat.exists
+    - amd_smi_output.stdout == "" or amd_smi_output.rc != 0
+
+- name: Validate GPU detection (rocm-smi)
+  fail:
+    msg: "No GPUs detected by rocm-smi"
+  when:
+    - not amd_smi_check.stat.exists
+    - rocm_smi_output.stdout == ""
 
 - name: Display ROCm version
   debug:
     msg: "ROCm version: {{ rocm_version }}"
 
-- name: Warn if ROCm version is not exactly {{ rocm_required_version }}
+- name: Warn if ROCm version is not acceptable for {{ gpu_stack_family_resolved | default('instinct') }}
   debug:
     msg: |
       ████████████████████████████████████████████████████████████████
@@ -182,7 +216,11 @@
       Installed : ROCm {{ rocm_version }}
       Required  : ROCm {{ rocm_required_version }}
 
-      ClusterBloom requires exactly ROCm {{ rocm_required_version }}.
+      {% if gpu_stack_family_resolved | default('instinct') == 'radeon' %}
+      ClusterBloom requires ROCm {{ rocm_required_normalized | default(rocm_required_version) }} or newer on the {{ rocm_required_normalized.split('.')[0] }}.{{ rocm_required_normalized.split('.')[1] }} train for radeon.
+      {% else %}
+      ClusterBloom requires ROCm 7.2.{{ rocm_instinct_min_patch | default(3) }} or newer on the 7.2 train for instinct.
+      {% endif %}
       Using a different version may result in compatibility issues,
       unexpected behavior, or unsupported features.
 
@@ -198,9 +236,9 @@
         4. sudo reboot
 
       ████████████████████████████████████████████████████████████████
-  when: rocm_version | regex_replace('^([0-9]+\.[0-9]+\.[0-9]+).*', '\1') != rocm_required_version
+  when: rocm_version is defined and rocm_version | trim != "" and not (rocm_version_acceptable | bool)
 
 - name: Confirm ROCm version matches requirement
   debug:
-    msg: "✅ ROCm {{ rocm_version }} confirmed — version {{ rocm_required_version }} requirement satisfied"
-  when: rocm_version | regex_replace('^([0-9]+\.[0-9]+\.[0-9]+).*', '\1') == rocm_required_version
+    msg: "✅ ROCm {{ rocm_version }} confirmed — acceptable for {{ gpu_stack_family_resolved | default('instinct') }} stack"
+  when: rocm_version_acceptable | bool

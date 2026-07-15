@@ -16,6 +16,10 @@ const (
 	// Instinct: the existing qualified defaults (no behavior change).
 	instinctHostRocmVersion    = "7.2.3"
 	instinctHostRocmDebBuild   = "70203-1"
+	// instinctHostRocmMinPatch is the minimum 7.2.x patch Bloom accepts on GPU
+	// nodes when GPU_STACK_FAMILY is instinct (or empty). Newer patches such as
+	// 7.2.4 are allowed without triggering amdgpu-install.
+	instinctHostRocmMinPatch = 3
 	instinctOperatorPath       = "amd-gpu-operator/v1.4.1"
 	instinctOperatorConfigPath = "amd-gpu-operator-config/v1.4.1"
 	instinctDriverVersion      = "7.0"
@@ -107,6 +111,8 @@ func ApplyGPUStackVars(cfg Config) error {
 	// Host ROCm: override the cluster-bloom.yaml play vars via extra-vars.
 	cfg["rocm_required_version"] = profile.HostRocmVersion
 	cfg["rocm_deb_build"] = profile.HostRocmDebBuild
+	cfg["rocm_version_exact_required"] = false
+	cfg["rocm_instinct_min_patch"] = instinctHostRocmMinPatch
 	// Forge-bound selections consumed by the deploy_clusterforge tasks.
 	cfg["gpu_operator_path"] = profile.OperatorPath
 	cfg["gpu_operator_config_path"] = profile.OperatorConfigPath
@@ -131,6 +137,39 @@ func checkRadeonSupported(p StackProfile) error {
 			p.DeviceConfigDriverVersion, minRadeonRocmMajor, minRadeonRocmMinor)
 	}
 	return nil
+}
+
+// HostRocmVersionAcceptable reports whether an installed host ROCm version may
+// be left in place for the given GPU stack family. Instinct accepts 7.2.x with
+// patch >= instinctHostRocmMinPatch (e.g. 7.2.3, 7.2.4). Radeon accepts the
+// pinned major.minor train with patch >= the pinned patch (e.g. 7.13.0,
+// 7.13.1 when required is 7.13.0).
+func HostRocmVersionAcceptable(family, installed, required string) (bool, error) {
+	major, minor, patch, err := parseRocmVersion(installed)
+	if err != nil {
+		return false, err
+	}
+	switch family {
+	case "", "instinct":
+		return major == 7 && minor == 2 && patch >= instinctHostRocmMinPatch, nil
+	case "radeon":
+		reqMajor, reqMinor, reqPatch, err := parseRocmVersion(required)
+		if err != nil {
+			return false, err
+		}
+		return major == reqMajor && minor == reqMinor && patch >= reqPatch, nil
+	default:
+		return false, fmt.Errorf("unknown GPU stack family %q", family)
+	}
+}
+
+// parseRocmVersion parses ROCm versions like "7.2.3" or "7.13.0-preview".
+func parseRocmVersion(version string) (major, minor, patch int, err error) {
+	n, _ := fmt.Sscanf(version, "%d.%d.%d", &major, &minor, &patch)
+	if n < 3 {
+		return 0, 0, 0, fmt.Errorf("invalid ROCm version %q", version)
+	}
+	return major, minor, patch, nil
 }
 
 // parseRocmMajorMinor parses a "MAJOR" or "MAJOR.MINOR[.PATCH]" ROCm version.
