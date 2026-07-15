@@ -271,9 +271,10 @@ Expected output: GPU listing with device information
 Step 5: ROCm Version Check
 ---------------------------
 Command (ROCm 7.x): amd-smi (version shown in header)
-Command (Alternative): cat /opt/rocm/.info/version
+Command (Alternative, legacy layout): cat /opt/rocm/.info/version
+Command (Alternative, ROCm 7.13 Core SDK): cat /opt/rocm/core-7.13/.info/version
 
-Expected output: ROCm version: 7.2.3 (in amd-smi header)
+Expected output: ROCm version: 7.2.3 (in amd-smi header) or 7.13.0 (radeon stack)
 
 Example amd-smi output:
 +------------------------------------------------------------------------------+
