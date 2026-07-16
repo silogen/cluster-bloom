@@ -19,7 +19,7 @@ Notes:
 - `instinct` reproduces the existing defaults exactly, so existing installs are unchanged.
 - `radeon` selects the ROCm 7.13 tech-preview stack. bloom prints a tech-preview notice at install time, these components are not production qualified for this release.
 - Single-select by design: host ROCm is one version per node. The AIM model catalog (`AIM_HARDWARE_FAMILY`) can still be heterogeneous.
-- Unsupported combinations (e.g. a Radeon stack resolving to ROCm 7.2.0, which is too old) fail validation before install with an error naming the incompatible component.
+- Unsupported combinations (e.g. a Radeon stack resolving to ROCm 7.2.0, which is too old) fail validation before install with an error naming the incompatible component. See [Version Compatibility Guard](#version-compatibility-guard-fail-fast) for the fail-fast behavior and how to override it.
 - The real ROCm 7.13 tech-preview version strings and the vendored GPU Operator chart are tracked in EAI-5906; the `radeon` row carries placeholder pins until then.
 
 ### ROCm Installation
@@ -91,6 +91,29 @@ cat /opt/rocm/core-7.13/.info/version          # ROCm 7.13 Core SDK (radeon)
 **Version Status Guide**:
 - ✅ **7.2.3** - Correct, required and fully supported
 - ⚠️ **Other** - Version mismatch: WARNING issued; install 7.2.3
+
+### Version Compatibility Guard (fail-fast)
+
+Before doing any package, kernel, or repository work, bloom detects the ROCm already installed on each GPU node and checks it against the version train required by the selected `GPU_STACK_FAMILY`:
+
+- `instinct` (default) requires host ROCm on the **7.2** train (>= 7.2.3).
+- `radeon` requires host ROCm on the **7.13** train.
+
+If a functional ROCm install (amd-smi / rocm-smi present) is found whose version does not match the required train — for example `radeon` selected on a host that already has ROCm 7.2.3 — bloom **aborts early during the node validation phase** with an "Unsupported ROCm version" message. This runs as early as the installed version can be known, so the deploy stops before any GPU work rather than finishing with a mismatched, unsupported stack.
+
+This guard is a **hard fail with no interactive prompt**: bloom pipes the ansible-playbook output through its own processor over an SSH connection, so there is no TTY for a `[y/N]` prompt (it would hang the run). The escape hatch is the `ROCM_ALLOW_VERSION_MISMATCH` config option instead.
+
+**Override (proceed anyway)** — keep the currently installed ROCm and skip the guard by setting this in `bloom.yaml`:
+
+```yaml
+ROCM_ALLOW_VERSION_MISMATCH: true   # accepts true|TRUE|1
+```
+
+`ROCM_ALLOW_VERSION_MISMATCH` is a `bloom.yaml` config key (default `false`), so it works with `bloom cli bloom.yaml`. With `bloom run` you can also pass it as an extra-var:
+
+```bash
+sudo bloom run -e ROCM_ALLOW_VERSION_MISMATCH=true ...
+```
 
 **Install ROCm 7.2.3**:
 ```bash

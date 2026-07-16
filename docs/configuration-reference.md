@@ -64,6 +64,7 @@ Configuration sources in priority order (highest to lowest):
   - Single-select by design: host ROCm is one version per node, so a heterogeneous Radeon + Instinct GPU stack cannot be expressed here. The AIM catalog (`AIM_HARDWARE_FAMILY`) can still be heterogeneous.
   - Selecting `radeon` defaults host ROCm and the GPU Operator to the ROCm 7.13 tech-preview train. These components are tech preview, not production qualified, and bloom prints a notice at install time.
   - Unsupported combinations (for example a Radeon stack resolving to ROCm 7.2) fail validation before install with an error naming the incompatible component.
+  - **Overriding the version guard**: when a GPU node already has ROCm installed that does not match the selected family's train (e.g. `radeon` on a host with ROCm 7.2.3), bloom aborts early during node validation with an "Unsupported ROCm version" message. This guard is a hard fail (no interactive prompt, because bloom pipes ansible output over SSH with no TTY). To proceed anyway with the currently installed ROCm, set [`ROCM_ALLOW_VERSION_MISMATCH`](#rocm_allow_version_mismatch) in `bloom.yaml`.
   - The exact ROCm 7.13 tech-preview version strings and the vendored GPU Operator chart are tracked in EAI-5906; until that lands the `radeon` row carries placeholder pins.
 
 ### Cluster Joining Configuration
@@ -340,6 +341,15 @@ Configuration sources in priority order (highest to lowest):
 - **Description**: Skip validation of `/var/lib/rancher` partition size (useful for CPU-only nodes)
 - **Values**: `true` | `false`
 - **Example**: `SKIP_RANCHER_PARTITION_CHECK: true`
+
+#### ROCM_ALLOW_VERSION_MISMATCH
+- **Type**: Boolean
+- **Default**: `false`
+- **Description**: Force continuation past the early ROCm version guard. On a GPU node, if the already-installed ROCm does not match the train required by `GPU_STACK_FAMILY` (e.g. `radeon` needs ROCm 7.13 but the host has 7.2.3), bloom warns and exits early during node validation. Set this to skip that guard and proceed with the installed ROCm. The guard is a hard fail with no interactive prompt (bloom pipes ansible output over SSH, so there is no TTY).
+- **Values**: `true` | `false` (also accepts `TRUE` / `1`)
+- **Applicable**: `GPU_NODE: true`
+- **Example**: `ROCM_ALLOW_VERSION_MISMATCH: true`
+- **Notes**: Works with `bloom cli bloom.yaml`. With `bloom run` it can also be passed as an extra-var: `-e ROCM_ALLOW_VERSION_MISMATCH=true`.
 
 #### RANCHER_DISK
 - **Type**: String (device path)

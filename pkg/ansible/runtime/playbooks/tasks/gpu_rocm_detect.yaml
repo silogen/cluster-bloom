@@ -1,0 +1,257 @@
+---
+# Purpose: Detect the ROCm install already present on the node and decide whether
+#          it is acceptable for the selected GPU_STACK_FAMILY.
+# Usage:   include_tasks'd from both validate_node/main.yaml (early fail-fast) and
+#          prepare_node/gpu_rocm.yaml (so tag-scoped `--tags prepare_node` runs,
+#          which skip validation, still get the guard). Runs identical logic in
+#          both places so there is a single source of truth for detection and the
+#          compatibility gate. All facts set here persist for the rest of the play.
+# Note:    An interactive [y/N] prompt is intentionally NOT used — bloom pipes the
+#          ansible-playbook stdout through a custom OutputProcessor over an SSH
+#          connection, so `pause` has no TTY and would hang. The non-interactive
+#          bypass is rocm_allow_version_mismatch: true.
+
+- name: Discover ROCm installation root (handles /opt/rocm symlink and versioned installs)
+  shell: |
+    set -e
+    has_tool() {
+      [ -x "$1/bin/amd-smi" ] || [ -x "$1/bin/rocm-smi" ]
+    }
+    has_version() {
+      c="$1"
+      if [ -f "$c/.info/version" ] || [ -f "$c/core/.info/version" ]; then
+        return 0
+      fi
+      for f in "$c"/core-*/.info/version; do
+        [ -f "$f" ] && return 0
+      done
+      return 1
+    }
+    # Prefer /opt/rocm, then the newest versioned sibling. A stale, incomplete
+    # /opt/rocm (e.g. a leftover core-only tree from a different ROCm train) can
+    # carry a .info/version but no bin/, so give priority to roots that actually
+    # contain the ROCm tooling before falling back to a version marker alone.
+    candidates="/opt/rocm $(ls -d /opt/rocm-* 2>/dev/null | sort -V -r)"
+    for d in $candidates; do
+      [ -e "$d" ] || continue
+      if has_tool "$d"; then
+        echo "$d"
+        exit 0
+      fi
+    done
+    for d in $candidates; do
+      [ -e "$d" ] || continue
+      if has_version "$d"; then
+        echo "$d"
+        exit 0
+      fi
+    done
+    exit 1
+  register: rocm_root_discovery
+  changed_when: false
+  failed_when: false
+
+- name: Set ROCm root path
+  set_fact:
+    rocm_root: "{{ (rocm_root_discovery.stdout | trim) if (rocm_root_discovery.rc == 0 and (rocm_root_discovery.stdout | trim) != '') else '/opt/rocm' }}"
+
+- name: Report resolved ROCm root
+  debug:
+    msg: "Using ROCm root: {{ rocm_root }}"
+
+# Resolve the SMI tooling by searching PATH (amd-smi is installed to /usr/bin via
+# update-alternatives) and every /opt/rocm*/bin, not just {{ rocm_root }}/bin.
+# This makes detection robust when rocm_root points at an incomplete tree (e.g. a
+# stale /opt/rocm that shadows the real versioned install), so we never fall back
+# to the nonexistent rocm-smi on a working ROCm 7.x node.
+- name: Locate amd-smi binary (ROCm 7.x)
+  shell: |
+    set -e
+    for c in "$(command -v amd-smi 2>/dev/null)" \
+             "{{ rocm_root }}/bin/amd-smi" \
+             /opt/rocm/bin/amd-smi \
+             $(ls -d /opt/rocm-*/bin/amd-smi 2>/dev/null | sort -V -r); do
+      if [ -n "$c" ] && [ -x "$c" ]; then
+        echo "$c"
+        exit 0
+      fi
+    done
+    exit 1
+  register: amd_smi_locate
+  changed_when: false
+  failed_when: false
+
+- name: Locate rocm-smi binary (legacy ROCm fallback)
+  shell: |
+    set -e
+    for c in "$(command -v rocm-smi 2>/dev/null)" \
+             "{{ rocm_root }}/bin/rocm-smi" \
+             /opt/rocm/bin/rocm-smi \
+             $(ls -d /opt/rocm-*/bin/rocm-smi 2>/dev/null | sort -V -r); do
+      if [ -n "$c" ] && [ -x "$c" ]; then
+        echo "$c"
+        exit 0
+      fi
+    done
+    exit 1
+  register: rocm_smi_locate
+  changed_when: false
+  failed_when: false
+
+- name: Set ROCm tool presence
+  set_fact:
+    amd_smi_bin: "{{ amd_smi_locate.stdout | trim }}"
+    rocm_smi_bin: "{{ rocm_smi_locate.stdout | trim }}"
+    amd_smi_present: "{{ amd_smi_locate.rc == 0 and (amd_smi_locate.stdout | trim) != '' }}"
+    rocm_smi_present: "{{ rocm_smi_locate.rc == 0 and (rocm_smi_locate.stdout | trim) != '' }}"
+    rocm_tools_present: "{{ (amd_smi_locate.rc == 0 and (amd_smi_locate.stdout | trim) != '') or (rocm_smi_locate.rc == 0 and (rocm_smi_locate.stdout | trim) != '') }}"
+
+- name: Get ROCm version from amd-smi header
+  shell: "{{ amd_smi_bin }} | head -2 | grep 'ROCm version' | sed -n 's/.*ROCm version: \\([0-9][0-9.]*\\).*/\\1/p'"
+  register: rocm_version_output
+  changed_when: false
+  when: amd_smi_present | bool
+  failed_when: false
+
+- name: Locate ROCm version file (legacy and Core SDK layouts)
+  shell: |
+    set -e
+    for p in {{ rocm_root }}/.info/version {{ rocm_root }}/core/.info/version {{ rocm_root }}/core-*/.info/version; do
+      for f in $p; do
+        if [ -f "$f" ]; then
+          echo "$f"
+          exit 0
+        fi
+      done
+    done
+    exit 1
+  register: rocm_version_file_path
+  changed_when: false
+  failed_when: false
+  when: not amd_smi_present | bool or rocm_version_output.rc != 0 or rocm_version_output.stdout == ""
+
+- name: Read ROCm version from file
+  slurp:
+    src: "{{ rocm_version_file_path.stdout | trim }}"
+  register: rocm_version_file
+  when:
+    - not amd_smi_present | bool or rocm_version_output.rc != 0 or rocm_version_output.stdout == ""
+    - rocm_version_file_path.rc == 0
+    - rocm_version_file_path.stdout | trim != ""
+
+- name: Set ROCm version fact (amd-smi)
+  set_fact:
+    rocm_version: "{{ rocm_version_output.stdout | trim }}"
+  when:
+    - amd_smi_present | bool
+    - rocm_version_output.rc == 0
+    - rocm_version_output.stdout != ""
+
+- name: Set ROCm version fact (file)
+  set_fact:
+    rocm_version: "{{ rocm_version_file.content | b64decode | trim }}"
+  when:
+    - not amd_smi_present | bool or rocm_version_output.rc != 0 or rocm_version_output.stdout == ""
+    - rocm_version_file_path is defined
+    - rocm_version_file_path.rc == 0
+    - rocm_version_file_path.stdout | trim != ""
+
+- name: Normalize detected ROCm version
+  set_fact:
+    rocm_version_normalized: "{{ rocm_version | regex_replace('^([0-9]+\\.[0-9]+\\.[0-9]+).*', '\\1') }}"
+    rocm_required_normalized: "{{ rocm_required_version | regex_replace('^([0-9]+\\.[0-9]+\\.[0-9]+).*', '\\1') }}"
+  when: rocm_version is defined and rocm_version | trim != ""
+
+- name: Normalize required ROCm version
+  set_fact:
+    rocm_required_normalized: "{{ rocm_required_version | regex_replace('^([0-9]+\\.[0-9]+\\.[0-9]+).*', '\\1') }}"
+  when: rocm_required_normalized is not defined
+
+- name: Initialize ROCm version acceptability
+  set_fact:
+    rocm_version_acceptable: false
+
+- name: Set instinct ROCm version acceptability (7.2.x patch >= min)
+  set_fact:
+    rocm_version_acceptable: true
+  when:
+    - gpu_stack_family_resolved | default('instinct') != 'radeon'
+    - rocm_version_normalized is defined
+    - rocm_version_normalized.split('.') | length >= 3
+    - rocm_version_normalized.split('.')[0] == '7'
+    - rocm_version_normalized.split('.')[1] == '2'
+    - (rocm_version_normalized.split('.')[2] | int) >= (rocm_instinct_min_patch | default(3) | int)
+
+- name: Set radeon ROCm version acceptability (required train, patch >= min)
+  set_fact:
+    rocm_version_acceptable: true
+  when:
+    - gpu_stack_family_resolved | default('instinct') == 'radeon'
+    - rocm_version_normalized is defined
+    - rocm_required_normalized is defined
+    - rocm_version_normalized.split('.') | length >= 3
+    - rocm_required_normalized.split('.') | length >= 3
+    - rocm_version_normalized.split('.')[0] == rocm_required_normalized.split('.')[0]
+    - rocm_version_normalized.split('.')[1] == rocm_required_normalized.split('.')[1]
+    - (rocm_version_normalized.split('.')[2] | int) >= (rocm_required_normalized.split('.')[2] | int)
+
+- name: Decide if ROCm install is needed
+  set_fact:
+    rocm_needs_install: "{{ not (rocm_tools_present | bool or (rocm_version is defined and rocm_version | trim != '' and rocm_version_acceptable | bool)) }}"
+
+# Fail fast when the ROCm already installed on the node is not a supported
+# version for the selected GPU_STACK_FAMILY, BEFORE doing any GPU work. This is
+# the earliest point the installed ROCm version is known (the family/required-
+# version pinning itself is validated earlier in Go config). Running this from
+# validate_node halts on a full deploy before packages/kernel/repo work; running
+# it again from gpu_rocm.yaml covers tag-scoped `--tags prepare_node` runs.
+#
+# It covers both families, because rocm_needs_install is forced false whenever
+# any ROCm tooling is present — so without this guard an unacceptable install
+# (e.g. instinct on ROCm 7.13, or radeon on ROCm 7.2) is silently kept and the
+# only signal is a debug warning at the very end, far too late.
+#
+# Set ROCM_ALLOW_VERSION_MISMATCH: true (in bloom.yaml or -e) to proceed anyway;
+# there is no interactive prompt because bloom pipes ansible output over SSH with
+# no TTY.
+
+# When the installed ROCm is unsupported for the family BUT the operator set the
+# override, the fail task below is skipped. Emit an explicit confirmation so the
+# override is visible in the output/bloom.log rather than only showing the guard
+# as "skipped" (which reads like action is still needed).
+- name: >-
+    allowing unsupported ROCm {{ rocm_version | default('unknown') }} for GPU_STACK_FAMILY={{ gpu_stack_family_resolved | default('instinct') }} because ROCM_ALLOW_VERSION_MISMATCH is set
+  debug:
+    msg: >-
+      ROCM_ALLOW_VERSION_MISMATCH is set — proceeding with installed ROCm {{ rocm_version }}
+      even though GPU_STACK_FAMILY={{ gpu_stack_family_resolved | default('instinct') }} normally requires
+      {{ ('ROCm >= ' ~ rocm_required_version) if (gpu_stack_family_resolved | default('instinct') == 'radeon') else ('ROCm >= 7.2.' ~ (rocm_instinct_min_patch | default(3))) }}.
+      This stack is mismatched and unsupported; continuing at operator request.
+  when:
+    - rocm_tools_present | bool
+    - rocm_version is defined
+    - rocm_version | trim != ''
+    - not (rocm_version_acceptable | bool)
+    - ROCM_ALLOW_VERSION_MISMATCH | default(false) | bool
+
+- name: >-
+    detected ROCm version is {{ rocm_version | default('unknown') }} and
+    GPU_STACK_FAMILY: {{ gpu_stack_family_resolved | default('instinct') }} needs
+    {{ ('>= ' ~ rocm_required_version) if (gpu_stack_family_resolved | default('instinct') == 'radeon') else ('>= 7.2.' ~ (rocm_instinct_min_patch | default(3))) }};
+    override by setting ROCM_ALLOW_VERSION_MISMATCH: true in bloom.yaml, see 'tail bloom.log' for full details
+  fail:
+    msg: |-
+      Unsupported ROCm version for GPU_STACK_FAMILY={{ gpu_stack_family_resolved | default('instinct') }}.
+      Installed: ROCm {{ rocm_version }}. Required: {{ ('ROCm >= ' ~ rocm_required_version ~ ' (the ' ~ (rocm_required_normalized | default('7.13')) ~ ' train)') if (gpu_stack_family_resolved | default('instinct') == 'radeon') else ('ROCm >= 7.2.' ~ (rocm_instinct_min_patch | default(3)) ~ ' (the 7.2 train, e.g. 7.2.3 or 7.2.4)') }}.
+      {% if gpu_stack_family_resolved | default('instinct') == 'radeon' %}The 7.13 tech-preview GPU Operator ({{ gpu_operator_path | default('amd-gpu-operator/v1.5.1-beta.0') }}) and DeviceConfig (ROCm {{ gpu_deviceconfig_driver_version | default('7.13') }}) are NOT compatible with ROCm 7.2 or older.{% endif %}
+      Continuing would deploy a mismatched, unsupported stack, so ClusterBloom stopped rather than finish with a broken configuration.
+      To proceed anyway with the currently installed ROCm, set ROCM_ALLOW_VERSION_MISMATCH: true in bloom.yaml (accepts true|TRUE|1; with `bloom run` you can also pass -e ROCM_ALLOW_VERSION_MISMATCH=true).
+  when:
+    # Only stop for a real, functional install (amd-smi/rocm-smi present). A
+    # stale directory-only remnant with no working tools is left to the normal
+    # install path, which lays down the correct version.
+    - rocm_tools_present | bool
+    - rocm_version is defined
+    - rocm_version | trim != ''
+    - not (rocm_version_acceptable | bool)
+    - not (ROCM_ALLOW_VERSION_MISMATCH | default(false) | bool)

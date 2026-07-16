@@ -200,6 +200,13 @@ schema:
       applicable: when(GPU_NODE == true)
       section: "⚙️ Advanced Configuration"
 
+    ROCM_ALLOW_VERSION_MISMATCH:
+      type: bool
+      default: false
+      desc: "Force continuation past the early ROCm version guard when a GPU node's already-installed ROCm does not match the train required by GPU_STACK_FAMILY (e.g. radeon needs 7.13 but host has 7.2.3). Normally this warns and exits early; set true (accepts true|TRUE|1) to proceed anyway with the installed ROCm."
+      applicable: when(GPU_NODE == true)
+      section: "⚙️ Advanced Configuration"
+
     CLUSTERFORGE_REPO:
       type: str
       default: https://github.com/silogen/cluster-forge.git
