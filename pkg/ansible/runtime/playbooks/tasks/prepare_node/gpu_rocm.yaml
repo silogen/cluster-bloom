@@ -4,23 +4,61 @@
 # Usage: Imported by prepare_node/main.yaml (conditional on GPU_NODE)
 # Tags: [gpu, rocm, prep_node]
 
+- name: Discover ROCm installation root (handles /opt/rocm symlink and versioned installs)
+  shell: |
+    set -e
+    check_root() {
+      c="$1"
+      if [ -x "$c/bin/amd-smi" ] || [ -x "$c/bin/rocm-smi" ] || [ -f "$c/.info/version" ] || [ -f "$c/core/.info/version" ]; then
+        return 0
+      fi
+      for f in "$c"/core-*/.info/version; do
+        [ -f "$f" ] && return 0
+      done
+      return 1
+    }
+    # Prefer the canonical /opt/rocm path (real dir or symlink to a versioned install).
+    if [ -e /opt/rocm ] && check_root /opt/rocm; then
+      echo /opt/rocm
+      exit 0
+    fi
+    # Fall back to the newest versioned sibling install (e.g. /opt/rocm-6.2.0).
+    for d in $(ls -d /opt/rocm-* 2>/dev/null | sort -V -r); do
+      if check_root "$d"; then
+        echo "$d"
+        exit 0
+      fi
+    done
+    exit 1
+  register: rocm_root_discovery
+  changed_when: false
+  failed_when: false
+
+- name: Set ROCm root path
+  set_fact:
+    rocm_root: "{{ (rocm_root_discovery.stdout | trim) if (rocm_root_discovery.rc == 0 and (rocm_root_discovery.stdout | trim) != '') else '/opt/rocm' }}"
+
+- name: Report resolved ROCm root
+  debug:
+    msg: "Using ROCm root: {{ rocm_root }}"
+
 - name: Check if amd-smi exists (ROCm 7.x)
   stat:
-    path: /opt/rocm/bin/amd-smi
+    path: "{{ rocm_root }}/bin/amd-smi"
   register: amd_smi_check
 
 - name: Check if rocm-smi exists (fallback for older versions)
   stat:
-    path: /opt/rocm/bin/rocm-smi
+    path: "{{ rocm_root }}/bin/rocm-smi"
   register: rocm_smi_check
 
 - name: Set ROCm tool presence
   set_fact:
     rocm_tools_present: "{{ amd_smi_check.stat.exists or rocm_smi_check.stat.exists }}"
-    rocm_tool: "{{ '/opt/rocm/bin/amd-smi' if amd_smi_check.stat.exists else '/opt/rocm/bin/rocm-smi' }}"
+    rocm_tool: "{{ (rocm_root ~ '/bin/amd-smi') if amd_smi_check.stat.exists else (rocm_root ~ '/bin/rocm-smi') }}"
 
 - name: Get ROCm version from amd-smi header
-  shell: "/opt/rocm/bin/amd-smi | head -2 | grep 'ROCm version' | sed -n 's/.*ROCm version: \\([0-9][0-9.]*\\).*/\\1/p'"
+  shell: "{{ rocm_root }}/bin/amd-smi | head -2 | grep 'ROCm version' | sed -n 's/.*ROCm version: \\([0-9][0-9.]*\\).*/\\1/p'"
   register: rocm_version_output
   changed_when: false
   when: amd_smi_check.stat.exists
@@ -29,7 +67,7 @@
 - name: Locate ROCm version file (legacy and Core SDK layouts)
   shell: |
     set -e
-    for p in /opt/rocm/.info/version /opt/rocm/core/.info/version /opt/rocm/core-*/.info/version; do
+    for p in {{ rocm_root }}/.info/version {{ rocm_root }}/core/.info/version {{ rocm_root }}/core-*/.info/version; do
       for f in $p; do
         if [ -f "$f" ]; then
           echo "$f"
@@ -165,14 +203,14 @@
     state: present
 
 - name: Verify GPUs with amd-smi (ROCm 7.x)
-  shell: /opt/rocm/bin/amd-smi list --json | jq -r '.[] | "GPU \(.gpu) \(.bdf)"'
+  shell: "{{ rocm_root }}/bin/amd-smi list --json | jq -r '.[] | \"GPU \\(.gpu) \\(.bdf)\"'"
   register: amd_smi_output
   changed_when: false
   when: amd_smi_check.stat.exists
   failed_when: false
 
 - name: Verify GPUs with rocm-smi (fallback)
-  shell: /opt/rocm/bin/rocm-smi -i --json | jq -r '.[] | .["Device Name"]' | sort | uniq -c
+  shell: "{{ rocm_root }}/bin/rocm-smi -i --json | jq -r '.[] | .[\"Device Name\"]' | sort | uniq -c"
   register: rocm_smi_output
   changed_when: false
   when: not amd_smi_check.stat.exists
