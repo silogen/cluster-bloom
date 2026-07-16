@@ -35,7 +35,7 @@ schema:
 
     DOMAIN:
       type: domain
-      desc: The domain name for the cluster (required for first node)
+      desc: "The domain name for the cluster (required for first node; also needed when joining as a control-plane node, since kube-apiserver on every control-plane node needs DOMAIN to build its TLS SAN (k8s.<DOMAIN>) and OIDC auth config (kc.<DOMAIN>))"
       required: when(FIRST_NODE == true)
       section: "📋 Basic Configuration"
       examples:
@@ -166,8 +166,9 @@ schema:
     CERT_OPTION:
       type: enum
       values: [existing, generate]
-      desc: Certificate option when USE_CERT_MANAGER is false
+      desc: Certificate option when USE_CERT_MANAGER is false (first node only)
       required: when(USE_CERT_MANAGER == false && FIRST_NODE == true)
+      applicable: when(FIRST_NODE == true)
       section: "🔒 SSL/TLS Configuration"
 
     TLS_CERT:

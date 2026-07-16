@@ -5,7 +5,11 @@
 # Tags: [certificates, deploy_cluster]
 
 - name: Generate API server certificates for Kubernetes
-  when: not USE_CERT_MANAGER and CERT_OPTION == "generate" and DOMAIN != ""
+  when:
+    - FIRST_NODE | bool
+    - not USE_CERT_MANAGER
+    - CERT_OPTION == "generate"
+    - DOMAIN != ""
   block:
     - name: Create RKE2 certificate directory
       file:
