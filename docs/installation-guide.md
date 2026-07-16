@@ -209,7 +209,17 @@ amd-smi
 **Expected Output**: `7.2.3.70002-1` (or similar 7.2.3.x)
 
 **If you have an out-of-date or incorrect version:**
-- **Other**: Version mismatch — WARNING issued; install 7.2.3
+- **Other**: Version mismatch — WARNING issued; install the version required by your `GPU_STACK_FAMILY`
+
+**Fail-fast version guard**: if a GPU node already has a ROCm install whose train does not match the selected `GPU_STACK_FAMILY` (e.g. `radeon`, which needs ROCm 7.13, on a host with ROCm 7.2.3), bloom aborts early during node validation with an "Unsupported ROCm version" message — before any package/kernel/repo work. This is a hard fail with no interactive prompt (bloom pipes ansible output over SSH, so there is no TTY). To proceed anyway with the currently installed ROCm, re-run with the override extra-var:
+
+```bash
+sudo ./bloom run -e rocm_allow_version_mismatch=true ...
+# JSON form also works:
+sudo ./bloom run -e '{"rocm_allow_version_mismatch": true}' ...
+```
+
+`rocm_allow_version_mismatch` is a playbook extra-var (default `false`), not a `bloom.yaml` schema key — pass it via `-e`/`--extra-vars`. See [rocm-support.md](rocm-support.md#version-compatibility-guard-fail-fast) for full details.
 
 **To install ROCm 7.2.3:**
 ```bash

@@ -64,6 +64,13 @@ Configuration sources in priority order (highest to lowest):
   - Single-select by design: host ROCm is one version per node, so a heterogeneous Radeon + Instinct GPU stack cannot be expressed here. The AIM catalog (`AIM_HARDWARE_FAMILY`) can still be heterogeneous.
   - Selecting `radeon` defaults host ROCm and the GPU Operator to the ROCm 7.13 tech-preview train. These components are tech preview, not production qualified, and bloom prints a notice at install time.
   - Unsupported combinations (for example a Radeon stack resolving to ROCm 7.2) fail validation before install with an error naming the incompatible component.
+  - **Overriding the version guard**: when a GPU node already has ROCm installed that does not match the selected family's train (e.g. `radeon` on a host with ROCm 7.2.3), bloom aborts early during node validation with an "Unsupported ROCm version" message. This guard is a hard fail (no interactive prompt, because bloom pipes ansible output over SSH with no TTY). To proceed anyway with the currently installed ROCm, re-run bloom with the override extra-var:
+    ```bash
+    sudo bloom run -e rocm_allow_version_mismatch=true ...
+    # JSON form also works:
+    sudo bloom run -e '{"rocm_allow_version_mismatch": true}' ...
+    ```
+    `rocm_allow_version_mismatch` is a playbook extra-var, not a `bloom.yaml` schema key — pass it via `-e`/`--extra-vars` rather than adding it to `bloom.yaml` (the schema validator rejects unknown keys).
   - The exact ROCm 7.13 tech-preview version strings and the vendored GPU Operator chart are tracked in EAI-5906; until that lands the `radeon` row carries placeholder pins.
 
 ### Cluster Joining Configuration

@@ -320,6 +320,14 @@ sudo ./bloom run myPlaybook.yaml --config additional-config.yaml
 sudo ./bloom run myPlaybook.yaml --verbose
 ```
 
+> **GPU nodes — ROCm version guard**: On a GPU node whose already-installed ROCm does not match the train required by `GPU_STACK_FAMILY` (e.g. `radeon` on a host with ROCm 7.2.3), bloom fails fast during node validation. To proceed anyway with the installed ROCm, add the override extra-var:
+>
+> ```sh
+> sudo ./bloom run -e rocm_allow_version_mismatch=true ...
+> ```
+>
+> This is a playbook extra-var (default `false`), not a `bloom.yaml` key — pass it via `-e`. See [docs/rocm-support.md](docs/rocm-support.md#version-compatibility-guard-fail-fast) for details.
+
 ## Installation Process
 
 Cluster-Bloom performs the following steps during installation:

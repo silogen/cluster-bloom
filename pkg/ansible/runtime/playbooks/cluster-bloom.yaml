@@ -50,8 +50,8 @@
     rocm_instinct_min_patch: 3
     rocm_version_exact_required: false
     # Bypass the early fail-fast when the installed ROCm train does not match the
-    # selected GPU_STACK_FAMILY (e.g. radeon on host ROCm 7.2). Not recommended;
-    # there is no interactive prompt because bloom pipes ansible output over SSH.
+    # selected GPU_STACK_FAMILY (e.g. radeon on host ROCm 7.2). There is no
+    # interactive prompt because bloom pipes ansible output over SSH with no TTY.
     rocm_allow_version_mismatch: false
     gpu_stack_family_resolved: instinct
     rke2_installation_url: "https://get.rke2.io"

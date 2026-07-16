@@ -213,7 +213,11 @@
 #
 # Override with rocm_allow_version_mismatch: true to proceed anyway (there is no
 # interactive prompt because bloom pipes ansible output over SSH with no TTY).
-- name: Fail early when installed ROCm is unsupported for GPU_STACK_FAMILY
+- name: >-
+    detected ROCm version is {{ rocm_version | default('unknown') }} and
+    GPU_STACK_FAMILY: {{ gpu_stack_family_resolved | default('instinct') }} needs
+    {{ ('>= ' ~ rocm_required_version) if (gpu_stack_family_resolved | default('instinct') == 'radeon') else ('>= 7.2.' ~ (rocm_instinct_min_patch | default(3))) }};
+    override with -e rocm_allow_version_mismatch=true, see 'tail bloom.log' for full details
   fail:
     msg: |
       ████████████████████████████████████████████████████████████████
@@ -223,25 +227,18 @@
       This node has ROCm {{ rocm_version }} installed, which is NOT a supported
       version for the '{{ gpu_stack_family_resolved | default('instinct') }}' GPU stack:
       {% if gpu_stack_family_resolved | default('instinct') == 'radeon' %}
-        radeon requires host ROCm on the {{ rocm_required_normalized | default('7.13') }} train (>= {{ rocm_required_version }}).
-        The 7.13 tech-preview GPU Operator ({{ gpu_operator_path | default('amd-gpu-operator/v1.5.1-beta.0') }}) and
-        DeviceConfig (ROCm {{ gpu_deviceconfig_driver_version | default('7.13') }}) are NOT compatible with ROCm 7.2 or older.
+      radeon requires host ROCm on the {{ rocm_required_normalized | default('7.13') }} train (>= {{ rocm_required_version }}).
+      The 7.13 tech-preview GPU Operator ({{ gpu_operator_path | default('amd-gpu-operator/v1.5.1-beta.0') }}) and
+      DeviceConfig (ROCm {{ gpu_deviceconfig_driver_version | default('7.13') }}) are NOT compatible with ROCm 7.2 or older.
       {% else %}
-        instinct requires host ROCm on the 7.2 train (>= 7.2.{{ rocm_instinct_min_patch | default(3) }}, e.g. 7.2.3 or 7.2.4).
+      instinct requires host ROCm on the 7.2 train (>= 7.2.{{ rocm_instinct_min_patch | default(3) }}, e.g. 7.2.3 or 7.2.4).
       {% endif %}
       Continuing would deploy a mismatched, unsupported stack, so ClusterBloom is
       stopping now rather than finishing with a broken configuration.
 
-      To fix, install the ROCm version ClusterBloom expects and re-run (it installs
-      ROCm {{ rocm_required_version }} automatically for this family):
-        sudo amdgpu-uninstall
-        sudo apt remove --purge amdgpu-install
-        sudo rm -f /etc/apt/sources.list.d/rocm.list
-        # then re-run ClusterBloom
-
-      To proceed anyway with the currently installed ROCm (NOT recommended),
-      re-run bloom with the override extra-var:
-        sudo bloom run -e rocm_allow_version_mismatch=true ...
+      To proceed anyway with the currently installed ROCm, re-run bloom with the
+      override extra-var:
+      sudo bloom run -e rocm_allow_version_mismatch=true ...
       (JSON form also works: -e '{"rocm_allow_version_mismatch": true}')
       ████████████████████████████████████████████████████████████████
   when:
