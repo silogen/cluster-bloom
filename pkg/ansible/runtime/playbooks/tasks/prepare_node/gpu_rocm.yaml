@@ -7,9 +7,12 @@
 - name: Discover ROCm installation root (handles /opt/rocm symlink and versioned installs)
   shell: |
     set -e
-    check_root() {
+    has_tool() {
+      [ -x "$1/bin/amd-smi" ] || [ -x "$1/bin/rocm-smi" ]
+    }
+    has_version() {
       c="$1"
-      if [ -x "$c/bin/amd-smi" ] || [ -x "$c/bin/rocm-smi" ] || [ -f "$c/.info/version" ] || [ -f "$c/core/.info/version" ]; then
+      if [ -f "$c/.info/version" ] || [ -f "$c/core/.info/version" ]; then
         return 0
       fi
       for f in "$c"/core-*/.info/version; do
@@ -17,14 +20,21 @@
       done
       return 1
     }
-    # Prefer the canonical /opt/rocm path (real dir or symlink to a versioned install).
-    if [ -e /opt/rocm ] && check_root /opt/rocm; then
-      echo /opt/rocm
-      exit 0
-    fi
-    # Fall back to the newest versioned sibling install (e.g. /opt/rocm-6.2.0).
-    for d in $(ls -d /opt/rocm-* 2>/dev/null | sort -V -r); do
-      if check_root "$d"; then
+    # Prefer /opt/rocm, then the newest versioned sibling. A stale, incomplete
+    # /opt/rocm (e.g. a leftover core-only tree from a different ROCm train) can
+    # carry a .info/version but no bin/, so give priority to roots that actually
+    # contain the ROCm tooling before falling back to a version marker alone.
+    candidates="/opt/rocm $(ls -d /opt/rocm-* 2>/dev/null | sort -V -r)"
+    for d in $candidates; do
+      [ -e "$d" ] || continue
+      if has_tool "$d"; then
+        echo "$d"
+        exit 0
+      fi
+    done
+    for d in $candidates; do
+      [ -e "$d" ] || continue
+      if has_version "$d"; then
         echo "$d"
         exit 0
       fi
@@ -42,26 +52,58 @@
   debug:
     msg: "Using ROCm root: {{ rocm_root }}"
 
-- name: Check if amd-smi exists (ROCm 7.x)
-  stat:
-    path: "{{ rocm_root }}/bin/amd-smi"
-  register: amd_smi_check
+# Resolve the SMI tooling by searching PATH (amd-smi is installed to /usr/bin via
+# update-alternatives) and every /opt/rocm*/bin, not just {{ rocm_root }}/bin.
+# This makes detection robust when rocm_root points at an incomplete tree (e.g. a
+# stale /opt/rocm that shadows the real versioned install), so we never fall back
+# to the nonexistent rocm-smi on a working ROCm 7.x node.
+- name: Locate amd-smi binary (ROCm 7.x)
+  shell: |
+    set -e
+    for c in "$(command -v amd-smi 2>/dev/null)" \
+             "{{ rocm_root }}/bin/amd-smi" \
+             /opt/rocm/bin/amd-smi \
+             $(ls -d /opt/rocm-*/bin/amd-smi 2>/dev/null | sort -V -r); do
+      if [ -n "$c" ] && [ -x "$c" ]; then
+        echo "$c"
+        exit 0
+      fi
+    done
+    exit 1
+  register: amd_smi_locate
+  changed_when: false
+  failed_when: false
 
-- name: Check if rocm-smi exists (fallback for older versions)
-  stat:
-    path: "{{ rocm_root }}/bin/rocm-smi"
-  register: rocm_smi_check
+- name: Locate rocm-smi binary (legacy ROCm fallback)
+  shell: |
+    set -e
+    for c in "$(command -v rocm-smi 2>/dev/null)" \
+             "{{ rocm_root }}/bin/rocm-smi" \
+             /opt/rocm/bin/rocm-smi \
+             $(ls -d /opt/rocm-*/bin/rocm-smi 2>/dev/null | sort -V -r); do
+      if [ -n "$c" ] && [ -x "$c" ]; then
+        echo "$c"
+        exit 0
+      fi
+    done
+    exit 1
+  register: rocm_smi_locate
+  changed_when: false
+  failed_when: false
 
 - name: Set ROCm tool presence
   set_fact:
-    rocm_tools_present: "{{ amd_smi_check.stat.exists or rocm_smi_check.stat.exists }}"
-    rocm_tool: "{{ (rocm_root ~ '/bin/amd-smi') if amd_smi_check.stat.exists else (rocm_root ~ '/bin/rocm-smi') }}"
+    amd_smi_bin: "{{ amd_smi_locate.stdout | trim }}"
+    rocm_smi_bin: "{{ rocm_smi_locate.stdout | trim }}"
+    amd_smi_present: "{{ amd_smi_locate.rc == 0 and (amd_smi_locate.stdout | trim) != '' }}"
+    rocm_smi_present: "{{ rocm_smi_locate.rc == 0 and (rocm_smi_locate.stdout | trim) != '' }}"
+    rocm_tools_present: "{{ (amd_smi_locate.rc == 0 and (amd_smi_locate.stdout | trim) != '') or (rocm_smi_locate.rc == 0 and (rocm_smi_locate.stdout | trim) != '') }}"
 
 - name: Get ROCm version from amd-smi header
-  shell: "{{ rocm_root }}/bin/amd-smi | head -2 | grep 'ROCm version' | sed -n 's/.*ROCm version: \\([0-9][0-9.]*\\).*/\\1/p'"
+  shell: "{{ amd_smi_bin }} | head -2 | grep 'ROCm version' | sed -n 's/.*ROCm version: \\([0-9][0-9.]*\\).*/\\1/p'"
   register: rocm_version_output
   changed_when: false
-  when: amd_smi_check.stat.exists
+  when: amd_smi_present | bool
   failed_when: false
 
 - name: Locate ROCm version file (legacy and Core SDK layouts)
@@ -79,14 +121,14 @@
   register: rocm_version_file_path
   changed_when: false
   failed_when: false
-  when: not amd_smi_check.stat.exists or rocm_version_output.rc != 0 or rocm_version_output.stdout == ""
+  when: not amd_smi_present | bool or rocm_version_output.rc != 0 or rocm_version_output.stdout == ""
 
 - name: Read ROCm version from file
   slurp:
     src: "{{ rocm_version_file_path.stdout | trim }}"
   register: rocm_version_file
   when:
-    - not amd_smi_check.stat.exists or rocm_version_output.rc != 0 or rocm_version_output.stdout == ""
+    - not amd_smi_present | bool or rocm_version_output.rc != 0 or rocm_version_output.stdout == ""
     - rocm_version_file_path.rc == 0
     - rocm_version_file_path.stdout | trim != ""
 
@@ -94,7 +136,7 @@
   set_fact:
     rocm_version: "{{ rocm_version_output.stdout | trim }}"
   when:
-    - amd_smi_check.stat.exists
+    - amd_smi_present | bool
     - rocm_version_output.rc == 0
     - rocm_version_output.stdout != ""
 
@@ -102,7 +144,7 @@
   set_fact:
     rocm_version: "{{ rocm_version_file.content | b64decode | trim }}"
   when:
-    - not amd_smi_check.stat.exists or rocm_version_output.rc != 0 or rocm_version_output.stdout == ""
+    - not amd_smi_present | bool or rocm_version_output.rc != 0 or rocm_version_output.stdout == ""
     - rocm_version_file_path is defined
     - rocm_version_file_path.rc == 0
     - rocm_version_file_path.stdout | trim != ""
@@ -273,43 +315,102 @@
     name: amdgpu
     state: present
 
+# The tool-presence facts above were computed before the (possible) install, so
+# on a freshly installed node amd-smi would not yet have been found. Re-resolve
+# the SMI tooling now so verification reflects the post-install state.
+- name: Re-locate amd-smi binary after install (ROCm 7.x)
+  shell: |
+    set -e
+    for c in "$(command -v amd-smi 2>/dev/null)" \
+             "{{ rocm_root }}/bin/amd-smi" \
+             /opt/rocm/bin/amd-smi \
+             $(ls -d /opt/rocm-*/bin/amd-smi 2>/dev/null | sort -V -r); do
+      if [ -n "$c" ] && [ -x "$c" ]; then
+        echo "$c"
+        exit 0
+      fi
+    done
+    exit 1
+  register: amd_smi_locate
+  changed_when: false
+  failed_when: false
+
+- name: Re-locate rocm-smi binary after install (legacy fallback)
+  shell: |
+    set -e
+    for c in "$(command -v rocm-smi 2>/dev/null)" \
+             "{{ rocm_root }}/bin/rocm-smi" \
+             /opt/rocm/bin/rocm-smi \
+             $(ls -d /opt/rocm-*/bin/rocm-smi 2>/dev/null | sort -V -r); do
+      if [ -n "$c" ] && [ -x "$c" ]; then
+        echo "$c"
+        exit 0
+      fi
+    done
+    exit 1
+  register: rocm_smi_locate
+  changed_when: false
+  failed_when: false
+
+- name: Refresh ROCm tool presence after install
+  set_fact:
+    amd_smi_bin: "{{ amd_smi_locate.stdout | trim }}"
+    rocm_smi_bin: "{{ rocm_smi_locate.stdout | trim }}"
+    amd_smi_present: "{{ amd_smi_locate.rc == 0 and (amd_smi_locate.stdout | trim) != '' }}"
+    rocm_smi_present: "{{ rocm_smi_locate.rc == 0 and (rocm_smi_locate.stdout | trim) != '' }}"
+
 - name: Verify GPUs with amd-smi (ROCm 7.x)
-  shell: "{{ rocm_root }}/bin/amd-smi list --json | jq -r '.[] | \"GPU \\(.gpu) \\(.bdf)\"'"
+  shell: "{{ amd_smi_bin }} list --json | jq -r '.[] | \"GPU \\(.gpu) \\(.bdf)\"'"
   register: amd_smi_output
   changed_when: false
-  when: amd_smi_check.stat.exists
+  when: amd_smi_present | bool
   failed_when: false
 
 - name: Verify GPUs with rocm-smi (fallback)
-  shell: "{{ rocm_root }}/bin/rocm-smi -i --json | jq -r '.[] | .[\"Device Name\"]' | sort | uniq -c"
+  shell: "{{ rocm_smi_bin }} -i --json | jq -r '.[] | .[\"Device Name\"]' | sort | uniq -c"
   register: rocm_smi_output
   changed_when: false
-  when: not amd_smi_check.stat.exists
+  when: not amd_smi_present | bool and rocm_smi_present | bool
   failed_when: false
 
 - name: Display detected GPUs (amd-smi)
   debug:
     msg: "ROCm Devices:\n{{ amd_smi_output.stdout }}"
-  when: amd_smi_check.stat.exists
+  when: amd_smi_present | bool
 
 - name: Display detected GPUs (rocm-smi)
   debug:
     msg: "ROCm Devices:\n{{ rocm_smi_output.stdout }}"
-  when: not amd_smi_check.stat.exists
+  when: not amd_smi_present | bool and rocm_smi_present | bool
 
 - name: Validate GPU detection (amd-smi)
   fail:
-    msg: "No GPUs detected by amd-smi"
+    msg: "No GPUs detected by amd-smi ({{ amd_smi_bin }})"
   when:
-    - amd_smi_check.stat.exists
+    - amd_smi_present | bool
     - amd_smi_output.stdout == "" or amd_smi_output.rc != 0
 
 - name: Validate GPU detection (rocm-smi)
   fail:
-    msg: "No GPUs detected by rocm-smi"
+    msg: "No GPUs detected by rocm-smi ({{ rocm_smi_bin }})"
   when:
-    - not amd_smi_check.stat.exists
+    - not amd_smi_present | bool
+    - rocm_smi_present | bool
     - rocm_smi_output.stdout == ""
+
+# Guard against the confusing "No GPUs detected by rocm-smi" failure on ROCm 7.x
+# nodes where rocm-smi does not exist: if neither tool resolved, the ROCm install
+# is incomplete rather than the GPUs being absent.
+- name: Fail if no ROCm SMI tooling could be located
+  fail:
+    msg: |
+      Could not locate amd-smi or rocm-smi on this node, so GPU presence cannot be
+      verified. This usually means the ROCm install is incomplete or /opt/rocm is a
+      stale/incomplete tree shadowing the real versioned install. Checked PATH,
+      {{ rocm_root }}/bin, /opt/rocm/bin and /opt/rocm-*/bin.
+  when:
+    - not amd_smi_present | bool
+    - not rocm_smi_present | bool
 
 - name: Display ROCm version
   debug:
