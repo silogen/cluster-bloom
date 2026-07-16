@@ -47,6 +47,9 @@
     rocm_deb_build: "70203-1"  # build identifier paired with rocm_required_version
     rocm_base_url: "https://repo.radeon.com/amdgpu-install/{{ rocm_required_version }}/ubuntu/"
     rocm_deb_package: "amdgpu-install_{{ rocm_required_version }}.{{ rocm_deb_build }}_all.deb"
+    rocm_instinct_min_patch: 3
+    rocm_version_exact_required: false
+    gpu_stack_family_resolved: instinct
     rke2_installation_url: "https://get.rke2.io"
 
     supported_ubuntu_versions:
