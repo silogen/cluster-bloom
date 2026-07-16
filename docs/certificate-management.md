@@ -10,6 +10,8 @@ Cluster-Bloom provides flexible certificate management options to secure HTTPS t
 
 Configure additional domain names for your Kubernetes API server certificate using `ADDITIONAL_TLS_SAN_URLS`. This allows secure access via multiple domains beyond the default `k8s.<DOMAIN>`.
 
+TLS SAN configuration applies to all control-plane nodes since each runs its own kube-apiserver.
+
 **Quick Example:**
 ```yaml
 DOMAIN: cluster.example.com
@@ -56,13 +58,14 @@ export TLS_KEY=/path/to/your/private.key
 
 #### b) Generate Self-Signed Certificates
 
-Set `CERT_OPTION=generate` to automatically create a self-signed certificate.
+Set `CERT_OPTION=generate` to automatically create a self-signed certificate on the first node.
 
 **Characteristics:**
 - Valid for 365 days
 - Includes domain and wildcard subdomain (*.domain.com)
 - Uses RSA 2048-bit encryption
 - Generated using OpenSSL
+- First node only (used for ingress/gateway TLS)
 
 **Example:**
 ```bash

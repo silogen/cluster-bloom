@@ -73,19 +73,21 @@ For high availability, add additional control plane nodes **before** adding work
 
 ### Create `bloom.yaml` for Additional Control Plane Nodes
 
-Copy the join token and server IP from `additional_node_command.txt` generated on your first control plane node to each additional node, then create the configuration on the additional node:
+Copy the join token, server IP, and domain from `additional_node_command.txt` generated on your first control plane node to each additional node, then create the configuration on the additional node:
 
 **For CPU Control Plane Node:**
 
 ```bash
-echo -e 'CLUSTER_SIZE: large\nCONTROL_PLANE: true\nGPU_NODE: false\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml
+echo -e 'CLUSTER_SIZE: large\nCONTROL_PLANE: true\nGPU_NODE: false\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>\nDOMAIN: <domain>' > bloom.yaml
 ```
 
 **For GPU Control Plane Node:**
 
 ```bash
-echo -e 'CLUSTER_SIZE: large\nCONTROL_PLANE: true\nGPU_NODE: true\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml
+echo -e 'CLUSTER_SIZE: large\nCONTROL_PLANE: true\nGPU_NODE: true\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>\nDOMAIN: <domain>' > bloom.yaml
 ```
+
+> **Note:** DOMAIN is required for control plane nodes so each node's kube-apiserver gets the correct TLS SAN and OIDC configuration.
 
 ### Add Storage Configuration
 
@@ -198,8 +200,8 @@ This step configures cluster-wide services, networking, and other essential comp
 
 | Node Type | Commands |
 |-----------|----------|
-| **CPU Control Plane** | `echo -e 'CLUSTER_SIZE: large\nCONTROL_PLANE: true\nGPU_NODE: false\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml` |
-| **GPU Control Plane** | `echo -e 'CLUSTER_SIZE: large\nCONTROL_PLANE: true\nGPU_NODE: true\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml` |
+| **CPU Control Plane** | `echo -e 'CLUSTER_SIZE: large\nCONTROL_PLANE: true\nGPU_NODE: false\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>\nDOMAIN: <domain>' > bloom.yaml` |
+| **GPU Control Plane** | `echo -e 'CLUSTER_SIZE: large\nCONTROL_PLANE: true\nGPU_NODE: true\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>\nDOMAIN: <domain>' > bloom.yaml` |
 | **GPU Worker Node** | `echo -e 'CLUSTER_SIZE: large\nCONTROL_PLANE: false\nGPU_NODE: true\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml` |
 
 | **CPU Worker Node** | `echo -e 'CLUSTER_SIZE: large\nCONTROL_PLANE: false\nGPU_NODE: false\nFIRST_NODE: false\nJOIN_TOKEN: <token>\nSERVER_IP: <ip>' > bloom.yaml` |

@@ -259,9 +259,13 @@
 #                  kubectl TLS verification fails.
 #   2. an AuthenticationConfiguration wired in via --authentication-config, so
 #      OIDC logins (kc.<DOMAIN> + any ADDITIONAL_OIDC_PROVIDERS) are accepted.
-# Both are only meaningful on a server node, which is gated on DOMAIN being set.
+# Both are meaningful on any server node (first node or joined control-plane
+# node) as long as DOMAIN is known. DOMAIN is now propagated to control-plane
+# join configs (see join_command.yaml), so this gate checks the actual role
+# instead of using DOMAIN presence as a proxy for "is this a server node".
 - name: Configure TLS SAN and OIDC authentication for kube-apiserver
   when:
+    - (FIRST_NODE | bool) or (CONTROL_PLANE | bool)
     - DOMAIN is defined
     - DOMAIN != ""
   block:
