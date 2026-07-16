@@ -206,6 +206,32 @@
   environment:
     DEBIAN_FRONTEND: noninteractive
 
+# Ubuntu's universe repo ships stale ROCm packages (e.g. rocminfo 5.7.1-3build1).
+# These break `rocm`'s exact-version dependency chain
+# (e.g. "rocminfo (= 1.0.0.70203-...) but 5.7.1-3build1 is to be installed").
+# amdgpu-install ships /etc/apt/preferences.d/repo-radeon-pin-600, but a
+# priority-600 pin is not enough: apt only downgrades an already-installed
+# package from a 500..999 pin when the pinned version is NEWER, and Ubuntu's
+# 5.7.1 sorts newer than the ROCm repo's 1.0.0.70203. A priority > 1000 forces
+# the downgrade so the repo.radeon.com builds always win. We also remove the
+# vendor 600 pin: APT applies matching preference files in alphanumeric order,
+# so leaving repo-radeon-pin-600 in place would shadow our higher priority.
+- name: Remove amdgpu-install's default (too-low) repo.radeon.com pin
+  file:
+    path: /etc/apt/preferences.d/repo-radeon-pin-600
+    state: absent
+  when: rocm_needs_install | bool
+
+- name: Pin repo.radeon.com above Ubuntu-provided ROCm packages
+  copy:
+    dest: /etc/apt/preferences.d/00-rocm-repo-radeon-pin
+    mode: "0644"
+    content: |
+      Package: *
+      Pin: release o=repo.radeon.com
+      Pin-Priority: 1001
+  when: rocm_needs_install | bool
+
 - name: Verify ROCm apt repository is configured
   shell: |
     set -e
@@ -231,8 +257,13 @@
     - rocm_needs_install | bool
     - rocm_repo_present.rc != 0
 
+# --allow-downgrades is required because pre-provisioned nodes may already carry
+# newer-versioned Ubuntu ROCm packages (e.g. rocminfo 5.7.1); the pinned
+# repo.radeon.com builds (e.g. 1.0.0.70203) are lower version numbers, so apt
+# treats switching to them as a downgrade and refuses under -y without this flag.
+# amdgpu-install passes unrecognized args straight through to apt-get.
 - name: Install ROCm
-  shell: amdgpu-install --usecase=rocm,dkms --yes
+  shell: amdgpu-install --usecase=rocm,dkms --yes --allow-downgrades
   when: rocm_needs_install | bool
   environment:
     DEBIAN_FRONTEND: noninteractive
