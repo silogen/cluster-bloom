@@ -157,6 +157,7 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | RKE2_INSTALLATION_URL | RKE2 installation script URL | https://get.rke2.io |
 | ROCM_BASE_URL | ROCm base repository URL | https://repo.radeon.com/amdgpu-install/7.2.3/ubuntu/ |
 | ROCM_DEB_PACKAGE | ROCm DEB package name | amdgpu-install_7.2.3.70203-1_all.deb |
+| ROCM_ALLOW_VERSION_MISMATCH | Force continuation past the early ROCm version guard when the installed ROCm does not match the GPU_STACK_FAMILY train (accepts true\|TRUE\|1) | false |
 
 ### OIDC Configuration Examples
 
@@ -320,13 +321,13 @@ sudo ./bloom run myPlaybook.yaml --config additional-config.yaml
 sudo ./bloom run myPlaybook.yaml --verbose
 ```
 
-> **GPU nodes — ROCm version guard**: On a GPU node whose already-installed ROCm does not match the train required by `GPU_STACK_FAMILY` (e.g. `radeon` on a host with ROCm 7.2.3), bloom fails fast during node validation. To proceed anyway with the installed ROCm, add the override extra-var:
+> **GPU nodes — ROCm version guard**: On a GPU node whose already-installed ROCm does not match the train required by `GPU_STACK_FAMILY` (e.g. `radeon` on a host with ROCm 7.2.3), bloom fails fast during node validation. To proceed anyway with the installed ROCm, set this in `bloom.yaml`:
 >
-> ```sh
-> sudo ./bloom run -e rocm_allow_version_mismatch=true ...
+> ```yaml
+> ROCM_ALLOW_VERSION_MISMATCH: true   # accepts true|TRUE|1
 > ```
 >
-> This is a playbook extra-var (default `false`), not a `bloom.yaml` key — pass it via `-e`. See [docs/rocm-support.md](docs/rocm-support.md#version-compatibility-guard-fail-fast) for details.
+> With `bloom run` you can also pass it as an extra-var (`-e ROCM_ALLOW_VERSION_MISMATCH=true`). See [docs/rocm-support.md](docs/rocm-support.md#version-compatibility-guard-fail-fast) for details.
 
 ## Installation Process
 

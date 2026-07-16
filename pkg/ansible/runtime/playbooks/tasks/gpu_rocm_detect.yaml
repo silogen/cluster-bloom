@@ -211,13 +211,14 @@
 # (e.g. instinct on ROCm 7.13, or radeon on ROCm 7.2) is silently kept and the
 # only signal is a debug warning at the very end, far too late.
 #
-# Override with rocm_allow_version_mismatch: true to proceed anyway (there is no
-# interactive prompt because bloom pipes ansible output over SSH with no TTY).
+# Set ROCM_ALLOW_VERSION_MISMATCH: true (in bloom.yaml or -e) to proceed anyway;
+# there is no interactive prompt because bloom pipes ansible output over SSH with
+# no TTY.
 - name: >-
     detected ROCm version is {{ rocm_version | default('unknown') }} and
     GPU_STACK_FAMILY: {{ gpu_stack_family_resolved | default('instinct') }} needs
     {{ ('>= ' ~ rocm_required_version) if (gpu_stack_family_resolved | default('instinct') == 'radeon') else ('>= 7.2.' ~ (rocm_instinct_min_patch | default(3))) }};
-    override with -e rocm_allow_version_mismatch=true, see 'tail bloom.log' for full details
+    override by setting ROCM_ALLOW_VERSION_MISMATCH: true in bloom.yaml, see 'tail bloom.log' for full details
   fail:
     msg: |
       ████████████████████████████████████████████████████████████████
@@ -236,10 +237,9 @@
       Continuing would deploy a mismatched, unsupported stack, so ClusterBloom is
       stopping now rather than finishing with a broken configuration.
 
-      To proceed anyway with the currently installed ROCm, re-run bloom with the
-      override extra-var:
-      sudo bloom run -e rocm_allow_version_mismatch=true ...
-      (JSON form also works: -e '{"rocm_allow_version_mismatch": true}')
+      To proceed anyway with the currently installed ROCm, set this in bloom.yaml:
+      ROCM_ALLOW_VERSION_MISMATCH: true
+      (accepts true|TRUE|1; with `bloom run` you can also pass -e ROCM_ALLOW_VERSION_MISMATCH=true)
       ████████████████████████████████████████████████████████████████
   when:
     # Only stop for a real, functional install (amd-smi/rocm-smi present). A
@@ -249,4 +249,4 @@
     - rocm_version is defined
     - rocm_version | trim != ''
     - not (rocm_version_acceptable | bool)
-    - not (rocm_allow_version_mismatch | default(false) | bool)
+    - not (ROCM_ALLOW_VERSION_MISMATCH | default(false) | bool)

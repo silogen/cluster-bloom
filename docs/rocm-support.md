@@ -101,17 +101,19 @@ Before doing any package, kernel, or repository work, bloom detects the ROCm alr
 
 If a functional ROCm install (amd-smi / rocm-smi present) is found whose version does not match the required train — for example `radeon` selected on a host that already has ROCm 7.2.3 — bloom **aborts early during the node validation phase** with an "Unsupported ROCm version" message. This runs as early as the installed version can be known, so the deploy stops before any GPU work rather than finishing with a mismatched, unsupported stack.
 
-This guard is a **hard fail with no interactive prompt**: bloom pipes the ansible-playbook output through its own processor over an SSH connection, so there is no TTY for a `[y/N]` prompt (it would hang the run). The escape hatch is a non-interactive override extra-var instead.
+This guard is a **hard fail with no interactive prompt**: bloom pipes the ansible-playbook output through its own processor over an SSH connection, so there is no TTY for a `[y/N]` prompt (it would hang the run). The escape hatch is the `ROCM_ALLOW_VERSION_MISMATCH` config option instead.
 
-**Override (proceed anyway)** — keep the currently installed ROCm and skip the guard:
+**Override (proceed anyway)** — keep the currently installed ROCm and skip the guard by setting this in `bloom.yaml`:
 
-```bash
-sudo bloom run -e rocm_allow_version_mismatch=true ...
-# JSON form also works:
-sudo bloom run -e '{"rocm_allow_version_mismatch": true}' ...
+```yaml
+ROCM_ALLOW_VERSION_MISMATCH: true   # accepts true|TRUE|1
 ```
 
-`rocm_allow_version_mismatch` is a playbook extra-var (default `false`), not a `bloom.yaml` schema key — always pass it via `-e`/`--extra-vars`, not in `bloom.yaml`, since the config validator rejects unknown keys.
+`ROCM_ALLOW_VERSION_MISMATCH` is a `bloom.yaml` config key (default `false`), so it works with `bloom cli bloom.yaml`. With `bloom run` you can also pass it as an extra-var:
+
+```bash
+sudo bloom run -e ROCM_ALLOW_VERSION_MISMATCH=true ...
+```
 
 **Install ROCm 7.2.3**:
 ```bash
