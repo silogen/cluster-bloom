@@ -1,5 +1,5 @@
 ---
-- name: Update cluster-forge domain
+- name: Update cluster-forge domain and TLS certificates
   hosts: all
   become: yes
   gather_facts: false
@@ -42,7 +42,7 @@
   tasks:
     - name: DNS check mode
       when: CHECK_DNS_ONLY
-      import_tasks: tasks/update_domain/dns_check.yaml
+      import_tasks: tasks/update/dns_check.yaml
 
     - name: TLS-only update
       when: not CHECK_DNS_ONLY and TLS_ONLY
@@ -71,7 +71,7 @@
               debug:
                 msg: "  ℹ️  Using current domain: {{ NEW_DOMAIN }}"
 
-        - import_tasks: tasks/update_domain/certificates.yaml
+        - import_tasks: tasks/update/certificates.yaml
 
         - name: Display TLS success message
           debug:
@@ -90,10 +90,10 @@
               - "================================"
               - ""
 
-        - import_tasks: tasks/update_domain/validate.yaml
-        - import_tasks: tasks/update_domain/certificates.yaml
-        - import_tasks: tasks/update_domain/update_config.yaml
-        - import_tasks: tasks/update_domain/verify.yaml
+        - import_tasks: tasks/update/validate.yaml
+        - import_tasks: tasks/update/certificates.yaml
+        - import_tasks: tasks/update/update_config.yaml
+        - import_tasks: tasks/update/verify.yaml
 
         - name: Display success message
           debug:

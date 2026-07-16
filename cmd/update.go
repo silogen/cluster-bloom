@@ -114,7 +114,7 @@ Examples:
 			// Run the Ansible playbook
 			exitCode, err := runtime.RunPlaybook(
 				cfg,
-				"update-domain.yaml",
+				"update.yaml",
 				dryRunUpdate,
 				"",
 				runtime.OutputClean,

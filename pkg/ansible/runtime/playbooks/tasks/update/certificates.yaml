@@ -1,7 +1,7 @@
 ---
 # Purpose: Handle TLS certificate generation and updates
 # Dependencies: CERT_OPTION, NEW_DOMAIN, CERT_PATH, KEY_PATH, DRY_RUN variables
-# Usage: Imported by update-domain.yaml
+# Usage: Imported by update.yaml
 
 - name: Handle certificate operations
   block:

@@ -1,7 +1,7 @@
 ---
 # Purpose: DNS configuration verification
 # Dependencies: NEW_DOMAIN variable
-# Usage: Imported by update-domain.yaml when CHECK_DNS_ONLY=true
+# Usage: Imported by update.yaml when CHECK_DNS_ONLY=true
 
 - name: Display DNS check header
   debug:

@@ -1,7 +1,7 @@
 ---
 # Purpose: Pre-flight validation for domain update
 # Dependencies: NEW_DOMAIN variable
-# Usage: Imported by update-domain.yaml
+# Usage: Imported by update.yaml
 
 - name: Display validation header
   debug:

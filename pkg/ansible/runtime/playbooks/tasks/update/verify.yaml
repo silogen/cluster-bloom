@@ -1,7 +1,7 @@
 ---
 # Purpose: Post-update verification
 # Dependencies: NEW_DOMAIN, DRY_RUN variables
-# Usage: Imported by update-domain.yaml
+# Usage: Imported by update.yaml
 
 - name: Verify domain update
   block:

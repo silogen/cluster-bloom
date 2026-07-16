@@ -1,7 +1,7 @@
 ---
 # Purpose: Main orchestration for domain update
 # This file imports all subtasks in the correct order
-# Usage: Imported by update-domain.yaml
+# Usage: Imported by update.yaml
 
 - import_tasks: validate.yaml
 - import_tasks: certificates.yaml

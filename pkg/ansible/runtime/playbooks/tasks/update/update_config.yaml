@@ -1,7 +1,7 @@
 ---
 # Purpose: Update cluster configuration for new domain
 # Dependencies: NEW_DOMAIN, DRY_RUN variables
-# Usage: Imported by update-domain.yaml
+# Usage: Imported by update.yaml
 
 - name: Display update summary
   debug:
