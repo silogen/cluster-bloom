@@ -123,8 +123,11 @@ func (p *OutputProcessor) processCleanMode(line string) string {
 			// Add message if available and not too verbose. Flatten to a single
 			// line (collapsing newlines/whitespace) so multi-line fail messages
 			// don't dump blank lines and box-art on screen; the full text is
-			// still written verbatim to bloom.log.
-			if taskInfo.Message != "" && !strings.Contains(taskInfo.Message, "{") {
+			// still written verbatim to bloom.log. Skip entirely when the task
+			// name already directs the user to the log (e.g. "... see 'tail
+			// bloom.log' for full details"), so the summary isn't duplicated.
+			selfDescribing := strings.Contains(strings.ToLower(p.currentTask), "for full details")
+			if !selfDescribing && taskInfo.Message != "" && !strings.Contains(taskInfo.Message, "{") {
 				if msg := flattenMessage(taskInfo.Message); msg != "" {
 					output += fmt.Sprintf(" (%s)", msg)
 				}
