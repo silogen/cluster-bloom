@@ -120,9 +120,14 @@ func (p *OutputProcessor) processCleanMode(line string) string {
 			emoji := p.getEmoji(taskInfo.Status)
 			output := fmt.Sprintf("%s %s", emoji, p.currentTask)
 
-			// Add message if available and not too verbose
+			// Add message if available and not too verbose. Flatten to a single
+			// line (collapsing newlines/whitespace) so multi-line fail messages
+			// don't dump blank lines and box-art on screen; the full text is
+			// still written verbatim to bloom.log.
 			if taskInfo.Message != "" && !strings.Contains(taskInfo.Message, "{") {
-				output += fmt.Sprintf(" (%s)", taskInfo.Message)
+				if msg := flattenMessage(taskInfo.Message); msg != "" {
+					output += fmt.Sprintf(" (%s)", msg)
+				}
 			}
 
 			return output
@@ -149,6 +154,23 @@ func (p *OutputProcessor) processCleanMode(line string) string {
 	}
 
 	return ""
+}
+
+var whitespaceRunRegex = regexp.MustCompile(`\s+`)
+
+// flattenMessage collapses a (possibly multi-line) task message into a single
+// tidy line for clean-mode display: newlines and repeated whitespace become a
+// single space and the result is rune-safe truncated. The full, unmodified
+// message is still written to bloom.log by ProcessStream.
+func flattenMessage(msg string) string {
+	msg = whitespaceRunRegex.ReplaceAllString(msg, " ")
+	msg = strings.TrimSpace(msg)
+
+	const maxLen = 240
+	if runes := []rune(msg); len(runes) > maxLen {
+		msg = string(runes[:maxLen-3]) + "..."
+	}
+	return msg
 }
 
 // getEmoji returns the emoji for a given task status
