@@ -1,9 +1,11 @@
 ---
 # Purpose: Update cluster configuration for new domain
-# Dependencies: NEW_DOMAIN, DRY_RUN variables
+# Dependencies: NEW_DOMAIN, DRY_RUN, FIRST_NODE variables
 # Usage: Imported by update.yaml
+# Note: Kubernetes-level updates run only on FIRST_NODE to avoid duplicates
 
 - name: Display update summary
+  when: FIRST_NODE
   debug:
     msg:
       - "📋 Domain Update Summary"
@@ -15,6 +17,7 @@
       - ""
 
 - name: Display DNS requirements
+  when: FIRST_NODE
   block:
     - name: Get LoadBalancer IP
       shell: >
@@ -45,7 +48,7 @@
           - ""
 
 - name: Confirm domain update
-  when: not DRY_RUN
+  when: FIRST_NODE and not DRY_RUN
   block:
     - name: Prompt for confirmation
       pause:
@@ -65,6 +68,7 @@
 # Update cluster-domain ConfigMap
 # ============================================================================
 - name: Update cluster-domain ConfigMap
+  when: FIRST_NODE
   block:
     - name: Display dry-run message for ConfigMap
       debug:
@@ -94,6 +98,7 @@
 # Update OpenBao secret
 # ============================================================================
 - name: Update OpenBao secret
+  when: FIRST_NODE
   block:
     - name: Display dry-run message for OpenBao
       debug:
@@ -127,9 +132,10 @@
           when: openbao_result.rc != 0
 
 # ============================================================================
-# Update ArgoCD Application
+# Update cluster-values repository
 # ============================================================================
-- name: Update ArgoCD Application
+- name: Update cluster-values repository
+  when: FIRST_NODE
   block:
     - name: Display dry-run message for ArgoCD
       debug:
@@ -230,16 +236,25 @@
 # Update Keycloak client redirect URIs
 # ============================================================================
 - import_tasks: update_keycloak.yaml
+  when: FIRST_NODE
 
 # ============================================================================
 # Update AIRM cluster records
 # ============================================================================
 - import_tasks: update_airm_clusters.yaml
+  when: FIRST_NODE
+
+# ============================================================================
+# Update RKE2 layer configuration
+# ============================================================================
+- import_tasks: update_rke2.yaml
+  when: not SKIP_RKE2
 
 # ============================================================================
 # Trigger ArgoCD sync
 # ============================================================================
 - name: Trigger ArgoCD sync
+  when: FIRST_NODE
   block:
     - name: Display dry-run message for sync
       debug:
@@ -274,5 +289,6 @@
             msg: "  ✅ ArgoCD sync triggered"
 
 - name: Display config update complete
+  when: FIRST_NODE
   debug:
     msg: ""

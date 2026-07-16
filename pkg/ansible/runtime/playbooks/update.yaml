@@ -11,7 +11,10 @@
     DRY_RUN: false           # Optional
     CHECK_DNS_ONLY: false    # Optional
     TLS_ONLY: false          # Optional - update only TLS certificates
+    SKIP_RKE2: false         # Optional - skip RKE2 layer updates
     KUBECONFIG: ""           # Optional, defaults to ~/.kube/config
+    FIRST_NODE: false        # Set by runtime, indicates if this is first node
+    CONTROL_PLANE: false     # Set by runtime, indicates if this is control plane node
 
   pre_tasks:
     - name: Set kubeconfig environment variable

@@ -14,6 +14,7 @@ var (
 	keyPath      string
 	checkDNSOnly bool
 	dryRunUpdate bool
+	skipRKE2     bool
 )
 
 func updateCmd() *cobra.Command {
@@ -27,6 +28,8 @@ You can update:
   - Just TLS certificates (omit --new-domain)
 
 When updating domain, this command updates:
+
+Application Layer:
   - TLS certificates (cluster-tls secret)
   - cluster-domain ConfigMap
   - OpenBao domain secret
@@ -34,6 +37,13 @@ When updating domain, this command updates:
   - Keycloak client redirect URIs
   - AIRM cluster records
   - ArgoCD Application (triggers sync)
+
+RKE2 Infrastructure Layer (by default):
+  - API server certificate (regenerated with new domain SAN)
+  - OIDC authentication configuration
+  - rke2-server service restart (~1-2 min downtime)
+
+Use --skip-rke2 to update only the application layer.
 
 When updating only TLS, this command updates:
   - TLS certificates (cluster-tls secret)
@@ -62,6 +72,11 @@ Examples:
   bloom update --cert-option provide \
     --cert-path /path/to/cert.pem \
     --key-path /path/to/key.pem
+
+  # Update domain without RKE2 layer (no API server downtime)
+  bloom update --new-domain new.example.com \
+    --cert-option generate \
+    --skip-rke2
 
   # Check DNS configuration for a domain
   bloom update --check-dns new.example.com`,
@@ -109,6 +124,7 @@ Examples:
 				"DRY_RUN":        dryRunUpdate,
 				"CHECK_DNS_ONLY": checkDNSOnly,
 				"TLS_ONLY":       tlsOnly,
+				"SKIP_RKE2":      skipRKE2,
 			}
 
 			// Run the Ansible playbook
@@ -138,6 +154,7 @@ Examples:
 	cmd.Flags().StringVar(&keyPath, "key-path", "", "Path to private key file (required with --cert-option=provide)")
 	cmd.Flags().BoolVar(&checkDNSOnly, "check-dns", false, "Only check DNS configuration for the specified domain")
 	cmd.Flags().BoolVar(&dryRunUpdate, "dry-run", false, "Show what would be changed without applying updates")
+	cmd.Flags().BoolVar(&skipRKE2, "skip-rke2", false, "Skip RKE2 layer updates (API server certificate, config files)")
 
 	return cmd
 }

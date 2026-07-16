@@ -2,6 +2,26 @@
 
 This document provides practical examples for updating the domain or the TLS certificates in cluster-forge installations.
 
+## Understanding Domain Updates
+
+Domain updates in cluster-forge involve two layers:
+
+### Application Layer
+- Keycloak client redirect URIs
+- AIRM cluster records
+- Gitea repository configuration
+- TLS certificates for ingress (Envoy Gateway)
+- ConfigMaps and secrets
+
+### RKE2 Infrastructure Layer (Default)
+- API server certificate (regenerated with new domain SAN)
+- OIDC authentication configuration
+- RKE2 service restart
+
+**Important:** RKE2 layer updates require restarting the rke2-server service, which causes API server downtime (typically 1-2 minutes per control plane node).
+
+Use `--skip-rke2` to update only the application layer if you want to avoid API server downtime.
+
 ## Example 1: Development Environment with Self-Signed Certificates
 
 **Scenario:** You're running a local development cluster and want to change from `dev.local` to `test.local`.
@@ -218,6 +238,79 @@ curl -k https://gitea.prod.company.com
 # Step 7: Update kubeconfig for all users
 # Send updated configuration to team
 ```
+
+---
+
+## Example 8: Application-Layer-Only Update (Skip RKE2)
+
+**Scenario:** Update application URLs without API server downtime.
+
+```bash
+# Update only application layer, skip RKE2 infrastructure updates
+./bloom update \
+  --new-domain new.company.com \
+  --cert-option generate \
+  --skip-rke2
+
+# The tool will:
+# 1. Update application configurations (Keycloak, AIRM, Gitea)
+# 2. Update ingress TLS certificates
+# 3. Skip API server certificate regeneration
+# 4. Skip rke2-server restart (no downtime)
+```
+
+**After completion:**
+1. Applications are accessible at new domain
+2. API server still responds only on old domain:
+   ```bash
+   kubectl --server=https://k8s.old.company.com:6443 get nodes  # ✅ Works
+   kubectl --server=https://k8s.new.company.com:6443 get nodes  # ❌ TLS error
+   ```
+3. To complete the migration, run without `--skip-rke2` during maintenance window:
+   ```bash
+   ./bloom update \
+     --new-domain new.company.com \
+     --cert-option generate
+   ```
+
+**Use case:** Deploy application changes first, then schedule RKE2 updates during off-hours.
+
+---
+
+## Example 9: Complete Domain Update with RKE2 Layer
+
+**Scenario:** Full domain migration including API server certificate.
+
+```bash
+# Complete update (default behavior - includes RKE2 layer)
+./bloom update \
+  --new-domain new.company.com \
+  --cert-option generate
+
+# The tool will:
+# 1. Update application layer
+# 2. Update RKE2 config and auth files
+# 3. Regenerate API server certificate
+# 4. Restart rke2-server (causes ~1-2 min downtime)
+# 5. Wait for cluster readiness
+```
+
+**After completion:**
+1. Verify API server responds on both domains (dual SAN):
+   ```bash
+   kubectl --server=https://k8s.new.company.com:6443 get nodes  # ✅ Works
+   kubectl --server=https://k8s.old.company.com:6443 get nodes  # ✅ Also works
+   ```
+2. Update kubeconfig to use new domain:
+   ```bash
+   kubectl config set-cluster default --server=https://k8s.new.company.com:6443
+   ```
+3. Verify certificate contains both domains:
+   ```bash
+   openssl s_client -connect k8s.new.company.com:6443 </dev/null 2>&1 | \
+     openssl x509 -noout -text | grep -A1 "Subject Alternative Name"
+   # Should show: DNS:k8s.old.company.com, DNS:k8s.new.company.com
+   ```
 
 ---
 

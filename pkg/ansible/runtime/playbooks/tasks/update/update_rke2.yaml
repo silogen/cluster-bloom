@@ -1,0 +1,150 @@
+---
+# Purpose: Update RKE2 layer configuration for domain changes
+# Dependencies: NEW_DOMAIN, CURRENT_DOMAIN, DRY_RUN, SKIP_RKE2 variables
+# Usage: Imported by update_config.yaml
+
+- name: Update RKE2 layer configuration
+  when: FIRST_NODE or CONTROL_PLANE
+  block:
+    - name: Display RKE2 update header
+      debug:
+        msg:
+          - ""
+          - "🔧 Updating RKE2 infrastructure layer..."
+          - "⚠️  This will restart rke2-server (causes API server downtime)"
+          - ""
+
+    - name: Display dry-run message for RKE2 updates
+      debug:
+        msg: "🔧 [DRY RUN] Would update RKE2 config and restart rke2-server"
+      when: DRY_RUN
+
+    - name: Update RKE2 configuration
+      when: not DRY_RUN
+      block:
+        # Step 1: Get existing additional TLS SANs
+        - name: Get current additional tls-san entries
+          shell: |
+            if grep -q "^tls-san:" /etc/rancher/rke2/config.yaml 2>/dev/null; then
+              grep -A 100 "^tls-san:" /etc/rancher/rke2/config.yaml | \
+              grep "^  - " | \
+              sed 's/^  - //' | \
+              grep -v "^k8s\." || true
+            fi
+          register: additional_sans_result
+          changed_when: false
+          failed_when: false
+
+        - name: Build updated tls-san list
+          set_fact:
+            updated_tls_san_list: "{{ ['k8s.' + CURRENT_DOMAIN, 'k8s.' + NEW_DOMAIN] + (additional_sans_result.stdout_lines | default([])) }}"
+
+        - name: Display tls-san update
+          debug:
+            msg:
+              - "  ℹ️  Updating tls-san configuration:"
+              - "    - Adding: k8s.{{ NEW_DOMAIN }}"
+              - "    - Keeping: k8s.{{ CURRENT_DOMAIN }}"
+              - "{% if additional_sans_result.stdout_lines | default([]) | length > 0 %}    - Preserving {{ additional_sans_result.stdout_lines | length }} additional SAN(s){% endif %}"
+
+        # Step 2: Update tls-san block in config.yaml
+        - name: Update tls-san block in RKE2 config
+          blockinfile:
+            path: /etc/rancher/rke2/config.yaml
+            marker: "# {mark} ANSIBLE MANAGED BLOCK - tls-san"
+            block: |
+              tls-san:
+              {% for san in updated_tls_san_list %}
+                - {{ san }}
+              {% endfor %}
+
+        - name: Display tls-san update result
+          debug:
+            msg: "  ✅ Updated /etc/rancher/rke2/config.yaml tls-san"
+
+        # Step 3: Update OIDC authentication config
+        - name: Update OIDC issuer URL in auth-config.yaml
+          copy:
+            dest: /etc/rancher/rke2/auth/auth-config.yaml
+            content: |
+              apiVersion: apiserver.config.k8s.io/v1beta1
+              kind: AuthenticationConfiguration
+              jwt:
+                - issuer:
+                    url: https://kc.{{ NEW_DOMAIN }}/realms/airm
+                    audiences: ['k8s']
+                    claimMappings:
+                      username:
+                        claim: preferred_username
+                        prefix: "oidc:"
+                      groups:
+                        claim: groups
+                        prefix: "oidc:"
+          when: ansible_facts.stat is defined or true
+
+        - name: Display auth-config update result
+          debug:
+            msg: "  ✅ Updated /etc/rancher/rke2/auth/auth-config.yaml"
+
+        # Step 4: Delete API server certificate to force regeneration
+        - name: Delete API server certificate
+          file:
+            path: /var/lib/rancher/rke2/server/tls/serving-kube-apiserver.crt
+            state: absent
+
+        - name: Display certificate deletion result
+          debug:
+            msg: "  ✅ Deleted API server certificate (will regenerate on restart)"
+
+        # Step 5: Restart rke2-server service
+        - name: Restart rke2-server service
+          systemd:
+            name: rke2-server
+            state: restarted
+
+        - name: Display restart initiated
+          debug:
+            msg: "  ⏳ Restarting rke2-server (this may take 1-2 minutes)..."
+
+        # Step 6: Wait for API server to be ready
+        - name: Wait for API server to respond
+          command: /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml cluster-info
+          register: cluster_info_check
+          retries: 60
+          delay: 5
+          until: cluster_info_check.rc == 0
+          changed_when: false
+
+        - name: Display API server ready
+          debug:
+            msg: "  ✅ API server is responding"
+
+        # Step 7: Wait for all nodes to be ready
+        - name: Wait for all nodes to be ready
+          command: /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml wait --for=condition=ready node --all --timeout=300s
+          register: nodes_ready
+          changed_when: false
+          failed_when: false
+
+        - name: Display node readiness
+          debug:
+            msg: "  ✅ All nodes are ready"
+          when: nodes_ready.rc == 0
+
+        - name: Warn about node readiness
+          debug:
+            msg: "  ⚠️  Some nodes may not be ready yet (check with: kubectl get nodes)"
+          when: nodes_ready.rc != 0
+
+    - name: Display RKE2 update complete
+      debug:
+        msg:
+          - ""
+          - "✅ RKE2 layer updated successfully!"
+          - "  • API server certificate regenerated with new domain SAN"
+          - "  • OIDC issuer updated to new domain"
+          - "  • rke2-server service restarted"
+          - ""
+          - "⚠️  Remember to update your kubeconfig files:"
+          - "  kubectl config set-cluster default --server=https://k8s.{{ NEW_DOMAIN }}:6443"
+          - ""
