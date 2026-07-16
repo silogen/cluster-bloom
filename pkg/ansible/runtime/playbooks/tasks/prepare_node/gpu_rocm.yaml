@@ -191,6 +191,46 @@
   environment:
     DEBIAN_FRONTEND: noninteractive
 
+# The amdgpu-install .deb is named after the ROCm release (e.g. 7.2.3) but its
+# internal package version tracks the amdgpu driver (e.g. 30.30.3). If the node
+# already has that amdgpu-install version (common on pre-provisioned GPU images),
+# the apt task above is a no-op and never (re)lays the repo conffiles. When
+# /etc/apt/sources.list.d/rocm.list is missing, `amdgpu-install --usecase=rocm`
+# has no ROCm apt repo and fails with "Unable to locate package rocm".
+# Force dpkg to restore any deleted conffiles so both amdgpu.list and rocm.list
+# are guaranteed present before we resolve the rocm metapackage.
+- name: Ensure amdgpu-install repo lists are present (restore missing conffiles)
+  shell: dpkg -i --force-confmiss "/tmp/{{ rocm_deb_package }}"
+  when: rocm_needs_install | bool
+  changed_when: false
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+
+- name: Verify ROCm apt repository is configured
+  shell: |
+    set -e
+    grep -Rqs 'repo.radeon.com/rocm/apt' /etc/apt/sources.list.d/rocm.list
+  register: rocm_repo_present
+  changed_when: false
+  failed_when: false
+  when: rocm_needs_install | bool
+
+- name: Fail early if ROCm apt repository is still missing
+  fail:
+    msg: |
+      The ROCm apt repository (/etc/apt/sources.list.d/rocm.list) is missing even
+      after reinstalling {{ rocm_deb_package }}. `amdgpu-install --usecase=rocm`
+      cannot locate the `rocm` package without it. Inspect the amdgpu-install
+      package state on this node:
+        dpkg -l amdgpu-install
+        ls -l /etc/apt/sources.list.d/
+      then purge and reinstall it:
+        sudo apt-get purge -y amdgpu-install && sudo rm -f /etc/apt/sources.list.d/rocm.list
+        sudo apt-get install -y /tmp/{{ rocm_deb_package }}
+  when:
+    - rocm_needs_install | bool
+    - rocm_repo_present.rc != 0
+
 - name: Install ROCm
   shell: amdgpu-install --usecase=rocm,dkms --yes
   when: rocm_needs_install | bool
