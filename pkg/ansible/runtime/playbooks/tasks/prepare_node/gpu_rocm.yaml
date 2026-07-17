@@ -426,9 +426,46 @@
     - not amd_smi_present | bool
     - not rocm_smi_present | bool
 
+# On a fresh install the pre-install detection ran before any ROCm existed, so
+# rocm_version was never set (and rocm_version_acceptable defaulted to false).
+# Re-read the version now — amd-smi header first, then the Core SDK / versioned
+# .info/version file — so the display and the confirmation below have a real
+# value instead of failing on an undefined rocm_version. We just installed the
+# pinned rocm_required_version, so mark it acceptable.
+- name: Re-read ROCm version after install
+  shell: |
+    set -e
+    v=""
+    smi="{{ amd_smi_bin | default('') }}"
+    if [ -n "$smi" ] && [ -x "$smi" ]; then
+      v="$("$smi" 2>/dev/null | head -2 | grep 'ROCm version' | sed -n 's/.*ROCm version: \([0-9][0-9.]*\).*/\1/p')"
+    fi
+    if [ -z "$v" ]; then
+      for f in /opt/rocm/core-*/.info/version /opt/rocm-*/.info/version /opt/rocm/.info/version; do
+        [ -f "$f" ] || continue
+        v="$(sed -n 's/^\([0-9][0-9.]*\).*/\1/p' "$f" | head -n1)"
+        [ -n "$v" ] && break
+      done
+    fi
+    echo "$v"
+  args:
+    executable: /bin/bash
+  register: rocm_version_post
+  changed_when: false
+  failed_when: false
+  when:
+    - rocm_needs_install | bool
+    - amd_smi_present | bool or rocm_smi_present | bool
+
+- name: Set ROCm version facts after install
+  set_fact:
+    rocm_version: "{{ (rocm_version_post.stdout | trim) if (rocm_version_post is defined and (rocm_version_post.stdout | default('') | trim) != '') else rocm_required_version }}"
+    rocm_version_acceptable: true
+  when: rocm_needs_install | bool
+
 - name: Display ROCm version
   debug:
-    msg: "ROCm version: {{ rocm_version }}"
+    msg: "ROCm version: {{ rocm_version | default(rocm_required_version) }}"
 
 - name: Warn if ROCm version is not acceptable for {{ gpu_stack_family_resolved | default('instinct') }}
   debug:
