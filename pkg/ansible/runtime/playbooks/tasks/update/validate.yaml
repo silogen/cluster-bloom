@@ -41,9 +41,9 @@
   debug:
     msg: "  ✓ Retrieving current domain... ✅ ({{ CURRENT_DOMAIN }})"
 
-- name: Check if domain is actually changing
-  fail:
-    msg: "New domain {{ NEW_DOMAIN }} is the same as current domain - no change needed"
+- name: Check if domain is the same
+  debug:
+    msg: "  ℹ️  New domain is the same as current domain - will re-apply configuration"
   when: CURRENT_DOMAIN == NEW_DOMAIN
 
 - name: Get cert-manager status
