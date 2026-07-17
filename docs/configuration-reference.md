@@ -622,6 +622,7 @@ bloom cli <config-file> [flags]
 - `--export`: Export generated playbook to stdout instead of executing it
 - `--dry-run`: Run in check mode without making changes
 - `--destroy-data`: ⚠️ DANGER: Wipes the cluster before redeploying (RKE2 uninstall, Longhorn cleanup, bloom-managed disk wipe). Shows a disk wipe preview before confirmation. Premounted disks (CLUSTER_PREMOUNTED_DISKS) have their bloom artifacts cleaned but their filesystem and fstab entries preserved
+- `--skip-data-safety`: Downgrade the pre-deployment data-safety failure (running RKE2 / non-empty `/var/lib/rancher/rke2` and `/etc/rancher/rke2`) to a warning so bloom can re-run on an already-provisioned node — for example to add or update ClusterForge — without `--destroy-data`. Existing cluster and disk data are preserved. Does NOT bypass the premounted-disk mount check. Also settable in `bloom.yaml` as `SKIP_DATA_SAFETY: true`
 - `--playbook string`: Playbook to run (default: "cluster-bloom.yaml")
 - `--tags string`: Run only tasks with specific tags (e.g., cleanup, validate, storage)
 
@@ -650,6 +651,13 @@ sudo ./bloom cli bloom.yaml --tags "validate_node,prep_node"
 sudo ./bloom cli bloom.yaml
 # Part 2: once all nodes have joined, run the ClusterForge bootstrap separately
 sudo ./bloom cli bloom.yaml --tags deploy_clusterforge
+
+# Add/update ClusterForge on an already-provisioned node via a FULL re-run.
+# A plain re-run fails the pre-deployment data-safety check (RKE2 is already
+# running and the rke2 dirs are non-empty). To keep the existing cluster and
+# only layer ClusterForge on top, either run just the ClusterForge tag (above),
+# or re-run the whole playbook with --skip-data-safety:
+sudo ./bloom cli bloom.yaml --skip-data-safety
 ```
 
 ### Run Command

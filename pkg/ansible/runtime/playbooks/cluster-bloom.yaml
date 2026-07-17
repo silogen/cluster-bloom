@@ -18,6 +18,7 @@
     SERVER_IP: ""
     JOIN_TOKEN: ""
     NO_DISKS_FOR_CLUSTER: false
+    SKIP_DATA_SAFETY: false
     CLUSTER_DISKS: []
     CLUSTER_PREMOUNTED_DISKS: ""
     USE_CERT_MANAGER: false

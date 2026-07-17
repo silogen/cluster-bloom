@@ -28,6 +28,7 @@ var (
 	export          bool
 	showVersion     bool
 	clusterListenIP string
+	skipDataSafety  bool
 )
 
 func init() {
@@ -259,6 +260,7 @@ imports (roles, tasks, vars) within that directory tree work as expected.`,
 	cliCmd.Flags().StringVar(&tags, "tags", "", "Run only tasks with specific tags (e.g., cleanup, validate, storage)")
 	cliCmd.Flags().BoolVar(&destroyData, "destroy-data", false, "⚠️  DANGER: Wipes cluster (RKE2 uninstall, Longhorn cleanup, disk wipe). Shows disk preview before confirmation. Equivalent to running bloom cleanup then redeploying.")
 	cliCmd.Flags().StringVar(&clusterListenIP, "cluster-listen-ip", "", "IP address or CIDR for cluster binding (e.g., 192.168.1.100 or 192.168.1.0/24)")
+	cliCmd.Flags().BoolVar(&skipDataSafety, "skip-data-safety", false, "Downgrade the pre-deployment data-safety failure (running RKE2 / existing rke2 dirs) to a warning so bloom can re-run on an already-provisioned node without --destroy-data (does NOT skip the premounted-disk mount check)")
 	cliCmd.Flags().BoolVar(&export, "export", false, "Export the playbook to ./bloom-playbook/ (overwrites if exists) instead of executing it")
 
 	// Add run command flags
@@ -302,6 +304,9 @@ func runAnsible(configFile string) {
 	// Inject CLI flag values into config (CLI flags override file values)
 	if clusterListenIP != "" {
 		cfg["CLUSTER_LISTEN_IP"] = clusterListenIP
+	}
+	if skipDataSafety {
+		cfg["SKIP_DATA_SAFETY"] = true
 	}
 
 	// Validate config (after injecting CLI flags)

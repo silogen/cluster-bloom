@@ -296,6 +296,12 @@ sudo ./bloom cli bloom.yaml
 # Part 2 — once all nodes have joined, run ClusterForge bootstrap:
 sudo ./bloom cli bloom.yaml --tags deploy_clusterforge
 
+# Add/update ClusterForge on an already-provisioned node with a FULL re-run.
+# A plain re-run would fail the pre-deployment data-safety check (RKE2 already
+# running); --skip-data-safety downgrades that to a warning and preserves the
+# existing cluster/data:
+sudo ./bloom cli bloom.yaml --skip-data-safety
+
 # Export with cleanup tasks for existing installations
 ./bloom cli bloom.yaml --export --destroy-data > cleanupPlaybook.yaml
 

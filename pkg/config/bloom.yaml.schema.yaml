@@ -96,6 +96,12 @@ schema:
       desc: Deploy only AIWB components; implicitly disables airm,airm-infra-*,kaiwo*,rabbitmq and passes aiwbOnly=true to the gitea-init job
       section: "⚙️ Advanced Configuration"
 
+    SKIP_DATA_SAFETY:
+      type: bool
+      default: false
+      desc: "Downgrade the pre-deployment data-safety failure (running RKE2 / non-empty /var/lib/rancher/rke2 and /etc/rancher/rke2) to a warning so bloom can re-run on an already-provisioned node (e.g. to add or update ClusterForge) without --destroy-data. Does NOT bypass the premounted-disk mount check. Also settable via the --skip-data-safety CLI flag."
+      section: "⚙️ Advanced Configuration"
+
     NO_DISKS_FOR_CLUSTER:
       type: bool
       default: false
