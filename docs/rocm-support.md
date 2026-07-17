@@ -21,6 +21,7 @@ Notes:
 - Single-select by design: host ROCm is one version per node. The AIM model catalog (`AIM_HARDWARE_FAMILY`) can still be heterogeneous.
 - Unsupported combinations (e.g. a Radeon stack resolving to ROCm 7.2.0, which is too old) fail validation before install with an error naming the incompatible component. See [Version Compatibility Guard](#version-compatibility-guard-fail-fast) for the fail-fast behavior and how to override it.
 - The real ROCm 7.13 tech-preview version strings and the vendored GPU Operator chart are tracked in EAI-5906; the `radeon` row carries placeholder pins until then.
+- **`radeon` uses a different install model.** ROCm 7.13 is a "TheRock" preview-stream release that is **not** published on repo.radeon.com's legacy `amdgpu-install/<rocm-version>/` path. Bloom installs it via the `amdgpu-install` 31.x installer series plus `amdgpu-install --rocmrelease=7.13.0` (which pulls ROCm packages from repo.amd.com), whereas `instinct` uses the legacy repo.radeon.com path. See [radeon ROCm 7.13 install model](#radeon-rocm-713-install-model).
 
 ### ROCm Installation
 Automated installation of ROCm drivers and runtime components:
@@ -53,9 +54,24 @@ Bloom now resets this leftover state to a clean slate during the ROCm install st
 - removes the stale `amdgpu.list`/`rocm.list` repo lists, and
 - deletes renamed-aside `/opt/rocm-*.stale` / `/opt/rocm-*.bak` trees,
 
-before laying down the target train's `amdgpu-install` `.deb` and running `amdgpu-install --usecase=rocm,dkms`. As a result, re-running bloom after `amdgpu-install --uninstall` installs ROCm cleanly for both `GPU_STACK_FAMILY: ""`/`instinct` and `GPU_STACK_FAMILY: radeon`.
+before laying down the target train's `amdgpu-install` `.deb` and running the ROCm install. As a result, re-running bloom after `amdgpu-install --uninstall` installs ROCm cleanly for both the `instinct` (7.2 train) and `radeon` (7.13 preview) paths.
 
 ROCm-root detection also ignores renamed-aside siblings: only real version-numbered directories such as `/opt/rocm-7.2.3` are considered, so a tool-less `/opt/rocm-7.13.0.stale` tree can no longer be picked as the ROCm root and shadow the real install. If detection still finds no `amd-smi`/`rocm-smi` after install, the failure now prints the dpkg package state, `/opt/rocm*` layout, and apt policy for `rocm`/`amd-smi` to make the cause obvious.
+
+### radeon ROCm 7.13 install model
+
+ROCm 7.13 (the `radeon` stack) is a **"TheRock" preview-stream release** with a different distribution model from the ROCm 5.x–7.2 stream used for `instinct`. Bloom selects the model automatically from `GPU_STACK_FAMILY` (`rocm_install_model` = `legacy` for instinct, `therock` for radeon):
+
+| | `instinct` (legacy) | `radeon` (therock) |
+|---|---|---|
+| `amdgpu-install` .deb | `repo.radeon.com/amdgpu-install/<rocm-version>/ubuntu/<codename>/` | `repo.radeon.com/amdgpu-install/31.30/ubuntu/<codename>/amdgpu-install_31.30.313000-1_all.deb` |
+| ROCm packages | repo.radeon.com (pinned above Ubuntu universe) | `repo.amd.com/rocm/packages/...`, registered on the fly by `amdgpu-install --rocmrelease` |
+| Install command | `amdgpu-install --usecase=rocm,dkms --yes --allow-downgrades` | `amdgpu-install --usecase=rocm,dkms --rocmrelease=7.13.0 --yes --allow-downgrades` |
+| Detected version | 7.2.x (`/opt/rocm-7.2.3`) | 7.13.x (`/opt/rocm-7.13`) |
+
+The installer coordinates for radeon are intentionally decoupled from the ROCm version used for detection: the `amdgpu-install` **installer** comes from the `31.x` series, while `--rocmrelease=7.13.0` selects the ROCm **packages** (the flag requires the full `X.Y.Z` version — `7.13` is rejected). The legacy-only steps (repo.radeon.com pin, `rocm.list` conffile restore/verify) are skipped for the therock model, since its repo comes from repo.amd.com.
+
+> The `31.30.313000-1` installer version and the `7.13` release are sourced from AMD's [ROCm 7.13.0 preview install guide](https://rocm.docs.amd.com/en/7.13.0-preview/install/rocm.html) and should be reconciled with the authoritative pins in EAI-5906. They live in `pkg/config/gpu_stack_matrix.go` (`radeonInstaller*` / `radeonRocmRelease`).
 
 ### GPU Detection
 Validates GPU availability and configuration:

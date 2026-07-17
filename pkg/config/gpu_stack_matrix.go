@@ -30,6 +30,27 @@ const (
 	radeonOperatorPath       = "amd-gpu-operator/v1.5.1-beta.0"
 	radeonOperatorConfigPath = "amd-gpu-operator-config/v1.5.1-beta.0"
 	radeonDriverVersion      = "7.13"
+
+	// Radeon ROCm 7.13 is a "TheRock" preview-stream release. It is NOT published
+	// on repo.radeon.com's legacy amdgpu-install/<rocm-version>/ path; instead it
+	// is installed with the amdgpu-install 31.x installer series (repo.radeon.com)
+	// plus ROCm packages served from repo.amd.com, selected via
+	// `amdgpu-install --rocmrelease=<X.Y>` (which registers the repo.amd.com apt
+	// source on the fly). These installer coordinates are intentionally decoupled
+	// from radeonHostRocmVersion (7.13.0), which is only used for detection and
+	// version-acceptability. Sourced from AMD's ROCm 7.13.0 preview install docs;
+	// reconcile with EAI-5906.
+	radeonInstallerBaseURL = "https://repo.radeon.com/amdgpu-install/31.30/ubuntu/"
+	radeonInstallerDeb     = "amdgpu-install_31.30.313000-1_all.deb"
+	// amdgpu-install --rocmrelease requires the full X.Y.Z version ("7.13" is
+	// rejected with "Invalid ROCm release format"), so this must match
+	// radeonHostRocmVersion.
+	radeonRocmRelease = "7.13.0"
+
+	// installModelLegacy is the repo.radeon.com amdgpu-install path used for the
+	// ROCm 5.x–7.2 stream (instinct); installModelTheRock is the 7.12+ preview path.
+	installModelLegacy  = "legacy"
+	installModelTheRock = "therock"
 )
 
 // minRadeonRocmMajor / minRadeonRocmMinor express the unsupported-combination
@@ -53,6 +74,17 @@ type StackProfile struct {
 	OperatorConfigPath        string
 	DeviceConfigDriverVersion string
 	TechPreview               bool
+	// InstallModel selects the ansible ROCm install path: "legacy" (repo.radeon.com
+	// amdgpu-install for the ROCm 5.x–7.2 stream) or "therock" (7.12+ preview stream).
+	InstallModel string
+	// InstallerBaseURL / InstallerDeb locate the amdgpu-install .deb to download.
+	// Empty means "use the legacy rocm_base_url / rocm_deb_package defaults", which
+	// keeps the ROCM_BASE_URL / ROCM_DEB_PACKAGE overrides working for instinct.
+	InstallerBaseURL string
+	InstallerDeb     string
+	// RocmRelease is the `amdgpu-install --rocmrelease` value for the therock model
+	// (e.g. "7.13"); empty for the legacy model.
+	RocmRelease string
 }
 
 // ResolveStackProfile maps a GPU_STACK_FAMILY value to its qualified stack.
@@ -70,6 +102,7 @@ func ResolveStackProfile(family string) (StackProfile, error) {
 			OperatorConfigPath:        instinctOperatorConfigPath,
 			DeviceConfigDriverVersion: instinctDriverVersion,
 			TechPreview:               false,
+			InstallModel:              installModelLegacy,
 		}, nil
 	case "radeon":
 		profile := StackProfile{
@@ -80,6 +113,10 @@ func ResolveStackProfile(family string) (StackProfile, error) {
 			OperatorConfigPath:        radeonOperatorConfigPath,
 			DeviceConfigDriverVersion: radeonDriverVersion,
 			TechPreview:               true,
+			InstallModel:              installModelTheRock,
+			InstallerBaseURL:          radeonInstallerBaseURL,
+			InstallerDeb:              radeonInstallerDeb,
+			RocmRelease:               radeonRocmRelease,
 		}
 		if err := checkRadeonSupported(profile); err != nil {
 			return StackProfile{}, err
@@ -113,6 +150,19 @@ func ApplyGPUStackVars(cfg Config) error {
 	cfg["rocm_deb_build"] = profile.HostRocmDebBuild
 	cfg["rocm_version_exact_required"] = false
 	cfg["rocm_instinct_min_patch"] = instinctHostRocmMinPatch
+	// ROCm install model + installer coordinates. For radeon (therock) these point
+	// the ansible download/install at the amdgpu-install 31.x series and select the
+	// ROCm release via --rocmrelease. For instinct they are left unset so the
+	// ansible defaults (rocm_base_url / rocm_deb_package, honoring ROCM_BASE_URL /
+	// ROCM_DEB_PACKAGE overrides) apply unchanged.
+	cfg["rocm_install_model"] = profile.InstallModel
+	cfg["rocm_release"] = profile.RocmRelease
+	if profile.InstallerBaseURL != "" {
+		cfg["amdgpu_install_base_url"] = profile.InstallerBaseURL
+	}
+	if profile.InstallerDeb != "" {
+		cfg["amdgpu_install_deb"] = profile.InstallerDeb
+	}
 	// Forge-bound selections consumed by the deploy_clusterforge tasks.
 	cfg["gpu_operator_path"] = profile.OperatorPath
 	cfg["gpu_operator_config_path"] = profile.OperatorConfigPath

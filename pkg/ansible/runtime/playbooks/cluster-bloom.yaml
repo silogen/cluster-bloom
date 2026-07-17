@@ -50,6 +50,15 @@
     rocm_instinct_min_patch: 3
     rocm_version_exact_required: false
     gpu_stack_family_resolved: instinct
+    # ROCm install model + amdgpu-install download coordinates. Defaults are the
+    # legacy repo.radeon.com path (instinct); ApplyGPUStackVars overrides these for
+    # radeon (therock) with the amdgpu-install 31.x series + --rocmrelease. The
+    # amdgpu_install_* defaults reference rocm_base_url/rocm_deb_package so the
+    # ROCM_BASE_URL / ROCM_DEB_PACKAGE overrides keep working for the legacy model.
+    rocm_install_model: legacy
+    amdgpu_install_base_url: "{{ rocm_base_url }}"
+    amdgpu_install_deb: "{{ rocm_deb_package }}"
+    rocm_release: ""
     rke2_installation_url: "https://get.rke2.io"
 
     supported_ubuntu_versions:
