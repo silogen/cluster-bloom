@@ -189,15 +189,85 @@
     NEEDRESTART_MODE: a
     NEEDRESTART_SUSPEND: "1"
 
-# TheRock preview stream (radeon ROCm 7.13): `amdgpu-install --rocmrelease=<X.Y.Z>`
-# (full version required — "7.13" is rejected) registers the repo.amd.com ROCm apt
-# source on the fly and installs the matching gfx-tagged ROCm packages, so no
-# repo.radeon.com pin/conffile handling applies.
+# TheRock preview stream (radeon ROCm 7.13): amdgpu-install 31.30 is BROKEN for
+# this tree — it constructs malformed apt package names (the X.Y.Z release tag is
+# glued AFTER the gfx family, e.g. "amdrocm-gfx110x7.13.0") so every apt-get 404s
+# with "Unable to locate package amdrocm-gfx110x7.13.0". The real repo.amd.com
+# packages put the major.minor BETWEEN the family root and the gfx suffix, e.g.
+# "amdrocm-core-sdk7.13-gfx110x". So we bypass amdgpu-install for the install and
+# drive apt directly against the repo.amd.com preview repo:
+#   * key  -> /etc/apt/keyrings/amdrocm.gpg (distinct from the legacy rocm.gpg so
+#             the two repos can coexist)
+#   * repo -> repo.amd.com/rocm/packages/<ubuntuXXYY> stable main (single-arch)
+#   * pkg  -> amdrocm-core-sdk<major.minor>-<gfx-family>, whose Depends chain pulls
+#             the runtime + dev + developer-tools (amd-smi) coverage
+# The gfx family suffix is still taken from amdgpu-install's OWN auto-detector (it
+# prints "gfx suffix: -gfxNNNx" before it fails), keeping AMD's device->gfx family
+# mapping as the source of truth. Ref: AMD ROCm 7.13.0-preview install docs and
+# the AMD HPCTrainingDock rocm_setup.sh preview path (documents this exact bug).
 - name: Install ROCm {{ rocm_release }} ({{ gpu_stack_family_resolved | default('radeon') }} tech preview)
-  shell: amdgpu-install --usecase=rocm,dkms --rocmrelease={{ rocm_release }} --yes --allow-downgrades
+  shell: |
+    set -euo pipefail
+    . /etc/os-release
+    case "${VERSION_ID:-}" in
+      22.04) DIST_TAG=ubuntu2204 ;;
+      24.04) DIST_TAG=ubuntu2404 ;;
+      26.04) DIST_TAG=ubuntu2604 ;;
+      *) echo "Unsupported Ubuntu '${VERSION_ID:-?}' for ROCm {{ rocm_release }} preview (need 22.04/24.04/26.04)" >&2; exit 1 ;;
+    esac
+
+    # Prereqs for keyring + repo registration (present on most images; cheap to
+    # ensure). Ubuntu base repos are already indexed, so no repo of ours is needed.
+    DEBIAN_FRONTEND=noninteractive apt-get install -y wget gnupg ca-certificates
+
+    # repo.amd.com signing key -> distinct keyring so it coexists with legacy rocm.gpg
+    mkdir -p -m 0755 /etc/apt/keyrings
+    wget -qO - https://repo.amd.com/rocm/packages/gpg/rocm.gpg \
+      | gpg --dearmor --yes -o /etc/apt/keyrings/amdrocm.gpg
+
+    # single-arch (x86_64) preview apt source
+    echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/amdrocm.gpg] https://repo.amd.com/rocm/packages/${DIST_TAG} stable main" \
+      > /etc/apt/sources.list.d/amdrocm-preview.list
+    apt-get update
+
+    # gfx family suffix from amdgpu-install's own auto-detector. Its install step
+    # fails on the malformed names described above, so we ignore its exit status
+    # and scrape the "gfx suffix: -gfxNNNx" line (falling back to "GFX version:").
+    detect="$(amdgpu-install --usecase=rocm --rocmrelease={{ rocm_release }} --yes 2>&1 || true)"
+    gfx="$(printf '%s\n' "$detect" | grep -oiE 'gfx suffix: -gfx[0-9a-z]+' | head -n1 | sed -E 's/.*-(gfx[0-9a-z]+).*/\1/')"
+    if [ -z "$gfx" ]; then
+      gfx="$(printf '%s\n' "$detect" | grep -oiE 'GFX version: gfx[0-9a-z]+' | head -n1 | sed -E 's/.*(gfx[0-9a-z]+).*/\1/')"
+    fi
+    if [ -z "$gfx" ]; then
+      echo "Could not auto-detect the GPU gfx family for the ROCm {{ rocm_release }} preview install." >&2
+      echo "amdgpu-install auto-detect output was:" >&2
+      printf '%s\n' "$detect" >&2
+      exit 1
+    fi
+    echo "Detected gfx family: $gfx"
+
+    mm="{{ rocm_release.split('.')[0] }}.{{ rocm_release.split('.')[1] }}"
+    meta="amdrocm-core-sdk${mm}-${gfx}"
+    echo "Installing ${meta} from repo.amd.com (bypassing broken amdgpu-install 31.30)"
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-downgrades "$meta"
+
+    # The preview packages install into /opt/rocm/core-<major.minor>/ (or
+    # /opt/rocm/core-<X.Y.Z>/), not the legacy /opt/rocm-<X.Y.Z>/. Downstream
+    # detection/verification searches /opt/rocm-*/bin and /opt/rocm/core-*/bin, so
+    # add a compat symlink /opt/rocm-{{ rocm_release }} -> the real core dir. Only
+    # create it when the target does not already exist (never clobber a real tree).
+    core_dir=""
+    for c in "/opt/rocm/core-${mm}" "/opt/rocm/core-{{ rocm_release }}"; do
+      if [ -d "$c" ] && [ ! -L "$c" ]; then core_dir="$c"; break; fi
+    done
+    if [ -n "$core_dir" ] && [ ! -e "/opt/rocm-{{ rocm_release }}" ]; then
+      ln -sfn "$core_dir" "/opt/rocm-{{ rocm_release }}"
+      echo "Compat symlink: /opt/rocm-{{ rocm_release }} -> $core_dir"
+    fi
   when:
     - rocm_needs_install | bool
     - rocm_install_model | default('legacy') == 'therock'
+  changed_when: true
   environment:
     DEBIAN_FRONTEND: noninteractive
     NEEDRESTART_MODE: a
@@ -217,7 +287,8 @@
     for c in "$(command -v amd-smi 2>/dev/null)" \
              "{{ rocm_root }}/bin/amd-smi" \
              /opt/rocm/bin/amd-smi \
-             $(ls -d /opt/rocm-*/bin/amd-smi 2>/dev/null | sort -V -r); do
+             $(ls -d /opt/rocm-*/bin/amd-smi 2>/dev/null | sort -V -r) \
+             $(ls -d /opt/rocm/core-*/bin/amd-smi 2>/dev/null | sort -V -r); do
       if [ -n "$c" ] && [ -x "$c" ]; then
         echo "$c"
         exit 0
@@ -234,7 +305,8 @@
     for c in "$(command -v rocm-smi 2>/dev/null)" \
              "{{ rocm_root }}/bin/rocm-smi" \
              /opt/rocm/bin/rocm-smi \
-             $(ls -d /opt/rocm-*/bin/rocm-smi 2>/dev/null | sort -V -r); do
+             $(ls -d /opt/rocm-*/bin/rocm-smi 2>/dev/null | sort -V -r) \
+             $(ls -d /opt/rocm/core-*/bin/rocm-smi 2>/dev/null | sort -V -r); do
       if [ -n "$c" ] && [ -x "$c" ]; then
         echo "$c"
         exit 0

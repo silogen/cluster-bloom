@@ -21,7 +21,7 @@ Notes:
 - Single-select by design: host ROCm is one version per node. The AIM model catalog (`AIM_HARDWARE_FAMILY`) can still be heterogeneous.
 - Unsupported combinations (e.g. a Radeon stack resolving to ROCm 7.2.0, which is too old) fail validation before install with an error naming the incompatible component. See [Version Compatibility Guard](#version-compatibility-guard-fail-fast) for the fail-fast behavior and how to override it.
 - The real ROCm 7.13 tech-preview version strings and the vendored GPU Operator chart are tracked in EAI-5906; the `radeon` row carries placeholder pins until then.
-- **`radeon` uses a different install model.** ROCm 7.13 is a "TheRock" preview-stream release that is **not** published on repo.radeon.com's legacy `amdgpu-install/<rocm-version>/` path. Bloom installs it via the `amdgpu-install` 31.x installer series plus `amdgpu-install --rocmrelease=7.13.0` (which pulls ROCm packages from repo.amd.com), whereas `instinct` uses the legacy repo.radeon.com path. See [radeon ROCm 7.13 install model](#radeon-rocm-713-install-model).
+- **`radeon` uses a different install model.** ROCm 7.13 is a "TheRock" preview-stream release that is **not** published on repo.radeon.com's legacy `amdgpu-install/<rocm-version>/` path; its ROCm packages are served from repo.amd.com. Bloom registers the repo.amd.com apt source itself and installs the `amdrocm-core-sdk<major.minor>-<gfx-family>` meta-package directly with `apt`, whereas `instinct` uses the legacy repo.radeon.com path. See [radeon ROCm 7.13 install model](#radeon-rocm-713-install-model).
 
 ### ROCm Installation
 Automated installation of ROCm drivers and runtime components:
@@ -64,14 +64,21 @@ ROCm 7.13 (the `radeon` stack) is a **"TheRock" preview-stream release** with a 
 
 | | `instinct` (legacy) | `radeon` (therock) |
 |---|---|---|
-| `amdgpu-install` .deb | `repo.radeon.com/amdgpu-install/<rocm-version>/ubuntu/<codename>/` | `repo.radeon.com/amdgpu-install/31.30/ubuntu/<codename>/amdgpu-install_31.30.313000-1_all.deb` |
-| ROCm packages | repo.radeon.com (pinned above Ubuntu universe) | `repo.amd.com/rocm/packages/...`, registered on the fly by `amdgpu-install --rocmrelease` |
-| Install command | `amdgpu-install --usecase=rocm,dkms --yes --allow-downgrades` | `amdgpu-install --usecase=rocm,dkms --rocmrelease=7.13.0 --yes --allow-downgrades` |
-| Detected version | 7.2.x (`/opt/rocm-7.2.3`) | 7.13.x (`/opt/rocm-7.13`) |
+| `amdgpu-install` .deb | `repo.radeon.com/amdgpu-install/<rocm-version>/ubuntu/<codename>/` | `repo.radeon.com/amdgpu-install/31.30/ubuntu/<codename>/amdgpu-install_31.30.313000-1_all.deb` (used **only** for GPU→gfx-family auto-detection) |
+| ROCm packages | repo.radeon.com (pinned above Ubuntu universe) | `repo.amd.com/rocm/packages/<ubuntuXXYY>` (apt source registered by bloom, key at `/etc/apt/keyrings/amdrocm.gpg`) |
+| Install command | `amdgpu-install --usecase=rocm,dkms --yes --allow-downgrades` | `apt install amdrocm-core-sdk<major.minor>-<gfx-family>` (e.g. `amdrocm-core-sdk7.13-gfx110x`) |
+| Detected version | 7.2.x (`/opt/rocm-7.2.3`) | 7.13.x (`/opt/rocm/core-7.13`, plus a `/opt/rocm-7.13.0` compat symlink) |
 
-The installer coordinates for radeon are intentionally decoupled from the ROCm version used for detection: the `amdgpu-install` **installer** comes from the `31.x` series, while `--rocmrelease=7.13.0` selects the ROCm **packages** (the flag requires the full `X.Y.Z` version — `7.13` is rejected). The legacy-only steps (repo.radeon.com pin, `rocm.list` conffile restore/verify) are skipped for the therock model, since its repo comes from repo.amd.com.
+**Why bloom does not run `amdgpu-install` to install the radeon packages.** The `amdgpu-install` 31.30 utility is broken for the 7.13 preview tree: it constructs malformed package names — the release tag is glued *after* the gfx family (e.g. `amdrocm-gfx110x7.13.0`) — so every `apt-get` it issues fails with `Unable to locate package amdrocm-gfx110x7.13.0`. The real repo.amd.com packages put the major.minor *between* the family root and the gfx suffix (`amdrocm-core-sdk7.13-gfx110x`). Bloom therefore:
 
-> The `31.30.313000-1` installer version and the `7.13` release are sourced from AMD's [ROCm 7.13.0 preview install guide](https://rocm.docs.amd.com/en/7.13.0-preview/install/rocm.html) and should be reconciled with the authoritative pins in EAI-5906. They live in `pkg/config/gpu_stack_matrix.go` (`radeonInstaller*` / `radeonRocmRelease`).
+1. registers the repo.amd.com apt source and signing key itself (a keyring distinct from the legacy `rocm.gpg` so both repos can coexist),
+2. reuses `amdgpu-install`'s own auto-detector purely to read the GPU's gfx family suffix (it prints `gfx suffix: -gfxNNNx` before it fails), keeping AMD's device→gfx mapping as the source of truth,
+3. `apt install`s the correctly-named `amdrocm-core-sdk<major.minor>-<gfx-family>` meta-package (whose Depends chain pulls the runtime, dev libraries, and developer-tools including `amd-smi`), and
+4. adds a `/opt/rocm-7.13.0 → /opt/rocm/core-7.13` compatibility symlink so ROCm-root detection and SMI verification (which search `/opt/rocm-*/bin` and `/opt/rocm/core-*/bin`) resolve the preview Core SDK layout.
+
+The legacy-only steps (repo.radeon.com pin, `rocm.list` conffile restore/verify) are skipped for the therock model, since its repo comes from repo.amd.com.
+
+> The `31.30.313000-1` installer version and the `7.13` release are sourced from AMD's [ROCm 7.13.0 preview install guide](https://rocm.docs.amd.com/en/7.13.0-preview/install/rocm.html) and the AMD HPCTrainingDock `rocm_setup.sh` preview path (which documents the same `amdgpu-install` 31.30 package-name bug), and should be reconciled with the authoritative pins in EAI-5906. They live in `pkg/config/gpu_stack_matrix.go` (`radeonInstaller*` / `radeonRocmRelease`).
 
 ### GPU Detection
 Validates GPU availability and configuration:
