@@ -35,7 +35,7 @@
   when: rocm_needs_install | bool
   environment:
     DEBIAN_FRONTEND: noninteractive
-    NEEDRESTART_MODE: a
+    NEEDRESTART_MODE: l
     NEEDRESTART_SUSPEND: "1"
 
 # Reaching this file with rocm_needs_install=true means no working ROCm tooling
@@ -69,7 +69,7 @@
   changed_when: true
   environment:
     DEBIAN_FRONTEND: noninteractive
-    NEEDRESTART_MODE: a
+    NEEDRESTART_MODE: l
     NEEDRESTART_SUSPEND: "1"
 
 # amdgpu_install_base_url / amdgpu_install_deb resolve per GPU_STACK_FAMILY (set
@@ -90,7 +90,7 @@
   when: rocm_needs_install | bool
   environment:
     DEBIAN_FRONTEND: noninteractive
-    NEEDRESTART_MODE: a
+    NEEDRESTART_MODE: l
     NEEDRESTART_SUSPEND: "1"
 
 # The amdgpu-install .deb is named after the ROCm release (e.g. 7.2.3) but its
@@ -177,8 +177,13 @@
 # repo.radeon.com builds (e.g. 1.0.0.70203) are lower version numbers, so apt
 # treats switching to them as a downgrade and refuses under -y without this flag.
 # amdgpu-install passes unrecognized args straight through to apt-get.
-# NEEDRESTART_* is set so needrestart does not try to (interactively) restart
-# services mid-install over bloom's SSH connection, which can cut the run short.
+# NEEDRESTART_* is set so needrestart neither prompts NOR restarts services after
+# this large apt transaction. Mode "l" (list-only) is deliberate: mode "a"
+# (auto-restart) would restart outdated services — including ones bloom's run
+# depends on (sshd / the container runtime the ansible run executes in) — which
+# tears down the connection/container and makes the playbook stop right after the
+# ROCm install instead of proceeding. NEEDRESTART_SUSPEND additionally skips the
+# needrestart apt hook entirely where that env var is honored.
 - name: Install ROCm {{ rocm_required_version }} ({{ gpu_stack_family_resolved | default('instinct') }})
   shell: amdgpu-install --usecase=rocm,dkms --yes --allow-downgrades
   when:
@@ -186,7 +191,7 @@
     - rocm_install_model | default('legacy') != 'therock'
   environment:
     DEBIAN_FRONTEND: noninteractive
-    NEEDRESTART_MODE: a
+    NEEDRESTART_MODE: l
     NEEDRESTART_SUSPEND: "1"
 
 # TheRock preview stream (radeon ROCm 7.13): amdgpu-install 31.30 is BROKEN for
@@ -281,7 +286,7 @@
   changed_when: true
   environment:
     DEBIAN_FRONTEND: noninteractive
-    NEEDRESTART_MODE: a
+    NEEDRESTART_MODE: l
     NEEDRESTART_SUSPEND: "1"
 
 - name: Load amdgpu module
