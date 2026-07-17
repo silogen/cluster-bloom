@@ -26,7 +26,7 @@
         - name: Get current additional tls-san entries
           shell: |
             if grep -q "^tls-san:" /etc/rancher/rke2/config.yaml 2>/dev/null; then
-              grep -A 100 "^tls-san:" /etc/rancher/rke2/config.yaml | \
+              sed -n '/^tls-san:/,/^# END ANSIBLE MANAGED BLOCK - tls-san/p' /etc/rancher/rke2/config.yaml | \
               grep "^  - " | \
               sed 's/^  - //' | \
               grep -v "^k8s\." || true
@@ -73,14 +73,13 @@
                 - issuer:
                     url: https://kc.{{ NEW_DOMAIN }}/realms/airm
                     audiences: ['k8s']
-                    claimMappings:
-                      username:
-                        claim: preferred_username
-                        prefix: "oidc:"
-                      groups:
-                        claim: groups
-                        prefix: "oidc:"
-          when: ansible_facts.stat is defined or true
+                  claimMappings:
+                    username:
+                      claim: preferred_username
+                      prefix: "oidc:"
+                    groups:
+                      claim: groups
+                      prefix: "oidc:"
 
         - name: Display auth-config update result
           debug:

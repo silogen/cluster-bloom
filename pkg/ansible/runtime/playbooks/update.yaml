@@ -13,8 +13,8 @@
     TLS_ONLY: false          # Optional - update only TLS certificates
     SKIP_RKE2: false         # Optional - skip RKE2 layer updates
     KUBECONFIG: ""           # Optional, defaults to ~/.kube/config
-    FIRST_NODE: false        # Set by runtime, indicates if this is first node
-    CONTROL_PLANE: false     # Set by runtime, indicates if this is control plane node
+    FIRST_NODE: true         # Default true for updates (run K8s updates once)
+    CONTROL_PLANE: true      # Default true for updates (run RKE2 updates)
 
   pre_tasks:
     - name: Set kubeconfig environment variable
