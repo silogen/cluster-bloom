@@ -21,14 +21,16 @@
 
         - name: Wait for changes to propagate
           pause:
-            seconds: 2
+            seconds: 10
 
         # Verify ConfigMap
         - name: Verify ConfigMap update
           command: /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get configmap cluster-domain -n default -o jsonpath='{.data.DOMAIN}'
           register: verify_configmap
           changed_when: false
-          failed_when: verify_configmap.stdout != NEW_DOMAIN
+          retries: 3
+          delay: 10
+          until: verify_configmap.stdout == NEW_DOMAIN
 
         - name: Display ConfigMap verification result
           debug:
