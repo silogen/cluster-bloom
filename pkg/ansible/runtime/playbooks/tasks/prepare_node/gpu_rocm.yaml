@@ -76,11 +76,20 @@
 # by ApplyGPUStackVars): the legacy repo.radeon.com amdgpu-install .deb for
 # instinct, or the amdgpu-install 31.x installer series for the radeon/therock
 # ROCm 7.13 preview.
+# Retry the download: the amdgpu-install .deb is served from repo.radeon.com,
+# which can intermittently fail the request (observed "Request failed") even
+# though the URL is valid. Retry a few times before giving up so a transient
+# network/CDN hiccup does not abort the whole deploy.
 - name: Download amdgpu-install package
   get_url:
     url: "{{ amdgpu_install_base_url }}/{{ ubuntu_codename.stdout }}/{{ amdgpu_install_deb }}"
     dest: "/tmp/{{ amdgpu_install_deb }}"
     mode: "0644"
+    timeout: 60
+  register: amdgpu_install_download
+  until: amdgpu_install_download is succeeded
+  retries: 5
+  delay: 10
   when: rocm_needs_install | bool
 
 - name: Install amdgpu-install package
