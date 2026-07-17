@@ -43,11 +43,19 @@ Automated installation of ROCm drivers and runtime components:
 
 `amdgpu-install --uninstall` (and `amdgpu-uninstall`) removes the ROCm runtime — `amd-smi`, `/opt/rocm`, and the `rocm` metapackages — but **leaves the `amdgpu-install` package itself installed**, along with its `/etc/apt/sources.list.d/amdgpu.list` and `rocm.list` conffiles pinned to whatever ROCm train was last configured.
 
-That leftover previously broke a subsequent bloom install:
+That leftover state previously broke a subsequent bloom install in several ways:
 - When the leftover `amdgpu-install` was an equal or newer version than the train bloom targets, `apt` refused to reinstall the pinned `.deb` and aborted with `A later version is already installed`, so ROCm was never installed.
-- On an upgrade path, `dpkg` preserved the old (modified) `rocm.list` conffile, so `amdgpu-install --usecase=rocm` resolved against the previous train's repo and left the node with no working ROCm tooling (the SMI-presence guard then failed).
+- On an upgrade path, `dpkg` preserved the old (modified) `rocm.list` conffile, so `amdgpu-install --usecase=rocm` resolved against the previous train's repo.
+- The ROCm runtime packages (`rocm`, `amd-smi`, `hip-runtime-amd`, …) were frequently left marked *installed* in dpkg even though their files had been removed or renamed aside (e.g. a `/opt/rocm-<ver>.stale` tree). `amdgpu-install --usecase=rocm` then treated ROCm as already present and did nothing — the step "succeeded" but no tooling landed, and the SMI-presence guard failed.
 
-Bloom now detects this state during the ROCm install step: when a fresh install is required (no acceptable ROCm tooling present) and the `amdgpu-install` package is still installed, it **purges that leftover installer package and removes the stale `amdgpu.list`/`rocm.list` repo lists** before laying down the target train's `amdgpu-install` `.deb`. This only removes the installer script and apt repo config; a healthy, acceptable ROCm install is not affected because it never enters the install path. As a result, re-running bloom after `amdgpu-install --uninstall` installs ROCm cleanly for both `GPU_STACK_FAMILY: ""`/`instinct` and `GPU_STACK_FAMILY: radeon`.
+Bloom now resets this leftover state to a clean slate during the ROCm install step, but only when a fresh install is required (no acceptable ROCm tooling present — a healthy, acceptable install never enters this path). It:
+- purges the leftover `amdgpu-install` **and** any orphaned ROCm runtime packages (`rocm*`, `amd-smi*`, `hip-runtime-amd*`),
+- removes the stale `amdgpu.list`/`rocm.list` repo lists, and
+- deletes renamed-aside `/opt/rocm-*.stale` / `/opt/rocm-*.bak` trees,
+
+before laying down the target train's `amdgpu-install` `.deb` and running `amdgpu-install --usecase=rocm,dkms`. As a result, re-running bloom after `amdgpu-install --uninstall` installs ROCm cleanly for both `GPU_STACK_FAMILY: ""`/`instinct` and `GPU_STACK_FAMILY: radeon`.
+
+ROCm-root detection also ignores renamed-aside siblings: only real version-numbered directories such as `/opt/rocm-7.2.3` are considered, so a tool-less `/opt/rocm-7.13.0.stale` tree can no longer be picked as the ROCm root and shadow the real install. If detection still finds no `amd-smi`/`rocm-smi` after install, the failure now prints the dpkg package state, `/opt/rocm*` layout, and apt policy for `rocm`/`amd-smi` to make the cause obvious.
 
 ### GPU Detection
 Validates GPU availability and configuration:

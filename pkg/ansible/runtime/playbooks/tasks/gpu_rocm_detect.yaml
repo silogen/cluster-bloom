@@ -31,7 +31,12 @@
     # /opt/rocm (e.g. a leftover core-only tree from a different ROCm train) can
     # carry a .info/version but no bin/, so give priority to roots that actually
     # contain the ROCm tooling before falling back to a version marker alone.
-    candidates="/opt/rocm $(ls -d /opt/rocm-* 2>/dev/null | sort -V -r)"
+    # Only consider real version-numbered siblings (/opt/rocm-7.2.3): skip
+    # renamed-aside trees like /opt/rocm-7.13.0.stale or *.bak, which an
+    # `amdgpu-install --uninstall` cycle can leave behind. Such a tool-less tree
+    # must never be picked as rocm_root and shadow the real install location.
+    versioned="$(ls -d /opt/rocm-* 2>/dev/null | grep -E '^/opt/rocm-[0-9]+(\.[0-9]+)*$' | sort -V -r)"
+    candidates="/opt/rocm $versioned"
     for d in $candidates; do
       [ -e "$d" ] || continue
       if has_tool "$d"; then

@@ -38,37 +38,34 @@
     NEEDRESTART_MODE: a
     NEEDRESTART_SUSPEND: "1"
 
-# `amdgpu-install --uninstall` (and `amdgpu-uninstall`) removes the ROCm runtime
-# (amd-smi, /opt/rocm, the rocm metapackages) but leaves the amdgpu-install
-# package itself installed, with its /etc/apt/sources.list.d/{amdgpu,rocm}.list
-# conffiles pinned to whatever train was last configured. Reaching this task with
-# rocm_needs_install=true means no working ROCm tooling was found, so a leftover
-# installer package is stale and breaks a fresh install two ways:
-#   * `apt` refuses to (re)install our pinned .deb when the leftover is an equal
-#     or newer version ("A later version is already installed"), aborting before
-#     ROCm is ever laid down (e.g. leftover 7.2.4 vs a requested 7.2.3).
-#   * On an upgrade, dpkg preserves the old (modified) rocm.list conffile, so
-#     `amdgpu-install --usecase=rocm` resolves against the previous train's repo
-#     and no working ROCm tooling ends up installed (guard trips later).
-# Purge the leftover installer + its repo lists so the desired train's .deb
-# installs cleanly. This only removes the installer script + apt repo config
-# (safe) — the ROCm runtime is already gone in this rocm_needs_install state, and
-# a healthy/acceptable install never reaches here (rocm_needs_install is false).
-- name: Detect leftover amdgpu-install package
-  shell: dpkg-query -W -f='${Status}' amdgpu-install 2>/dev/null | grep -q 'install ok installed'
-  register: amdgpu_install_leftover
-  changed_when: false
-  failed_when: false
-  when: rocm_needs_install | bool
-
-- name: Purge leftover amdgpu-install and stale repo lists for a clean install
+# Reaching this file with rocm_needs_install=true means no working ROCm tooling
+# was found, yet `amdgpu-install --uninstall` (and `amdgpu-uninstall`) leaves the
+# box in a half-torn-down state that silently defeats a fresh install:
+#   * The amdgpu-install package itself stays installed, with its
+#     /etc/apt/sources.list.d/{amdgpu,rocm}.list conffiles pinned to whatever
+#     train was last configured. `apt` then refuses to (re)install our pinned .deb
+#     when the leftover is an equal/newer version ("A later version is already
+#     installed"), aborting before ROCm is ever laid down; and on an upgrade dpkg
+#     preserves the old rocm.list conffile so the wrong train's repo is used.
+#   * The ROCm runtime packages (rocm, amd-smi, hip-runtime-amd, ...) are often
+#     left marked "installed" in dpkg while their files were removed or renamed
+#     aside (e.g. /opt/rocm-<ver>.stale). `amdgpu-install --usecase=rocm` then
+#     sees rocm as already installed and does nothing — the install "succeeds"
+#     but no tooling ends up on the node.
+# So before installing, wipe this leftover state to a clean slate: purge the
+# installer AND any orphaned ROCm packages, drop the stale repo lists and any
+# renamed-aside /opt/rocm-*.stale|.bak trees. This is safe here because we have
+# already determined no acceptable ROCm is present (rocm_needs_install); a
+# healthy/acceptable install never reaches this path (rocm_needs_install=false).
+- name: Reset leftover ROCm state for a clean install
   shell: |
     set -e
-    apt-get purge -y amdgpu-install
+    # Orphaned runtime packages first (dpkg-only, no repo needed) so a later
+    # amdgpu-install --usecase=rocm is a real install rather than a no-op.
+    apt-get purge -y 'rocm*' 'amd-smi*' 'hip-runtime-amd*' amdgpu-install 2>/dev/null || true
     rm -f /etc/apt/sources.list.d/rocm.list /etc/apt/sources.list.d/amdgpu.list
-  when:
-    - rocm_needs_install | bool
-    - amdgpu_install_leftover.rc == 0
+    rm -rf /opt/rocm-*.stale /opt/rocm-*.bak
+  when: rocm_needs_install | bool
   changed_when: true
   environment:
     DEBIAN_FRONTEND: noninteractive
@@ -258,6 +255,29 @@
 # Guard against the confusing "No GPUs detected by rocm-smi" failure on ROCm 7.x
 # nodes where rocm-smi does not exist: if neither tool resolved, the ROCm install
 # is incomplete rather than the GPUs being absent.
+#
+# Capture the package/filesystem state first so the failure is actionable. The
+# common cause here is a prior `amdgpu-install --uninstall` that left the ROCm
+# runtime packages marked "installed" in dpkg while removing/renaming their files
+# (e.g. /opt/rocm-<ver>.stale). In that state `amdgpu-install --usecase=rocm` is a
+# no-op — apt believes rocm is already installed — so no tooling is ever laid down.
+- name: Gather ROCm install diagnostics (no SMI tooling found)
+  shell: |
+    echo "== dpkg rocm/amdgpu/amd-smi package state =="
+    dpkg -l | grep -iE 'rocm|amdgpu|amd-smi' || echo "(no matching packages)"
+    echo "== /opt/rocm* trees =="
+    ls -ld /opt/rocm /opt/rocm-* 2>/dev/null || echo "(none)"
+    echo "== apt policy for rocm / amd-smi =="
+    apt-cache policy rocm amd-smi 2>/dev/null || true
+    echo "== amd-smi/rocm-smi on PATH =="
+    command -v amd-smi rocm-smi 2>/dev/null || echo "(none on PATH)"
+  register: rocm_missing_diag
+  changed_when: false
+  failed_when: false
+  when:
+    - not amd_smi_present | bool
+    - not rocm_smi_present | bool
+
 - name: Fail if no ROCm SMI tooling could be located
   fail:
     msg: |
@@ -265,6 +285,16 @@
       verified. This usually means the ROCm install is incomplete or /opt/rocm is a
       stale/incomplete tree shadowing the real versioned install. Checked PATH,
       {{ rocm_root }}/bin, /opt/rocm/bin and /opt/rocm-*/bin.
+
+      A prior `amdgpu-install --uninstall` can leave the ROCm packages marked
+      installed in dpkg while their files were removed or renamed aside (e.g. a
+      /opt/rocm-<ver>.stale tree), which makes `amdgpu-install --usecase=rocm` a
+      no-op. If the diagnostics below show rocm packages as "ii" but no populated
+      /opt/rocm tree, purge them and re-run bloom:
+        sudo apt-get purge -y 'rocm*' 'amd-smi*' && sudo rm -rf /opt/rocm /opt/rocm-*
+
+      Diagnostics:
+      {{ rocm_missing_diag.stdout | default('(not collected)') }}
   when:
     - not amd_smi_present | bool
     - not rocm_smi_present | bool
