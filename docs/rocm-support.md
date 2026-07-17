@@ -39,6 +39,7 @@ Automated installation of ROCm drivers and runtime components:
 5. Execute installation with ROCm and DKMS use cases
 6. Load amdgpu kernel module
 7. Verify installation with amd-smi
+8. (instinct/ROCm 7.2.x) Apply AMD's [post-install environment configuration](https://rocm.docs.amd.com/projects/install-on-linux/en/docs-7.2.3/install/post-install.html): register ROCm's `lib`/`lib64` with the system linker (`/etc/ld.so.conf.d/rocm.conf` + `ldconfig`), add ROCm `bin` to `PATH` for login shells (`/etc/profile.d/rocm.sh`), and verify with `amd-smi version`. These are written as persistent, system-wide config (not the doc's session-only `export`s) and are driven off the resolved ROCm root, so they stay correct for `/opt/rocm`, `/opt/rocm-7.2.3`, etc. The radeon/ROCm 7.13 packages register their tools/libraries via `update-alternatives` at install time, so this legacy finalization is not applied there.
 
 ### Recovering after `amdgpu-install --uninstall`
 

@@ -503,3 +503,59 @@
   debug:
     msg: "✅ ROCm {{ rocm_version }} confirmed — acceptable for {{ gpu_stack_family_resolved | default('instinct') }} stack"
   when: rocm_version_acceptable | bool
+
+# Post-installation environment configuration for the instinct (ROCm 7.2.x)
+# stack, per AMD's ROCm 7.2.3 post-install guide:
+#   https://rocm.docs.amd.com/projects/install-on-linux/en/docs-7.2.3/install/post-install.html
+# The guide's "Environment Configuration" steps register ROCm's shared objects
+# with the system linker and put ROCm on PATH. We implement them as persistent,
+# system-wide config (ld.so.conf + /etc/profile.d) rather than the doc's
+# session-only `export`s, and drive the paths off the resolved rocm_root so they
+# stay correct for /opt/rocm, /opt/rocm-7.2.3, etc. All tasks are idempotent, so
+# they apply whether ROCm was just installed or was already present.
+#
+# Scoped to instinct: the radeon/therock (ROCm 7.13) packages register their
+# tools and libraries via update-alternatives (/opt/rocm/bin, /opt/rocm/lib) at
+# install time, so this legacy finalization is neither required nor applied there.
+- name: Configure ROCm shared objects for the system linker (ld.so.conf)
+  copy:
+    dest: /etc/ld.so.conf.d/rocm.conf
+    mode: "0644"
+    content: |
+      {{ rocm_root }}/lib
+      {{ rocm_root }}/lib64
+  register: rocm_ldsoconf
+  when: gpu_stack_family_resolved | default('instinct') != 'radeon'
+
+- name: Refresh the dynamic linker cache (ldconfig)
+  command: ldconfig
+  changed_when: true
+  when:
+    - gpu_stack_family_resolved | default('instinct') != 'radeon'
+    - rocm_ldsoconf is changed
+
+- name: Add ROCm bin to PATH for login shells
+  copy:
+    dest: /etc/profile.d/rocm.sh
+    mode: "0644"
+    content: |
+      export PATH="$PATH:{{ rocm_root }}/bin"
+  when: gpu_stack_family_resolved | default('instinct') != 'radeon'
+
+- name: Verify ROCm installation (amd-smi version)
+  command: "{{ amd_smi_bin }} version"
+  register: amd_smi_version
+  changed_when: false
+  failed_when: false
+  when:
+    - gpu_stack_family_resolved | default('instinct') != 'radeon'
+    - amd_smi_present | bool
+
+- name: Display ROCm install verification (amd-smi version)
+  debug:
+    msg: "{{ amd_smi_version.stdout | default('(amd-smi version unavailable)') }}"
+  when:
+    - gpu_stack_family_resolved | default('instinct') != 'radeon'
+    - amd_smi_present | bool
+    - amd_smi_version is defined
+    - amd_smi_version.rc | default(1) == 0
