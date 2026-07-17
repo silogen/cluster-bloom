@@ -38,6 +38,43 @@
     NEEDRESTART_MODE: a
     NEEDRESTART_SUSPEND: "1"
 
+# `amdgpu-install --uninstall` (and `amdgpu-uninstall`) removes the ROCm runtime
+# (amd-smi, /opt/rocm, the rocm metapackages) but leaves the amdgpu-install
+# package itself installed, with its /etc/apt/sources.list.d/{amdgpu,rocm}.list
+# conffiles pinned to whatever train was last configured. Reaching this task with
+# rocm_needs_install=true means no working ROCm tooling was found, so a leftover
+# installer package is stale and breaks a fresh install two ways:
+#   * `apt` refuses to (re)install our pinned .deb when the leftover is an equal
+#     or newer version ("A later version is already installed"), aborting before
+#     ROCm is ever laid down (e.g. leftover 7.2.4 vs a requested 7.2.3).
+#   * On an upgrade, dpkg preserves the old (modified) rocm.list conffile, so
+#     `amdgpu-install --usecase=rocm` resolves against the previous train's repo
+#     and no working ROCm tooling ends up installed (guard trips later).
+# Purge the leftover installer + its repo lists so the desired train's .deb
+# installs cleanly. This only removes the installer script + apt repo config
+# (safe) — the ROCm runtime is already gone in this rocm_needs_install state, and
+# a healthy/acceptable install never reaches here (rocm_needs_install is false).
+- name: Detect leftover amdgpu-install package
+  shell: dpkg-query -W -f='${Status}' amdgpu-install 2>/dev/null | grep -q 'install ok installed'
+  register: amdgpu_install_leftover
+  changed_when: false
+  failed_when: false
+  when: rocm_needs_install | bool
+
+- name: Purge leftover amdgpu-install and stale repo lists for a clean install
+  shell: |
+    set -e
+    apt-get purge -y amdgpu-install
+    rm -f /etc/apt/sources.list.d/rocm.list /etc/apt/sources.list.d/amdgpu.list
+  when:
+    - rocm_needs_install | bool
+    - amdgpu_install_leftover.rc == 0
+  changed_when: true
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+    NEEDRESTART_MODE: a
+    NEEDRESTART_SUSPEND: "1"
+
 - name: Download amdgpu-install package
   get_url:
     url: "{{ rocm_base_url }}/{{ ubuntu_codename.stdout }}/{{ rocm_deb_package }}"
