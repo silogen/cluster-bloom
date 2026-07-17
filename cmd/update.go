@@ -15,6 +15,8 @@ var (
 	checkDNSOnly bool
 	dryRunUpdate bool
 	skipRKE2     bool
+	firstNode    bool
+	controlPlane bool
 )
 
 func updateCmd() *cobra.Command {
@@ -125,6 +127,8 @@ Examples:
 				"CHECK_DNS_ONLY": checkDNSOnly,
 				"TLS_ONLY":       tlsOnly,
 				"SKIP_RKE2":      skipRKE2,
+				"FIRST_NODE":     firstNode,
+				"CONTROL_PLANE":  controlPlane,
 			}
 
 			// Run the Ansible playbook
@@ -155,6 +159,8 @@ Examples:
 	cmd.Flags().BoolVar(&checkDNSOnly, "check-dns", false, "Only check DNS configuration for the specified domain")
 	cmd.Flags().BoolVar(&dryRunUpdate, "dry-run", false, "Show what would be changed without applying updates")
 	cmd.Flags().BoolVar(&skipRKE2, "skip-rke2", false, "Skip RKE2 layer updates (API server certificate, config files)")
+	cmd.Flags().BoolVar(&firstNode, "first-node", true, "Run Kubernetes-level updates (set false on additional nodes)")
+	cmd.Flags().BoolVar(&controlPlane, "control-plane", true, "Run RKE2-level updates (set false on worker nodes)")
 
 	return cmd
 }
