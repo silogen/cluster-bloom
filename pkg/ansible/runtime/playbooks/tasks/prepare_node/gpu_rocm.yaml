@@ -213,6 +213,9 @@
   # rocm_release is also expanded once into a shell var and major.minor is derived
   # in bash, so there is no Jinja-with-quotes (e.g. split('.')) inside the script.
   shell:
+    # `set -o pipefail` (and ${var:-}) need bash; Ansible's shell module defaults
+    # to /bin/sh (dash on Ubuntu), which errors with "Illegal option -o pipefail".
+    executable: /bin/bash
     cmd: |
       set -euo pipefail
       rr="{{ rocm_release }}"
