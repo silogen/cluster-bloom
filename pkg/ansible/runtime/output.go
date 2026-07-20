@@ -227,19 +227,19 @@ func (p *OutputProcessor) PrintSummary() {
 		domain := p.config["DOMAIN"]
 
 		if clusterforgeRelease != "" && clusterforgeRelease != "none" && domain != "" {
-			endpoints := clusterForgeEndpoints()
+			aiwbOnly := strings.EqualFold(p.config["AIWB_ONLY"], "true")
+			endpoints := clusterForgeEndpoints(aiwbOnly)
 
 			fmt.Println()
 			fmt.Println("🚀 ClusterForge Deployment:")
 			fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-			fmt.Println("⏳ Services are starting up. Endpoints will be available once envoy-gateway is ready.")
+			fmt.Println("⏳ Services are starting up. Endpoints will be available once everything below is ready.")
 			fmt.Println()
-			fmt.Println("Run this command to wait for services AND endpoints to be reachable (Ctrl+C to exit early);")
-			fmt.Println("it also prints the decoded credentials once everything is confirmed up:")
+			fmt.Println("Run this command to wait for services to be ready (Ctrl+C to exit early):")
 			fmt.Println()
-			printReadinessScript(domain, endpoints)
+			printReadinessScript(aiwbOnly)
 			fmt.Println()
-			fmt.Println("Reference — retrieval commands for each credential (values are not yet guaranteed valid until the script above confirms readiness):")
+			fmt.Println("Once ready, access these endpoints:")
 			fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 			fmt.Println()
 			fmt.Println("📋 Credential Information:")
@@ -280,10 +280,11 @@ func (e clusterForgeEndpoint) formatUsername(domain string) string {
 }
 
 // clusterForgeEndpoints is the single source of truth for the endpoints listed
-// both in the static credential reference block and in the generated
-// readiness-check script, so the two can never drift apart.
-func clusterForgeEndpoints() []clusterForgeEndpoint {
-	return []clusterForgeEndpoint{
+// in the credential reference block. The AI Resource Manager endpoint only
+// exists on a full (non-AIWB_ONLY) install, so it's omitted for AIWB-only
+// installs where the airm namespace/app is never deployed.
+func clusterForgeEndpoints(aiwbOnly bool) []clusterForgeEndpoint {
+	all := []clusterForgeEndpoint{
 		{"🔐", "AI Resource Manager - DevUser", "airmui", "devuser", "keycloak", "airm-realm-credentials", ".data.KEYCLOAK_INITIAL_DEVUSER_PASSWORD"},
 		{"💼", "AI Workbench - DevUser", "aiwbui", "devuser", "keycloak", "airm-realm-credentials", ".data.KEYCLOAK_INITIAL_DEVUSER_PASSWORD"},
 		{"📦", "ArgoCD - Admin", "argocd", "admin", "argocd", "argocd-initial-admin-secret", ".data.password"},
@@ -291,45 +292,39 @@ func clusterForgeEndpoints() []clusterForgeEndpoint {
 		{"🔐", "OpenBao - Root Token", "openbao", "", "cf-openbao", "openbao-keys", ".data.root_token"},
 		{"🔑", "Keycloak - Admin", "kc", "silogen-admin", "keycloak", "keycloak-credentials", ".data.KEYCLOAK_INITIAL_ADMIN_PASSWORD"},
 	}
-}
-
-// printReadinessScript prints a single copy-pasteable shell script that waits
-// for the envoy-gateway/cluster-auth Kubernetes objects, THEN polls each real
-// HTTPS endpoint until it actually responds (not just "pod ready" — envoy
-// routing, TLS termination, and the backend all have to be up), and finally
-// fetches and prints the decoded credentials so there is no need to scroll
-// back up or guess whether the static reference values below are usable yet.
-func printReadinessScript(domain string, endpoints []clusterForgeEndpoint) {
-	fmt.Printf("  DOMAIN=%q\n", domain)
-	fmt.Println("  kubectl wait --for=condition=ready pod --all -n envoy-gateway-system --timeout=600s && \\")
-	fmt.Println("  kubectl wait --for=condition=complete job --all -n cluster-auth --timeout=600s && \\")
-	fmt.Println("  for h in " + endpointHostList(endpoints) + "; do \\")
-	waitingLine := "    printf '  Waiting for https://%s.%s ... ' \"$h\" \"$DOMAIN\"; \\"
-	fmt.Println(waitingLine)
-	fmt.Println("    until code=$(curl -ks -o /dev/null -w '%{http_code}' --max-time 5 \"https://$h.$DOMAIN\" 2>/dev/null); [[ \"$code\" =~ ^[0-9]{3}$ ]] && [ \"$code\" != 000 ] && [ \"$code\" != 502 ] && [ \"$code\" != 503 ] && [ \"$code\" != 504 ]; do sleep 5; done; \\")
-	fmt.Println("    echo \"ready ($code)\"; \\")
-	fmt.Println("  done && \\")
-	fmt.Println("  echo && echo '✅ Services and endpoints are ready! Fetching credentials...' && echo && \\")
-	for _, ep := range endpoints {
-		fmt.Printf("  echo '%s %s:  https://%s.%s' && \\\n", ep.Emoji, ep.Label, ep.Subdomain, domain)
-		if ep.Username != "" {
-			fmt.Printf("  echo \"   Username: %s\" && \\\n", ep.formatUsername(domain))
-			fmt.Printf("  echo \"   Password: $(kubectl -n %s get secret %s -o jsonpath='{%s}' | base64 --decode)\" && echo && \\\n", ep.SecretNamespace, ep.SecretName, ep.SecretJSONPath)
-		} else {
-			fmt.Printf("  echo \"   Token:    $(kubectl -n %s get secret %s -o jsonpath='{%s}' | base64 --decode)\" && echo && \\\n", ep.SecretNamespace, ep.SecretName, ep.SecretJSONPath)
+	if !aiwbOnly {
+		return all
+	}
+	endpoints := make([]clusterForgeEndpoint, 0, len(all)-1)
+	for _, ep := range all {
+		if ep.Subdomain == "airmui" {
+			continue
 		}
+		endpoints = append(endpoints, ep)
 	}
-	fmt.Println("  true")
+	return endpoints
 }
 
-// endpointHostList renders the endpoint subdomains as a space-separated list
-// for the bash `for h in ...` loop in printReadinessScript.
-func endpointHostList(endpoints []clusterForgeEndpoint) string {
-	hosts := make([]string, len(endpoints))
-	for i, ep := range endpoints {
-		hosts[i] = ep.Subdomain
+// printReadinessScript prints a single copy-pasteable chain of `kubectl wait`
+// commands covering every namespace that needs to be up before the endpoints
+// below are reachable. The airm wait is only included on a full install,
+// since AIWB_ONLY disables the airm app entirely (see DISABLED_APPS in
+// deploy_clusterforge/main.yaml).
+func printReadinessScript(aiwbOnly bool) {
+	fmt.Println("  # Wait for envoy-gateway pods to be ready")
+	fmt.Println("  kubectl wait --for=condition=ready pod --all -n envoy-gateway-system --timeout=600s && \\")
+	fmt.Println("  # Wait for cluster-auth job to complete (creates initial auth configuration)")
+	fmt.Println("  kubectl wait --for=condition=complete job --all -n cluster-auth --timeout=600s && \\")
+	fmt.Println("  # Wait for Keycloak pods to be ready (auth/identity provider)")
+	fmt.Println("  kubectl wait --for=condition=ready pod --all -n keycloak --timeout=600s && \\")
+	fmt.Println("  # Wait for AI Workbench pods to be ready")
+	fmt.Println("  kubectl wait --for=condition=ready pod --all -n aiwb --timeout=600s && \\")
+	if !aiwbOnly {
+		fmt.Println("  # Wait for AI Resource Manager pods to be ready")
+		fmt.Println("  kubectl wait --for=condition=ready pod --all -n airm --timeout=600s && \\")
 	}
-	return strings.Join(hosts, " ")
+	fmt.Println("  echo ''")
+	fmt.Println("  echo '✅ Services are ready! Endpoints are now accessible.'")
 }
 
 // extractJoinInfoMessage extracts join information from Ansible debug output

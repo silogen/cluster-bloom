@@ -683,3 +683,79 @@
     - amd_smi_present | bool
     - amd_smi_version is defined
     - amd_smi_version.rc | default(1) == 0
+
+# AMD's ROCm 7.13.0-preview install docs recommend confirming the driver
+# stack with `rocminfo` and `amd-smi version` right after installation:
+#   https://rocm.docs.amd.com/en/7.13.0-preview/install/rocm.html#post-installation
+# The radeon/therock path is a tech-preview installed via a hand-rolled apt
+# workaround (see "Launch radeon/therock ROCm ... install" above), so unlike
+# the mature instinct/legacy path (whose amd-smi verification above is
+# informational only) we don't trust "apt reported success" alone here: fail
+# the run outright with an actionable message if either check doesn't confirm
+# a healthy install, rather than letting a broken node proceed.
+- name: Locate rocminfo binary (radeon/therock)
+  shell: |
+    set -e
+    for c in "$(command -v rocminfo 2>/dev/null)" \
+             "{{ rocm_root }}/bin/rocminfo" \
+             /opt/rocm/bin/rocminfo \
+             $(ls -d /opt/rocm-*/bin/rocminfo 2>/dev/null | sort -V -r) \
+             $(ls -d /opt/rocm/core-*/bin/rocminfo 2>/dev/null | sort -V -r); do
+      if [ -n "$c" ] && [ -x "$c" ]; then
+        echo "$c"
+        exit 0
+      fi
+    done
+    exit 1
+  register: rocminfo_locate
+  changed_when: false
+  failed_when: false
+  when: gpu_stack_family_resolved | default('instinct') == 'radeon'
+
+- name: Run rocminfo post-install check
+  command: "{{ rocminfo_locate.stdout | trim }}"
+  register: rocminfo_check
+  changed_when: false
+  failed_when: false
+  when:
+    - gpu_stack_family_resolved | default('instinct') == 'radeon'
+    - rocminfo_locate.rc | default(1) == 0
+    - (rocminfo_locate.stdout | default('') | trim) != ''
+
+- name: Run amd-smi version post-install check (radeon/therock)
+  command: "{{ amd_smi_bin }} version"
+  register: amdsmi_version_check
+  changed_when: false
+  failed_when: false
+  when:
+    - gpu_stack_family_resolved | default('instinct') == 'radeon'
+    - amd_smi_present | bool
+
+- name: Set ROCm 7.13.0 post-install validation facts
+  set_fact:
+    rocminfo_ok: "{{ rocminfo_check is defined and rocminfo_check.rc | default(1) == 0 and 'HSA Agents' in (rocminfo_check.stdout | default('')) }}"
+    amdsmi_version_ok: "{{ amdsmi_version_check is defined and amdsmi_version_check.rc | default(1) == 0 and 'ROCm version' in (amdsmi_version_check.stdout | default('')) }}"
+  when: gpu_stack_family_resolved | default('instinct') == 'radeon'
+
+- name: Display ROCm 7.13.0 post-install validation
+  debug:
+    msg: |
+      rocminfo:        {{ 'OK' if rocminfo_ok else 'FAILED or not found' }}
+      amd-smi version: {{ 'OK' if amdsmi_version_ok else 'FAILED or not found' }}
+  when: gpu_stack_family_resolved | default('instinct') == 'radeon'
+
+- name: Fail if ROCm 7.13.0 post-install validation did not succeed
+  fail:
+    msg: |
+      ROCm {{ rocm_release | default('7.13.0') }} was not able to be installed automatically on this node.
+
+      AMD's recommended post-install checks did not both report success:
+        rocminfo:        {{ 'OK' if rocminfo_ok else 'FAILED or not found' }}
+        amd-smi version: {{ 'OK' if amdsmi_version_ok else 'FAILED or not found' }}
+
+      Please install ROCm {{ rocm_release | default('7.13.0') }} manually on this node
+      (see https://rocm.docs.amd.com/en/7.13.0-preview/install/rocm.html), then run
+      cluster-bloom again.
+  when:
+    - gpu_stack_family_resolved | default('instinct') == 'radeon'
+    - not (rocminfo_ok and amdsmi_version_ok)
