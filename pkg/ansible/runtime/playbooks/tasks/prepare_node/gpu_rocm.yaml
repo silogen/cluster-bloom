@@ -204,8 +204,19 @@
 # tears down the connection/container and makes the playbook stop right after the
 # ROCm install instead of proceeding. NEEDRESTART_SUSPEND additionally skips the
 # needrestart apt hook entirely where that env var is honored.
-- name: Install ROCm {{ rocm_required_version }} ({{ gpu_stack_family_resolved | default('instinct') }})
+# Run detached (async) and poll separately. NEEDRESTART_MODE=l alone is not
+# enough: a large ROCm/DKMS install can also pull an openssh-server or glibc
+# upgrade whose OWN postinst restarts sshd, tearing down ansible's
+# ssh-to-127.0.0.1 connection at task completion. When that happens on a
+# synchronous task the worker goes defunct and the controller deadlocks forever
+# in pipe_write (observed: install fully succeeded, run hung 40+ min). An async
+# job keeps running across a dropped connection; the poll loop below tolerates a
+# brief reconnect via until/retries instead of hanging.
+- name: Install ROCm {{ rocm_required_version }} ({{ gpu_stack_family_resolved | default('instinct') }}, legacy amdgpu-install path)
   shell: amdgpu-install --usecase=rocm,dkms --yes --allow-downgrades
+  async: 3600
+  poll: 0
+  register: rocm_legacy_install_job
   when:
     - rocm_needs_install | bool
     - rocm_install_model | default('legacy') != 'therock'
@@ -213,6 +224,18 @@
     DEBIAN_FRONTEND: noninteractive
     NEEDRESTART_MODE: l
     NEEDRESTART_SUSPEND: "1"
+
+- name: Wait for legacy ROCm install to finish (survives an sshd bounce mid-install)
+  async_status:
+    jid: "{{ rocm_legacy_install_job.ansible_job_id }}"
+  register: rocm_legacy_install_result
+  until: rocm_legacy_install_result.finished
+  retries: 240
+  delay: 15
+  when:
+    - rocm_needs_install | bool
+    - rocm_install_model | default('legacy') != 'therock'
+    - rocm_legacy_install_job.ansible_job_id is defined
 
 # TheRock preview stream (radeon ROCm 7.13): amdgpu-install 31.30 is BROKEN for
 # this tree — it constructs malformed apt package names (the X.Y.Z release tag is
@@ -230,7 +253,7 @@
 # prints "gfx suffix: -gfxNNNx" before it fails), keeping AMD's device->gfx family
 # mapping as the source of truth. Ref: AMD ROCm 7.13.0-preview install docs and
 # the AMD HPCTrainingDock rocm_setup.sh preview path (documents this exact bug).
-- name: Install ROCm {{ rocm_release }} ({{ gpu_stack_family_resolved | default('radeon') }} tech preview)
+- name: Install ROCm {{ rocm_release }} ({{ gpu_stack_family_resolved | default('radeon') }}, therock preview via repo.amd.com)
   # NOTE: pass the script via the explicit `cmd:` sub-key (not `shell: |`). With
   # free-form `shell: |`, Ansible runs its argument splitter over the whole script
   # and chokes ("failed at splitting arguments, either an unbalanced jinja2 block
@@ -300,6 +323,12 @@
         ln -sfn "$core_dir" "/opt/rocm-${rr}"
         echo "Compat symlink: /opt/rocm-${rr} -> $core_dir"
       fi
+  # Run detached and poll separately (see the legacy install task above): the
+  # multi-GB repo.amd.com install can bounce sshd at completion and deadlock a
+  # synchronous ansible task in pipe_write. async + async_status survives it.
+  async: 3600
+  poll: 0
+  register: rocm_therock_install_job
   when:
     - rocm_needs_install | bool
     - rocm_install_model | default('legacy') == 'therock'
@@ -308,6 +337,18 @@
     DEBIAN_FRONTEND: noninteractive
     NEEDRESTART_MODE: l
     NEEDRESTART_SUSPEND: "1"
+
+- name: Wait for radeon/therock ROCm install to finish (survives an sshd bounce mid-install)
+  async_status:
+    jid: "{{ rocm_therock_install_job.ansible_job_id }}"
+  register: rocm_therock_install_result
+  until: rocm_therock_install_result.finished
+  retries: 240
+  delay: 15
+  when:
+    - rocm_needs_install | bool
+    - rocm_install_model | default('legacy') == 'therock'
+    - rocm_therock_install_job.ansible_job_id is defined
 
 - name: Load amdgpu module
   modprobe:

@@ -223,7 +223,7 @@
 # (e.g. instinct on ROCm 7.13, or radeon on ROCm 7.2) is silently kept and the
 # only signal is a debug warning at the very end, far too late.
 #
-# Set ROCM_ALLOW_VERSION_MISMATCH: true (in bloom.yaml or -e) to proceed anyway;
+# Set ROCM_ALLOW_VERSION_MISMATCH: true (in bloom configuration) to proceed anyway;
 # there is no interactive prompt because bloom pipes ansible output over SSH with
 # no TTY.
 
@@ -250,14 +250,14 @@
     detected ROCm version is {{ rocm_version | default('unknown') }} and
     GPU_STACK_FAMILY: {{ gpu_stack_family_resolved | default('instinct') }} needs
     {{ ('>= ' ~ rocm_required_version) if (gpu_stack_family_resolved | default('instinct') == 'radeon') else ('>= 7.2.' ~ (rocm_instinct_min_patch | default(3))) }};
-    override by setting ROCM_ALLOW_VERSION_MISMATCH: true in bloom.yaml, see 'tail bloom.log' for full details
+    override by setting ROCM_ALLOW_VERSION_MISMATCH: true in bloom configuration, see bloom.log for full details
   fail:
     msg: |-
       Unsupported ROCm version for GPU_STACK_FAMILY={{ gpu_stack_family_resolved | default('instinct') }}.
       Installed: ROCm {{ rocm_version }}. Required: {{ ('ROCm >= ' ~ rocm_required_version ~ ' (the ' ~ (rocm_required_normalized | default('7.13')) ~ ' train)') if (gpu_stack_family_resolved | default('instinct') == 'radeon') else ('ROCm >= 7.2.' ~ (rocm_instinct_min_patch | default(3)) ~ ' (the 7.2 train, e.g. 7.2.3 or 7.2.4)') }}.
       {% if gpu_stack_family_resolved | default('instinct') == 'radeon' %}The 7.13 tech-preview GPU Operator ({{ gpu_operator_path | default('amd-gpu-operator/v1.5.1-beta.0') }}) and DeviceConfig (ROCm {{ gpu_deviceconfig_driver_version | default('7.13') }}) are NOT compatible with ROCm 7.2 or older.{% endif %}
       Continuing would deploy a mismatched, unsupported stack, so ClusterBloom stopped rather than finish with a broken configuration.
-      To proceed anyway with the currently installed ROCm, set ROCM_ALLOW_VERSION_MISMATCH: true in bloom.yaml (accepts true|TRUE|1; with `bloom run` you can also pass -e ROCM_ALLOW_VERSION_MISMATCH=true).
+      To proceed anyway with the currently installed ROCm, set ROCM_ALLOW_VERSION_MISMATCH: true in bloom configuration (accepts true|TRUE|1; with `bloom run` you can also pass -e ROCM_ALLOW_VERSION_MISMATCH=true).
   when:
     # Only stop for a real, functional install (amd-smi/rocm-smi present). A
     # stale directory-only remnant with no working tools is left to the normal
