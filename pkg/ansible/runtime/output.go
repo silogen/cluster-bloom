@@ -127,7 +127,13 @@ func (p *OutputProcessor) processCleanMode(line string) string {
 			// name already directs the user to the log (e.g. "... see 'tail
 			// bloom.log' for full details"), so the summary isn't duplicated.
 			selfDescribing := strings.Contains(strings.ToLower(p.currentTask), "for full details")
-			if !selfDescribing && taskInfo.Message != "" && !strings.Contains(taskInfo.Message, "{") {
+			// Ansible's shell/command modules stamp this generic message on any
+			// task with failed_when: false that happens to exit non-zero (e.g.
+			// detection probes for something that may not exist yet). It's an
+			// implementation detail, not information the user needs alongside
+			// an already-successful/skipped task, so don't surface it.
+			genericMsg := strings.EqualFold(strings.TrimSpace(taskInfo.Message), "non-zero return code")
+			if !selfDescribing && !genericMsg && taskInfo.Message != "" && !strings.Contains(taskInfo.Message, "{") {
 				if msg := flattenMessage(taskInfo.Message); msg != "" {
 					output += fmt.Sprintf(" (%s)", msg)
 				}
@@ -221,56 +227,109 @@ func (p *OutputProcessor) PrintSummary() {
 		domain := p.config["DOMAIN"]
 
 		if clusterforgeRelease != "" && clusterforgeRelease != "none" && domain != "" {
+			endpoints := clusterForgeEndpoints()
+
 			fmt.Println()
 			fmt.Println("🚀 ClusterForge Deployment:")
 			fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 			fmt.Println("⏳ Services are starting up. Endpoints will be available once envoy-gateway is ready.")
 			fmt.Println()
-			fmt.Println("Run this command to wait for services to be ready (Ctrl+C to exit early):")
+			fmt.Println("Run this command to wait for services AND endpoints to be reachable (Ctrl+C to exit early);")
+			fmt.Println("it also prints the decoded credentials once everything is confirmed up:")
 			fmt.Println()
-			fmt.Println("  # Wait for envoy-gateway pods to be ready")
-			fmt.Println("  kubectl wait --for=condition=ready pod --all -n envoy-gateway-system --timeout=600s && \\")
-			fmt.Println("  # Wait for cluster-auth job to complete (creates initial auth configuration)")
-			fmt.Println("  kubectl wait --for=condition=complete job --all -n cluster-auth --timeout=600s && \\")
-			fmt.Println("  echo ''")
-			fmt.Println("  echo '✅ Services are ready! Endpoints are now accessible.'")
+			printReadinessScript(domain, endpoints)
 			fmt.Println()
-			fmt.Println("Once ready, access these endpoints:")
+			fmt.Println("Reference — retrieval commands for each credential (values are not yet guaranteed valid until the script above confirms readiness):")
 			fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 			fmt.Println()
 			fmt.Println("📋 Credential Information:")
 			fmt.Println()
-			fmt.Printf("🔐 AI Resource Manager - DevUser:\n")
-			fmt.Printf("   URL:      https://airmui.%s\n", domain)
-			fmt.Printf("   Username: devuser@%s\n", domain)
-			fmt.Printf("   Password: kubectl -n keycloak get secret airm-realm-credentials -o jsonpath='{.data.KEYCLOAK_INITIAL_DEVUSER_PASSWORD}' | base64 --decode && echo\n")
-			fmt.Println()
-			fmt.Printf("💼 AI Workbench - DevUser:\n")
-			fmt.Printf("   URL:      https://aiwbui.%s\n", domain)
-			fmt.Printf("   Username: devuser@%s\n", domain)
-			fmt.Printf("   Password: kubectl -n keycloak get secret airm-realm-credentials -o jsonpath='{.data.KEYCLOAK_INITIAL_DEVUSER_PASSWORD}' | base64 --decode && echo\n")
-			fmt.Println()
-			fmt.Printf("📦 ArgoCD - Admin:\n")
-			fmt.Printf("   URL:      https://argocd.%s\n", domain)
-			fmt.Printf("   Username: admin\n")
-			fmt.Printf("   Password: kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 --decode && echo\n")
-			fmt.Println()
-			fmt.Printf("🔧 Gitea - Admin:\n")
-			fmt.Printf("   URL:      https://gitea.%s\n", domain)
-			fmt.Printf("   Username: silogen-admin\n")
-			fmt.Printf("   Password: kubectl -n cf-gitea get secret gitea-admin-credentials -o jsonpath='{.data.password}' | base64 --decode && echo\n")
-			fmt.Println()
-			fmt.Printf("🔐 OpenBao - Root Token:\n")
-			fmt.Printf("   URL:      https://openbao.%s\n", domain)
-			fmt.Printf("   Token:    kubectl -n cf-openbao get secret openbao-keys -o jsonpath='{.data.root_token}' | base64 --decode && echo\n")
-			fmt.Println()
-			fmt.Printf("🔑 Keycloak - Admin:\n")
-			fmt.Printf("   URL:      https://kc.%s\n", domain)
-			fmt.Printf("   Username: silogen-admin\n")
-			fmt.Printf("   Password: kubectl -n keycloak get secret keycloak-credentials -o jsonpath='{.data.KEYCLOAK_INITIAL_ADMIN_PASSWORD}' | base64 --decode && echo\n")
+			for _, ep := range endpoints {
+				fmt.Printf("%s %s:\n", ep.Emoji, ep.Label)
+				fmt.Printf("   URL:      https://%s.%s\n", ep.Subdomain, domain)
+				if ep.Username != "" {
+					fmt.Printf("   Username: %s\n", ep.formatUsername(domain))
+					fmt.Printf("   Password: kubectl -n %s get secret %s -o jsonpath='{%s}' | base64 --decode && echo\n", ep.SecretNamespace, ep.SecretName, ep.SecretJSONPath)
+				} else {
+					fmt.Printf("   Token:    kubectl -n %s get secret %s -o jsonpath='{%s}' | base64 --decode && echo\n", ep.SecretNamespace, ep.SecretName, ep.SecretJSONPath)
+				}
+				fmt.Println()
+			}
 			fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		}
 	}
+}
+
+// clusterForgeEndpoint describes one ClusterForge UI/service endpoint whose
+// credential lives in a Kubernetes secret.
+type clusterForgeEndpoint struct {
+	Emoji           string
+	Label           string
+	Subdomain       string
+	Username        string // literal username, "devuser" to expand to devuser@<domain>, or "" for a token-only credential (e.g. OpenBao)
+	SecretNamespace string
+	SecretName      string
+	SecretJSONPath  string
+}
+
+func (e clusterForgeEndpoint) formatUsername(domain string) string {
+	if e.Username == "devuser" {
+		return fmt.Sprintf("devuser@%s", domain)
+	}
+	return e.Username
+}
+
+// clusterForgeEndpoints is the single source of truth for the endpoints listed
+// both in the static credential reference block and in the generated
+// readiness-check script, so the two can never drift apart.
+func clusterForgeEndpoints() []clusterForgeEndpoint {
+	return []clusterForgeEndpoint{
+		{"🔐", "AI Resource Manager - DevUser", "airmui", "devuser", "keycloak", "airm-realm-credentials", ".data.KEYCLOAK_INITIAL_DEVUSER_PASSWORD"},
+		{"💼", "AI Workbench - DevUser", "aiwbui", "devuser", "keycloak", "airm-realm-credentials", ".data.KEYCLOAK_INITIAL_DEVUSER_PASSWORD"},
+		{"📦", "ArgoCD - Admin", "argocd", "admin", "argocd", "argocd-initial-admin-secret", ".data.password"},
+		{"🔧", "Gitea - Admin", "gitea", "silogen-admin", "cf-gitea", "gitea-admin-credentials", ".data.password"},
+		{"🔐", "OpenBao - Root Token", "openbao", "", "cf-openbao", "openbao-keys", ".data.root_token"},
+		{"🔑", "Keycloak - Admin", "kc", "silogen-admin", "keycloak", "keycloak-credentials", ".data.KEYCLOAK_INITIAL_ADMIN_PASSWORD"},
+	}
+}
+
+// printReadinessScript prints a single copy-pasteable shell script that waits
+// for the envoy-gateway/cluster-auth Kubernetes objects, THEN polls each real
+// HTTPS endpoint until it actually responds (not just "pod ready" — envoy
+// routing, TLS termination, and the backend all have to be up), and finally
+// fetches and prints the decoded credentials so there is no need to scroll
+// back up or guess whether the static reference values below are usable yet.
+func printReadinessScript(domain string, endpoints []clusterForgeEndpoint) {
+	fmt.Printf("  DOMAIN=%q\n", domain)
+	fmt.Println("  kubectl wait --for=condition=ready pod --all -n envoy-gateway-system --timeout=600s && \\")
+	fmt.Println("  kubectl wait --for=condition=complete job --all -n cluster-auth --timeout=600s && \\")
+	fmt.Println("  for h in " + endpointHostList(endpoints) + "; do \\")
+	waitingLine := "    printf '  Waiting for https://%s.%s ... ' \"$h\" \"$DOMAIN\"; \\"
+	fmt.Println(waitingLine)
+	fmt.Println("    until code=$(curl -ks -o /dev/null -w '%{http_code}' --max-time 5 \"https://$h.$DOMAIN\" 2>/dev/null); [[ \"$code\" =~ ^[0-9]{3}$ ]] && [ \"$code\" != 000 ] && [ \"$code\" != 502 ] && [ \"$code\" != 503 ] && [ \"$code\" != 504 ]; do sleep 5; done; \\")
+	fmt.Println("    echo \"ready ($code)\"; \\")
+	fmt.Println("  done && \\")
+	fmt.Println("  echo && echo '✅ Services and endpoints are ready! Fetching credentials...' && echo && \\")
+	for _, ep := range endpoints {
+		fmt.Printf("  echo '%s %s:  https://%s.%s' && \\\n", ep.Emoji, ep.Label, ep.Subdomain, domain)
+		if ep.Username != "" {
+			fmt.Printf("  echo \"   Username: %s\" && \\\n", ep.formatUsername(domain))
+			fmt.Printf("  echo \"   Password: $(kubectl -n %s get secret %s -o jsonpath='{%s}' | base64 --decode)\" && echo && \\\n", ep.SecretNamespace, ep.SecretName, ep.SecretJSONPath)
+		} else {
+			fmt.Printf("  echo \"   Token:    $(kubectl -n %s get secret %s -o jsonpath='{%s}' | base64 --decode)\" && echo && \\\n", ep.SecretNamespace, ep.SecretName, ep.SecretJSONPath)
+		}
+	}
+	fmt.Println("  true")
+}
+
+// endpointHostList renders the endpoint subdomains as a space-separated list
+// for the bash `for h in ...` loop in printReadinessScript.
+func endpointHostList(endpoints []clusterForgeEndpoint) string {
+	hosts := make([]string, len(endpoints))
+	for i, ep := range endpoints {
+		hosts[i] = ep.Subdomain
+	}
+	return strings.Join(hosts, " ")
 }
 
 // extractJoinInfoMessage extracts join information from Ansible debug output

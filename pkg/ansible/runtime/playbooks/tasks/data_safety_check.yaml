@@ -29,7 +29,7 @@
     path: /var/lib/rancher/rke2
   register: rke2_data_dir
 
-- name: Check if RKE2 data directory is empty (if it exists)
+- name: Check if RKE2 data directory is empty
   find:
     paths: /var/lib/rancher/rke2
     file_type: any
@@ -41,7 +41,7 @@
     path: /etc/rancher/rke2
   register: rke2_config_dir
 
-- name: Check if RKE2 config directory is empty (if it exists)
+- name: Check if RKE2 config directory is empty
   find:
     paths: /etc/rancher/rke2
     file_type: any

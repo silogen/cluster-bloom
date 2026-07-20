@@ -11,7 +11,7 @@
 #          connection, so `pause` has no TTY and would hang. The non-interactive
 #          bypass is rocm_allow_version_mismatch: true.
 
-- name: Discover ROCm installation root (handles /opt/rocm symlink and versioned installs)
+- name: Discover ROCm installation root
   shell: |
     set -e
     has_tool() {

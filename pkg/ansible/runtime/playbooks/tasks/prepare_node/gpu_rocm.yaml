@@ -217,7 +217,7 @@
 # exit code to a file as its last act, and each poll is a trivial, fast
 # test+cat that a lightweight until/retries loop can just retry on a fresh
 # connection if one attempt hits a bounce — no long-lived worker to wedge.
-- name: Launch legacy ROCm install in the background (survives an sshd bounce mid-install)
+- name: Launch legacy ROCm install in the background
   shell:
     executable: /bin/bash
     cmd: |
@@ -237,7 +237,7 @@
     NEEDRESTART_MODE: l
     NEEDRESTART_SUSPEND: "1"
 
-- name: Wait for legacy ROCm install to finish (backgrounded; immune to a dropped ssh session)
+- name: Wait for legacy ROCm install to finish
   shell:
     executable: /bin/bash
     cmd: |
@@ -282,7 +282,7 @@
 # prints "gfx suffix: -gfxNNNx" before it fails), keeping AMD's device->gfx family
 # mapping as the source of truth. Ref: AMD ROCm 7.13.0-preview install docs and
 # the AMD HPCTrainingDock rocm_setup.sh preview path (documents this exact bug).
-- name: Launch radeon/therock ROCm {{ rocm_release }} install in the background (survives an sshd bounce mid-install)
+- name: Launch radeon/therock ROCm {{ rocm_release }} install in the background
   # NOTE: pass the script via the explicit `cmd:` sub-key (not `shell: |`). With
   # free-form `shell: |`, Ansible runs its argument splitter over the whole script
   # and chokes ("failed at splitting arguments, either an unbalanced jinja2 block
@@ -384,7 +384,7 @@
     NEEDRESTART_MODE: l
     NEEDRESTART_SUSPEND: "1"
 
-- name: Wait for radeon/therock ROCm install to finish (backgrounded; immune to a dropped ssh session)
+- name: Wait for radeon/therock ROCm install to finish
   shell:
     executable: /bin/bash
     cmd: |
@@ -512,7 +512,7 @@
 # runtime packages marked "installed" in dpkg while removing/renaming their files
 # (e.g. /opt/rocm-<ver>.stale). In that state `amdgpu-install --usecase=rocm` is a
 # no-op — apt believes rocm is already installed — so no tooling is ever laid down.
-- name: Gather ROCm install diagnostics (no SMI tooling found)
+- name: Gather ROCm install diagnostics
   shell: |
     echo "== dpkg rocm/amdgpu/amd-smi package state =="
     dpkg -l | grep -iE 'rocm|amdgpu|amd-smi' || echo "(no matching packages)"
