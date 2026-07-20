@@ -62,7 +62,18 @@
     set -e
     # Orphaned runtime packages first (dpkg-only, no repo needed) so a later
     # amdgpu-install --usecase=rocm is a real install rather than a no-op.
-    apt-get purge -y 'rocm*' 'amd-smi*' 'hip-runtime-amd*' amdgpu-install 2>/dev/null || true
+    # Purge only packages that are actually installed: passing globs straight to
+    # apt-get (e.g. 'rocm*') makes it abort the ENTIRE command when a pattern
+    # matches nothing. That is exactly the state right after `amdgpu-install
+    # --uninstall`, which removes the ROCm runtime (so rocm*/amd-smi*/... match
+    # nothing) but leaves amdgpu-install behind — so amdgpu-install would never
+    # get purged and the pinned .deb install then fails with "A later version is
+    # already installed". Resolve the concrete installed names first instead.
+    installed="$(dpkg-query -W -f='${Package}\n' 2>/dev/null \
+      | grep -E '^(rocm|amd-smi|hip-runtime-amd|amdgpu-install)' || true)"
+    if [ -n "$installed" ]; then
+      apt-get purge -y $installed 2>/dev/null || true
+    fi
     rm -f /etc/apt/sources.list.d/rocm.list /etc/apt/sources.list.d/amdgpu.list
     rm -rf /opt/rocm-*.stale /opt/rocm-*.bak
   when: rocm_needs_install | bool
