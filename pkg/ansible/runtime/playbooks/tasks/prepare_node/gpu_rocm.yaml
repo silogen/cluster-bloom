@@ -204,38 +204,67 @@
 # tears down the connection/container and makes the playbook stop right after the
 # ROCm install instead of proceeding. NEEDRESTART_SUSPEND additionally skips the
 # needrestart apt hook entirely where that env var is honored.
-# Run detached (async) and poll separately. NEEDRESTART_MODE=l alone is not
-# enough: a large ROCm/DKMS install can also pull an openssh-server or glibc
-# upgrade whose OWN postinst restarts sshd, tearing down ansible's
-# ssh-to-127.0.0.1 connection at task completion. When that happens on a
-# synchronous task the worker goes defunct and the controller deadlocks forever
-# in pipe_write (observed: install fully succeeded, run hung 40+ min). An async
-# job keeps running across a dropped connection; the poll loop below tolerates a
-# brief reconnect via until/retries instead of hanging.
-- name: Install ROCm {{ rocm_required_version }} ({{ gpu_stack_family_resolved | default('instinct') }}, legacy amdgpu-install path)
-  shell: amdgpu-install --usecase=rocm,dkms --yes --allow-downgrades
-  async: 3600
-  poll: 0
-  register: rocm_legacy_install_job
+# Run fully detached (nohup+setsid, own log + exit-code marker file) and poll
+# for the marker with a plain shell task, instead of ansible's async/async_status.
+# NEEDRESTART_MODE=l alone is not enough: a large ROCm/DKMS install can also
+# pull an openssh-server or glibc upgrade whose OWN postinst restarts sshd,
+# tearing down ansible's ssh-to-127.0.0.1 connection at task completion. That
+# has been observed to deadlock BOTH a plain synchronous task (worker goes
+# defunct, controller hangs forever in pipe_write) AND ansible's own async
+# wrapper (the completed job's status file was missing the "finished" marker
+# async_status waits on, so the poll never satisfied and hung just the same).
+# Driving our own marker file sidesteps async entirely: the script writes its
+# exit code to a file as its last act, and each poll is a trivial, fast
+# test+cat that a lightweight until/retries loop can just retry on a fresh
+# connection if one attempt hits a bounce — no long-lived worker to wedge.
+- name: Launch legacy ROCm install in the background (survives an sshd bounce mid-install)
+  shell:
+    executable: /bin/bash
+    cmd: |
+      set -e
+      rm -f /tmp/bloom_rocm_install_legacy.rc /tmp/bloom_rocm_install_legacy.done
+      nohup setsid bash -c '
+        amdgpu-install --usecase=rocm,dkms --yes --allow-downgrades > /tmp/bloom_rocm_install_legacy.log 2>&1
+        echo $? > /tmp/bloom_rocm_install_legacy.rc
+        touch /tmp/bloom_rocm_install_legacy.done
+      ' </dev/null >/tmp/bloom_rocm_install_legacy.launch.log 2>&1 &
   when:
     - rocm_needs_install | bool
     - rocm_install_model | default('legacy') != 'therock'
+  changed_when: true
   environment:
     DEBIAN_FRONTEND: noninteractive
     NEEDRESTART_MODE: l
     NEEDRESTART_SUSPEND: "1"
 
-- name: Wait for legacy ROCm install to finish (survives an sshd bounce mid-install)
-  async_status:
-    jid: "{{ rocm_legacy_install_job.ansible_job_id }}"
-  register: rocm_legacy_install_result
-  until: rocm_legacy_install_result.finished
+- name: Wait for legacy ROCm install to finish (backgrounded; immune to a dropped ssh session)
+  shell:
+    executable: /bin/bash
+    cmd: |
+      if [ -f /tmp/bloom_rocm_install_legacy.done ]; then
+        cat /tmp/bloom_rocm_install_legacy.rc
+      else
+        echo RUNNING
+      fi
+  register: rocm_legacy_install_poll
+  until: rocm_legacy_install_poll.stdout is match('^[0-9]+$')
   retries: 240
   delay: 15
+  changed_when: false
   when:
     - rocm_needs_install | bool
     - rocm_install_model | default('legacy') != 'therock'
-    - rocm_legacy_install_job.ansible_job_id is defined
+
+- name: Fail if the backgrounded legacy ROCm install did not succeed
+  fail:
+    msg: |
+      ROCm install failed (background job exit code {{ rocm_legacy_install_poll.stdout }}).
+      Full output: /tmp/bloom_rocm_install_legacy.log on the node.
+  when:
+    - rocm_needs_install | bool
+    - rocm_install_model | default('legacy') != 'therock'
+    - rocm_legacy_install_poll.stdout is defined
+    - rocm_legacy_install_poll.stdout != '0'
 
 # TheRock preview stream (radeon ROCm 7.13): amdgpu-install 31.30 is BROKEN for
 # this tree — it constructs malformed apt package names (the X.Y.Z release tag is
@@ -253,18 +282,34 @@
 # prints "gfx suffix: -gfxNNNx" before it fails), keeping AMD's device->gfx family
 # mapping as the source of truth. Ref: AMD ROCm 7.13.0-preview install docs and
 # the AMD HPCTrainingDock rocm_setup.sh preview path (documents this exact bug).
-- name: Install ROCm {{ rocm_release }} ({{ gpu_stack_family_resolved | default('radeon') }}, therock preview via repo.amd.com)
+- name: Launch radeon/therock ROCm {{ rocm_release }} install in the background (survives an sshd bounce mid-install)
   # NOTE: pass the script via the explicit `cmd:` sub-key (not `shell: |`). With
   # free-form `shell: |`, Ansible runs its argument splitter over the whole script
   # and chokes ("failed at splitting arguments, either an unbalanced jinja2 block
   # or quotes") on the mix of shell quoting. `cmd:` hands the block through as-is.
   # rocm_release is also expanded once into a shell var and major.minor is derived
   # in bash, so there is no Jinja-with-quotes (e.g. split('.')) inside the script.
+  #
+  # The actual work is written to a script file and launched via nohup+setsid,
+  # fully detached from this ssh session, with its own log + exit-code marker
+  # file. We poll for that marker in a separate task instead of relying on
+  # ansible's async/async_status: a large repo.amd.com install can bounce sshd
+  # right at completion (an openssh-server/glibc postinst restart, unaffected by
+  # NEEDRESTART_MODE=l since it isn't needrestart-driven), and that has been
+  # observed to wedge BOTH a plain synchronous task (worker goes defunct,
+  # controller hangs in pipe_write) AND ansible's own async wrapper (the
+  # completed job's status file was missing the "finished" flag async_status
+  # waits on, so the poll never satisfied). A marker file we write ourselves,
+  # polled with a trivial test+cat, has no such dependency.
   shell:
     # `set -o pipefail` (and ${var:-}) need bash; Ansible's shell module defaults
     # to /bin/sh (dash on Ubuntu), which errors with "Illegal option -o pipefail".
     executable: /bin/bash
     cmd: |
+      set -e
+      rm -f /tmp/bloom_rocm_install_therock.rc /tmp/bloom_rocm_install_therock.done
+      cat > /tmp/bloom_rocm_install_therock.sh <<'ROCM_THEROCK_SCRIPT'
+      #!/bin/bash
       set -euo pipefail
       rr="{{ rocm_release }}"
       mm="${rr%.*}"
@@ -323,12 +368,13 @@
         ln -sfn "$core_dir" "/opt/rocm-${rr}"
         echo "Compat symlink: /opt/rocm-${rr} -> $core_dir"
       fi
-  # Run detached and poll separately (see the legacy install task above): the
-  # multi-GB repo.amd.com install can bounce sshd at completion and deadlock a
-  # synchronous ansible task in pipe_write. async + async_status survives it.
-  async: 3600
-  poll: 0
-  register: rocm_therock_install_job
+      ROCM_THEROCK_SCRIPT
+      chmod +x /tmp/bloom_rocm_install_therock.sh
+      nohup setsid bash -c '
+        /tmp/bloom_rocm_install_therock.sh > /tmp/bloom_rocm_install_therock.log 2>&1
+        echo $? > /tmp/bloom_rocm_install_therock.rc
+        touch /tmp/bloom_rocm_install_therock.done
+      ' </dev/null >/tmp/bloom_rocm_install_therock.launch.log 2>&1 &
   when:
     - rocm_needs_install | bool
     - rocm_install_model | default('legacy') == 'therock'
@@ -338,17 +384,34 @@
     NEEDRESTART_MODE: l
     NEEDRESTART_SUSPEND: "1"
 
-- name: Wait for radeon/therock ROCm install to finish (survives an sshd bounce mid-install)
-  async_status:
-    jid: "{{ rocm_therock_install_job.ansible_job_id }}"
-  register: rocm_therock_install_result
-  until: rocm_therock_install_result.finished
+- name: Wait for radeon/therock ROCm install to finish (backgrounded; immune to a dropped ssh session)
+  shell:
+    executable: /bin/bash
+    cmd: |
+      if [ -f /tmp/bloom_rocm_install_therock.done ]; then
+        cat /tmp/bloom_rocm_install_therock.rc
+      else
+        echo RUNNING
+      fi
+  register: rocm_therock_install_poll
+  until: rocm_therock_install_poll.stdout is match('^[0-9]+$')
   retries: 240
   delay: 15
+  changed_when: false
   when:
     - rocm_needs_install | bool
     - rocm_install_model | default('legacy') == 'therock'
-    - rocm_therock_install_job.ansible_job_id is defined
+
+- name: Fail if the backgrounded radeon/therock ROCm install did not succeed
+  fail:
+    msg: |
+      ROCm install failed (background job exit code {{ rocm_therock_install_poll.stdout }}).
+      Full output: /tmp/bloom_rocm_install_therock.log on the node.
+  when:
+    - rocm_needs_install | bool
+    - rocm_install_model | default('legacy') == 'therock'
+    - rocm_therock_install_poll.stdout is defined
+    - rocm_therock_install_poll.stdout != '0'
 
 - name: Load amdgpu module
   modprobe:
