@@ -52,7 +52,7 @@ schema:
     AIM_HARDWARE_FAMILY:
       type: hardwareFamilyList
       default: ""
-      desc: "Comma-separated AIM hardware families to install (cpu,epyc,instinct,radeon). Empty = install all (legacy)."
+      desc: "Comma-separated AIM hardware families to install (cpu,epyc,instinct,radeon). Empty = legacy catalog only (generic + instinct sources); radeon/epyc/cpu sources are opt-in and never included by default."
       section: "📋 Basic Configuration"
 
     GPU_STACK_FAMILY:

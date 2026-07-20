@@ -123,7 +123,7 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 |----------|-------------|---------|
 | ADDITIONAL_OIDC_PROVIDERS | List of additional OIDC providers for authentication (see examples below) | [] |
 | ADDITIONAL_TLS_SAN_URLS | Additional TLS Subject Alternative Name URLs for Kubernetes API server certificate | [] |
-| AIM_HARDWARE_FAMILY | Comma-separated AIM hardware families to install (cpu,epyc,instinct,radeon). Empty installs the full legacy model catalog. Example: "epyc,instinct" | "" |
+| AIM_HARDWARE_FAMILY | Comma-separated AIM hardware families to install (cpu,epyc,instinct,radeon). Empty = legacy catalog only (generic + instinct sources), not all families. Example: "epyc,instinct" | "" |
 | CERT_OPTION | Certificate option when USE_CERT_MANAGER is false. Choose 'existing' or 'generate' | "" |
 | CF_VALUES | Path to ClusterForge values file (optional). Example: "values_cf.yaml" | "" |
 | CLUSTER_DISKS | Comma-separated list of disk devices. Example "/dev/sdb,/dev/sdc". Also skips NVME drive checks. | "" |

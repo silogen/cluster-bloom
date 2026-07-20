@@ -49,10 +49,10 @@ Configuration sources in priority order (highest to lowest):
 #### AIM_HARDWARE_FAMILY
 - **Type**: String (comma-separated list)
 - **Default**: `""` (empty)
-- **Description**: Selects which AIM model sources cluster-forge installs, by hardware family. Empty installs the full legacy model catalog (no change from previous behavior). When set, only the listed families are installed.
+- **Description**: Selects which AIM model sources cluster-forge installs, by hardware family. Empty selects the legacy branch: only the fixed generic `amd-aim-release-*` + `amd-aim-instinct-*` catalog installs, unchanged from before per-family support existed. This is **not** an "install everything" default — `radeon`/`epyc`/`cpu` sources are opt-in only and never install unless explicitly listed here. When set, only the listed families' sources are installed (the legacy generic sources are not installed).
 - **Values**: any comma-separated combination of `cpu`, `epyc`, `instinct`, `radeon` (lowercase, no spaces)
 - **Example**: `AIM_HARDWARE_FAMILY: "epyc,instinct"`
-- **Notes**: `instinct` and `radeon` are GPU families; `cpu` and `epyc` are CPU inference targets. `cpu` and `radeon` are currently placeholders pointing at `ghcr.io` images that require a pull secret this cluster does not provision, so they will fail to pull until a `docker.io` release is published. In a `bloom.yaml` file the value is a normal comma-separated string. cluster-bloom splits it into a list before passing it to cluster-forge, so no comma-escaping is needed at the bloom layer.
+- **Notes**: `instinct` and `radeon` are GPU families; `cpu` and `epyc` are CPU inference targets. All families' images are hosted on `docker.io`; `cpu` and `radeon` use the `silogenai` org and the chart references an optional `dockerhub-regcred` pull secret for those, in case the images are private. In a `bloom.yaml` file the value is a normal comma-separated string. cluster-bloom splits it into a list before passing it to cluster-forge, so no comma-escaping is needed at the bloom layer.
 
 #### GPU_STACK_FAMILY
 - **Type**: String (single value)
