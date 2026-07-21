@@ -712,8 +712,14 @@
   failed_when: false
   when: gpu_stack_family_resolved | default('instinct') == 'radeon'
 
+# `rocminfo` can hang indefinitely (never exiting) when the amdgpu/kfd driver
+# stack is unhealthy -- e.g. /dev/kfd not ready, a wedged GPU, or blocked agent
+# enumeration. failed_when: false only catches non-zero exits, not a process
+# that never returns, so wrap it in `timeout`: a hang becomes rc=124, which the
+# validation facts below treat as a failed check (triggering the actionable
+# "install ROCm manually and re-run bloom" failure instead of hanging the run).
 - name: Run rocminfo post-install check
-  command: "{{ rocminfo_locate.stdout | trim }}"
+  command: "timeout 120 {{ rocminfo_locate.stdout | trim }}"
   register: rocminfo_check
   changed_when: false
   failed_when: false
@@ -723,7 +729,7 @@
     - (rocminfo_locate.stdout | default('') | trim) != ''
 
 - name: Run amd-smi version post-install check (radeon/therock)
-  command: "{{ amd_smi_bin }} version"
+  command: "timeout 120 {{ amd_smi_bin }} version"
   register: amdsmi_version_check
   changed_when: false
   failed_when: false
