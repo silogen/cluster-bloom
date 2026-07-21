@@ -1,271 +1,110 @@
 ---
-# Purpose: Update TLS certificate in existing RKE2 cluster
-# Dependencies: NEW_TLS_CERT, NEW_TLS_KEY variables
-# Usage: sudo ./bloom run update-certificate-playbook.yaml --config cert-update.yaml
-# Tags: [certificate, update]
+# Streamlined TLS Certificate Update Playbook for cluster-bloom
+# Updates the cluster-tls secret in envoy-gateway-system namespace
+# User is responsible for providing valid certificate and key files
 
 - name: Update Cluster TLS Certificate
   hosts: all
-  become: yes
   gather_facts: false
-  gather_subset:
-    - min
-    - network
-  
+  gather_subset: [min, network]
+  become: false
+
   vars:
-    # These should be provided via config file
-    # NEW_TLS_CERT: /path/to/new/cert.pem
-    # NEW_TLS_KEY: /path/to/new/key.pem
-    
-    # Optional: Restart Envoy Gateway pods after certificate update
+    # Required parameters (must be provided via config file)
+    NEW_TLS_CERT: ""
+    NEW_TLS_KEY: ""
     RESTART_ENVOY_PODS: true
-    
-    # Optional: Create backup of existing cluster-tls secret before update
-    BACKUP_EXPIRED_CLUSTER_TLS_SECRET: true
-    
-    kubeconfig_path: /etc/rancher/rke2/rke2.yaml
-    kubectl_bin: /var/lib/rancher/rke2/bin/kubectl
-    namespace: envoy-gateway-system
-    secret_name: cluster-tls
 
   tasks:
     # ============================================
     # Pre-flight Validation
     # ============================================
-    
-    - name: Validate NEW_TLS_CERT is defined
-      fail:
-        msg: "NEW_TLS_CERT must be defined. Provide it in your config file."
-      when: NEW_TLS_CERT is not defined or NEW_TLS_CERT == ""
 
-    - name: Validate NEW_TLS_KEY is defined
-      fail:
-        msg: "NEW_TLS_KEY must be defined. Provide it in your config file."
-      when: NEW_TLS_KEY is not defined or NEW_TLS_KEY == ""
+    - name: Validate required parameters
+      assert:
+        that:
+          - NEW_TLS_CERT != ""
+          - NEW_TLS_KEY != ""
+        fail_msg: "NEW_TLS_CERT and NEW_TLS_KEY are required parameters"
+        success_msg: "✓ Required parameters provided"
 
-    - name: Check if kubectl is available
-      stat:
-        path: "{{ kubectl_bin }}"
-      register: kubectl_check
-      failed_when: not kubectl_check.stat.exists
-
-    - name: Check if kubeconfig exists
-      stat:
-        path: "{{ kubeconfig_path }}"
-      register: kubeconfig_check
-      failed_when: not kubeconfig_check.stat.exists
-
-    - name: Validate certificate file exists
+    - name: Check certificate file exists
       stat:
         path: "{{ NEW_TLS_CERT }}"
-      register: cert_file_check
-      failed_when: not cert_file_check.stat.exists
+      register: cert_file
 
-    - name: Validate key file exists
+    - name: Check key file exists
       stat:
         path: "{{ NEW_TLS_KEY }}"
-      register: key_file_check
-      failed_when: not key_file_check.stat.exists
+      register: key_file
 
-    - name: Validate certificate file is readable
-      shell: cat "{{ NEW_TLS_CERT }}" > /dev/null
+    - name: Validate files exist and are readable
+      assert:
+        that:
+          - cert_file.stat.exists
+          - cert_file.stat.readable
+          - key_file.stat.exists
+          - key_file.stat.readable
+        fail_msg: "Certificate or key file not found or not readable"
+        success_msg: "✓ Certificate and key files are accessible"
+
+    # ============================================
+    # Update Secret
+    # ============================================
+
+    - name: Read certificate content
+      slurp:
+        src: "{{ NEW_TLS_CERT }}"
+      register: cert_content
+
+    - name: Read key content
+      slurp:
+        src: "{{ NEW_TLS_KEY }}"
+      register: key_content
+
+    - name: Check if envoy-gateway-system namespace exists
+      shell: kubectl get namespace envoy-gateway-system
+      register: namespace_check
       changed_when: false
-      
-    - name: Validate key file is readable
-      shell: cat "{{ NEW_TLS_KEY }}" > /dev/null
-      changed_when: false
+      failed_when: false
 
-    - name: Display certificate info
-      debug:
-        msg:
-          - "Certificate file: {{ NEW_TLS_CERT }}"
-          - "Key file: {{ NEW_TLS_KEY }}"
-          - "Target namespace: {{ namespace }}"
-          - "Target secret: {{ secret_name }}"
-
-    # ============================================
-    # Certificate Validation
-    # ============================================
-
-    - name: Check certificate validity
-      block:
-        - name: Get certificate subject
-          shell: openssl x509 -in "{{ NEW_TLS_CERT }}" -noout -subject
-          register: cert_subject
-          changed_when: false
-
-        - name: Get certificate dates
-          shell: openssl x509 -in "{{ NEW_TLS_CERT }}" -noout -dates
-          register: cert_dates
-          changed_when: false
-
-        - name: Get certificate SANs
-          shell: openssl x509 -in "{{ NEW_TLS_CERT }}" -noout -ext subjectAltName 2>/dev/null || echo "No SANs found"
-          register: cert_sans
-          changed_when: false
-
-        - name: Display certificate information
-          debug:
-            msg:
-              - "Certificate Subject: {{ cert_subject.stdout }}"
-              - "Certificate Dates: {{ cert_dates.stdout }}"
-              - "Certificate SANs: {{ cert_sans.stdout }}"
-
-        - name: Verify certificate and key match
-          shell: |
-            cert_modulus=$(openssl x509 -noout -modulus -in "{{ NEW_TLS_CERT }}" | openssl md5)
-            key_modulus=$(openssl rsa -noout -modulus -in "{{ NEW_TLS_KEY }}" | openssl md5)
-            if [ "$cert_modulus" != "$key_modulus" ]; then
-              echo "ERROR: Certificate and key do not match!"
-              exit 1
-            fi
-            echo "Certificate and key match successfully"
-          register: cert_key_match
-          changed_when: false
-
-        - name: Display validation result
-          debug:
-            msg: "{{ cert_key_match.stdout }}"
-
-      rescue:
-        - name: Certificate validation failed
-          fail:
-            msg: "Certificate validation failed. Please check your certificate and key files."
-
-    # ============================================
-    # Backup Existing Secret (Optional)
-    # ============================================
-
-    - name: Backup existing secret
-      when: BACKUP_EXPIRED_CLUSTER_TLS_SECRET | default(true)
-      block:
-        - name: Check if secret exists
-          shell: |
-            {{ kubectl_bin }} --kubeconfig {{ kubeconfig_path }} \
-              get secret {{ secret_name }} -n {{ namespace }} &> /dev/null
-          register: secret_exists
-          changed_when: false
-          failed_when: false
-
-        - name: Create backup of existing secret
-          when: secret_exists.rc == 0
-          shell: |
-            timestamp=$(date +%Y%m%d-%H%M%S)
-            {{ kubectl_bin }} --kubeconfig {{ kubeconfig_path }} \
-              get secret {{ secret_name }} -n {{ namespace }} -o yaml \
-              > /tmp/{{ secret_name }}-backup-${timestamp}.yaml
-            echo "/tmp/{{ secret_name }}-backup-${timestamp}.yaml"
-          register: backup_result
-
-        - name: Display backup location
-          when: secret_exists.rc == 0
-          debug:
-            msg: "Existing secret backed up to: {{ backup_result.stdout }}"
-
-    # ============================================
-    # Update Certificate Secret
-    # ============================================
+    - name: Fail if namespace does not exist
+      fail:
+        msg: "Namespace envoy-gateway-system does not exist. Is this a cluster-bloom cluster?"
+      when: namespace_check.rc != 0
 
     - name: Update cluster-tls secret
       shell: |
-        {{ kubectl_bin }} --kubeconfig {{ kubeconfig_path }} \
-          create secret tls {{ secret_name }} \
-          --cert={{ NEW_TLS_CERT }} \
-          --key={{ NEW_TLS_KEY }} \
-          -n {{ namespace }} \
-          --dry-run=client -o yaml | \
-        {{ kubectl_bin }} --kubeconfig {{ kubeconfig_path }} apply -f -
-      register: secret_update_result
+        kubectl create secret tls cluster-tls \
+          --cert="{{ NEW_TLS_CERT }}" \
+          --key="{{ NEW_TLS_KEY }}" \
+          --namespace=envoy-gateway-system \
+          --dry-run=client -o yaml | kubectl apply -f -
+      register: secret_update
+      changed_when: "'configured' in secret_update.stdout or 'created' in secret_update.stdout"
 
-    - name: Verify secret was updated
-      shell: |
-        {{ kubectl_bin }} --kubeconfig {{ kubeconfig_path }} \
-          get secret {{ secret_name }} -n {{ namespace }} -o jsonpath='{.metadata.creationTimestamp}'
-      register: secret_timestamp
-      changed_when: false
-
-    - name: Display update result
+    - name: Display secret update result
       debug:
-        msg:
-          - "Secret {{ secret_name }} updated successfully"
-          - "Updated at: {{ secret_timestamp.stdout }}"
+        msg: "{{ secret_update.stdout }}"
 
     # ============================================
-    # Restart Affected Pods (Optional)
+    # Restart Envoy Pods
     # ============================================
 
-    - name: Restart pods using the certificate
-      when: RESTART_ENVOY_PODS | default(true)
-      block:
-        - name: Get deployments in envoy-gateway-system
-          shell: |
-            {{ kubectl_bin }} --kubeconfig {{ kubeconfig_path }} \
-              get deployments -n {{ namespace }} -o name
-          register: deployments
-          changed_when: false
+    - name: Restart Envoy Gateway pods
+      shell: kubectl rollout restart deployment -n envoy-gateway-system
+      when: RESTART_ENVOY_PODS | bool
+      register: restart_result
 
-        - name: Restart Envoy Gateway deployments
-          when: deployments.stdout_lines | length > 0
-          shell: |
-            {{ kubectl_bin }} --kubeconfig {{ kubeconfig_path }} \
-              rollout restart {{ item }} -n {{ namespace }}
-          loop: "{{ deployments.stdout_lines }}"
-          register: restart_result
+    - name: Wait for Envoy Gateway pods to be ready
+      shell: kubectl rollout status deployment -n envoy-gateway-system --timeout=120s
+      when: RESTART_ENVOY_PODS | bool
+      register: rollout_status
 
-        - name: Wait for rollout to complete
-          when: deployments.stdout_lines | length > 0
-          shell: |
-            {{ kubectl_bin }} --kubeconfig {{ kubeconfig_path }} \
-              rollout status {{ item }} -n {{ namespace }} --timeout=120s
-          loop: "{{ deployments.stdout_lines }}"
-
-        - name: Display restart result
-          debug:
-            msg: "Restarted {{ deployments.stdout_lines | length }} deployment(s) in {{ namespace }}"
-
-    # ============================================
-    # Verification
-    # ============================================
-
-    - name: Verify certificate in secret matches new certificate
-      block:
-        - name: Extract certificate from secret
-          shell: |
-            {{ kubectl_bin }} --kubeconfig {{ kubeconfig_path }} \
-              get secret {{ secret_name }} -n {{ namespace }} \
-              -o jsonpath='{.data.tls\.crt}' | base64 -d > /tmp/secret-cert.pem
-
-        - name: Compare certificates
-          shell: |
-            cert_modulus=$(openssl x509 -in "{{ NEW_TLS_CERT }}" -noout -modulus)
-            secret_modulus=$(openssl x509 -in /tmp/secret-cert.pem -noout -modulus)
-            if [ "$cert_modulus" != "$secret_modulus" ]; then
-              echo "ERROR: Certificates do not match!"
-              exit 1
-            fi
-            echo "Certificates match"
-          args:
-            executable: /bin/bash
-          changed_when: false
-
-        - name: Cleanup temporary file
-          file:
-            path: /tmp/secret-cert.pem
-            state: absent
-
-        - name: Certificate verification successful
-          debug:
-            msg: "✓ Certificate in secret matches the provided certificate file"
-
-      rescue:
-        - name: Cleanup temporary file on error
-          file:
-            path: /tmp/secret-cert.pem
-            state: absent
-
-        - name: Certificate verification failed
-          fail:
-            msg: "Certificate verification failed. The secret may not have been updated correctly."
+    - name: Display restart result
+      debug:
+        msg: "{{ restart_result.stdout }}"
+      when: RESTART_ENVOY_PODS | bool
 
     # ============================================
     # Summary
@@ -277,15 +116,14 @@
           - "==============================================="
           - "Certificate Update Completed Successfully"
           - "==============================================="
-          - "Secret Name: {{ secret_name }}"
-          - "Namespace: {{ namespace }}"
-          - "Certificate File: {{ NEW_TLS_CERT }}"
-          - "Key File: {{ NEW_TLS_KEY }}"
-          - "Backup Created: {{ 'Yes' if BACKUP_EXPIRED_CLUSTER_TLS_SECRET else 'No' }}"
-          - "Pods Restarted: {{ 'Yes' if RESTART_ENVOY_PODS else 'No' }}"
-          - "==============================================="
+          - "Secret: cluster-tls"
+          - "Namespace: envoy-gateway-system"
+          - "Certificate: {{ NEW_TLS_CERT }}"
+          - "Key: {{ NEW_TLS_KEY }}"
+          - "Pods Restarted: {{ 'Yes' if RESTART_ENVOY_PODS | bool else 'No' }}"
+          - ""
           - "Next Steps:"
-          - "1. Verify HTTPS endpoints are working"
-          - "2. Check pod logs for any certificate errors"
-          - "3. Test ingress resources"
+          - "1. Verify HTTPS endpoints in browser (https://gitea.<domain>, https://argocd.<domain>)"
+          - "2. Check for certificate warnings"
+          - "3. Verify certificate expiration date"
           - "==============================================="
