@@ -2,7 +2,7 @@
 
 ## Overview
 
-Existing control plane nodes deployed before the `EAI_6938_oidc_auth_tls_san_for_control_nodes` fix lack DOMAIN configuration, resulting in missing TLS SAN and OIDC authentication settings. This causes kubectl TLS verification and OIDC login failures on those nodes.
+Existing control plane nodes deployed before the `v2.2.2` fix lack DOMAIN configuration, resulting in missing TLS SAN and OIDC authentication settings. This causes kubectl TLS verification and OIDC login failures on those nodes.
 
 **Solution:** Copy two configuration blocks from the first node to each additional control plane node.
 
