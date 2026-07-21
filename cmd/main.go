@@ -103,7 +103,11 @@ func newRootCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:   "bloom",
 		Short: "Kubernetes Cluster Deployment Tool",
-		Long:  `Bloom - A tool for generating bloom.yaml configurations and deploying Kubernetes clusters.`,
+		Long:  `Bloom - A tool for generating bloom.yaml configurations and deploying Kubernetes clusters.
+
+Certificate Management:
+  Update cluster TLS certificates: bloom run update-certificate.yaml --config cert-update.yaml
+  For detailed guidance, see: https://github.com/silogen/cluster-bloom#certificate-updates`,
 		Run: func(cmd *cobra.Command, args []string) {
 			if showVersion {
 				if Version != "" {
@@ -241,7 +245,14 @@ Example: ./bloom cli bloom.yaml --export`,
 Ansible runtime. No Ansible or Python installation required on the host.
 
 The playbook's parent directory is mounted into the container, so relative
-imports (roles, tasks, vars) within that directory tree work as expected.`,
+imports (roles, tasks, vars) within that directory tree work as expected.
+
+Embedded playbooks:
+  cluster-bloom.yaml       - Full cluster deployment
+  update-certificate.yaml  - Update TLS certificates in existing cluster
+
+Certificate update example:
+  bloom run update-certificate.yaml --config cert-update.yaml`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			checkRootPrivileges("run")
