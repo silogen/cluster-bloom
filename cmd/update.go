@@ -12,7 +12,7 @@ var (
 	certOption   string
 	certPath     string
 	keyPath      string
-	checkDNSOnly bool
+	skipDNSCheck bool
 	dryRunUpdate bool
 	skipRKE2     bool
 	firstNode    bool
@@ -80,17 +80,11 @@ Examples:
     --cert-option generate \
     --skip-rke2
 
-  # Check DNS configuration for a domain
-  bloom update --check-dns new.example.com`,
+  # Update domain without DNS verification
+  bloom update --new-domain new.example.com \
+    --cert-option generate \
+    --skip-dns-check`,
 		PreRunE: func(cmd *cobra.Command, args []string) error {
-			// Validation
-			if checkDNSOnly {
-				if newDomain == "" {
-					return fmt.Errorf("--new-domain is required with --check-dns")
-				}
-				return nil
-			}
-
 			// cert-option is always required
 			if certOption == "" {
 				return fmt.Errorf("--cert-option is required (generate|provide|cert-manager)")
@@ -124,7 +118,7 @@ Examples:
 				"CERT_PATH":      certPath,
 				"KEY_PATH":       keyPath,
 				"DRY_RUN":        dryRunUpdate,
-				"CHECK_DNS_ONLY": checkDNSOnly,
+				"SKIP_DNS_CHECK": skipDNSCheck,
 				"TLS_ONLY":       tlsOnly,
 				"SKIP_RKE2":      skipRKE2,
 				"FIRST_NODE":     firstNode,
@@ -156,7 +150,7 @@ Examples:
 	cmd.Flags().StringVar(&certOption, "cert-option", "", "Certificate option: generate|provide|cert-manager (required)")
 	cmd.Flags().StringVar(&certPath, "cert-path", "", "Path to certificate file (required with --cert-option=provide)")
 	cmd.Flags().StringVar(&keyPath, "key-path", "", "Path to private key file (required with --cert-option=provide)")
-	cmd.Flags().BoolVar(&checkDNSOnly, "check-dns", false, "Only check DNS configuration for the specified domain")
+	cmd.Flags().BoolVar(&skipDNSCheck, "skip-dns-check", false, "Skip DNS verification (DNS check runs by default)")
 	cmd.Flags().BoolVar(&dryRunUpdate, "dry-run", false, "Show what would be changed without applying updates")
 	cmd.Flags().BoolVar(&skipRKE2, "skip-rke2", false, "Skip RKE2 layer updates (API server certificate, config files)")
 	cmd.Flags().BoolVar(&firstNode, "first-node", true, "Run Kubernetes-level updates (set false on additional nodes)")

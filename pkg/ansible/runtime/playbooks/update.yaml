@@ -9,7 +9,7 @@
     CERT_PATH: ""            # For cert_option=provide
     KEY_PATH: ""             # For cert_option=provide
     DRY_RUN: false           # Optional
-    CHECK_DNS_ONLY: false    # Optional
+    SKIP_DNS_CHECK: false    # Optional - skip DNS verification
     TLS_ONLY: false          # Optional - update only TLS certificates
     SKIP_RKE2: false         # Optional - skip RKE2 layer updates
     KUBECONFIG: ""           # Optional, defaults to ~/.kube/config
@@ -25,30 +25,27 @@
     - name: Validate required variables for domain update
       fail:
         msg: "NEW_DOMAIN is required"
-      when: NEW_DOMAIN == "" and not CHECK_DNS_ONLY and not TLS_ONLY
+      when: NEW_DOMAIN == "" and not TLS_ONLY
 
     - name: Validate CERT_OPTION
       fail:
         msg: "CERT_OPTION must be one of: generate, provide, cert-manager"
-      when:
-        - not CHECK_DNS_ONLY
-        - CERT_OPTION not in ['generate', 'provide', 'cert-manager']
+      when: CERT_OPTION not in ['generate', 'provide', 'cert-manager']
 
     - name: Validate CERT_PATH and KEY_PATH for provided certificates
       fail:
         msg: "CERT_PATH and KEY_PATH are required when CERT_OPTION=provide"
       when:
-        - not CHECK_DNS_ONLY
         - CERT_OPTION == 'provide'
         - (CERT_PATH == "" or KEY_PATH == "")
 
   tasks:
-    - name: DNS check mode
-      when: CHECK_DNS_ONLY
+    - name: DNS check
+      when: not SKIP_DNS_CHECK and not TLS_ONLY and NEW_DOMAIN != ""
       import_tasks: tasks/update/dns_check.yaml
 
     - name: TLS-only update
-      when: not CHECK_DNS_ONLY and TLS_ONLY
+      when: TLS_ONLY
       block:
         - name: Display TLS update header
           debug:
@@ -84,7 +81,7 @@
               - ""
 
     - name: Full domain update
-      when: not CHECK_DNS_ONLY and not TLS_ONLY
+      when: not TLS_ONLY
       block:
         - name: Display update header
           debug:
