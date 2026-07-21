@@ -2,8 +2,10 @@ package cmd
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -21,7 +23,7 @@ var (
 	dryRun          bool
 	tags            string
 	destroyData     bool
-	forceCleanup    bool
+	autoConfirm     bool // --yes/-y, --auto-confirm-prompts, cleanup's --force/-f all bind here
 	extraVars       []string
 	verbose         bool
 	configFile      string
@@ -30,6 +32,24 @@ var (
 	clusterListenIP string
 	skipDataSafety  bool
 )
+
+// rebootMarkerPath is where the reboot_required_check.yaml ansible task
+// records a pending reboot (e.g. after a kernel/DKMS GPU driver update). Lives
+// under /var/lib, not BLOOM_DIR, so it persists regardless of which directory
+// the user happens to invoke bloom from on the next run.
+const rebootMarkerPath = "/var/lib/bloom/reboot-required.json"
+
+// rebootRequiredMarker mirrors the JSON written by reboot_required_check.yaml.
+// Attempted acts as a loop-guard: once bloom has rebooted for a given
+// unresolved condition, it will not offer to reboot again for the same
+// marker — ansible's own fail message takes over with manual-intervention
+// instructions instead of bloom silently rebooting forever.
+type rebootRequiredMarker struct {
+	Reason     string   `json:"reason"`
+	Packages   []string `json:"packages"`
+	Attempted  bool     `json:"attempted"`
+	DetectedAt string   `json:"detected_at"`
+}
 
 func init() {
 	// Set the embedded filesystem for webui package
@@ -172,7 +192,7 @@ Mount index allocation is fstab- and config-aware: the lowest contiguous range s
 from index 0 that does not conflict with premounted disk indexes is chosen, ensuring
 CLUSTER_DISKS and CLUSTER_PREMOUNTED_DISKS can coexist without collision.
 
-By default, this command requires confirmation before proceeding. Use --force to skip confirmation.`,
+By default, this command requires confirmation before proceeding. Use --force (or --yes/-y, --auto-confirm-prompts) to skip confirmation.`,
 		Run: func(cmd *cobra.Command, args []string) {
 			checkRootPrivileges("cleanup")
 			// Load config early so the preview can use it before confirmation
@@ -201,8 +221,8 @@ By default, this command requires confirmation before proceeding. Use --force to
 			}
 			// Show disk wipe preview before asking for confirmation
 			runtime.PrintDiskWipePreview(clusterDisks, premountedDisks, rancherDisk)
-			// Check if force flag is used to bypass confirmation
-			if !forceCleanup {
+			// Check if force/--yes flag is used to bypass confirmation
+			if !autoConfirm {
 				if !confirmCleanupOperation() {
 					fmt.Println("❌ Cleanup aborted by user.")
 					os.Exit(0)
@@ -253,6 +273,8 @@ imports (roles, tasks, vars) within that directory tree work as expected.`,
 	// Add flags
 	rootCmd.PersistentFlags().IntVarP(&port, "port", "p", 62078, "Port for web UI (fails if in use)")
 	rootCmd.Flags().BoolVarP(&showVersion, "version", "v", false, "Show version information")
+	rootCmd.PersistentFlags().BoolVarP(&autoConfirm, "yes", "y", false, "Automatically confirm all interactive prompts (--destroy-data, cleanup, reboot-required). Same as --auto-confirm-prompts. USE WITH CAUTION")
+	rootCmd.PersistentFlags().BoolVar(&autoConfirm, "auto-confirm-prompts", false, "Alias for --yes/-y")
 
 	// Add CLI command flags
 	cliCmd.Flags().StringVar(&playbookName, "playbook", "cluster-bloom.yaml", "Playbook to run (default: cluster-bloom.yaml)")
@@ -271,7 +293,9 @@ imports (roles, tasks, vars) within that directory tree work as expected.`,
 	runCmd.Flags().BoolVar(&verbose, "verbose", false, "Show full Ansible output instead of clean summary")
 
 	// Add cleanup-specific flags
-	cleanupCmd.Flags().BoolVarP(&forceCleanup, "force", "f", false, "Skip confirmation prompt and force immediate cleanup (USE WITH CAUTION)")
+	// --force/-f is a historical alias for --yes/-y, bound to the same
+	// variable so either name bypasses cleanup's confirmation prompt.
+	cleanupCmd.Flags().BoolVarP(&autoConfirm, "force", "f", false, "Skip confirmation prompt and force immediate cleanup. Alias for --yes/-y (USE WITH CAUTION)")
 
 	// Add subcommands
 	rootCmd.AddCommand(webuiCmd)
@@ -358,7 +382,7 @@ func runAnsible(configFile string) {
 		os.Exit(1)
 	}
 
-	os.Exit(exitCode)
+	os.Exit(maybeHandleRebootRequired(exitCode))
 }
 
 func runPlaybookDirect(playbookPath string) {
@@ -391,7 +415,7 @@ func runPlaybookDirect(playbookPath string) {
 		os.Exit(1)
 	}
 
-	os.Exit(exitCode)
+	os.Exit(maybeHandleRebootRequired(exitCode))
 }
 
 // exportPlaybook writes a self-contained playbook directory (./bloom-playbook/)
@@ -507,6 +531,11 @@ func confirmDestructiveOperation(cfg config.Config) bool {
 	runtime.PrintDiskWipePreview(clusterDisks, premountedDisks, rancherDisk)
 	fmt.Println()
 
+	if autoConfirm {
+		fmt.Println("🚀 --yes/--auto-confirm-prompts set - bypassing confirmation")
+		return true
+	}
+
 	// Read user input
 	fmt.Print("Type \"yes\" to confirm destruction of all data: ")
 
@@ -560,6 +589,85 @@ func confirmCleanupOperation() bool {
 
 	fmt.Println("\n✅ Cleanup confirmed. Proceeding...")
 	return true
+}
+
+// confirmYesNo prompts a lightweight [y/N] confirmation (default No), the
+// convention used for disruptive-but-recoverable actions like a reboot as
+// opposed to the stricter typed-"yes" prompts used for irreversible data
+// destruction. Auto-confirms without prompting when autoConfirm is set.
+func confirmYesNo(prompt string) bool {
+	if autoConfirm {
+		fmt.Printf("%s [y/N]: y (auto-confirmed via --yes/--auto-confirm-prompts)\n", prompt)
+		return true
+	}
+
+	fmt.Printf("%s [y/N]: ", prompt)
+	reader := bufio.NewReader(os.Stdin)
+	input, err := reader.ReadString('\n')
+	if err != nil {
+		return false
+	}
+	input = strings.ToLower(strings.TrimSpace(input))
+	return input == "y" || input == "yes"
+}
+
+// maybeHandleRebootRequired checks for the marker that reboot_required_check.yaml
+// writes when a kernel/GPU driver package update needs a reboot before GPU
+// functionality is available (e.g. ROCm/amdgpu DKMS install). If found and not
+// yet acted on, it offers to reboot the node right away; the ansible task's own
+// loop-guard (the marker's "attempted" flag) prevents bloom from ever offering
+// to reboot a second time for the same unresolved condition, so no special
+// handling is needed here for that case beyond leaving the original exit code
+// and letting ansible's manual-intervention failure message speak for itself.
+//
+// Deliberately does not run inside the namespaced/pivot-rooted ansible child
+// process: this runs in the original top-level bloom process, which executes
+// directly on the host, so `systemctl reboot` here reboots the real machine.
+func maybeHandleRebootRequired(exitCode int) int {
+	data, err := os.ReadFile(rebootMarkerPath)
+	if err != nil {
+		return exitCode
+	}
+
+	var marker rebootRequiredMarker
+	if err := json.Unmarshal(data, &marker); err != nil || marker.Attempted {
+		return exitCode
+	}
+
+	fmt.Println("\n⏳ REBOOT REQUIRED")
+	fmt.Println()
+	fmt.Println(marker.Reason)
+	if len(marker.Packages) > 0 {
+		fmt.Println("\nPackages that triggered this:")
+		for _, p := range marker.Packages {
+			fmt.Printf("  - %s\n", p)
+		}
+	}
+	fmt.Println("\nGPU/ROCm functionality will not work correctly until this node is rebooted.")
+	fmt.Println()
+
+	if !confirmYesNo("Reboot this node now?") {
+		fmt.Println("\n❌ Reboot declined.")
+		fmt.Println("Reboot manually and re-run this exact bloom command afterwards — bloom's")
+		fmt.Println("steps are idempotent and will resume automatically:")
+		fmt.Println("  sudo reboot")
+		return exitCode
+	}
+
+	marker.Attempted = true
+	if updated, err := json.MarshalIndent(marker, "", "  "); err == nil {
+		if err := os.WriteFile(rebootMarkerPath, updated, 0644); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to update reboot marker (risk of a reboot loop if the next run hits the same issue): %v\n", err)
+		}
+	}
+
+	fmt.Println("\n🔄 Rebooting now. Re-run this exact bloom command once the node is back up.")
+	_ = exec.Command("sync").Run()
+	if err := exec.Command("systemctl", "reboot").Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to trigger reboot via systemctl: %v\n", err)
+		fmt.Fprintln(os.Stderr, "Please reboot manually: sudo reboot")
+	}
+	return exitCode
 }
 
 // checkRootPrivileges verifies that the current process is running with root privileges
