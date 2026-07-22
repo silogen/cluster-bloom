@@ -42,12 +42,29 @@ import (
 // worth auto-detecting for AIM_HARDWARE_FAMILY) on a node with no AMD GPU at
 // all, and the GPU PCI scan itself is a cheap no-op on such a node anyway.
 //
+// gpuFamilyDetectionReport carries what resolveGPUFamilyDefaults learned —
+// the raw hardware scan plus whether each variable was already explicitly
+// set before it ran — so printHardwareDetectionSummary can render an
+// accurate "explicit vs. auto-detected vs. default" summary afterward, once
+// ApplyGPUStackVars has resolved GPU_STACK_FAMILY's final value (including
+// the empty-means-instinct default that lives there, not here).
+type gpuFamilyDetectionReport struct {
+	Detected                     config.DetectedHardware
+	GPUStackFamilyWasExplicit    bool
+	AIMHardwareFamilyWasExplicit bool
+}
+
 // Runs in the top-level bloom process on the operator's real terminal,
 // before RunPlaybook re-execs into the namespaced container that drives
 // ansible-playbook over an SSH loopback with no TTY — so, unlike the
 // ROCM_ALLOW_VERSION_MISMATCH guard deep in the ansible run, an interactive
 // prompt here is safe.
-func resolveGPUFamilyDefaults(cfg config.Config) error {
+func resolveGPUFamilyDefaults(cfg config.Config) (gpuFamilyDetectionReport, error) {
+	report := gpuFamilyDetectionReport{
+		GPUStackFamilyWasExplicit:    configString(cfg, "GPU_STACK_FAMILY") != "",
+		AIMHardwareFamilyWasExplicit: configString(cfg, "AIM_HARDWARE_FAMILY") != "",
+	}
+
 	detected := config.DetectedHardware{}
 
 	gpuDetected, err := config.DetectAMDGPUFamilies()
@@ -67,13 +84,14 @@ func resolveGPUFamilyDefaults(cfg config.Config) error {
 	} else if epycDetected {
 		detected.EPYCModel = epycModel
 	}
+	report.Detected = detected
 
 	defaults := config.ComputeFamilyDefaults(cfg, detected)
 
 	if defaults.Ambiguous {
 		family, err := decideAmbiguousGPUStackFamily(detected.GPU)
 		if err != nil {
-			return err
+			return report, err
 		}
 		defaults.GPUStackFamily = family
 	}
@@ -94,7 +112,59 @@ func resolveGPUFamilyDefaults(cfg config.Config) error {
 		fmt.Println("   Using your explicit AIM_HARDWARE_FAMILY as-is. Add the family/families above too if you want AIM models for them on this cluster.")
 	}
 
-	return nil
+	return report, nil
+}
+
+// printHardwareDetectionSummary always prints what hardware bloom found on
+// this node and the resulting GPU_STACK_FAMILY / AIM_HARDWARE_FAMILY values
+// — unlike the messages in resolveGPUFamilyDefaults above, which only print
+// when auto-detection actually changes something. This gives a node
+// validation run (e.g. `bloom cli bloom.yaml --tags validate_node`) a clear
+// "here's what was detected, and here's what it resolved to" readout even
+// when nothing was detected, or both variables were already set explicitly.
+//
+// Must run after config.ApplyGPUStackVars, which resolves GPU_STACK_FAMILY's
+// final value into cfg["gpu_stack_family_resolved"] — including the
+// empty-string-means-"instinct" default that lives in the GPU stack matrix,
+// not in the detection logic itself.
+func printHardwareDetectionSummary(report gpuFamilyDetectionReport, cfg config.Config) {
+	detected := report.Detected
+
+	fmt.Println()
+	fmt.Println("🔎 Hardware detection summary")
+	if len(detected.GPU.Families) == 0 {
+		fmt.Println("   GPU: none detected")
+	} else {
+		for _, family := range detected.GPU.Families {
+			fmt.Printf("   GPU: %s (%s)\n", family, detected.GPU.DescribeFamily(family))
+		}
+	}
+	if detected.HasEPYC() {
+		fmt.Printf("   CPU: AMD EPYC detected (%s)\n", detected.EPYCModel)
+	} else {
+		fmt.Println("   CPU: no AMD EPYC CPU detected")
+	}
+
+	resolvedGPUStackFamily, _ := cfg["gpu_stack_family_resolved"].(string)
+	gpuStackSource := "default: no AMD GPU detected and none configured"
+	switch {
+	case report.GPUStackFamilyWasExplicit:
+		gpuStackSource = "explicit in bloom.yaml"
+	case configString(cfg, "GPU_STACK_FAMILY") != "":
+		gpuStackSource = "auto-detected"
+	}
+	fmt.Printf("   -> GPU_STACK_FAMILY=%s (%s)\n", resolvedGPUStackFamily, gpuStackSource)
+
+	aimHardwareFamily := configString(cfg, "AIM_HARDWARE_FAMILY")
+	switch {
+	case report.AIMHardwareFamilyWasExplicit:
+		fmt.Printf("   -> AIM_HARDWARE_FAMILY=%s (explicit in bloom.yaml)\n", aimHardwareFamily)
+	case aimHardwareFamily != "":
+		fmt.Printf("   -> AIM_HARDWARE_FAMILY=%s (auto-detected)\n", aimHardwareFamily)
+	default:
+		fmt.Println("   -> AIM_HARDWARE_FAMILY=(empty) — legacy catalog (generic + instinct sources)")
+	}
+	fmt.Println()
 }
 
 // configString reads a string config value, tolerating an absent, nil, or

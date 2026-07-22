@@ -348,7 +348,8 @@ func runAnsible(configFile string) {
 	// unset. A node with GPUs from more than one family forces an explicit
 	// interactive choice here (see resolveGPUFamilyDefaults) rather than
 	// bloom silently guessing which ROCm/GPU Operator stack to install.
-	if err := resolveGPUFamilyDefaults(cfg); err != nil {
+	familyReport, err := resolveGPUFamilyDefaults(cfg)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
@@ -359,6 +360,13 @@ func runAnsible(configFile string) {
 		fmt.Fprintf(os.Stderr, "Error resolving GPU stack defaults: %v\n", err)
 		os.Exit(1)
 	}
+
+	// Always show what hardware was found and what it resolved to — even
+	// when nothing changed (already explicit, or nothing detected) — so a
+	// validation-focused run (e.g. `--tags validate_node`) has a clear
+	// readout. This runs before RunPlaybook applies --tags, so it shows
+	// regardless of which tags (if any) were requested.
+	printHardwareDetectionSummary(familyReport, cfg)
 
 	// Handle export mode
 	if export {

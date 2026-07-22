@@ -42,6 +42,18 @@ What happens with the result:
 
 This prompt is safe from the "no TTY" constraint that applies to the [version compatibility guard](#version-compatibility-guard-fail-fast) below: it runs in the top-level `bloom` process directly on the operator's terminal, *before* `bloom` re-execs itself into the namespaced container that drives `ansible-playbook` over an SSH loopback connection (where a `pause`-style prompt genuinely has no TTY and would hang). By the time any ansible task runs, both variables are already resolved.
 
+**Hardware detection summary**: every `bloom cli`/`bloom run` invocation always prints a short readout of what was found and what it resolved to, regardless of `--tags` (this runs before `--tags` filtering reaches ansible), and regardless of whether anything was auto-detected or auto-assigned:
+
+```
+🔎 Hardware detection summary
+   GPU: radeon (RX 9070)
+   CPU: AMD EPYC detected (AMD EPYC 9124 16-Core Processor)
+   -> GPU_STACK_FAMILY=radeon (auto-detected)
+   -> AIM_HARDWARE_FAMILY=epyc,radeon (auto-detected)
+```
+
+`GPU`/`CPU` report `none detected` / `no AMD EPYC CPU detected` when nothing was found. The `->` lines report the final resolved value for each variable and its source — `explicit in bloom.yaml`, `auto-detected`, or (for `GPU_STACK_FAMILY` only) the `instinct` default when nothing was detected and nothing was configured. This is the easiest way to sanity-check detection on a node, e.g. via `bloom cli bloom.yaml --tags validate_node`.
+
 ### ROCm Installation
 Automated installation of ROCm drivers and runtime components:
 - **Driver Version**: Selected by `GPU_STACK_FAMILY` (default family `instinct` → ROCm 7.2.3); base URL still overridable via `ROCM_BASE_URL`
