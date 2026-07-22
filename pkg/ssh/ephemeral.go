@@ -194,9 +194,17 @@ func (e *EphemeralSSHManager) validateAuthorizedKeys() error {
 
 	sshPerms := sshInfo.Mode().Perm()
 	if sshPerms != 0700 {
-		fmt.Printf("❌ ERROR: SSH directory has incorrect permissions: %o (expected 700)\n", sshPerms)
-		fmt.Printf("   Please fix permissions: chmod 700 %s\n", userSSHDir)
-		return fmt.Errorf("SSH directory has incorrect permissions: %o", sshPerms)
+		// bloom owns the lifecycle of the ephemeral key in this dir, and sshd's
+		// StrictModes rejects a group/other-accessible ~/.ssh anyway, so
+		// normalize to 0700 rather than hard-failing and forcing a manual
+		// chmod (matching the leftover-key self-heal below). This only ever
+		// tightens permissions.
+		fmt.Printf("⚠️ SSH directory %s has permissions %o (expected 700); fixing to 700.\n", userSSHDir, sshPerms)
+		if err := os.Chmod(userSSHDir, 0700); err != nil {
+			fmt.Printf("❌ ERROR: failed to fix SSH directory permissions: %v\n", err)
+			fmt.Printf("   Please fix permissions manually: chmod 700 %s\n", userSSHDir)
+			return fmt.Errorf("SSH directory has incorrect permissions %o and could not be fixed: %w", sshPerms, err)
+		}
 	}
 
 	// Check if authorized_keys file exists and has 600 permissions
@@ -212,9 +220,15 @@ func (e *EphemeralSSHManager) validateAuthorizedKeys() error {
 
 	authKeysPerms := authKeysInfo.Mode().Perm()
 	if authKeysPerms != 0600 {
-		fmt.Printf("❌ ERROR: authorized_keys file has incorrect permissions: %o (expected 600)\n", authKeysPerms)
-		fmt.Printf("   Please fix permissions: chmod 600 %s\n", e.AuthorizedKeysPath)
-		return fmt.Errorf("authorized_keys file has incorrect permissions: %o", authKeysPerms)
+		// Same rationale as the .ssh dir above: bloom writes to this file, and
+		// sshd ignores an authorized_keys that is group/other-writable, so
+		// normalize to 0600 instead of aborting on a manual chmod.
+		fmt.Printf("⚠️ authorized_keys %s has permissions %o (expected 600); fixing to 600.\n", e.AuthorizedKeysPath, authKeysPerms)
+		if err := os.Chmod(e.AuthorizedKeysPath, 0600); err != nil {
+			fmt.Printf("❌ ERROR: failed to fix authorized_keys permissions: %v\n", err)
+			fmt.Printf("   Please fix permissions manually: chmod 600 %s\n", e.AuthorizedKeysPath)
+			return fmt.Errorf("authorized_keys file has incorrect permissions %o and could not be fixed: %w", authKeysPerms, err)
+		}
 	}
 
 	// Check if bloom ephemeral key already exists
