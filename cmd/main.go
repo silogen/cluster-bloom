@@ -305,13 +305,16 @@ func runAnsible(configFile string) {
 	}
 
 	// Validate config (after injecting CLI flags)
-	errors := config.Validate(cfg)
-	if len(errors) > 0 {
-		fmt.Fprintln(os.Stderr, "Configuration validation errors:")
-		for _, err := range errors {
-			fmt.Fprintf(os.Stderr, "  - %s\n", err)
+	// Skip validation for cert update tags to allow separate cert-update-config.yaml
+	if tags == "" || !strings.Contains(tags, "update_cert") {
+		errors := config.Validate(cfg)
+		if len(errors) > 0 {
+			fmt.Fprintln(os.Stderr, "Configuration validation errors:")
+			for _, err := range errors {
+				fmt.Fprintf(os.Stderr, "  - %s\n", err)
+			}
+			os.Exit(1)
 		}
-		os.Exit(1)
 	}
 
 	// Resolve GPU-family stack defaults (host ROCm + GPU Operator + DeviceConfig)

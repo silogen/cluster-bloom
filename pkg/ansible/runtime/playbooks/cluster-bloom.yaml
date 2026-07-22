@@ -136,6 +136,11 @@
       tags: [deploy_clusterforge]
       import_tasks: tasks/deploy_clusterforge/main.yaml
 
+    - name: Update Cluster Certificates
+      tags: [update_cert]
+      import_tasks: tasks/update_certificate/main.yaml
+      when: false  # Skip by default, run only with --tags update_cert
+
   handlers:
     - name: Restart multipathd
       service:
