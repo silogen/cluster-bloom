@@ -1,7 +1,21 @@
-# Certificate update tasks - only run when NEW_TLS_CERT is defined
-# Skip silently during normal cluster deployment
+---
+# Streamlined TLS Certificate Update Playbook for cluster-bloom
+# Updates the cluster-tls secret in envoy-gateway-system namespace
+# User is responsible for providing valid certificate and key files
 
-- block:
+- name: Update Cluster TLS Certificate
+  hosts: all
+  gather_facts: false
+  gather_subset: [min, network]
+  become: false
+
+  vars:
+    # Required parameters (must be provided via config file)
+    NEW_TLS_CERT: ""
+    NEW_TLS_KEY: ""
+    RESTART_ENVOY_PODS: true
+
+  tasks:
     # ============================================
     # Pre-flight Validation
     # ============================================
@@ -79,18 +93,18 @@
 
     - name: Restart Envoy Gateway pods
       shell: kubectl rollout restart deployment -n envoy-gateway-system
-      when: RESTART_ENVOY_PODS | default(true) | bool
+      when: RESTART_ENVOY_PODS | bool
       register: restart_result
 
     - name: Wait for Envoy Gateway pods to be ready
       shell: kubectl rollout status deployment -n envoy-gateway-system --timeout=120s
-      when: RESTART_ENVOY_PODS | default(true) | bool
+      when: RESTART_ENVOY_PODS | bool
       register: rollout_status
 
     - name: Display restart result
       debug:
         msg: "{{ restart_result.stdout }}"
-      when: RESTART_ENVOY_PODS | default(true) | bool
+      when: RESTART_ENVOY_PODS | bool
 
     # ============================================
     # Summary
@@ -106,12 +120,10 @@
           - "Namespace: envoy-gateway-system"
           - "Certificate: {{ NEW_TLS_CERT }}"
           - "Key: {{ NEW_TLS_KEY }}"
-          - "Pods Restarted: {{ 'Yes' if RESTART_ENVOY_PODS | default(true) | bool else 'No' }}"
+          - "Pods Restarted: {{ 'Yes' if RESTART_ENVOY_PODS | bool else 'No' }}"
           - ""
           - "Next Steps:"
           - "1. Verify HTTPS endpoints in browser (https://gitea.<domain>, https://argocd.<domain>)"
           - "2. Check for certificate warnings"
           - "3. Verify certificate expiration date"
           - "==============================================="
-
-  when: NEW_TLS_CERT is defined and NEW_TLS_CERT != ""
