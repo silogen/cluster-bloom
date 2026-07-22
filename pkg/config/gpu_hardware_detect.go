@@ -76,21 +76,25 @@ var amdGPUDevicesByID = map[string]amdGPUDevice{
 	"7590": {FamilyRadeon, "RX 9060 XT"},
 }
 
-// gpuPCIClasses are the lspci class codes that represent a display/3D/GPU
-// accelerator function, as opposed to a GPU board's *other* PCI functions
-// (HDMI audio, USB-C, PCI bridge) which also carry AMD's vendor ID and would
-// otherwise show up as spurious "unknown AMD device" noise.
-var gpuPCIClasses = map[string]bool{
-	"0300": true, // VGA controller
-	"0302": true, // 3D controller
-	"1200": true, // Processing accelerator (e.g. Instinct OAM modules)
-}
-
-// amdPCIDeviceLine matches one AMD (vendor 1002) `lspci -nn` line and
-// captures the PCI class code and device ID, e.g.:
+// amdPCIDeviceLine matches one AMD (vendor 1002) `lspci -nn` line and captures
+// the device ID, e.g.:
 //
 //	0000:03:00.0 Processing accelerators [1200]: AMD/ATI Aldebaran/MI210 [1002:740f]
-var amdPCIDeviceLine = regexp.MustCompile(`\[([0-9a-fA-F]{4})]:.*\[1002:([0-9a-fA-F]{4})]\s*$`)
+//	0000:0a:00.0 VGA compatible controller [0300]: AMD/ATI Navi 21 [1002:73bf] (rev c1)
+//
+// The leading `[<class>]:` token (non-captured) keeps the match anchored to a
+// real lspci device line, but the PCI class is deliberately NOT used to decide
+// GPU-ness: the amdGPUDevicesByID table is authoritative. A device ID in the
+// table is a GPU by definition, and a non-GPU function on the same board (HDMI
+// audio, USB-C, PCI bridge) has its own distinct device ID that is simply absent
+// from the table — so the table alone excludes it, with no class allowlist
+// needed. This mirrors cluster-forge's amd-gpu NFD rule (which also keys purely
+// on device ID) and avoids silently dropping a valid GPU whose function (e.g. an
+// SR-IOV VF, or a headless "Display controller [0380]") reports an unexpected
+// class. The device-ID bracket is intentionally NOT anchored to end-of-line:
+// lspci appends "(rev NN)" for any non-zero PCI revision, which is common on AMD
+// GPUs and would otherwise defeat the match.
+var amdPCIDeviceLine = regexp.MustCompile(`\[[0-9a-fA-F]{4}]:.*\[1002:([0-9a-fA-F]{4})]`)
 
 // DetectedGPUFamilies is the classification of AMD GPU hardware physically
 // present on a node, from a local PCI scan.
@@ -150,10 +154,7 @@ func ParseLspciAMDOutput(output string) DetectedGPUFamilies {
 		if m == nil {
 			continue
 		}
-		class, deviceID := strings.ToLower(m[1]), strings.ToLower(m[2])
-		if !gpuPCIClasses[class] {
-			continue
-		}
+		deviceID := strings.ToLower(m[1])
 		dev, ok := amdGPUDevicesByID[deviceID]
 		if !ok {
 			continue

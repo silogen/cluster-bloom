@@ -333,24 +333,26 @@ func runAnsible(configFile string) {
 		cfg["SKIP_DATA_SAFETY"] = true
 	}
 
-	// Validate config (after injecting CLI flags)
+	// Auto-detect AMD GPU hardware families present on this node and fill in
+	// GPU_STACK_FAMILY / AIM_HARDWARE_FAMILY when the installer left them
+	// unset, BEFORE validation, so the schema validates the effective
+	// (auto-detected) values rather than the pre-detection blanks. A node with
+	// GPUs from more than one family forces an explicit interactive choice here
+	// (see resolveGPUFamilyDefaults) rather than bloom silently guessing which
+	// ROCm/GPU Operator stack to install.
+	familyReport, err := resolveGPUFamilyDefaults(cfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Validate config (after injecting CLI flags and auto-detection)
 	errors := config.Validate(cfg)
 	if len(errors) > 0 {
 		fmt.Fprintln(os.Stderr, "Configuration validation errors:")
 		for _, err := range errors {
 			fmt.Fprintf(os.Stderr, "  - %s\n", err)
 		}
-		os.Exit(1)
-	}
-
-	// Auto-detect AMD GPU hardware families present on this node and fill in
-	// GPU_STACK_FAMILY / AIM_HARDWARE_FAMILY when the installer left them
-	// unset. A node with GPUs from more than one family forces an explicit
-	// interactive choice here (see resolveGPUFamilyDefaults) rather than
-	// bloom silently guessing which ROCm/GPU Operator stack to install.
-	familyReport, err := resolveGPUFamilyDefaults(cfg)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 

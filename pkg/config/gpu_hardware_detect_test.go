@@ -58,6 +58,38 @@ func TestParseLspciAMDOutputMixedFamiliesIsAmbiguous(t *testing.T) {
 	}
 }
 
+func TestParseLspciAMDOutputMatchesRevisionSuffix(t *testing.T) {
+	// lspci -nn appends "(rev NN)" for any non-zero PCI revision, which is
+	// common on AMD GPUs. A trailing revision must not defeat detection (a
+	// previous `\s*$`-anchored regex silently missed these, falling back to
+	// the instinct default even on a radeon node).
+	output := "0000:03:00.0 VGA compatible controller [0300]: Advanced Micro Devices, Inc. [AMD/ATI] Navi 31 [Radeon RX 7900 XT/7900 XTX/7900 GRE/7900M] [1002:744c] (rev c8)\n"
+
+	got := ParseLspciAMDOutput(output)
+
+	if !reflect.DeepEqual(got.Families, []string{FamilyRadeon}) {
+		t.Fatalf("Families = %v, want [%s] (a trailing '(rev NN)' must not defeat detection)", got.Families, FamilyRadeon)
+	}
+}
+
+func TestParseLspciAMDOutputClassifiesByDeviceIDNotPCIClass(t *testing.T) {
+	// A known GPU device ID must be classified from the amdGPUDevicesByID
+	// table regardless of the PCI class lspci reports for it — e.g. an SR-IOV
+	// VF or a headless "Display controller [0380]" function. This guards
+	// against re-introducing a hardcoded PCI-class allowlist that would
+	// silently drop valid GPUs whose function reports an unexpected class.
+	output := "0000:01:00.0 Display controller [0380]: Advanced Micro Devices, Inc. [AMD/ATI] [1002:74b5]\n"
+
+	got := ParseLspciAMDOutput(output)
+
+	if !reflect.DeepEqual(got.Families, []string{FamilyInstinct}) {
+		t.Fatalf("Families = %v, want [%s] (device-ID table must be authoritative over PCI class)", got.Families, FamilyInstinct)
+	}
+	if got.DescribeFamily(FamilyInstinct) != "MI300X VF" {
+		t.Errorf("DescribeFamily(instinct) = %q, want %q", got.DescribeFamily(FamilyInstinct), "MI300X VF")
+	}
+}
+
 func TestParseLspciAMDOutputNoKnownGPU(t *testing.T) {
 	// A non-GPU AMD PCI function (e.g. chipset/bridge) must not be
 	// misclassified just because it shares the AMD vendor ID.
