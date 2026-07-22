@@ -23,6 +23,19 @@ Notes:
 - The real ROCm 7.13 tech-preview version strings and the vendored GPU Operator chart are tracked in EAI-5906; the `radeon` row carries placeholder pins until then.
 - **`radeon` uses a different install model.** ROCm 7.13 is a "TheRock" preview-stream release that is **not** published on repo.radeon.com's legacy `amdgpu-install/<rocm-version>/` path; its ROCm packages are served from repo.amd.com. Bloom registers the repo.amd.com apt source itself and installs the `amdrocm-core-sdk<major.minor>-<gfx-family>` meta-package directly with `apt`, whereas `instinct` uses the legacy repo.radeon.com path. See [radeon ROCm 7.13 install model](#radeon-rocm-713-install-model).
 
+### GPU family auto-detection and ambiguous hardware
+
+When `GPU_STACK_FAMILY` and/or `AIM_HARDWARE_FAMILY` are left unset (the default), bloom runs a local PCI scan (`lspci -nn -d 1002:`) on the node before starting the install and classifies any AMD GPUs it finds by product family, using the same device-ID taxonomy as cluster-forge's `amd-gpu` NFD rule (`pkg/config/gpu_hardware_detect.go`, kept in sync with `sources/amd-gpu-operator/*/templates/gpu-nfd-default-rule.yaml` in cluster-forge). Detection is best-effort: if `lspci`/`pciutils` isn't available or the scan otherwise fails, bloom silently skips it and falls back to today's behavior (empty resolves to `instinct`) — this can never turn a previously successful install into a failure.
+
+What happens with the result:
+
+- **One family detected, `GPU_STACK_FAMILY` unset** — bloom sets it to that family automatically (e.g. a Radeon-only box gets `GPU_STACK_FAMILY: radeon` without being asked).
+- **One or more families detected, `AIM_HARDWARE_FAMILY` unset** — bloom sets it to the comma-separated list of every family detected. This is never ambiguous: the AIM model catalog is multi-select by design, so a mixed-family box is valid here and just gets both families' models.
+- **GPUs from more than one family detected (the "node ambiguity" case), `GPU_STACK_FAMILY` unset** — host ROCm and the GPU Operator are single-select per node, so bloom cannot guess which stack you intend to run AI workloads on. It prints the detected models for each family and an explanation of why it's asking, then prompts you to pick `instinct` or `radeon` interactively. Running with `--yes`/`--auto-confirm-prompts` (or with no readable stdin) hard-fails instead of guessing, telling you to set `GPU_STACK_FAMILY` explicitly in `bloom.yaml`.
+- **Anything explicitly set in `bloom.yaml`** (either variable) is never overridden by detection, regardless of what hardware is found.
+
+This prompt is safe from the "no TTY" constraint that applies to the [version compatibility guard](#version-compatibility-guard-fail-fast) below: it runs in the top-level `bloom` process directly on the operator's terminal, *before* `bloom` re-execs itself into the namespaced container that drives `ansible-playbook` over an SSH loopback connection (where a `pause`-style prompt genuinely has no TTY and would hang). By the time any ansible task runs, both variables are already resolved.
+
 ### ROCm Installation
 Automated installation of ROCm drivers and runtime components:
 - **Driver Version**: Selected by `GPU_STACK_FAMILY` (default family `instinct` → ROCm 7.2.3); base URL still overridable via `ROCM_BASE_URL`

@@ -343,6 +343,16 @@ func runAnsible(configFile string) {
 		os.Exit(1)
 	}
 
+	// Auto-detect AMD GPU hardware families present on this node and fill in
+	// GPU_STACK_FAMILY / AIM_HARDWARE_FAMILY when the installer left them
+	// unset. A node with GPUs from more than one family forces an explicit
+	// interactive choice here (see resolveGPUFamilyDefaults) rather than
+	// bloom silently guessing which ROCm/GPU Operator stack to install.
+	if err := resolveGPUFamilyDefaults(cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
 	// Resolve GPU-family stack defaults (host ROCm + GPU Operator + DeviceConfig)
 	// and inject them as ansible vars before export/run.
 	if err := config.ApplyGPUStackVars(cfg); err != nil {

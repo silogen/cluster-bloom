@@ -52,13 +52,13 @@ schema:
     AIM_HARDWARE_FAMILY:
       type: hardwareFamilyList
       default: ""
-      desc: "Comma-separated AIM hardware families to install (cpu,epyc,instinct,radeon). Empty = legacy catalog only (generic + instinct sources); radeon/epyc/cpu sources are opt-in and never included by default."
+      desc: "Comma-separated AIM hardware families to install (cpu,epyc,instinct,radeon). Empty = auto-detected AMD GPU families on this node if any are found, otherwise the legacy catalog (generic + instinct sources); cpu/epyc are never auto-detected and stay opt-in."
       section: "📋 Basic Configuration"
 
     GPU_STACK_FAMILY:
       type: gpuStackFamily
       default: ""
-      desc: "GPU family that drives ROCm + GPU Operator install defaults (radeon | instinct). Empty = instinct (current qualified defaults). Radeon selects the ROCm 7.13 tech-preview stack."
+      desc: "GPU family that drives ROCm + GPU Operator install defaults (radeon | instinct). Empty = auto-detected from this node's AMD GPU hardware; if none is detected, resolves to instinct (current qualified defaults). If the node has GPUs from both families, bloom prompts for an explicit choice (or hard-fails with --yes). Radeon selects the ROCm 7.13 tech-preview stack."
       section: "📋 Basic Configuration"
 
     # 🔗 Additional Node Configuration
