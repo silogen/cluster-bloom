@@ -2,8 +2,10 @@ package cmd
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -21,14 +23,33 @@ var (
 	dryRun          bool
 	tags            string
 	destroyData     bool
-	forceCleanup    bool
+	autoConfirm     bool // --yes/-y, --auto-confirm-prompts, cleanup's --force/-f all bind here
 	extraVars       []string
 	verbose         bool
 	configFile      string
 	export          bool
 	showVersion     bool
 	clusterListenIP string
+	skipDataSafety  bool
 )
+
+// rebootMarkerPath is where the reboot_required_check.yaml ansible task
+// records a pending reboot (e.g. after a kernel/DKMS GPU driver update). Lives
+// under /var/lib, not BLOOM_DIR, so it persists regardless of which directory
+// the user happens to invoke bloom from on the next run.
+const rebootMarkerPath = "/var/lib/bloom/reboot-required.json"
+
+// rebootRequiredMarker mirrors the JSON written by reboot_required_check.yaml.
+// Attempted acts as a loop-guard: once bloom has rebooted for a given
+// unresolved condition, it will not offer to reboot again for the same
+// marker — ansible's own fail message takes over with manual-intervention
+// instructions instead of bloom silently rebooting forever.
+type rebootRequiredMarker struct {
+	Reason     string   `json:"reason"`
+	Packages   []string `json:"packages"`
+	Attempted  bool     `json:"attempted"`
+	DetectedAt string   `json:"detected_at"`
+}
 
 func init() {
 	// Set the embedded filesystem for webui package
@@ -176,7 +197,7 @@ Mount index allocation is fstab- and config-aware: the lowest contiguous range s
 from index 0 that does not conflict with premounted disk indexes is chosen, ensuring
 CLUSTER_DISKS and CLUSTER_PREMOUNTED_DISKS can coexist without collision.
 
-By default, this command requires confirmation before proceeding. Use --force to skip confirmation.`,
+By default, this command requires confirmation before proceeding. Use --force (or --yes/-y, --auto-confirm-prompts) to skip confirmation.`,
 		Run: func(cmd *cobra.Command, args []string) {
 			checkRootPrivileges("cleanup")
 			// Load config early so the preview can use it before confirmation
@@ -205,8 +226,8 @@ By default, this command requires confirmation before proceeding. Use --force to
 			}
 			// Show disk wipe preview before asking for confirmation
 			runtime.PrintDiskWipePreview(clusterDisks, premountedDisks, rancherDisk)
-			// Check if force flag is used to bypass confirmation
-			if !forceCleanup {
+			// Check if force/--yes flag is used to bypass confirmation
+			if !autoConfirm {
 				if !confirmCleanupOperation() {
 					fmt.Println("❌ Cleanup aborted by user.")
 					os.Exit(0)
@@ -267,6 +288,8 @@ imports (roles, tasks, vars) within that directory tree work as expected.`,
 	// Add flags
 	rootCmd.PersistentFlags().IntVarP(&port, "port", "p", 62078, "Port for web UI (fails if in use)")
 	rootCmd.Flags().BoolVarP(&showVersion, "version", "v", false, "Show version information")
+	rootCmd.PersistentFlags().BoolVarP(&autoConfirm, "yes", "y", false, "Automatically confirm all interactive prompts (--destroy-data, cleanup, reboot-required). Same as --auto-confirm-prompts. USE WITH CAUTION")
+	rootCmd.PersistentFlags().BoolVar(&autoConfirm, "auto-confirm-prompts", false, "Alias for --yes/-y")
 
 	// Add CLI command flags
 	cliCmd.Flags().StringVar(&playbookName, "playbook", "cluster-bloom.yaml", "Playbook to run (default: cluster-bloom.yaml)")
@@ -274,6 +297,7 @@ imports (roles, tasks, vars) within that directory tree work as expected.`,
 	cliCmd.Flags().StringVar(&tags, "tags", "", "Run only tasks with specific tags (e.g., cleanup, validate, storage)")
 	cliCmd.Flags().BoolVar(&destroyData, "destroy-data", false, "⚠️  DANGER: Wipes cluster (RKE2 uninstall, Longhorn cleanup, disk wipe). Shows disk preview before confirmation. Equivalent to running bloom cleanup then redeploying.")
 	cliCmd.Flags().StringVar(&clusterListenIP, "cluster-listen-ip", "", "IP address or CIDR for cluster binding (e.g., 192.168.1.100 or 192.168.1.0/24)")
+	cliCmd.Flags().BoolVar(&skipDataSafety, "skip-data-safety", false, "Downgrade the pre-deployment data-safety failure (running RKE2 / existing rke2 dirs) to a warning so bloom can re-run on an already-provisioned node without --destroy-data (does NOT skip the premounted-disk mount check)")
 	cliCmd.Flags().BoolVar(&export, "export", false, "Export the playbook to ./bloom-playbook/ (overwrites if exists) instead of executing it")
 
 	// Add run command flags
@@ -284,7 +308,9 @@ imports (roles, tasks, vars) within that directory tree work as expected.`,
 	runCmd.Flags().BoolVar(&verbose, "verbose", false, "Show full Ansible output instead of clean summary")
 
 	// Add cleanup-specific flags
-	cleanupCmd.Flags().BoolVarP(&forceCleanup, "force", "f", false, "Skip confirmation prompt and force immediate cleanup (USE WITH CAUTION)")
+	// --force/-f is a historical alias for --yes/-y, bound to the same
+	// variable so either name bypasses cleanup's confirmation prompt.
+	cleanupCmd.Flags().BoolVarP(&autoConfirm, "force", "f", false, "Skip confirmation prompt and force immediate cleanup. Alias for --yes/-y (USE WITH CAUTION)")
 
 	// Add subcommands
 	rootCmd.AddCommand(webuiCmd)
@@ -318,6 +344,9 @@ func runAnsible(configFile string) {
 	if clusterListenIP != "" {
 		cfg["CLUSTER_LISTEN_IP"] = clusterListenIP
 	}
+	if skipDataSafety {
+		cfg["SKIP_DATA_SAFETY"] = true
+	}
 
 	// Validate config (after injecting CLI flags)
 	// Skip validation for cert update tags to allow separate cert-update-config.yaml
@@ -332,12 +361,30 @@ func runAnsible(configFile string) {
 		}
 	}
 
+	// Auto-detect AMD GPU hardware families present on this node and fill in
+	// GPU_STACK_FAMILY / AIM_HARDWARE_FAMILY when the installer left them
+	// unset. A node with GPUs from more than one family forces an explicit
+	// interactive choice here (see resolveGPUFamilyDefaults) rather than
+	// bloom silently guessing which ROCm/GPU Operator stack to install.
+	familyReport, err := resolveGPUFamilyDefaults(cfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
 	// Resolve GPU-family stack defaults (host ROCm + GPU Operator + DeviceConfig)
 	// and inject them as ansible vars before export/run.
 	if err := config.ApplyGPUStackVars(cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "Error resolving GPU stack defaults: %v\n", err)
 		os.Exit(1)
 	}
+
+	// Always show what hardware was found and what it resolved to — even
+	// when nothing changed (already explicit, or nothing detected) — so a
+	// validation-focused run (e.g. `--tags validate_node`) has a clear
+	// readout. This runs before RunPlaybook applies --tags, so it shows
+	// regardless of which tags (if any) were requested.
+	printHardwareDetectionSummary(familyReport, cfg)
 
 	// Handle export mode
 	if export {
@@ -371,7 +418,7 @@ func runAnsible(configFile string) {
 		os.Exit(1)
 	}
 
-	os.Exit(exitCode)
+	os.Exit(maybeHandleRebootRequired(exitCode))
 }
 
 func runPlaybookDirect(playbookPath string) {
@@ -404,7 +451,7 @@ func runPlaybookDirect(playbookPath string) {
 		os.Exit(1)
 	}
 
-	os.Exit(exitCode)
+	os.Exit(maybeHandleRebootRequired(exitCode))
 }
 
 // exportPlaybook writes a self-contained playbook directory (./bloom-playbook/)
@@ -520,6 +567,11 @@ func confirmDestructiveOperation(cfg config.Config) bool {
 	runtime.PrintDiskWipePreview(clusterDisks, premountedDisks, rancherDisk)
 	fmt.Println()
 
+	if autoConfirm {
+		fmt.Println("🚀 --yes/--auto-confirm-prompts set - bypassing confirmation")
+		return true
+	}
+
 	// Read user input
 	fmt.Print("Type \"yes\" to confirm destruction of all data: ")
 
@@ -573,6 +625,81 @@ func confirmCleanupOperation() bool {
 
 	fmt.Println("\n✅ Cleanup confirmed. Proceeding...")
 	return true
+}
+
+// confirmYesNo prompts a lightweight [y/N] confirmation (default No), the
+// convention used for disruptive-but-recoverable actions like a reboot as
+// opposed to the stricter typed-"yes" prompts used for irreversible data
+// destruction. Auto-confirms without prompting when autoConfirm is set.
+func confirmYesNo(prompt string) bool {
+	if autoConfirm {
+		fmt.Printf("%s [y/N]: y (auto-confirmed via --yes/--auto-confirm-prompts)\n", prompt)
+		return true
+	}
+
+	fmt.Printf("%s [y/N]: ", prompt)
+	reader := bufio.NewReader(os.Stdin)
+	input, err := reader.ReadString('\n')
+	if err != nil {
+		return false
+	}
+	input = strings.ToLower(strings.TrimSpace(input))
+	return input == "y" || input == "yes"
+}
+
+// maybeHandleRebootRequired checks for the marker that reboot_required_check.yaml
+// writes when a kernel/GPU driver package update needs a reboot before GPU
+// functionality is available (e.g. ROCm/amdgpu DKMS install). If found and not
+// yet acted on, it offers to reboot the node right away; the ansible task's own
+// loop-guard (the marker's "attempted" flag) prevents bloom from ever offering
+// to reboot a second time for the same unresolved condition, so no special
+// handling is needed here for that case beyond leaving the original exit code
+// and letting ansible's manual-intervention failure message speak for itself.
+//
+// Deliberately does not run inside the namespaced/pivot-rooted ansible child
+// process: this runs in the original top-level bloom process, which executes
+// directly on the host, so `systemctl reboot` here reboots the real machine.
+func maybeHandleRebootRequired(exitCode int) int {
+	data, err := os.ReadFile(rebootMarkerPath)
+	if err != nil {
+		return exitCode
+	}
+
+	var marker rebootRequiredMarker
+	if err := json.Unmarshal(data, &marker); err != nil || marker.Attempted {
+		return exitCode
+	}
+
+	fmt.Println("\n⏳ REBOOT REQUIRED:")
+	fmt.Println(marker.Reason)
+	if len(marker.Packages) > 0 {
+		fmt.Println("Packages that triggered this:")
+		for _, p := range marker.Packages {
+			fmt.Printf("  - %s\n", p)
+		}
+	}
+	fmt.Println("GPU/ROCm functionality will not work correctly until this node is rebooted.")
+
+	if !confirmYesNo("Reboot now?") {
+		fmt.Println("\n⏭️(skipped) Reboot declined.")
+		fmt.Println("Reboot manually when ready (`sudo reboot`) and re-run this cluster-bloom binary")
+		return exitCode
+	}
+
+	marker.Attempted = true
+	if updated, err := json.MarshalIndent(marker, "", "  "); err == nil {
+		if err := os.WriteFile(rebootMarkerPath, updated, 0644); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to update reboot marker (risk of a reboot loop if the next run hits the same issue): %v\n", err)
+		}
+	}
+
+	fmt.Println("\n🔄 Rebooting now. Re-run this exact bloom command once the node is back up.")
+	_ = exec.Command("sync").Run()
+	if err := exec.Command("systemctl", "reboot").Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to trigger reboot via systemctl: %v\n", err)
+		fmt.Fprintln(os.Stderr, "Please reboot manually: sudo reboot")
+	}
+	return exitCode
 }
 
 // checkRootPrivileges verifies that the current process is running with root privileges

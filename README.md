@@ -123,7 +123,7 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 |----------|-------------|---------|
 | ADDITIONAL_OIDC_PROVIDERS | List of additional OIDC providers for authentication (see examples below) | [] |
 | ADDITIONAL_TLS_SAN_URLS | Additional TLS Subject Alternative Name URLs for Kubernetes API server certificate | [] |
-| AIM_HARDWARE_FAMILY | Comma-separated AIM hardware families to install (cpu,epyc,instinct,radeon). Empty installs the full legacy model catalog. Example: "epyc,instinct" | "" |
+| AIM_HARDWARE_FAMILY | Comma-separated AIM hardware families to install (cpu,epyc,instinct,radeon). Empty = auto-detected from this node's hardware (AMD GPU families via PCI scan, plus epyc if the CPU is AMD EPYC), else legacy catalog only (generic + instinct sources); cpu stays opt-in. If set explicitly it always wins as-is, but bloom notes when detected hardware isn't in the list. Example: "epyc,instinct" | "" |
 | CERT_OPTION | Certificate option when USE_CERT_MANAGER is false. Choose 'existing' or 'generate' | "" |
 | CF_VALUES | Path to ClusterForge values file (optional). Example: "values_cf.yaml" | "" |
 | CLUSTER_DISKS | Comma-separated list of disk devices. Example "/dev/sdb,/dev/sdc". Also skips NVME drive checks. | "" |
@@ -141,7 +141,7 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | FIX_DNS | **Opt-in** to allow automatic DNS fixes. Only modifies DNS if broken and external DNS works. Creates backups and auto-rolls back on failure. | false |
 | FIRST_NODE | Set to true if this is the first node in the cluster | true |
 | GPU_NODE | Set to true if this node has GPUs | true |
-| GPU_STACK_FAMILY | GPU family that drives ROCm + GPU Operator install defaults (radeon \| instinct). Empty resolves to instinct (current defaults). radeon selects the ROCm 7.13 tech-preview stack. Example: "radeon" | "" |
+| GPU_STACK_FAMILY | GPU family that drives ROCm + GPU Operator install defaults (radeon \| instinct). Empty = auto-detected from this node's AMD GPU hardware, else instinct (current defaults); prompts if the node has both families. radeon selects the ROCm 7.13 tech-preview stack. Example: "radeon" | "" |
 | JOIN_TOKEN | The token used to join additional nodes to the cluster | |
 | NO_DISKS_FOR_CLUSTER | Set to true to skip disk-related operations | false |
 | RKE2_VERSION | Specific RKE2 version to install (e.g., "v1.34.1+rke2r1") | "" |
@@ -296,6 +296,12 @@ sudo ./bloom cli bloom.yaml
 # Part 2 — once all nodes have joined, run ClusterForge bootstrap:
 sudo ./bloom cli bloom.yaml --tags deploy_clusterforge
 
+# Add/update ClusterForge on an already-provisioned node with a FULL re-run.
+# A plain re-run would fail the pre-deployment data-safety check (RKE2 already
+# running); --skip-data-safety downgrades that to a warning and preserves the
+# existing cluster/data:
+sudo ./bloom cli bloom.yaml --skip-data-safety
+
 # Export with cleanup tasks for existing installations
 ./bloom cli bloom.yaml --export --destroy-data > cleanupPlaybook.yaml
 
@@ -328,6 +334,8 @@ sudo ./bloom run myPlaybook.yaml --verbose
 > ```
 >
 > With `bloom run` you can also pass it as an extra-var (`-e ROCM_ALLOW_VERSION_MISMATCH=true`). See [docs/rocm-support.md](docs/rocm-support.md#version-compatibility-guard-fail-fast) for details.
+
+> **Hardware family auto-detection**: If `GPU_STACK_FAMILY` and/or `AIM_HARDWARE_FAMILY` are left unset, bloom auto-detects the AMD GPU family/families present via a local PCI scan, plus whether the CPU is an AMD EPYC part (via `/proc/cpuinfo`). This runs on every node, not just GPU nodes. If a node has GPUs from *both* Instinct and Radeon, bloom interactively asks which family `GPU_STACK_FAMILY` should target (hard-fails with `--yes`/`--auto-confirm-prompts` instead of guessing) — EPYC has no bearing on that choice. If `AIM_HARDWARE_FAMILY` is set explicitly and detection finds hardware not listed there (e.g. `"epyc"` on a node that also has a Radeon GPU), the explicit value still wins as-is, but bloom prints a notice. See [docs/rocm-support.md](docs/rocm-support.md#gpu-family-auto-detection-and-ambiguous-hardware) for details.
 
 ## Installation Process
 

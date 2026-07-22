@@ -52,13 +52,13 @@ schema:
     AIM_HARDWARE_FAMILY:
       type: hardwareFamilyList
       default: ""
-      desc: "Comma-separated AIM hardware families to install (cpu,epyc,instinct,radeon). Empty = install all (legacy)."
+      desc: "Comma-separated AIM hardware families to install (cpu,epyc,instinct,radeon). Empty = auto-detected from this node's hardware: AMD GPU families found via PCI scan plus \"epyc\" if the CPU is an AMD EPYC part, otherwise the legacy catalog (generic + instinct sources); cpu is never auto-detected and stays opt-in. If set explicitly, this value always wins as-is, but bloom prints a notice when detected hardware isn't included in the list (e.g. AIM_HARDWARE_FAMILY: \"epyc\" on a node that also has a Radeon GPU)."
       section: "📋 Basic Configuration"
 
     GPU_STACK_FAMILY:
       type: gpuStackFamily
       default: ""
-      desc: "GPU family that drives ROCm + GPU Operator install defaults (radeon | instinct). Empty = instinct (current qualified defaults). Radeon selects the ROCm 7.13 tech-preview stack."
+      desc: "GPU family that drives ROCm + GPU Operator install defaults (radeon | instinct). Empty = auto-detected from this node's AMD GPU hardware; if none is detected, resolves to instinct (current qualified defaults). If the node has GPUs from both families, bloom prompts for an explicit choice (or hard-fails with --yes). Radeon selects the ROCm 7.13 tech-preview stack."
       section: "📋 Basic Configuration"
 
     # 🔗 Additional Node Configuration
@@ -94,6 +94,12 @@ schema:
       type: bool
       default: false
       desc: Deploy only AIWB components; implicitly disables airm,airm-infra-*,kaiwo*,rabbitmq and passes aiwbOnly=true to the gitea-init job
+      section: "⚙️ Advanced Configuration"
+
+    SKIP_DATA_SAFETY:
+      type: bool
+      default: false
+      desc: "Downgrade the pre-deployment data-safety failure (running RKE2 / non-empty /var/lib/rancher/rke2 and /etc/rancher/rke2) to a warning so bloom can re-run on an already-provisioned node (e.g. to add or update ClusterForge) without --destroy-data. Does NOT bypass the premounted-disk mount check. Also settable via the --skip-data-safety CLI flag."
       section: "⚙️ Advanced Configuration"
 
     NO_DISKS_FOR_CLUSTER:

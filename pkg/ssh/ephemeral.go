@@ -228,26 +228,70 @@ func (e *EphemeralSSHManager) validateAuthorizedKeys() error {
 	hasBloomHostname := strings.Contains(string(authKeysContent), "bloom-ephemeral@localhost")
 
 	if hasBloomComment || hasBloomHostname {
-		fmt.Printf("❌ ERROR: Bloom ephemeral key already exists in authorized_keys\n")
-		fmt.Printf("   This indicates a previous bloom run was not cleaned up properly.\n")
-		fmt.Printf("   RECOMMENDED: Restore from backup (if available):\n")
-		fmt.Printf("   1. Check for backup files: ls %s*.backup.*\n", e.AuthorizedKeysPath)
-		fmt.Printf("   2. Restore the most recent backup:\n")
-		fmt.Printf("      cp %s.backup.YYYYMMDD_HHMMSS %s\n", e.AuthorizedKeysPath, e.AuthorizedKeysPath)
-		fmt.Printf("   3. Re-run bloom\n")
-		fmt.Printf("   ALTERNATIVE: Manual removal (if no backup available):\n")
-		fmt.Printf("   1. Edit the file: nano %s\n", e.AuthorizedKeysPath)
-		fmt.Printf("   2. Look for and remove lines containing:\n")
-		fmt.Printf("      - '# bloom-ephemeral-key' (comment marker)\n")
-		fmt.Printf("      - 'bloom-ephemeral@localhost' (hostname marker)\n")
-		fmt.Printf("   3. The line will look like:\n")
-		fmt.Printf("      ssh-ed25519 AAAAC3NzaC... bloom-ephemeral@localhost # bloom-ephemeral-key\n")
-		fmt.Printf("   4. Delete the entire line(s) with bloom markers\n")
-		fmt.Printf("   5. Save and re-run bloom\n")
-		return fmt.Errorf("bloom ephemeral key already exists in authorized_keys")
+		// A leftover key means a previous bloom run did not clean up (e.g. it was
+		// killed with SIGKILL, the terminal was closed, or the box lost power
+		// before the signal/defer cleanup could run). Rather than hard-failing and
+		// forcing a manual edit, self-heal by stripping the stale bloom line(s) so
+		// this run can install a fresh key and proceed.
+		fmt.Printf("⚠️ Found a leftover bloom ephemeral key in %s (a previous run was not cleaned up); removing it before continuing.\n", e.AuthorizedKeysPath)
+		removed, err := e.removeStaleEphemeralKeys()
+		if err != nil {
+			fmt.Printf("❌ ERROR: failed to auto-remove the stale bloom ephemeral key: %v\n", err)
+			fmt.Printf("   Manual removal:\n")
+			fmt.Printf("   1. Edit the file: nano %s\n", e.AuthorizedKeysPath)
+			fmt.Printf("   2. Delete any line containing '# bloom-ephemeral-key' or 'bloom-ephemeral@localhost'\n")
+			fmt.Printf("   3. Save and re-run bloom\n")
+			return fmt.Errorf("failed to remove stale bloom ephemeral key from authorized_keys: %w", err)
+		}
+		fmt.Printf("   Removed %d stale bloom key line(s); continuing.\n", removed)
 	}
 
 	return nil
+}
+
+// removeStaleEphemeralKeys strips any bloom ephemeral key lines from
+// authorized_keys (lines carrying the "# bloom-ephemeral-key" comment marker or
+// the "bloom-ephemeral@localhost" hostname marker). It is used both to self-heal
+// a leftover key on startup and as a cleanup fallback when a backup restore is
+// not possible. The file is rewritten atomically via a temp file with the
+// original owner and permissions preserved. Returns the number of lines removed.
+func (e *EphemeralSSHManager) removeStaleEphemeralKeys() (int, error) {
+	content, err := os.ReadFile(e.AuthorizedKeysPath)
+	if err != nil {
+		return 0, fmt.Errorf("failed to read authorized_keys: %w", err)
+	}
+
+	uid, gid, mode, err := getFileInfo(e.AuthorizedKeysPath)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get authorized_keys file info: %w", err)
+	}
+
+	lines := strings.Split(string(content), "\n")
+	kept := make([]string, 0, len(lines))
+	removed := 0
+	for _, line := range lines {
+		if strings.Contains(line, "# bloom-ephemeral-key") || strings.Contains(line, "bloom-ephemeral@localhost") {
+			removed++
+			continue
+		}
+		kept = append(kept, line)
+	}
+
+	if removed == 0 {
+		return 0, nil
+	}
+
+	tmpPath := e.AuthorizedKeysPath + ".heal.tmp"
+	if err := os.WriteFile(tmpPath, []byte(strings.Join(kept, "\n")), mode.Perm()); err != nil {
+		return 0, fmt.Errorf("failed to write cleaned authorized_keys: %w", err)
+	}
+	if err := safelyOverwriteFile(tmpPath, e.AuthorizedKeysPath, uid, gid, mode); err != nil {
+		os.Remove(tmpPath)
+		return 0, fmt.Errorf("failed to overwrite authorized_keys: %w", err)
+	}
+	os.Remove(tmpPath)
+
+	return removed, nil
 }
 
 // installPublicKey backs up original authorized_keys and adds ephemeral public key
@@ -330,12 +374,21 @@ func (e *EphemeralSSHManager) removePublicKey() error {
 	}
 
 	return e.runAsUser(func() error {
+		// Preferred path: restore the pre-run backup (exact prior state).
 		if e.verifyBackup() {
 			if copyErr := copyFile(e.AuthorizedKeysBackup, e.AuthorizedKeysPath); copyErr == nil {
 				e.isInstalled = false
 				return nil
 			}
 		}
+		// Fallback: strip the bloom-marked line(s) directly, so the ephemeral key
+		// is removed even when the backup is missing or unreadable. Previously
+		// this returned nil and reported success without removing anything, which
+		// left the key behind and blocked the next run.
+		if _, err := e.removeStaleEphemeralKeys(); err != nil {
+			return fmt.Errorf("failed to remove ephemeral key (backup restore unavailable): %w", err)
+		}
+		e.isInstalled = false
 		return nil
 	})
 }

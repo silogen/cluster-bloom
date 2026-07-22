@@ -30,6 +30,34 @@ const (
 	radeonOperatorPath       = "amd-gpu-operator/v1.5.1-beta.0"
 	radeonOperatorConfigPath = "amd-gpu-operator-config/v1.5.1-beta.0"
 	radeonDriverVersion      = "7.13"
+
+	// Radeon ROCm 7.13 is a "TheRock" preview-stream release. It is NOT published
+	// on repo.radeon.com's legacy amdgpu-install/<rocm-version>/ path; the ROCm
+	// packages are served from repo.amd.com (repo.amd.com/rocm/packages/<ubuntuXXYY>).
+	//
+	// amdgpu-install 31.30 is BROKEN for this tree: it builds malformed package
+	// names (the release tag glued after the gfx family, e.g.
+	// "amdrocm-gfx110x7.13.0") and every apt-get 404s. So the ansible therock path
+	// does NOT run `amdgpu-install --rocmrelease` to install; it registers the
+	// repo.amd.com apt source itself and `apt install`s the correctly-named
+	// "amdrocm-core-sdk<major.minor>-<gfx-family>" meta-package directly. The
+	// amdgpu-install 31.x .deb is still downloaded/installed and used ONLY for its
+	// GPU->gfx-family auto-detector (which prints "gfx suffix: -gfxNNNx"). These
+	// installer coordinates are decoupled from radeonHostRocmVersion (7.13.0),
+	// used for detection and version-acceptability. Sourced from AMD's ROCm
+	// 7.13.0 preview install docs and the AMD HPCTrainingDock rocm_setup.sh
+	// preview path (documents the amdgpu-install 31.30 bug); reconcile with EAI-5906.
+	radeonInstallerBaseURL = "https://repo.radeon.com/amdgpu-install/31.30/ubuntu/"
+	radeonInstallerDeb     = "amdgpu-install_31.30.313000-1_all.deb"
+	// radeonRocmRelease is passed to the amdgpu-install auto-detector (as
+	// --rocmrelease) and used to derive the major.minor package suffix (7.13.0 ->
+	// 7.13) for the repo.amd.com meta-package. Must match radeonHostRocmVersion.
+	radeonRocmRelease = "7.13.0"
+
+	// installModelLegacy is the repo.radeon.com amdgpu-install path used for the
+	// ROCm 5.x–7.2 stream (instinct); installModelTheRock is the 7.12+ preview path.
+	installModelLegacy  = "legacy"
+	installModelTheRock = "therock"
 )
 
 // minRadeonRocmMajor / minRadeonRocmMinor express the unsupported-combination
@@ -53,6 +81,18 @@ type StackProfile struct {
 	OperatorConfigPath        string
 	DeviceConfigDriverVersion string
 	TechPreview               bool
+	// InstallModel selects the ansible ROCm install path: "legacy" (repo.radeon.com
+	// amdgpu-install for the ROCm 5.x–7.2 stream) or "therock" (7.12+ preview stream).
+	InstallModel string
+	// InstallerBaseURL / InstallerDeb locate the amdgpu-install .deb to download.
+	// Empty means "use the legacy rocm_base_url / rocm_deb_package defaults", which
+	// keeps the ROCM_BASE_URL / ROCM_DEB_PACKAGE overrides working for instinct.
+	InstallerBaseURL string
+	InstallerDeb     string
+	// RocmRelease is the full ROCm version for the therock model (e.g. "7.13.0"):
+	// fed to the amdgpu-install gfx auto-detector and used to derive the
+	// major.minor repo.amd.com package suffix. Empty for the legacy model.
+	RocmRelease string
 }
 
 // ResolveStackProfile maps a GPU_STACK_FAMILY value to its qualified stack.
@@ -70,6 +110,7 @@ func ResolveStackProfile(family string) (StackProfile, error) {
 			OperatorConfigPath:        instinctOperatorConfigPath,
 			DeviceConfigDriverVersion: instinctDriverVersion,
 			TechPreview:               false,
+			InstallModel:              installModelLegacy,
 		}, nil
 	case "radeon":
 		profile := StackProfile{
@@ -80,6 +121,10 @@ func ResolveStackProfile(family string) (StackProfile, error) {
 			OperatorConfigPath:        radeonOperatorConfigPath,
 			DeviceConfigDriverVersion: radeonDriverVersion,
 			TechPreview:               true,
+			InstallModel:              installModelTheRock,
+			InstallerBaseURL:          radeonInstallerBaseURL,
+			InstallerDeb:              radeonInstallerDeb,
+			RocmRelease:               radeonRocmRelease,
 		}
 		if err := checkRadeonSupported(profile); err != nil {
 			return StackProfile{}, err
@@ -113,6 +158,20 @@ func ApplyGPUStackVars(cfg Config) error {
 	cfg["rocm_deb_build"] = profile.HostRocmDebBuild
 	cfg["rocm_version_exact_required"] = false
 	cfg["rocm_instinct_min_patch"] = instinctHostRocmMinPatch
+	// ROCm install model + installer coordinates. For radeon (therock) these point
+	// the ansible download at the amdgpu-install 31.x series (used only for gfx
+	// auto-detection) and carry the ROCm release used to build the repo.amd.com
+	// package name. For instinct they are left unset so the
+	// ansible defaults (rocm_base_url / rocm_deb_package, honoring ROCM_BASE_URL /
+	// ROCM_DEB_PACKAGE overrides) apply unchanged.
+	cfg["rocm_install_model"] = profile.InstallModel
+	cfg["rocm_release"] = profile.RocmRelease
+	if profile.InstallerBaseURL != "" {
+		cfg["amdgpu_install_base_url"] = profile.InstallerBaseURL
+	}
+	if profile.InstallerDeb != "" {
+		cfg["amdgpu_install_deb"] = profile.InstallerDeb
+	}
 	// Forge-bound selections consumed by the deploy_clusterforge tasks.
 	cfg["gpu_operator_path"] = profile.OperatorPath
 	cfg["gpu_operator_config_path"] = profile.OperatorConfigPath

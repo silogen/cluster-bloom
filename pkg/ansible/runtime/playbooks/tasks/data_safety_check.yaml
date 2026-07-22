@@ -29,7 +29,7 @@
     path: /var/lib/rancher/rke2
   register: rke2_data_dir
 
-- name: Check if RKE2 data directory is empty (if it exists)
+- name: Check if RKE2 data directory is empty
   find:
     paths: /var/lib/rancher/rke2
     file_type: any
@@ -41,7 +41,7 @@
     path: /etc/rancher/rke2
   register: rke2_config_dir
 
-- name: Check if RKE2 config directory is empty (if it exists)
+- name: Check if RKE2 config directory is empty
   find:
     paths: /etc/rancher/rke2
     file_type: any
@@ -140,7 +140,33 @@
       sudo ./bloom cli {{ ansible_config_file | default('bloom.yaml') }} --destroy-data
       
       WARNING: This will destroy ALL existing cluster and disk data!
-  when: validation_issues | length > 0
+      
+      Alternatively, if this is an intentional re-run on an already-provisioned
+      node (e.g. to add or update ClusterForge) and you want to KEEP the existing
+      cluster and data, re-run with --skip-data-safety to downgrade this check to
+      a warning:
+      sudo ./bloom cli {{ ansible_config_file | default('bloom.yaml') }} --skip-data-safety
+  when:
+    - validation_issues | length > 0
+    - not (SKIP_DATA_SAFETY | default(false) | bool)
+
+# When SKIP_DATA_SAFETY is set, report the same issues as a non-fatal warning so
+# an intentional re-run on an existing node can proceed without --destroy-data.
+- name: Warn about data safety issues (SKIP_DATA_SAFETY enabled)
+  debug:
+    msg: |
+      ⚠️  Pre-deployment Data Safety issues detected but SKIP_DATA_SAFETY is set — continuing.
+
+      The following issues were detected and are being IGNORED:
+      {% for issue in validation_issues %}
+      • {{ issue }}
+      {% endfor %}
+
+      Proceeding will reuse the existing cluster/disks. Bloom tasks are expected
+      to be idempotent, but existing data will NOT be wiped by this run.
+  when:
+    - validation_issues | length > 0
+    - SKIP_DATA_SAFETY | default(false) | bool
 
 # Report premounted-disk issues separately — resolution is remount, not destroy
 - name: Fail if CLUSTER_PREMOUNTED_DISKS are not mounted

@@ -1,0 +1,119 @@
+---
+# Purpose: detect an OS-level "reboot required" condition (e.g. after a
+# kernel/DKMS GPU driver package update) and hand off to bloom's CLI so it can
+# offer to reboot the node, rather than letting a subsequent check (such as
+# rocminfo against a not-yet-active driver) hang or fail confusingly.
+# Usage: include_tasks'd right after any step that might install a
+# kernel-affecting package (e.g. ROCm/amdgpu DKMS install).
+# Tags: [gpu, rocm]
+#
+# Detection relies on the OS's own standard signal instead of bespoke
+# heuristics: Debian/Ubuntu package postinst hooks write /var/run/reboot-required
+# (and list the triggering packages in /var/run/reboot-required.pkgs) whenever a
+# kernel or DKMS module package needs a reboot to take effect. This is the same
+# signal MOTD/unattended-upgrades key off, so it also catches reboot-needs from
+# anything else on the box, not just what bloom itself just installed.
+#
+# State is tracked in /var/lib/bloom/reboot-required.json (host-level, not
+# BLOOM_DIR-relative, so it persists regardless of which directory the user
+# invokes bloom from next). Its "attempted" flag is a loop-guard: once bloom has
+# rebooted once for a given unresolved condition, this task fails hard with a
+# manual-intervention message instead of writing a fresh marker and letting
+# bloom's CLI offer to reboot forever.
+
+- name: Ensure /var/lib/bloom exists for reboot-required state tracking
+  file:
+    path: /var/lib/bloom
+    state: directory
+    mode: "0755"
+
+- name: Check whether a reboot is required (kernel/driver package updates)
+  stat:
+    path: /var/run/reboot-required
+  register: bloom_reboot_required_stat
+  changed_when: false
+
+- name: Check for the packages that triggered the reboot-required flag
+  stat:
+    path: /var/run/reboot-required.pkgs
+  register: bloom_reboot_pkgs_stat
+  changed_when: false
+  when: bloom_reboot_required_stat.stat.exists
+
+- name: Check for a prior bloom reboot-required marker (loop guard)
+  stat:
+    path: /var/lib/bloom/reboot-required.json
+  register: bloom_reboot_marker_stat
+  changed_when: false
+
+- name: Load prior reboot-required marker, if present
+  slurp:
+    src: /var/lib/bloom/reboot-required.json
+  register: bloom_reboot_marker_raw
+  when: bloom_reboot_marker_stat.stat.exists
+
+- name: Parse prior reboot-required marker
+  set_fact:
+    bloom_reboot_marker: "{{ (bloom_reboot_marker_raw.content | b64decode | from_json) if bloom_reboot_marker_stat.stat.exists else {} }}"
+
+- name: Clear a stale reboot-required marker (system no longer reports one)
+  file:
+    path: /var/lib/bloom/reboot-required.json
+    state: absent
+  when:
+    - not bloom_reboot_required_stat.stat.exists
+    - bloom_reboot_marker_stat.stat.exists
+
+- name: Fail if bloom already rebooted for this and the system still requires one
+  fail:
+    msg: |
+      ❌ A reboot was already performed to apply a pending kernel/GPU driver
+      package update, but /var/run/reboot-required is STILL present after
+      rebooting.
+
+      This means the reboot did not resolve the pending update, or a new one
+      appeared. Automatic recovery has been disabled here to avoid an infinite
+      reboot loop.
+
+      Please investigate manually on the node:
+        cat /var/run/reboot-required.pkgs
+        dmesg | grep -iE 'kfd|amdgpu'
+        dkms status
+
+      Once resolved, remove the marker and re-run bloom:
+        sudo rm -f /var/lib/bloom/reboot-required.json
+  when:
+    - bloom_reboot_required_stat.stat.exists
+    - bloom_reboot_marker.attempted | default(false) | bool
+
+- name: Build reboot-required marker content
+  set_fact:
+    bloom_reboot_marker_new:
+      reason: >-
+        A kernel or GPU driver package update requires a reboot before GPU
+        functionality is available.
+      packages: "{{ (lookup('file', '/var/run/reboot-required.pkgs') if bloom_reboot_pkgs_stat.stat.exists | default(false) else '') .split('\n') | select('truthy') | list }}"
+      attempted: false
+      detected_at: "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
+  when:
+    - bloom_reboot_required_stat.stat.exists
+    - not (bloom_reboot_marker.attempted | default(false) | bool)
+
+- name: Write reboot-required marker for bloom's CLI to act on
+  copy:
+    dest: /var/lib/bloom/reboot-required.json
+    mode: "0644"
+    content: "{{ bloom_reboot_marker_new | to_nice_json }}"
+  when:
+    - bloom_reboot_required_stat.stat.exists
+    - not (bloom_reboot_marker.attempted | default(false) | bool)
+
+- name: Prompt for reboot (kernel / GPU driver package update)
+  debug:
+    msg: >-
+      Reboot required before GPU/ROCm is usable (/var/run/reboot-required
+      present). Bloom will offer to reboot on exit; pass --yes to auto-confirm,
+      or just re-run bloom after rebooting (steps are idempotent).
+  when:
+    - bloom_reboot_required_stat.stat.exists
+    - not (bloom_reboot_marker.attempted | default(false) | bool)

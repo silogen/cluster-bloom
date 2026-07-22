@@ -63,12 +63,12 @@
         mode: "0644"
       when: dns_needs_fixing
 
-    - name: Make resolv.conf mutable (if immutable)
+    - name: Make resolv.conf mutable
       shell: chattr -i /etc/resolv.conf 2>/dev/null || true
       ignore_errors: yes
       when: dns_needs_fixing
 
-    - name: Configure working DNS servers (only if broken)
+    - name: Configure working DNS servers
       copy:
         content: |
           # Configured by cluster-bloom due to DNS failure
@@ -174,5 +174,8 @@
     cache_valid_time: 3600
   environment:
     DEBIAN_FRONTEND: noninteractive
-    NEEDRESTART_MODE: a
+    # Mode "l" (list-only) so needrestart never restarts services after this apt
+    # transaction — "a" (auto-restart) can restart sshd / the container runtime
+    # the run depends on and cut the playbook short.
+    NEEDRESTART_MODE: l
     NEEDRESTART_SUSPEND: "1"

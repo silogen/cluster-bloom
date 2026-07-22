@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"syscall"
 
 	"github.com/silogen/cluster-bloom/pkg/ssh"
@@ -354,6 +355,14 @@ func parseConfigFromExtraArgs(extraArgs []string) map[string]string {
 				}
 				if val, ok := varMap["DOMAIN"].(string); ok {
 					config["DOMAIN"] = val
+				}
+				// AIWB_ONLY is normally a JSON bool, but an env-var override
+				// (see ConfigToAnsibleVars) comes through as a JSON string
+				// instead, so accept either shape.
+				if val, ok := varMap["AIWB_ONLY"].(bool); ok {
+					config["AIWB_ONLY"] = strconv.FormatBool(val)
+				} else if val, ok := varMap["AIWB_ONLY"].(string); ok {
+					config["AIWB_ONLY"] = val
 				}
 			}
 			i++ // Skip the next argument as we've already processed it

@@ -35,23 +35,83 @@
   when: rocm_needs_install | bool
   environment:
     DEBIAN_FRONTEND: noninteractive
-    NEEDRESTART_MODE: a
+    NEEDRESTART_MODE: l
     NEEDRESTART_SUSPEND: "1"
 
+# Reaching this file with rocm_needs_install=true means no working ROCm tooling
+# was found, yet `amdgpu-install --uninstall` (and `amdgpu-uninstall`) leaves the
+# box in a half-torn-down state that silently defeats a fresh install:
+#   * The amdgpu-install package itself stays installed, with its
+#     /etc/apt/sources.list.d/{amdgpu,rocm}.list conffiles pinned to whatever
+#     train was last configured. `apt` then refuses to (re)install our pinned .deb
+#     when the leftover is an equal/newer version ("A later version is already
+#     installed"), aborting before ROCm is ever laid down; and on an upgrade dpkg
+#     preserves the old rocm.list conffile so the wrong train's repo is used.
+#   * The ROCm runtime packages (rocm, amd-smi, hip-runtime-amd, ...) are often
+#     left marked "installed" in dpkg while their files were removed or renamed
+#     aside (e.g. /opt/rocm-<ver>.stale). `amdgpu-install --usecase=rocm` then
+#     sees rocm as already installed and does nothing — the install "succeeds"
+#     but no tooling ends up on the node.
+# So before installing, wipe this leftover state to a clean slate: purge the
+# installer AND any orphaned ROCm packages, drop the stale repo lists and any
+# renamed-aside /opt/rocm-*.stale|.bak trees. This is safe here because we have
+# already determined no acceptable ROCm is present (rocm_needs_install); a
+# healthy/acceptable install never reaches this path (rocm_needs_install=false).
+- name: Reset leftover ROCm state for a clean install
+  shell: |
+    set -e
+    # Orphaned runtime packages first (dpkg-only, no repo needed) so a later
+    # amdgpu-install --usecase=rocm is a real install rather than a no-op.
+    # Purge only packages that are actually installed: passing globs straight to
+    # apt-get (e.g. 'rocm*') makes it abort the ENTIRE command when a pattern
+    # matches nothing. That is exactly the state right after `amdgpu-install
+    # --uninstall`, which removes the ROCm runtime (so rocm*/amd-smi*/... match
+    # nothing) but leaves amdgpu-install behind — so amdgpu-install would never
+    # get purged and the pinned .deb install then fails with "A later version is
+    # already installed". Resolve the concrete installed names first instead.
+    installed="$(dpkg-query -W -f='${Package}\n' 2>/dev/null \
+      | grep -E '^(rocm|amd-smi|hip-runtime-amd|amdgpu-install)' || true)"
+    if [ -n "$installed" ]; then
+      apt-get purge -y $installed 2>/dev/null || true
+    fi
+    rm -f /etc/apt/sources.list.d/rocm.list /etc/apt/sources.list.d/amdgpu.list
+    rm -rf /opt/rocm-*.stale /opt/rocm-*.bak
+  when: rocm_needs_install | bool
+  changed_when: true
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+    NEEDRESTART_MODE: l
+    NEEDRESTART_SUSPEND: "1"
+
+# amdgpu_install_base_url / amdgpu_install_deb resolve per GPU_STACK_FAMILY (set
+# by ApplyGPUStackVars): the legacy repo.radeon.com amdgpu-install .deb for
+# instinct, or the amdgpu-install 31.x installer series for the radeon/therock
+# ROCm 7.13 preview.
+# Retry the download: the amdgpu-install .deb is served from repo.radeon.com,
+# which can intermittently fail the request (observed "Request failed") even
+# though the URL is valid. Retry a few times before giving up so a transient
+# network/CDN hiccup does not abort the whole deploy.
 - name: Download amdgpu-install package
   get_url:
-    url: "{{ rocm_base_url }}/{{ ubuntu_codename.stdout }}/{{ rocm_deb_package }}"
-    dest: "/tmp/{{ rocm_deb_package }}"
+    url: "{{ amdgpu_install_base_url }}/{{ ubuntu_codename.stdout }}/{{ amdgpu_install_deb }}"
+    dest: "/tmp/{{ amdgpu_install_deb }}"
     mode: "0644"
+    timeout: 60
+  register: amdgpu_install_download
+  until: amdgpu_install_download is succeeded
+  retries: 5
+  delay: 10
   when: rocm_needs_install | bool
 
 - name: Install amdgpu-install package
   apt:
-    deb: "/tmp/{{ rocm_deb_package }}"
+    deb: "/tmp/{{ amdgpu_install_deb }}"
     state: present
   when: rocm_needs_install | bool
   environment:
     DEBIAN_FRONTEND: noninteractive
+    NEEDRESTART_MODE: l
+    NEEDRESTART_SUSPEND: "1"
 
 # The amdgpu-install .deb is named after the ROCm release (e.g. 7.2.3) but its
 # internal package version tracks the amdgpu driver (e.g. 30.30.3). If the node
@@ -61,9 +121,13 @@
 # has no ROCm apt repo and fails with "Unable to locate package rocm".
 # Force dpkg to restore any deleted conffiles so both amdgpu.list and rocm.list
 # are guaranteed present before we resolve the rocm metapackage.
+# Legacy (instinct) only: the therock/radeon repo comes from repo.amd.com and is
+# registered on the fly by `amdgpu-install --rocmrelease`, not from .deb conffiles.
 - name: Ensure amdgpu-install repo lists are present (restore missing conffiles)
-  shell: dpkg -i --force-confmiss "/tmp/{{ rocm_deb_package }}"
-  when: rocm_needs_install | bool
+  shell: dpkg -i --force-confmiss "/tmp/{{ amdgpu_install_deb }}"
+  when:
+    - rocm_needs_install | bool
+    - rocm_install_model | default('legacy') != 'therock'
   changed_when: false
   environment:
     DEBIAN_FRONTEND: noninteractive
@@ -78,11 +142,15 @@
 # the downgrade so the repo.radeon.com builds always win. We also remove the
 # vendor 600 pin: APT applies matching preference files in alphanumeric order,
 # so leaving repo-radeon-pin-600 in place would shadow our higher priority.
+# Legacy (instinct) only: the pin targets repo.radeon.com; the therock model
+# pulls ROCm from repo.amd.com and does not need it.
 - name: Remove amdgpu-install's default (too-low) repo.radeon.com pin
   file:
     path: /etc/apt/preferences.d/repo-radeon-pin-600
     state: absent
-  when: rocm_needs_install | bool
+  when:
+    - rocm_needs_install | bool
+    - rocm_install_model | default('legacy') != 'therock'
 
 - name: Pin repo.radeon.com above Ubuntu-provided ROCm packages
   copy:
@@ -92,7 +160,9 @@
       Package: *
       Pin: release o=repo.radeon.com
       Pin-Priority: 1001
-  when: rocm_needs_install | bool
+  when:
+    - rocm_needs_install | bool
+    - rocm_install_model | default('legacy') != 'therock'
 
 - name: Verify ROCm apt repository is configured
   shell: |
@@ -101,22 +171,25 @@
   register: rocm_repo_present
   changed_when: false
   failed_when: false
-  when: rocm_needs_install | bool
+  when:
+    - rocm_needs_install | bool
+    - rocm_install_model | default('legacy') != 'therock'
 
 - name: Fail early if ROCm apt repository is still missing
   fail:
     msg: |
       The ROCm apt repository (/etc/apt/sources.list.d/rocm.list) is missing even
-      after reinstalling {{ rocm_deb_package }}. `amdgpu-install --usecase=rocm`
+      after reinstalling {{ amdgpu_install_deb }}. `amdgpu-install --usecase=rocm`
       cannot locate the `rocm` package without it. Inspect the amdgpu-install
       package state on this node:
         dpkg -l amdgpu-install
         ls -l /etc/apt/sources.list.d/
       then purge and reinstall it:
         sudo apt-get purge -y amdgpu-install && sudo rm -f /etc/apt/sources.list.d/rocm.list
-        sudo apt-get install -y /tmp/{{ rocm_deb_package }}
+        sudo apt-get install -y /tmp/{{ amdgpu_install_deb }}
   when:
     - rocm_needs_install | bool
+    - rocm_install_model | default('legacy') != 'therock'
     - rocm_repo_present.rc != 0
 
 # --allow-downgrades is required because pre-provisioned nodes may already carry
@@ -124,11 +197,229 @@
 # repo.radeon.com builds (e.g. 1.0.0.70203) are lower version numbers, so apt
 # treats switching to them as a downgrade and refuses under -y without this flag.
 # amdgpu-install passes unrecognized args straight through to apt-get.
-- name: Install ROCm
-  shell: amdgpu-install --usecase=rocm,dkms --yes --allow-downgrades
-  when: rocm_needs_install | bool
+# NEEDRESTART_* is set so needrestart neither prompts NOR restarts services after
+# this large apt transaction. Mode "l" (list-only) is deliberate: mode "a"
+# (auto-restart) would restart outdated services — including ones bloom's run
+# depends on (sshd / the container runtime the ansible run executes in) — which
+# tears down the connection/container and makes the playbook stop right after the
+# ROCm install instead of proceeding. NEEDRESTART_SUSPEND additionally skips the
+# needrestart apt hook entirely where that env var is honored.
+# Run fully detached (nohup+setsid, own log + exit-code marker file) and poll
+# for the marker with a plain shell task, instead of ansible's async/async_status.
+# NEEDRESTART_MODE=l alone is not enough: a large ROCm/DKMS install can also
+# pull an openssh-server or glibc upgrade whose OWN postinst restarts sshd,
+# tearing down ansible's ssh-to-127.0.0.1 connection at task completion. That
+# has been observed to deadlock BOTH a plain synchronous task (worker goes
+# defunct, controller hangs forever in pipe_write) AND ansible's own async
+# wrapper (the completed job's status file was missing the "finished" marker
+# async_status waits on, so the poll never satisfied and hung just the same).
+# Driving our own marker file sidesteps async entirely: the script writes its
+# exit code to a file as its last act, and each poll is a trivial, fast
+# test+cat that a lightweight until/retries loop can just retry on a fresh
+# connection if one attempt hits a bounce — no long-lived worker to wedge.
+- name: Launch legacy ROCm install in the background
+  shell:
+    executable: /bin/bash
+    cmd: |
+      set -e
+      rm -f /tmp/bloom_rocm_install_legacy.rc /tmp/bloom_rocm_install_legacy.done
+      nohup setsid bash -c '
+        amdgpu-install --usecase=rocm,dkms --yes --allow-downgrades > /tmp/bloom_rocm_install_legacy.log 2>&1
+        echo $? > /tmp/bloom_rocm_install_legacy.rc
+        touch /tmp/bloom_rocm_install_legacy.done
+      ' </dev/null >/tmp/bloom_rocm_install_legacy.launch.log 2>&1 &
+  when:
+    - rocm_needs_install | bool
+    - rocm_install_model | default('legacy') != 'therock'
+  changed_when: true
   environment:
     DEBIAN_FRONTEND: noninteractive
+    NEEDRESTART_MODE: l
+    NEEDRESTART_SUSPEND: "1"
+
+- name: Wait for legacy ROCm install to finish
+  shell:
+    executable: /bin/bash
+    cmd: |
+      if [ -f /tmp/bloom_rocm_install_legacy.done ]; then
+        cat /tmp/bloom_rocm_install_legacy.rc
+      else
+        echo RUNNING
+      fi
+  register: rocm_legacy_install_poll
+  until: rocm_legacy_install_poll.stdout is match('^[0-9]+$')
+  retries: 240
+  delay: 15
+  changed_when: false
+  when:
+    - rocm_needs_install | bool
+    - rocm_install_model | default('legacy') != 'therock'
+
+- name: Fail if the backgrounded legacy ROCm install did not succeed
+  fail:
+    msg: |
+      ROCm install failed (background job exit code {{ rocm_legacy_install_poll.stdout }}).
+      Full output: /tmp/bloom_rocm_install_legacy.log on the node.
+  when:
+    - rocm_needs_install | bool
+    - rocm_install_model | default('legacy') != 'therock'
+    - rocm_legacy_install_poll.stdout is defined
+    - rocm_legacy_install_poll.stdout != '0'
+
+# TheRock preview stream (radeon ROCm 7.13): amdgpu-install 31.30 is BROKEN for
+# this tree — it constructs malformed apt package names (the X.Y.Z release tag is
+# glued AFTER the gfx family, e.g. "amdrocm-gfx110x7.13.0") so every apt-get 404s
+# with "Unable to locate package amdrocm-gfx110x7.13.0". The real repo.amd.com
+# packages put the major.minor BETWEEN the family root and the gfx suffix, e.g.
+# "amdrocm-core-sdk7.13-gfx110x". So we bypass amdgpu-install for the install and
+# drive apt directly against the repo.amd.com preview repo:
+#   * key  -> /etc/apt/keyrings/amdrocm.gpg (distinct from the legacy rocm.gpg so
+#             the two repos can coexist)
+#   * repo -> repo.amd.com/rocm/packages/<ubuntuXXYY> stable main (single-arch)
+#   * pkg  -> amdrocm-core-sdk<major.minor>-<gfx-family>, whose Depends chain pulls
+#             the runtime + dev + developer-tools (amd-smi) coverage
+# The gfx family suffix is still taken from amdgpu-install's OWN auto-detector (it
+# prints "gfx suffix: -gfxNNNx" before it fails), keeping AMD's device->gfx family
+# mapping as the source of truth. Ref: AMD ROCm 7.13.0-preview install docs and
+# the AMD HPCTrainingDock rocm_setup.sh preview path (documents this exact bug).
+- name: Launch radeon/therock ROCm {{ rocm_release }} install in the background
+  # NOTE: pass the script via the explicit `cmd:` sub-key (not `shell: |`). With
+  # free-form `shell: |`, Ansible runs its argument splitter over the whole script
+  # and chokes ("failed at splitting arguments, either an unbalanced jinja2 block
+  # or quotes") on the mix of shell quoting. `cmd:` hands the block through as-is.
+  # rocm_release is also expanded once into a shell var and major.minor is derived
+  # in bash, so there is no Jinja-with-quotes (e.g. split('.')) inside the script.
+  #
+  # The actual work is written to a script file and launched via nohup+setsid,
+  # fully detached from this ssh session, with its own log + exit-code marker
+  # file. We poll for that marker in a separate task instead of relying on
+  # ansible's async/async_status: a large repo.amd.com install can bounce sshd
+  # right at completion (an openssh-server/glibc postinst restart, unaffected by
+  # NEEDRESTART_MODE=l since it isn't needrestart-driven), and that has been
+  # observed to wedge BOTH a plain synchronous task (worker goes defunct,
+  # controller hangs in pipe_write) AND ansible's own async wrapper (the
+  # completed job's status file was missing the "finished" flag async_status
+  # waits on, so the poll never satisfied). A marker file we write ourselves,
+  # polled with a trivial test+cat, has no such dependency.
+  shell:
+    # `set -o pipefail` (and ${var:-}) need bash; Ansible's shell module defaults
+    # to /bin/sh (dash on Ubuntu), which errors with "Illegal option -o pipefail".
+    executable: /bin/bash
+    cmd: |
+      set -e
+      rm -f /tmp/bloom_rocm_install_therock.rc /tmp/bloom_rocm_install_therock.done
+      cat > /tmp/bloom_rocm_install_therock.sh <<'ROCM_THEROCK_SCRIPT'
+      #!/bin/bash
+      set -euo pipefail
+      rr="{{ rocm_release }}"
+      mm="${rr%.*}"
+      . /etc/os-release
+      case "${VERSION_ID:-}" in
+        22.04) DIST_TAG=ubuntu2204 ;;
+        24.04) DIST_TAG=ubuntu2404 ;;
+        26.04) DIST_TAG=ubuntu2604 ;;
+        *) echo "Unsupported Ubuntu '${VERSION_ID:-?}' for ROCm ${rr} preview (need 22.04/24.04/26.04)" >&2; exit 1 ;;
+      esac
+
+      # Prereqs for keyring + repo registration (present on most images; cheap to
+      # ensure). Ubuntu base repos are already indexed, so no repo of ours is needed.
+      DEBIAN_FRONTEND=noninteractive apt-get install -y wget gnupg ca-certificates
+
+      # repo.amd.com signing key -> distinct keyring so it coexists with legacy rocm.gpg
+      mkdir -p -m 0755 /etc/apt/keyrings
+      wget -qO - https://repo.amd.com/rocm/packages/gpg/rocm.gpg \
+        | gpg --dearmor --yes -o /etc/apt/keyrings/amdrocm.gpg
+
+      # single-arch (x86_64) preview apt source
+      echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/amdrocm.gpg] https://repo.amd.com/rocm/packages/${DIST_TAG} stable main" \
+        > /etc/apt/sources.list.d/amdrocm-preview.list
+      apt-get update
+
+      # gfx family suffix from amdgpu-install's own auto-detector. Its install step
+      # fails on the malformed names described above, so we ignore its exit status
+      # and scrape the "gfx suffix: -gfxNNNx" line (falling back to "GFX version:").
+      detect="$(amdgpu-install --usecase=rocm --rocmrelease=${rr} --yes 2>&1 || true)"
+      gfx="$(printf '%s\n' "$detect" | grep -oiE 'gfx suffix: -gfx[0-9a-z]+' | head -n1 | sed -E 's/.*-(gfx[0-9a-z]+).*/\1/')"
+      if [ -z "$gfx" ]; then
+        gfx="$(printf '%s\n' "$detect" | grep -oiE 'GFX version: gfx[0-9a-z]+' | head -n1 | sed -E 's/.*(gfx[0-9a-z]+).*/\1/')"
+      fi
+      if [ -z "$gfx" ]; then
+        echo "Could not auto-detect the GPU gfx family for the ROCm ${rr} preview install." >&2
+        echo "amdgpu-install auto-detect output was:" >&2
+        printf '%s\n' "$detect" >&2
+        exit 1
+      fi
+      echo "Detected gfx family: $gfx"
+
+      meta="amdrocm-core-sdk${mm}-${gfx}"
+      echo "Installing ${meta} from repo.amd.com (bypassing broken amdgpu-install 31.30)"
+      DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-downgrades "$meta"
+
+      # The preview packages install into /opt/rocm/core-<major.minor>/ (or
+      # /opt/rocm/core-<X.Y.Z>/), not the legacy /opt/rocm-<X.Y.Z>/. Downstream
+      # detection/verification searches /opt/rocm-*/bin and /opt/rocm/core-*/bin, so
+      # add a compat symlink /opt/rocm-<version> -> the real core dir. Only create
+      # it when the target does not already exist (never clobber a real tree).
+      core_dir=""
+      for c in "/opt/rocm/core-${mm}" "/opt/rocm/core-${rr}"; do
+        if [ -d "$c" ] && [ ! -L "$c" ]; then core_dir="$c"; break; fi
+      done
+      if [ -n "$core_dir" ] && [ ! -e "/opt/rocm-${rr}" ]; then
+        ln -sfn "$core_dir" "/opt/rocm-${rr}"
+        echo "Compat symlink: /opt/rocm-${rr} -> $core_dir"
+      fi
+      ROCM_THEROCK_SCRIPT
+      chmod +x /tmp/bloom_rocm_install_therock.sh
+      nohup setsid bash -c '
+        /tmp/bloom_rocm_install_therock.sh > /tmp/bloom_rocm_install_therock.log 2>&1
+        echo $? > /tmp/bloom_rocm_install_therock.rc
+        touch /tmp/bloom_rocm_install_therock.done
+      ' </dev/null >/tmp/bloom_rocm_install_therock.launch.log 2>&1 &
+  when:
+    - rocm_needs_install | bool
+    - rocm_install_model | default('legacy') == 'therock'
+  changed_when: true
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+    NEEDRESTART_MODE: l
+    NEEDRESTART_SUSPEND: "1"
+
+- name: Wait for radeon/therock ROCm install to finish
+  shell:
+    executable: /bin/bash
+    cmd: |
+      if [ -f /tmp/bloom_rocm_install_therock.done ]; then
+        cat /tmp/bloom_rocm_install_therock.rc
+      else
+        echo RUNNING
+      fi
+  register: rocm_therock_install_poll
+  until: rocm_therock_install_poll.stdout is match('^[0-9]+$')
+  retries: 240
+  delay: 15
+  changed_when: false
+  when:
+    - rocm_needs_install | bool
+    - rocm_install_model | default('legacy') == 'therock'
+
+- name: Fail if the backgrounded radeon/therock ROCm install did not succeed
+  fail:
+    msg: |
+      ROCm install failed (background job exit code {{ rocm_therock_install_poll.stdout }}).
+      Full output: /tmp/bloom_rocm_install_therock.log on the node.
+  when:
+    - rocm_needs_install | bool
+    - rocm_install_model | default('legacy') == 'therock'
+    - rocm_therock_install_poll.stdout is defined
+    - rocm_therock_install_poll.stdout != '0'
+
+# Either install path above can pull in a kernel/DKMS-affecting package
+# (amdgpu-dkms on legacy, or a kernel update via therock's apt transaction).
+# Check for a pending reboot BEFORE running rocminfo/amd-smi against a driver
+# that may not be active yet — this gives a fast, reliable signal instead of
+# waiting for those checks to hang or misreport against a half-loaded driver.
+- name: Check for a pending reboot before validating the GPU driver stack
+  include_tasks: ../reboot_required_check.yaml
 
 - name: Load amdgpu module
   modprobe:
@@ -144,7 +435,8 @@
     for c in "$(command -v amd-smi 2>/dev/null)" \
              "{{ rocm_root }}/bin/amd-smi" \
              /opt/rocm/bin/amd-smi \
-             $(ls -d /opt/rocm-*/bin/amd-smi 2>/dev/null | sort -V -r); do
+             $(ls -d /opt/rocm-*/bin/amd-smi 2>/dev/null | sort -V -r) \
+             $(ls -d /opt/rocm/core-*/bin/amd-smi 2>/dev/null | sort -V -r); do
       if [ -n "$c" ] && [ -x "$c" ]; then
         echo "$c"
         exit 0
@@ -161,7 +453,8 @@
     for c in "$(command -v rocm-smi 2>/dev/null)" \
              "{{ rocm_root }}/bin/rocm-smi" \
              /opt/rocm/bin/rocm-smi \
-             $(ls -d /opt/rocm-*/bin/rocm-smi 2>/dev/null | sort -V -r); do
+             $(ls -d /opt/rocm-*/bin/rocm-smi 2>/dev/null | sort -V -r) \
+             $(ls -d /opt/rocm/core-*/bin/rocm-smi 2>/dev/null | sort -V -r); do
       if [ -n "$c" ] && [ -x "$c" ]; then
         echo "$c"
         exit 0
@@ -221,6 +514,29 @@
 # Guard against the confusing "No GPUs detected by rocm-smi" failure on ROCm 7.x
 # nodes where rocm-smi does not exist: if neither tool resolved, the ROCm install
 # is incomplete rather than the GPUs being absent.
+#
+# Capture the package/filesystem state first so the failure is actionable. The
+# common cause here is a prior `amdgpu-install --uninstall` that left the ROCm
+# runtime packages marked "installed" in dpkg while removing/renaming their files
+# (e.g. /opt/rocm-<ver>.stale). In that state `amdgpu-install --usecase=rocm` is a
+# no-op — apt believes rocm is already installed — so no tooling is ever laid down.
+- name: Gather ROCm install diagnostics
+  shell: |
+    echo "== dpkg rocm/amdgpu/amd-smi package state =="
+    dpkg -l | grep -iE 'rocm|amdgpu|amd-smi' || echo "(no matching packages)"
+    echo "== /opt/rocm* trees =="
+    ls -ld /opt/rocm /opt/rocm-* 2>/dev/null || echo "(none)"
+    echo "== apt policy for rocm / amd-smi =="
+    apt-cache policy rocm amd-smi 2>/dev/null || true
+    echo "== amd-smi/rocm-smi on PATH =="
+    command -v amd-smi rocm-smi 2>/dev/null || echo "(none on PATH)"
+  register: rocm_missing_diag
+  changed_when: false
+  failed_when: false
+  when:
+    - not amd_smi_present | bool
+    - not rocm_smi_present | bool
+
 - name: Fail if no ROCm SMI tooling could be located
   fail:
     msg: |
@@ -228,13 +544,60 @@
       verified. This usually means the ROCm install is incomplete or /opt/rocm is a
       stale/incomplete tree shadowing the real versioned install. Checked PATH,
       {{ rocm_root }}/bin, /opt/rocm/bin and /opt/rocm-*/bin.
+
+      A prior `amdgpu-install --uninstall` can leave the ROCm packages marked
+      installed in dpkg while their files were removed or renamed aside (e.g. a
+      /opt/rocm-<ver>.stale tree), which makes `amdgpu-install --usecase=rocm` a
+      no-op. If the diagnostics below show rocm packages as "ii" but no populated
+      /opt/rocm tree, purge them and re-run bloom:
+        sudo apt-get purge -y 'rocm*' 'amd-smi*' && sudo rm -rf /opt/rocm /opt/rocm-*
+
+      Diagnostics:
+      {{ rocm_missing_diag.stdout | default('(not collected)') }}
   when:
     - not amd_smi_present | bool
     - not rocm_smi_present | bool
 
+# On a fresh install the pre-install detection ran before any ROCm existed, so
+# rocm_version was never set (and rocm_version_acceptable defaulted to false).
+# Re-read the version now — amd-smi header first, then the Core SDK / versioned
+# .info/version file — so the display and the confirmation below have a real
+# value instead of failing on an undefined rocm_version. We just installed the
+# pinned rocm_required_version, so mark it acceptable.
+- name: Re-read ROCm version after install
+  shell: |
+    set -e
+    v=""
+    smi="{{ amd_smi_bin | default('') }}"
+    if [ -n "$smi" ] && [ -x "$smi" ]; then
+      v="$("$smi" 2>/dev/null | head -2 | grep 'ROCm version' | sed -n 's/.*ROCm version: \([0-9][0-9.]*\).*/\1/p')"
+    fi
+    if [ -z "$v" ]; then
+      for f in /opt/rocm/core-*/.info/version /opt/rocm-*/.info/version /opt/rocm/.info/version; do
+        [ -f "$f" ] || continue
+        v="$(sed -n 's/^\([0-9][0-9.]*\).*/\1/p' "$f" | head -n1)"
+        [ -n "$v" ] && break
+      done
+    fi
+    echo "$v"
+  args:
+    executable: /bin/bash
+  register: rocm_version_post
+  changed_when: false
+  failed_when: false
+  when:
+    - rocm_needs_install | bool
+    - amd_smi_present | bool or rocm_smi_present | bool
+
+- name: Set ROCm version facts after install
+  set_fact:
+    rocm_version: "{{ (rocm_version_post.stdout | trim) if (rocm_version_post is defined and (rocm_version_post.stdout | default('') | trim) != '') else rocm_required_version }}"
+    rocm_version_acceptable: true
+  when: rocm_needs_install | bool
+
 - name: Display ROCm version
   debug:
-    msg: "ROCm version: {{ rocm_version }}"
+    msg: "ROCm version: {{ rocm_version | default(rocm_required_version) }}"
 
 - name: Warn if ROCm version is not acceptable for {{ gpu_stack_family_resolved | default('instinct') }}
   debug:
@@ -272,3 +635,226 @@
   debug:
     msg: "✅ ROCm {{ rocm_version }} confirmed — acceptable for {{ gpu_stack_family_resolved | default('instinct') }} stack"
   when: rocm_version_acceptable | bool
+
+# Post-installation environment configuration for the instinct (ROCm 7.2.x)
+# stack, per AMD's ROCm 7.2.3 post-install guide:
+#   https://rocm.docs.amd.com/projects/install-on-linux/en/docs-7.2.3/install/post-install.html
+# The guide's "Environment Configuration" steps register ROCm's shared objects
+# with the system linker and put ROCm on PATH. We implement them as persistent,
+# system-wide config (ld.so.conf + /etc/profile.d) rather than the doc's
+# session-only `export`s, and drive the paths off the resolved rocm_root so they
+# stay correct for /opt/rocm, /opt/rocm-7.2.3, etc. All tasks are idempotent, so
+# they apply whether ROCm was just installed or was already present.
+#
+# Scoped to instinct: the radeon/therock (ROCm 7.13) packages register their
+# tools and libraries via update-alternatives (/opt/rocm/bin, /opt/rocm/lib) at
+# install time, so this legacy finalization is neither required nor applied there.
+- name: Configure ROCm shared objects for the system linker (ld.so.conf)
+  copy:
+    dest: /etc/ld.so.conf.d/rocm.conf
+    mode: "0644"
+    content: |
+      {{ rocm_root }}/lib
+      {{ rocm_root }}/lib64
+  register: rocm_ldsoconf
+  when: gpu_stack_family_resolved | default('instinct') != 'radeon'
+
+- name: Refresh the dynamic linker cache (ldconfig)
+  command: ldconfig
+  changed_when: true
+  when:
+    - gpu_stack_family_resolved | default('instinct') != 'radeon'
+    - rocm_ldsoconf is changed
+
+- name: Add ROCm bin to PATH for login shells
+  copy:
+    dest: /etc/profile.d/rocm.sh
+    mode: "0644"
+    content: |
+      export PATH="$PATH:{{ rocm_root }}/bin"
+  when: gpu_stack_family_resolved | default('instinct') != 'radeon'
+
+- name: Verify ROCm installation (amd-smi version)
+  command: "{{ amd_smi_bin }} version"
+  register: amd_smi_version
+  changed_when: false
+  failed_when: false
+  when:
+    - gpu_stack_family_resolved | default('instinct') != 'radeon'
+    - amd_smi_present | bool
+
+- name: Display ROCm install verification (amd-smi version)
+  debug:
+    msg: "{{ amd_smi_version.stdout | default('(amd-smi version unavailable)') }}"
+  when:
+    - gpu_stack_family_resolved | default('instinct') != 'radeon'
+    - amd_smi_present | bool
+    - amd_smi_version is defined
+    - amd_smi_version.rc | default(1) == 0
+
+# AMD's ROCm 7.13.0-preview install docs recommend confirming the driver
+# stack with `rocminfo` and `amd-smi version` right after installation:
+#   https://rocm.docs.amd.com/en/7.13.0-preview/install/rocm.html#post-installation
+# The radeon/therock path is a tech-preview installed via a hand-rolled apt
+# workaround (see "Launch radeon/therock ROCm ... install" above), so unlike
+# the mature instinct/legacy path (whose amd-smi verification above is
+# informational only) we don't trust "apt reported success" alone here: fail
+# the run outright with an actionable message if either check doesn't confirm
+# a healthy install, rather than letting a broken node proceed.
+- name: Locate rocminfo binary (radeon/therock)
+  shell: |
+    set -e
+    for c in "$(command -v rocminfo 2>/dev/null)" \
+             "{{ rocm_root }}/bin/rocminfo" \
+             /opt/rocm/bin/rocminfo \
+             $(ls -d /opt/rocm-*/bin/rocminfo 2>/dev/null | sort -V -r) \
+             $(ls -d /opt/rocm/core-*/bin/rocminfo 2>/dev/null | sort -V -r); do
+      if [ -n "$c" ] && [ -x "$c" ]; then
+        echo "$c"
+        exit 0
+      fi
+    done
+    exit 1
+  register: rocminfo_locate
+  changed_when: false
+  failed_when: false
+  when: gpu_stack_family_resolved | default('instinct') == 'radeon'
+
+# `rocminfo`/`amd-smi` can hang when the amdgpu/kfd driver stack is unhealthy
+# -- e.g. /dev/kfd not ready, a wedged GPU, or blocked agent enumeration. Worse,
+# the hang is often *uninterruptible* (blocked in a kernel ioctl on /dev/kfd in
+# D state), where even `timeout -s KILL` cannot reap the child.
+#
+# We deliberately do NOT use ansible's async/poll here. In bloom's namespaced
+# execution a completed async job's status file can be missing the "finished"
+# marker async_status waits on, so the poll never satisfies and the play hangs
+# on "ASYNC OK ... jid=..." even after the command itself finished -- the same
+# failure that forced the ROCm install tasks above onto a self-driven marker
+# file. We mirror that proven pattern here instead: launch the check fully
+# detached (nohup+setsid) under `timeout -s KILL 120`, have it write its exit
+# code to a marker file as its last act, and poll for that marker with a trivial
+# test+cat under until/retries (30 x 5s = 150s, comfortably past the 120s inner
+# timeout). A genuine D-state hang never writes the marker, so the poll loop
+# exhausts its retries and the validation facts below treat it as a failed check
+# -- triggering the actionable "install ROCm manually" failure instead of
+# hanging the run forever, with no async_status dependency to wedge on.
+- name: Launch rocminfo post-install check in the background
+  shell:
+    executable: /bin/bash
+    cmd: |
+      set -e
+      rm -f /tmp/bloom_rocminfo_check.rc /tmp/bloom_rocminfo_check.done /tmp/bloom_rocminfo_check.out
+      nohup setsid bash -c '
+        timeout -s KILL 120 "{{ rocminfo_locate.stdout | trim }}" > /tmp/bloom_rocminfo_check.out 2>&1
+        echo $? > /tmp/bloom_rocminfo_check.rc
+        touch /tmp/bloom_rocminfo_check.done
+      ' </dev/null >/tmp/bloom_rocminfo_check.launch.log 2>&1 &
+  changed_when: false
+  when:
+    - gpu_stack_family_resolved | default('instinct') == 'radeon'
+    - rocminfo_locate.rc | default(1) == 0
+    - (rocminfo_locate.stdout | default('') | trim) != ''
+
+- name: Wait for rocminfo post-install check to finish
+  shell:
+    executable: /bin/bash
+    cmd: |
+      if [ -f /tmp/bloom_rocminfo_check.done ]; then
+        cat /tmp/bloom_rocminfo_check.rc
+      else
+        echo RUNNING
+      fi
+  register: rocminfo_check_poll
+  until: rocminfo_check_poll.stdout is match('^[0-9]+$')
+  retries: 30
+  delay: 5
+  changed_when: false
+  failed_when: false
+  when:
+    - gpu_stack_family_resolved | default('instinct') == 'radeon'
+    - rocminfo_locate.rc | default(1) == 0
+    - (rocminfo_locate.stdout | default('') | trim) != ''
+
+- name: Read rocminfo post-install output
+  slurp:
+    src: /tmp/bloom_rocminfo_check.out
+  register: rocminfo_check_out
+  changed_when: false
+  failed_when: false
+  when:
+    - gpu_stack_family_resolved | default('instinct') == 'radeon'
+    - rocminfo_check_poll.stdout | default('') is match('^[0-9]+$')
+
+- name: Launch amd-smi version post-install check in the background (radeon/therock)
+  shell:
+    executable: /bin/bash
+    cmd: |
+      set -e
+      rm -f /tmp/bloom_amdsmi_check.rc /tmp/bloom_amdsmi_check.done /tmp/bloom_amdsmi_check.out
+      nohup setsid bash -c '
+        timeout -s KILL 120 "{{ amd_smi_bin }}" version > /tmp/bloom_amdsmi_check.out 2>&1
+        echo $? > /tmp/bloom_amdsmi_check.rc
+        touch /tmp/bloom_amdsmi_check.done
+      ' </dev/null >/tmp/bloom_amdsmi_check.launch.log 2>&1 &
+  changed_when: false
+  when:
+    - gpu_stack_family_resolved | default('instinct') == 'radeon'
+    - amd_smi_present | bool
+
+- name: Wait for amd-smi version post-install check to finish
+  shell:
+    executable: /bin/bash
+    cmd: |
+      if [ -f /tmp/bloom_amdsmi_check.done ]; then
+        cat /tmp/bloom_amdsmi_check.rc
+      else
+        echo RUNNING
+      fi
+  register: amdsmi_check_poll
+  until: amdsmi_check_poll.stdout is match('^[0-9]+$')
+  retries: 30
+  delay: 5
+  changed_when: false
+  failed_when: false
+  when:
+    - gpu_stack_family_resolved | default('instinct') == 'radeon'
+    - amd_smi_present | bool
+
+- name: Read amd-smi version post-install output
+  slurp:
+    src: /tmp/bloom_amdsmi_check.out
+  register: amdsmi_check_out
+  changed_when: false
+  failed_when: false
+  when:
+    - gpu_stack_family_resolved | default('instinct') == 'radeon'
+    - amdsmi_check_poll.stdout | default('') is match('^[0-9]+$')
+
+- name: Set ROCm 7.13.0 post-install validation facts
+  set_fact:
+    rocminfo_ok: "{{ (rocminfo_check_poll.stdout | default('') == '0') and ('HSA Agents' in (rocminfo_check_out.content | default('') | b64decode)) }}"
+    amdsmi_version_ok: "{{ (amdsmi_check_poll.stdout | default('') == '0') and ('ROCm version' in (amdsmi_check_out.content | default('') | b64decode)) }}"
+  when: gpu_stack_family_resolved | default('instinct') == 'radeon'
+
+- name: Display ROCm 7.13.0 post-install validation
+  debug:
+    msg: |
+      rocminfo:        {{ 'OK' if rocminfo_ok else 'FAILED or not found' }}
+      amd-smi version: {{ 'OK' if amdsmi_version_ok else 'FAILED or not found' }}
+  when: gpu_stack_family_resolved | default('instinct') == 'radeon'
+
+- name: Fail if ROCm 7.13.0 post-install validation did not succeed
+  fail:
+    msg: |
+      ROCm {{ rocm_release | default('7.13.0') }} was not able to be installed automatically on this node.
+
+      AMD's recommended post-install checks did not both report success:
+        rocminfo:        {{ 'OK' if rocminfo_ok else 'FAILED or not found' }}
+        amd-smi version: {{ 'OK' if amdsmi_version_ok else 'FAILED or not found' }}
+
+      Please install ROCm {{ rocm_release | default('7.13.0') }} manually on this node
+      (see https://rocm.docs.amd.com/en/7.13.0-preview/install/rocm.html), then run
+      cluster-bloom again.
+  when:
+    - gpu_stack_family_resolved | default('instinct') == 'radeon'
+    - not (rocminfo_ok and amdsmi_version_ok)

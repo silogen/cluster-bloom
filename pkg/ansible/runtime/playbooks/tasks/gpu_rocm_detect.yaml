@@ -11,11 +11,16 @@
 #          connection, so `pause` has no TTY and would hang. The non-interactive
 #          bypass is rocm_allow_version_mismatch: true.
 
-- name: Discover ROCm installation root (handles /opt/rocm symlink and versioned installs)
+- name: Discover ROCm installation root
   shell: |
     set -e
     has_tool() {
-      [ -x "$1/bin/amd-smi" ] || [ -x "$1/bin/rocm-smi" ]
+      [ -x "$1/bin/amd-smi" ] || [ -x "$1/bin/rocm-smi" ] && return 0
+      # Core SDK (7.12+ preview) layout: tools live under core-<X.Y>/bin.
+      for b in "$1"/core-*/bin/amd-smi "$1"/core-*/bin/rocm-smi; do
+        [ -x "$b" ] && return 0
+      done
+      return 1
     }
     has_version() {
       c="$1"
@@ -31,7 +36,12 @@
     # /opt/rocm (e.g. a leftover core-only tree from a different ROCm train) can
     # carry a .info/version but no bin/, so give priority to roots that actually
     # contain the ROCm tooling before falling back to a version marker alone.
-    candidates="/opt/rocm $(ls -d /opt/rocm-* 2>/dev/null | sort -V -r)"
+    # Only consider real version-numbered siblings (/opt/rocm-7.2.3): skip
+    # renamed-aside trees like /opt/rocm-7.13.0.stale or *.bak, which an
+    # `amdgpu-install --uninstall` cycle can leave behind. Such a tool-less tree
+    # must never be picked as rocm_root and shadow the real install location.
+    versioned="$(ls -d /opt/rocm-* 2>/dev/null | grep -E '^/opt/rocm-[0-9]+(\.[0-9]+)*$' | sort -V -r)"
+    candidates="/opt/rocm $versioned"
     for d in $candidates; do
       [ -e "$d" ] || continue
       if has_tool "$d"; then
@@ -70,7 +80,8 @@
     for c in "$(command -v amd-smi 2>/dev/null)" \
              "{{ rocm_root }}/bin/amd-smi" \
              /opt/rocm/bin/amd-smi \
-             $(ls -d /opt/rocm-*/bin/amd-smi 2>/dev/null | sort -V -r); do
+             $(ls -d /opt/rocm-*/bin/amd-smi 2>/dev/null | sort -V -r) \
+             $(ls -d /opt/rocm/core-*/bin/amd-smi 2>/dev/null | sort -V -r); do
       if [ -n "$c" ] && [ -x "$c" ]; then
         echo "$c"
         exit 0
@@ -87,7 +98,8 @@
     for c in "$(command -v rocm-smi 2>/dev/null)" \
              "{{ rocm_root }}/bin/rocm-smi" \
              /opt/rocm/bin/rocm-smi \
-             $(ls -d /opt/rocm-*/bin/rocm-smi 2>/dev/null | sort -V -r); do
+             $(ls -d /opt/rocm-*/bin/rocm-smi 2>/dev/null | sort -V -r) \
+             $(ls -d /opt/rocm/core-*/bin/rocm-smi 2>/dev/null | sort -V -r); do
       if [ -n "$c" ] && [ -x "$c" ]; then
         echo "$c"
         exit 0
@@ -211,7 +223,7 @@
 # (e.g. instinct on ROCm 7.13, or radeon on ROCm 7.2) is silently kept and the
 # only signal is a debug warning at the very end, far too late.
 #
-# Set ROCM_ALLOW_VERSION_MISMATCH: true (in bloom.yaml or -e) to proceed anyway;
+# Set ROCM_ALLOW_VERSION_MISMATCH: true (in bloom configuration) to proceed anyway;
 # there is no interactive prompt because bloom pipes ansible output over SSH with
 # no TTY.
 
@@ -238,14 +250,14 @@
     detected ROCm version is {{ rocm_version | default('unknown') }} and
     GPU_STACK_FAMILY: {{ gpu_stack_family_resolved | default('instinct') }} needs
     {{ ('>= ' ~ rocm_required_version) if (gpu_stack_family_resolved | default('instinct') == 'radeon') else ('>= 7.2.' ~ (rocm_instinct_min_patch | default(3))) }};
-    override by setting ROCM_ALLOW_VERSION_MISMATCH: true in bloom.yaml, see 'tail bloom.log' for full details
+    override by setting ROCM_ALLOW_VERSION_MISMATCH: true in bloom configuration, see bloom.log for full details
   fail:
     msg: |-
       Unsupported ROCm version for GPU_STACK_FAMILY={{ gpu_stack_family_resolved | default('instinct') }}.
       Installed: ROCm {{ rocm_version }}. Required: {{ ('ROCm >= ' ~ rocm_required_version ~ ' (the ' ~ (rocm_required_normalized | default('7.13')) ~ ' train)') if (gpu_stack_family_resolved | default('instinct') == 'radeon') else ('ROCm >= 7.2.' ~ (rocm_instinct_min_patch | default(3)) ~ ' (the 7.2 train, e.g. 7.2.3 or 7.2.4)') }}.
       {% if gpu_stack_family_resolved | default('instinct') == 'radeon' %}The 7.13 tech-preview GPU Operator ({{ gpu_operator_path | default('amd-gpu-operator/v1.5.1-beta.0') }}) and DeviceConfig (ROCm {{ gpu_deviceconfig_driver_version | default('7.13') }}) are NOT compatible with ROCm 7.2 or older.{% endif %}
       Continuing would deploy a mismatched, unsupported stack, so ClusterBloom stopped rather than finish with a broken configuration.
-      To proceed anyway with the currently installed ROCm, set ROCM_ALLOW_VERSION_MISMATCH: true in bloom.yaml (accepts true|TRUE|1; with `bloom run` you can also pass -e ROCM_ALLOW_VERSION_MISMATCH=true).
+      To proceed anyway with the currently installed ROCm, set ROCM_ALLOW_VERSION_MISMATCH: true in bloom configuration (accepts true|TRUE|1; with `bloom run` you can also pass -e ROCM_ALLOW_VERSION_MISMATCH=true).
   when:
     # Only stop for a real, functional install (amd-smi/rocm-smi present). A
     # stale directory-only remnant with no working tools is left to the normal

@@ -49,19 +49,20 @@ Configuration sources in priority order (highest to lowest):
 #### AIM_HARDWARE_FAMILY
 - **Type**: String (comma-separated list)
 - **Default**: `""` (empty)
-- **Description**: Selects which AIM model sources cluster-forge installs, by hardware family. Empty installs the full legacy model catalog (no change from previous behavior). When set, only the listed families are installed.
+- **Description**: Selects which AIM model sources cluster-forge installs, by hardware family. When left empty, bloom auto-detects the hardware physically present on this node — AMD GPU family/families via a local PCI scan, plus `epyc` if the CPU is an AMD EPYC part (via `/proc/cpuinfo`) — and uses that as the list; if nothing is detected (or detection itself fails), it falls back to the legacy branch: only the fixed generic `amd-aim-release-*` + `amd-aim-instinct-*` catalog installs, unchanged from before per-family support existed. `cpu` is never auto-detected — it stays opt-in only. When set explicitly, only the listed families' sources are installed (the legacy generic sources are not installed), and detection never overrides your value — but if detection finds hardware not in your explicit list (e.g. `AIM_HARDWARE_FAMILY: "epyc"` on a box that also has a Radeon GPU), bloom prints an informational notice naming the gap rather than silently using your config as-is with no feedback.
 - **Values**: any comma-separated combination of `cpu`, `epyc`, `instinct`, `radeon` (lowercase, no spaces)
 - **Example**: `AIM_HARDWARE_FAMILY: "epyc,instinct"`
-- **Notes**: `instinct` and `radeon` are GPU families; `cpu` and `epyc` are CPU inference targets. `cpu` and `radeon` are currently placeholders pointing at `ghcr.io` images that require a pull secret this cluster does not provision, so they will fail to pull until a `docker.io` release is published. In a `bloom.yaml` file the value is a normal comma-separated string. cluster-bloom splits it into a list before passing it to cluster-forge, so no comma-escaping is needed at the bloom layer.
+- **Notes**: `instinct` and `radeon` are GPU families; `cpu` and `epyc` are CPU inference targets. All families' images are hosted on `docker.io`; `cpu` and `radeon` use the `silogenai` org and the chart references an optional `dockerhub-regcred` pull secret for those, in case the images are private. In a `bloom.yaml` file the value is a normal comma-separated string. cluster-bloom splits it into a list before passing it to cluster-forge, so no comma-escaping is needed at the bloom layer. Unlike `GPU_STACK_FAMILY`, a node with hardware from multiple families is never ambiguous here — it's multi-select, so auto-detection just lists every family found (GPU families plus `epyc`). See [GPU family auto-detection and ambiguous hardware](rocm-support.md#gpu-family-auto-detection-and-ambiguous-hardware) for the detection mechanism.
 
 #### GPU_STACK_FAMILY
 - **Type**: String (single value)
-- **Default**: `""` (empty, resolves to `instinct`)
-- **Description**: Selects the ROCm + GPU Operator install defaults by GPU family. This is independent of `AIM_HARDWARE_FAMILY` (which selects the AIM model catalog). Empty or `instinct` keeps the current qualified defaults (host ROCm `7.2.3`, GPU Operator `v1.4.1`, DeviceConfig ROCm driver `7.0`), so existing installs are unchanged. `radeon` selects the ROCm 7.13 tech-preview stack.
+- **Default**: `""` (empty, auto-detected from this node's AMD GPU hardware; resolves to `instinct` if nothing is detected)
+- **Description**: Selects the ROCm + GPU Operator install defaults by GPU family. This is independent of `AIM_HARDWARE_FAMILY` (which selects the AIM model catalog). When left empty, bloom auto-detects the AMD GPU family from a local PCI scan; if none is detected, it keeps the current qualified defaults (host ROCm `7.2.3`, GPU Operator `v1.4.1`, DeviceConfig ROCm driver `7.0`), so existing installs are unchanged. `radeon` selects the ROCm 7.13 tech-preview stack. Setting this explicitly always wins over detection.
 - **Values**: `radeon` | `instinct` (lowercase, single value)
 - **Example**: `GPU_STACK_FAMILY: "radeon"`
 - **Notes**:
   - Single-select by design: host ROCm is one version per node, so a heterogeneous Radeon + Instinct GPU stack cannot be expressed here. The AIM catalog (`AIM_HARDWARE_FAMILY`) can still be heterogeneous.
+  - **Ambiguous hardware**: if this node has AMD GPUs from *both* families and `GPU_STACK_FAMILY` is left unset, bloom cannot guess which stack you want — it prints the detected models for each family and interactively asks you to choose `instinct` or `radeon`, with an explanation of why. Running non-interactively (`--yes`/`--auto-confirm-prompts`, or no readable stdin) hard-fails instead of guessing; set `GPU_STACK_FAMILY` explicitly to proceed. See [GPU family auto-detection and ambiguous hardware](rocm-support.md#gpu-family-auto-detection-and-ambiguous-hardware) for details — this prompt is safe from the "no TTY" limitation noted below because it runs before bloom re-execs into the ansible/SSH container.
   - Selecting `radeon` defaults host ROCm and the GPU Operator to the ROCm 7.13 tech-preview train. These components are tech preview, not production qualified, and bloom prints a notice at install time.
   - Unsupported combinations (for example a Radeon stack resolving to ROCm 7.2) fail validation before install with an error naming the incompatible component.
   - **Overriding the version guard**: when a GPU node already has ROCm installed that does not match the selected family's train (e.g. `radeon` on a host with ROCm 7.2.3), bloom aborts early during node validation with an "Unsupported ROCm version" message. This guard is a hard fail (no interactive prompt, because bloom pipes ansible output over SSH with no TTY). To proceed anyway with the currently installed ROCm, set [`ROCM_ALLOW_VERSION_MISMATCH`](#rocm_allow_version_mismatch) in `bloom.yaml`.
@@ -622,6 +623,7 @@ bloom cli <config-file> [flags]
 - `--export`: Export generated playbook to stdout instead of executing it
 - `--dry-run`: Run in check mode without making changes
 - `--destroy-data`: ⚠️ DANGER: Wipes the cluster before redeploying (RKE2 uninstall, Longhorn cleanup, bloom-managed disk wipe). Shows a disk wipe preview before confirmation. Premounted disks (CLUSTER_PREMOUNTED_DISKS) have their bloom artifacts cleaned but their filesystem and fstab entries preserved
+- `--skip-data-safety`: Downgrade the pre-deployment data-safety failure (running RKE2 / non-empty `/var/lib/rancher/rke2` and `/etc/rancher/rke2`) to a warning so bloom can re-run on an already-provisioned node — for example to add or update ClusterForge — without `--destroy-data`. Existing cluster and disk data are preserved. Does NOT bypass the premounted-disk mount check. Also settable in `bloom.yaml` as `SKIP_DATA_SAFETY: true`
 - `--playbook string`: Playbook to run (default: "cluster-bloom.yaml")
 - `--tags string`: Run only tasks with specific tags (e.g., cleanup, validate, storage)
 
@@ -650,6 +652,13 @@ sudo ./bloom cli bloom.yaml --tags "validate_node,prep_node"
 sudo ./bloom cli bloom.yaml
 # Part 2: once all nodes have joined, run the ClusterForge bootstrap separately
 sudo ./bloom cli bloom.yaml --tags deploy_clusterforge
+
+# Add/update ClusterForge on an already-provisioned node via a FULL re-run.
+# A plain re-run fails the pre-deployment data-safety check (RKE2 is already
+# running and the rke2 dirs are non-empty). To keep the existing cluster and
+# only layer ClusterForge on top, either run just the ClusterForge tag (above),
+# or re-run the whole playbook with --skip-data-safety:
+sudo ./bloom cli bloom.yaml --skip-data-safety
 ```
 
 ### Run Command
