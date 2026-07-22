@@ -634,23 +634,19 @@ func maybeHandleRebootRequired(exitCode int) int {
 		return exitCode
 	}
 
-	fmt.Println("\n⏳ REBOOT REQUIRED")
-	fmt.Println()
+	fmt.Println("\n⏳ REBOOT REQUIRED:")
 	fmt.Println(marker.Reason)
 	if len(marker.Packages) > 0 {
-		fmt.Println("\nPackages that triggered this:")
+		fmt.Println("Packages that triggered this:")
 		for _, p := range marker.Packages {
 			fmt.Printf("  - %s\n", p)
 		}
 	}
-	fmt.Println("\nGPU/ROCm functionality will not work correctly until this node is rebooted.")
-	fmt.Println()
+	fmt.Println("GPU/ROCm functionality will not work correctly until this node is rebooted.")
 
-	if !confirmYesNo("Reboot this node now?") {
-		fmt.Println("\n❌ Reboot declined.")
-		fmt.Println("Reboot manually and re-run this exact bloom command afterwards — bloom's")
-		fmt.Println("steps are idempotent and will resume automatically:")
-		fmt.Println("  sudo reboot")
+	if !confirmYesNo("Reboot now?") {
+		fmt.Println("\n⏭️(skipped) Reboot declined.")
+		fmt.Println("Reboot manually when ready (`sudo reboot`) and re-run this cluster-bloom binary")
 		return exitCode
 	}
 

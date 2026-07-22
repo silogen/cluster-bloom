@@ -108,18 +108,12 @@
     - bloom_reboot_required_stat.stat.exists
     - not (bloom_reboot_marker.attempted | default(false) | bool)
 
-- name: Fail the run so bloom's CLI can offer to reboot
-  fail:
-    msg: |
-      ⏳ REBOOT REQUIRED: a kernel or GPU driver package update needs a reboot
-      before GPU functionality is available (/var/run/reboot-required is
-      present).
-
-      Bloom will offer to reboot this node for you when this command exits. If
-      you are running non-interactively, pass --yes (or --auto-confirm-prompts)
-      to confirm the reboot automatically. If you decline or are re-running
-      bloom after a manual reboot, just re-run this exact command — bloom's
-      steps are idempotent and will resume automatically.
+- name: Prompt for reboot (kernel / GPU driver package update)
+  debug:
+    msg: >-
+      Reboot required before GPU/ROCm is usable (/var/run/reboot-required
+      present). Bloom will offer to reboot on exit; pass --yes to auto-confirm,
+      or just re-run bloom after rebooting (steps are idempotent).
   when:
     - bloom_reboot_required_stat.stat.exists
     - not (bloom_reboot_marker.attempted | default(false) | bool)
