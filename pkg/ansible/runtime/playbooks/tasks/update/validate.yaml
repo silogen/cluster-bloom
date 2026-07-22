@@ -81,7 +81,7 @@
     msg: "  ✓ Verifying OpenBao installation... ✅"
 
 - name: Verify domain-dependent services
-  when: not CHECK_DNS_ONLY and not TLS_ONLY
+  when: not TLS_ONLY
   block:
     - name: Verify Keycloak is ready
       command: /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get deployment keycloak -n keycloak -o jsonpath='{.status.readyReplicas}'
