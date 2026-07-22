@@ -103,7 +103,7 @@ func newRootCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:   "bloom",
 		Short: "Kubernetes Cluster Deployment Tool",
-		Long:  `Bloom - A tool for generating bloom.yaml configurations and deploying Kubernetes clusters.
+		Long: `Bloom - A tool for generating bloom.yaml configurations and deploying Kubernetes clusters.
 
 Certificate Updates:
   To update TLS certificates in an existing cluster, use a separate config with --tags:
@@ -317,6 +317,15 @@ func runAnsible(configFile string) {
 	// Inject CLI flag values into config (CLI flags override file values)
 	if clusterListenIP != "" {
 		cfg["CLUSTER_LISTEN_IP"] = clusterListenIP
+	}
+
+	// Strip keys from older bloom releases (warn-and-continue) so a stale
+	// bloom.yaml keeps working with clear migration guidance, instead of
+	// hard-failing on an "Unknown configuration key" that can't distinguish a
+	// removed key from a typo. Must run before Validate (which flags unknown
+	// keys) so the deprecated keys are already gone by then.
+	for _, w := range config.ApplyDeprecations(cfg) {
+		fmt.Fprintf(os.Stderr, "⚠️  %s\n", w)
 	}
 
 	// Validate config (after injecting CLI flags)
