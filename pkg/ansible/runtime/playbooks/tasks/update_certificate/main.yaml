@@ -1,0 +1,117 @@
+# Certificate update tasks - only run when NEW_TLS_CERT is defined
+# Skip silently during normal cluster deployment
+
+- block:
+    # ============================================
+    # Pre-flight Validation
+    # ============================================
+
+    - name: Validate required parameters
+      assert:
+        that:
+          - NEW_TLS_CERT != ""
+          - NEW_TLS_KEY != ""
+        fail_msg: "NEW_TLS_CERT and NEW_TLS_KEY are required parameters"
+        success_msg: "✓ Required parameters provided"
+
+    - name: Check certificate file exists
+      stat:
+        path: "{{ NEW_TLS_CERT }}"
+      register: cert_file
+
+    - name: Check key file exists
+      stat:
+        path: "{{ NEW_TLS_KEY }}"
+      register: key_file
+
+    - name: Validate files exist and are readable
+      assert:
+        that:
+          - cert_file.stat.exists
+          - cert_file.stat.readable
+          - key_file.stat.exists
+          - key_file.stat.readable
+        fail_msg: "Certificate or key file not found or not readable"
+        success_msg: "✓ Certificate and key files are accessible"
+
+    # ============================================
+    # Update Secret
+    # ============================================
+
+    - name: Read certificate content
+      slurp:
+        src: "{{ NEW_TLS_CERT }}"
+      register: cert_content
+
+    - name: Read key content
+      slurp:
+        src: "{{ NEW_TLS_KEY }}"
+      register: key_content
+
+    - name: Check if envoy-gateway-system namespace exists
+      shell: kubectl get namespace envoy-gateway-system
+      register: namespace_check
+      changed_when: false
+      failed_when: false
+
+    - name: Fail if namespace does not exist
+      fail:
+        msg: "Namespace envoy-gateway-system does not exist. Is this a cluster-bloom cluster?"
+      when: namespace_check.rc != 0
+
+    - name: Update cluster-tls secret
+      shell: |
+        kubectl create secret tls cluster-tls \
+          --cert="{{ NEW_TLS_CERT }}" \
+          --key="{{ NEW_TLS_KEY }}" \
+          --namespace=envoy-gateway-system \
+          --dry-run=client -o yaml | kubectl apply -f -
+      register: secret_update
+      changed_when: "'configured' in secret_update.stdout or 'created' in secret_update.stdout"
+
+    - name: Display secret update result
+      debug:
+        msg: "{{ secret_update.stdout }}"
+
+    # ============================================
+    # Restart Envoy Pods
+    # ============================================
+
+    - name: Restart Envoy Gateway pods
+      shell: kubectl rollout restart deployment -n envoy-gateway-system
+      when: RESTART_ENVOY_PODS | default(true) | bool
+      register: restart_result
+
+    - name: Wait for Envoy Gateway pods to be ready
+      shell: kubectl rollout status deployment -n envoy-gateway-system --timeout=120s
+      when: RESTART_ENVOY_PODS | default(true) | bool
+      register: rollout_status
+
+    - name: Display restart result
+      debug:
+        msg: "{{ restart_result.stdout }}"
+      when: RESTART_ENVOY_PODS | default(true) | bool
+
+    # ============================================
+    # Summary
+    # ============================================
+
+    - name: Display summary
+      debug:
+        msg:
+          - "==============================================="
+          - "Certificate Update Completed Successfully"
+          - "==============================================="
+          - "Secret: cluster-tls"
+          - "Namespace: envoy-gateway-system"
+          - "Certificate: {{ NEW_TLS_CERT }}"
+          - "Key: {{ NEW_TLS_KEY }}"
+          - "Pods Restarted: {{ 'Yes' if RESTART_ENVOY_PODS | default(true) | bool else 'No' }}"
+          - ""
+          - "Next Steps:"
+          - "1. Verify HTTPS endpoints in browser (https://gitea.<domain>, https://argocd.<domain>)"
+          - "2. Check for certificate warnings"
+          - "3. Verify certificate expiration date"
+          - "==============================================="
+
+  when: NEW_TLS_CERT is defined and NEW_TLS_CERT != ""

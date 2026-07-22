@@ -103,7 +103,12 @@ func newRootCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:   "bloom",
 		Short: "Kubernetes Cluster Deployment Tool",
-		Long:  `Bloom - A tool for generating bloom.yaml configurations and deploying Kubernetes clusters.`,
+		Long:  `Bloom - A tool for generating bloom.yaml configurations and deploying Kubernetes clusters.
+
+Certificate Updates:
+  To update TLS certificates in an existing cluster, use a separate config with --tags:
+    bloom cli cert-update-config.yaml --tags update_cert
+  See 'bloom cli --help' for details.`,
 		Run: func(cmd *cobra.Command, args []string) {
 			if showVersion {
 				if Version != "" {
@@ -220,11 +225,21 @@ By default, this command requires confirmation before proceeding. Use --force to
 
 Requires a configuration file (typically bloom.yaml).
 
-Use --export flag to write a self-contained playbook directory (./bloom-playbook/)
-instead of executing it. The directory contains the root playbook, a bloom-vars.yaml
-file derived from your config, and the tasks/ and manifests/ trees. Run it with:
-  ansible-playbook bloom-playbook/cluster-bloom.yaml
-Example: ./bloom cli bloom.yaml --export`,
+Certificate Updates:
+  To update TLS certificates in an existing cluster:
+    1. Create cert-update.yaml:
+         NEW_TLS_CERT: /home/ubuntu/tls-cert.pem
+         NEW_TLS_KEY: /home/ubuntu/tls-key.pem
+         RESTART_ENVOY_PODS: true
+    2. Run: bloom cli cert-update.yaml --tags update_cert
+  This skips schema validation and runs only certificate update tasks.
+
+Export Mode:
+  Use --export flag to write a self-contained playbook directory (./bloom-playbook/)
+  instead of executing it. The directory contains the root playbook, a bloom-vars.yaml
+  file derived from your config, and the tasks/ and manifests/ trees. Run it with:
+    ansible-playbook bloom-playbook/cluster-bloom.yaml
+  Example: ./bloom cli bloom.yaml --export`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			if !export {
@@ -305,13 +320,16 @@ func runAnsible(configFile string) {
 	}
 
 	// Validate config (after injecting CLI flags)
-	errors := config.Validate(cfg)
-	if len(errors) > 0 {
-		fmt.Fprintln(os.Stderr, "Configuration validation errors:")
-		for _, err := range errors {
-			fmt.Fprintf(os.Stderr, "  - %s\n", err)
+	// Skip validation for cert update tags to allow separate cert-update-config.yaml
+	if tags == "" || !strings.Contains(tags, "update_cert") {
+		errors := config.Validate(cfg)
+		if len(errors) > 0 {
+			fmt.Fprintln(os.Stderr, "Configuration validation errors:")
+			for _, err := range errors {
+				fmt.Fprintf(os.Stderr, "  - %s\n", err)
+			}
+			os.Exit(1)
 		}
-		os.Exit(1)
 	}
 
 	// Resolve GPU-family stack defaults (host ROCm + GPU Operator + DeviceConfig)
