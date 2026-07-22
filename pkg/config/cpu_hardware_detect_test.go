@@ -22,6 +22,35 @@ func TestParseCPUInfoForEPYCDetectsEPYC(t *testing.T) {
 	}
 }
 
+func TestParseCPUInfoForEPYCDetectsCustomCloudSKU(t *testing.T) {
+	// Semi-custom / hyperscaler EPYC SKUs (e.g. "9J14") have non-retail model
+	// numbers but still carry "EPYC" in the name — must be detected, since we
+	// match the name substring rather than a model-number whitelist.
+	cpuinfo := "vendor_id\t: AuthenticAMD\n" +
+		"model name\t: AMD EPYC 9J14 96-Core Processor\n"
+
+	detected, model := ParseCPUInfoForEPYC(cpuinfo)
+
+	if !detected || model != "AMD EPYC 9J14 96-Core Processor" {
+		t.Errorf("detected=%v model=%q, want a custom EPYC SKU to be detected", detected, model)
+	}
+}
+
+func TestParseCPUInfoForEPYCDetectsVirtualizedMaskedVendor(t *testing.T) {
+	// Some hypervisors mask/omit vendor_id on virtualized EPYC parts. The
+	// model name still identifies it as EPYC, so detection must not depend on
+	// vendor_id == AuthenticAMD.
+	cpuinfo := "processor\t: 0\n" +
+		"vendor_id\t: KVMKVMKVM\n" +
+		"model name\t: AMD EPYC 9J14 96-Core Processor\n"
+
+	detected, model := ParseCPUInfoForEPYC(cpuinfo)
+
+	if !detected || model != "AMD EPYC 9J14 96-Core Processor" {
+		t.Errorf("detected=%v model=%q, want a masked-vendor virtualized EPYC to be detected", detected, model)
+	}
+}
+
 func TestParseCPUInfoForEPYCIgnoresNonEPYCAMD(t *testing.T) {
 	// An AMD CPU that isn't EPYC (e.g. Ryzen/Threadripper) must not match.
 	cpuinfo := "vendor_id\t: AuthenticAMD\n" +

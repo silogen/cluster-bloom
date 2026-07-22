@@ -65,7 +65,15 @@ func ParseCPUInfoForEPYC(cpuinfo string) (detected bool, model string) {
 			break
 		}
 	}
-	if isAMD && strings.Contains(strings.ToUpper(modelName), "EPYC") {
+	// "EPYC" in the model name is itself an unambiguous AMD signal — no other
+	// vendor uses the name — so we do NOT hard-require vendor_id ==
+	// AuthenticAMD. Some hypervisors mask or omit vendor_id on virtualized
+	// EPYC parts (including custom cloud SKUs such as "AMD EPYC 9J14"), and
+	// gating on it there would wrongly skip a node whose model name plainly
+	// says it's an EPYC. vendor_id (or "AMD" in the model string) is still
+	// required as a guard so a stray "EPYC" elsewhere can't false-positive.
+	modelUpper := strings.ToUpper(modelName)
+	if strings.Contains(modelUpper, "EPYC") && (isAMD || strings.Contains(modelUpper, "AMD")) {
 		return true, modelName
 	}
 	return false, ""
