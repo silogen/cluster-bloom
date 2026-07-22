@@ -52,7 +52,7 @@ schema:
     AIM_HARDWARE_FAMILY:
       type: hardwareFamilyList
       default: ""
-      desc: "Comma-separated AIM hardware families to install (cpu,epyc,instinct,radeon). Empty = auto-detected AMD GPU families on this node if any are found, otherwise the legacy catalog (generic + instinct sources); cpu/epyc are never auto-detected and stay opt-in."
+      desc: "Comma-separated AIM hardware families to install (cpu,epyc,instinct,radeon). Empty = auto-detected from this node's hardware: AMD GPU families found via PCI scan plus \"epyc\" if the CPU is an AMD EPYC part, otherwise the legacy catalog (generic + instinct sources); cpu is never auto-detected and stays opt-in. If set explicitly, this value always wins as-is, but bloom prints a notice when detected hardware isn't included in the list (e.g. AIM_HARDWARE_FAMILY: \"epyc\" on a node that also has a Radeon GPU)."
       section: "📋 Basic Configuration"
 
     GPU_STACK_FAMILY:

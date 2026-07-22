@@ -123,7 +123,7 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 |----------|-------------|---------|
 | ADDITIONAL_OIDC_PROVIDERS | List of additional OIDC providers for authentication (see examples below) | [] |
 | ADDITIONAL_TLS_SAN_URLS | Additional TLS Subject Alternative Name URLs for Kubernetes API server certificate | [] |
-| AIM_HARDWARE_FAMILY | Comma-separated AIM hardware families to install (cpu,epyc,instinct,radeon). Empty = auto-detected from this node's AMD GPU hardware, else legacy catalog only (generic + instinct sources). Example: "epyc,instinct" | "" |
+| AIM_HARDWARE_FAMILY | Comma-separated AIM hardware families to install (cpu,epyc,instinct,radeon). Empty = auto-detected from this node's hardware (AMD GPU families via PCI scan, plus epyc if the CPU is AMD EPYC), else legacy catalog only (generic + instinct sources); cpu stays opt-in. If set explicitly it always wins as-is, but bloom notes when detected hardware isn't in the list. Example: "epyc,instinct" | "" |
 | CERT_OPTION | Certificate option when USE_CERT_MANAGER is false. Choose 'existing' or 'generate' | "" |
 | CF_VALUES | Path to ClusterForge values file (optional). Example: "values_cf.yaml" | "" |
 | CLUSTER_DISKS | Comma-separated list of disk devices. Example "/dev/sdb,/dev/sdc". Also skips NVME drive checks. | "" |
@@ -335,7 +335,7 @@ sudo ./bloom run myPlaybook.yaml --verbose
 >
 > With `bloom run` you can also pass it as an extra-var (`-e ROCM_ALLOW_VERSION_MISMATCH=true`). See [docs/rocm-support.md](docs/rocm-support.md#version-compatibility-guard-fail-fast) for details.
 
-> **GPU nodes — family auto-detection**: If `GPU_STACK_FAMILY` and/or `AIM_HARDWARE_FAMILY` are left unset, bloom auto-detects the AMD GPU family/families present via a local PCI scan. If a node has GPUs from *both* Instinct and Radeon, bloom interactively asks which family `GPU_STACK_FAMILY` should target (hard-fails with `--yes`/`--auto-confirm-prompts` instead of guessing). See [docs/rocm-support.md](docs/rocm-support.md#gpu-family-auto-detection-and-ambiguous-hardware) for details.
+> **Hardware family auto-detection**: If `GPU_STACK_FAMILY` and/or `AIM_HARDWARE_FAMILY` are left unset, bloom auto-detects the AMD GPU family/families present via a local PCI scan, plus whether the CPU is an AMD EPYC part (via `/proc/cpuinfo`). This runs on every node, not just GPU nodes. If a node has GPUs from *both* Instinct and Radeon, bloom interactively asks which family `GPU_STACK_FAMILY` should target (hard-fails with `--yes`/`--auto-confirm-prompts` instead of guessing) — EPYC has no bearing on that choice. If `AIM_HARDWARE_FAMILY` is set explicitly and detection finds hardware not listed there (e.g. `"epyc"` on a node that also has a Radeon GPU), the explicit value still wins as-is, but bloom prints a notice. See [docs/rocm-support.md](docs/rocm-support.md#gpu-family-auto-detection-and-ambiguous-hardware) for details.
 
 ## Installation Process
 

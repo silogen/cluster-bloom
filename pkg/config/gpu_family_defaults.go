@@ -1,13 +1,45 @@
 package config
 
-import "strings"
+import (
+	"sort"
+	"strings"
+)
 
-// FamilyDefaults is the outcome of applying detected GPU hardware to the
-// family config values an installer left unset. GPU_STACK_FAMILY is
-// single-select (host ROCm targets one family per node), so a node with GPUs
-// from more than one family cannot be resolved here — Ambiguous is set
-// instead, and the caller must obtain an explicit choice (e.g. an
-// interactive prompt) before setting GPU_STACK_FAMILY.
+// DetectedHardware combines the AMD GPU PCI scan with AMD EPYC CPU
+// detection: the full picture ComputeFamilyDefaults needs to fill in
+// AIM_HARDWARE_FAMILY. GPU_STACK_FAMILY only ever depends on the GPU side —
+// "epyc" is not a valid GPU_STACK_FAMILY value (ResolveStackProfile rejects
+// it), since it names a CPU-only AIM target, not a ROCm/GPU Operator stack.
+type DetectedHardware struct {
+	GPU DetectedGPUFamilies
+	// EPYCModel is the reported CPU model name if this node's CPU is an AMD
+	// EPYC part, or "" if not detected.
+	EPYCModel string
+}
+
+// HasEPYC reports whether an AMD EPYC CPU was detected.
+func (d DetectedHardware) HasEPYC() bool {
+	return d.EPYCModel != ""
+}
+
+// AIMFamilies returns every family suitable for AIM_HARDWARE_FAMILY
+// auto-population — the detected GPU families plus "epyc" if this node's
+// CPU is an AMD EPYC part — sorted for deterministic output.
+func (d DetectedHardware) AIMFamilies() []string {
+	if !d.HasEPYC() {
+		return d.GPU.Families
+	}
+	families := append(append([]string{}, d.GPU.Families...), FamilyEPYC)
+	sort.Strings(families)
+	return families
+}
+
+// FamilyDefaults is the outcome of applying detected hardware to the family
+// config values an installer left unset. GPU_STACK_FAMILY is single-select
+// (host ROCm targets one family per node), so a node with GPUs from more
+// than one family cannot be resolved here — Ambiguous is set instead, and
+// the caller must obtain an explicit choice (e.g. an interactive prompt)
+// before setting GPU_STACK_FAMILY.
 type FamilyDefaults struct {
 	// GPUStackFamily is the value to auto-assign when non-empty. Empty means
 	// "leave GPU_STACK_FAMILY as-is": either the installer already set it
@@ -23,35 +55,59 @@ type FamilyDefaults struct {
 	// AIMHardwareFamily is the value to auto-assign when non-empty. Empty
 	// means "leave AIM_HARDWARE_FAMILY as-is". Unlike GPU_STACK_FAMILY, this
 	// is never ambiguous: the AIM model catalog is a comma-separated list by
-	// design, so a mixed-family node just gets every detected family listed.
+	// design, so a mixed-family node just gets every detected family listed
+	// (GPU families plus "epyc" when an AMD EPYC CPU was detected).
 	AIMHardwareFamily string
+	// UnconfiguredDetectedAIMFamilies lists hardware families that were
+	// detected but are NOT present in an explicitly-set AIM_HARDWARE_FAMILY.
+	// Explicit config always wins and is never overridden, but a
+	// deliberately narrow config (e.g. AIM_HARDWARE_FAMILY: "epyc" on a box
+	// that also has a Radeon GPU) may be an oversight, so callers should
+	// surface this as an informational notice rather than silently
+	// proceeding. Empty when AIM_HARDWARE_FAMILY was unset (nothing to
+	// compare against) or when detection matches the explicit config.
+	UnconfiguredDetectedAIMFamilies []string
 	// Detected is the hardware scan this decision was computed from, kept
 	// around so callers can build prompt/log text without re-running
 	// detection.
-	Detected DetectedGPUFamilies
+	Detected DetectedHardware
 }
 
 // ComputeFamilyDefaults decides how detected hardware should fill in
 // GPU_STACK_FAMILY / AIM_HARDWARE_FAMILY, given the config values the
 // installer already set in cfg (which are never overridden here). Pure
 // function: takes an already-run detection result so the decision logic is
-// unit-testable without shelling out to lspci.
-func ComputeFamilyDefaults(cfg Config, detected DetectedGPUFamilies) FamilyDefaults {
+// unit-testable without shelling out to lspci or reading /proc/cpuinfo.
+func ComputeFamilyDefaults(cfg Config, detected DetectedHardware) FamilyDefaults {
 	result := FamilyDefaults{Detected: detected}
-	if len(detected.Families) == 0 {
-		return result
-	}
 
-	if configString(cfg, "GPU_STACK_FAMILY") == "" {
-		if len(detected.Families) == 1 {
-			result.GPUStackFamily = detected.Families[0]
+	if len(detected.GPU.Families) > 0 && configString(cfg, "GPU_STACK_FAMILY") == "" {
+		if len(detected.GPU.Families) == 1 {
+			result.GPUStackFamily = detected.GPU.Families[0]
 		} else {
 			result.Ambiguous = true
 		}
 	}
 
-	if configString(cfg, "AIM_HARDWARE_FAMILY") == "" {
-		result.AIMHardwareFamily = strings.Join(detected.Families, ",")
+	aimFamilies := detected.AIMFamilies()
+	if len(aimFamilies) == 0 {
+		return result
+	}
+
+	existingAIM := configString(cfg, "AIM_HARDWARE_FAMILY")
+	if existingAIM == "" {
+		result.AIMHardwareFamily = strings.Join(aimFamilies, ",")
+		return result
+	}
+
+	configured := map[string]bool{}
+	for _, f := range strings.Split(existingAIM, ",") {
+		configured[strings.TrimSpace(f)] = true
+	}
+	for _, f := range aimFamilies {
+		if !configured[f] {
+			result.UnconfiguredDetectedAIMFamilies = append(result.UnconfiguredDetectedAIMFamilies, f)
+		}
 	}
 
 	return result
