@@ -23,6 +23,44 @@
 
 - name: Open Firewall Ports
   block:
+    # Ensure the persistence dir exists before any "Save iptables" handler runs
+    # (mirrors the guarantee the old validate_node/ip_table_check.yaml provided).
+    - name: Ensure /etc/iptables directory exists
+      file:
+        path: /etc/iptables
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    # Remove distro-default catch-all REJECT rules BEFORE appending the ACCEPT
+    # port rules below: iptables appends, so an ACCEPT added after an existing
+    # "-A INPUT -j REJECT" would sit behind the catch-all and never match.
+    # Detection is self-contained here so `--tags firewall` / `--tags
+    # prepare_node` remediate without depending on validate_node facts;
+    # validate_node/ip_table_check.yaml only *reports* these rules (read-only).
+    - name: Check for iptables INPUT REJECT rule
+      command: iptables -C INPUT -j REJECT --reject-with icmp-host-prohibited
+      register: input_reject_rule
+      failed_when: false
+      changed_when: false
+
+    - name: Check for iptables FORWARD REJECT rule
+      command: iptables -C FORWARD -j REJECT --reject-with icmp-host-prohibited
+      register: forward_reject_rule
+      failed_when: false
+      changed_when: false
+
+    - name: Remove iptables INPUT REJECT rule if present
+      command: iptables -D INPUT -j REJECT --reject-with icmp-host-prohibited
+      when: input_reject_rule.rc == 0
+      notify: Save iptables
+
+    - name: Remove iptables FORWARD REJECT rule if present
+      command: iptables -D FORWARD -j REJECT --reject-with icmp-host-prohibited
+      when: forward_reject_rule.rc == 0
+      notify: Save iptables
+
     - name: Open TCP ports
       iptables:
         chain: INPUT
