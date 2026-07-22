@@ -106,10 +106,25 @@ func resolveGPUFamilyDefaults(cfg config.Config) (gpuFamilyDetectionReport, erro
 			describeAllHardware(detected), defaults.AIMHardwareFamily)
 		cfg["AIM_HARDWARE_FAMILY"] = defaults.AIMHardwareFamily
 	}
+	if defaults.GPUStackFamilyConflict {
+		configured := configString(cfg, "GPU_STACK_FAMILY")
+		fmt.Println()
+		fmt.Printf("⚠️  GPU_STACK_FAMILY is set to %q in bloom.yaml, but this node's detected GPU(s) are %s.\n",
+			configured, describeFamilyList(detected, detected.GPU.Families))
+		fmt.Println("   Host ROCm and the GPU Operator target GPU_STACK_FAMILY, so this most likely installs")
+		fmt.Println("   the wrong driver stack for the hardware present. Proceeding with your explicit value —")
+		fmt.Println("   fix GPU_STACK_FAMILY (or remove it to auto-detect) if this is unintended.")
+		fmt.Println()
+	}
 	if len(defaults.UnconfiguredDetectedAIMFamilies) > 0 {
 		fmt.Printf("ℹ️  AIM_HARDWARE_FAMILY is set to %q, but this node also has %s not included there.\n",
 			configString(cfg, "AIM_HARDWARE_FAMILY"), describeFamilyList(detected, defaults.UnconfiguredDetectedAIMFamilies))
 		fmt.Println("   Using your explicit AIM_HARDWARE_FAMILY as-is. Add the family/families above too if you want AIM models for them on this cluster.")
+	}
+	if len(defaults.ConfiguredAIMFamiliesNotDetected) > 0 {
+		fmt.Printf("ℹ️  AIM_HARDWARE_FAMILY lists %s, which was not detected on this node.\n",
+			strings.Join(defaults.ConfiguredAIMFamiliesNotDetected, ", "))
+		fmt.Println("   That's expected if that hardware lives on other nodes in the cluster; otherwise check for a typo.")
 	}
 
 	return report, nil

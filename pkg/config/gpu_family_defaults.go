@@ -67,6 +67,23 @@ type FamilyDefaults struct {
 	// proceeding. Empty when AIM_HARDWARE_FAMILY was unset (nothing to
 	// compare against) or when detection matches the explicit config.
 	UnconfiguredDetectedAIMFamilies []string
+	// GPUStackFamilyConflict is true when GPU_STACK_FAMILY was set explicitly
+	// to a family that is NOT among the GPU families actually detected on this
+	// node (and at least one GPU family WAS detected). Host ROCm and the GPU
+	// Operator target this single family, so a mismatch most likely installs
+	// the wrong driver stack for the hardware present — callers should surface
+	// this as a warning. Never set when no GPU was detected: detection is
+	// best-effort, so an empty scan (container, missing pciutils, etc.) is not
+	// proof of a conflict.
+	GPUStackFamilyConflict bool
+	// ConfiguredAIMFamiliesNotDetected lists families present in an
+	// explicitly-set AIM_HARDWARE_FAMILY that were NOT detected on this node.
+	// Unlike a GPU_STACK_FAMILY conflict this is only informational:
+	// AIM_HARDWARE_FAMILY is a cluster-wide model catalog and may legitimately
+	// list hardware that lives on *other* nodes. Empty when AIM_HARDWARE_FAMILY
+	// was unset or nothing was detected (best-effort: an empty scan is not
+	// proof the configured hardware is absent).
+	ConfiguredAIMFamiliesNotDetected []string
 	// Detected is the hardware scan this decision was computed from, kept
 	// around so callers can build prompt/log text without re-running
 	// detection.
@@ -81,11 +98,20 @@ type FamilyDefaults struct {
 func ComputeFamilyDefaults(cfg Config, detected DetectedHardware) FamilyDefaults {
 	result := FamilyDefaults{Detected: detected}
 
-	if len(detected.GPU.Families) > 0 && configString(cfg, "GPU_STACK_FAMILY") == "" {
-		if len(detected.GPU.Families) == 1 {
-			result.GPUStackFamily = detected.GPU.Families[0]
-		} else {
-			result.Ambiguous = true
+	existingGPUStack := configString(cfg, "GPU_STACK_FAMILY")
+	if len(detected.GPU.Families) > 0 {
+		switch {
+		case existingGPUStack == "":
+			if len(detected.GPU.Families) == 1 {
+				result.GPUStackFamily = detected.GPU.Families[0]
+			} else {
+				result.Ambiguous = true
+			}
+		case !contains(detected.GPU.Families, existingGPUStack):
+			// Explicit value is never overridden, but a family the node
+			// doesn't actually have means the wrong host ROCm/GPU Operator
+			// stack — worth a warning.
+			result.GPUStackFamilyConflict = true
 		}
 	}
 
@@ -102,15 +128,35 @@ func ComputeFamilyDefaults(cfg Config, detected DetectedHardware) FamilyDefaults
 
 	configured := map[string]bool{}
 	for _, f := range strings.Split(existingAIM, ",") {
-		configured[strings.TrimSpace(f)] = true
+		if f = strings.TrimSpace(f); f != "" {
+			configured[f] = true
+		}
 	}
+	detectedAIM := map[string]bool{}
 	for _, f := range aimFamilies {
+		detectedAIM[f] = true
 		if !configured[f] {
 			result.UnconfiguredDetectedAIMFamilies = append(result.UnconfiguredDetectedAIMFamilies, f)
 		}
 	}
+	for _, f := range sortedKeys(configured) {
+		if !detectedAIM[f] {
+			result.ConfiguredAIMFamiliesNotDetected = append(result.ConfiguredAIMFamiliesNotDetected, f)
+		}
+	}
 
 	return result
+}
+
+// sortedKeys returns the keys of a set in deterministic order, so warning
+// text (e.g. ConfiguredAIMFamiliesNotDetected) is stable across runs.
+func sortedKeys(set map[string]bool) []string {
+	keys := make([]string, 0, len(set))
+	for k := range set {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // configString reads a string config value, tolerating an absent, nil, or

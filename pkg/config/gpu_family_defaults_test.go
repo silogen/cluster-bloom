@@ -65,6 +65,59 @@ func TestComputeFamilyDefaultsExplicitGPUStackFamilyNeverOverridden(t *testing.T
 	}
 }
 
+func TestComputeFamilyDefaultsExplicitGPUStackFamilyMismatchIsFlagged(t *testing.T) {
+	// bloom.yaml says instinct, but the box only has a Radeon card: explicit
+	// value must be kept (no override), but the conflict must be flagged so
+	// the caller can warn about the wrong host ROCm/GPU Operator stack.
+	cfg := Config{"GPU_STACK_FAMILY": "instinct"}
+	detected := DetectedHardware{GPU: DetectedGPUFamilies{Families: []string{FamilyRadeon}}}
+
+	got := ComputeFamilyDefaults(cfg, detected)
+
+	if !got.GPUStackFamilyConflict {
+		t.Error("GPU_STACK_FAMILY=instinct on a radeon-only node must be flagged as a conflict")
+	}
+	if got.GPUStackFamily != "" {
+		t.Errorf("explicit GPU_STACK_FAMILY must never be overridden, got %q", got.GPUStackFamily)
+	}
+}
+
+func TestComputeFamilyDefaultsExplicitGPUStackFamilyMatchIsNotFlagged(t *testing.T) {
+	cfg := Config{"GPU_STACK_FAMILY": "radeon"}
+	detected := DetectedHardware{GPU: DetectedGPUFamilies{Families: []string{FamilyRadeon}}}
+
+	if got := ComputeFamilyDefaults(cfg, detected); got.GPUStackFamilyConflict {
+		t.Error("GPU_STACK_FAMILY that matches a detected family must not be flagged as a conflict")
+	}
+}
+
+func TestComputeFamilyDefaultsGPUStackFamilyConflictNeedsDetection(t *testing.T) {
+	// Best-effort: an empty GPU scan (container / no pciutils) is not proof of
+	// a conflict, so an explicit value must NOT be flagged when nothing was seen.
+	cfg := Config{"GPU_STACK_FAMILY": "instinct"}
+
+	if got := ComputeFamilyDefaults(cfg, DetectedHardware{}); got.GPUStackFamilyConflict {
+		t.Error("no detected GPUs must not flag a GPU_STACK_FAMILY conflict")
+	}
+}
+
+func TestComputeFamilyDefaultsConfiguredAIMFamilyNotDetectedIsFlagged(t *testing.T) {
+	// AIM lists instinct, but this node only has a Radeon GPU (no EPYC): the
+	// instinct entry is reported as configured-but-not-detected (informational).
+	cfg := Config{"AIM_HARDWARE_FAMILY": "instinct"}
+	detected := DetectedHardware{GPU: DetectedGPUFamilies{Families: []string{FamilyRadeon}}}
+
+	got := ComputeFamilyDefaults(cfg, detected)
+
+	if len(got.ConfiguredAIMFamiliesNotDetected) != 1 || got.ConfiguredAIMFamiliesNotDetected[0] != FamilyInstinct {
+		t.Errorf("ConfiguredAIMFamiliesNotDetected = %v, want [instinct]", got.ConfiguredAIMFamiliesNotDetected)
+	}
+	// The Radeon GPU that IS present but not listed is the reverse case.
+	if len(got.UnconfiguredDetectedAIMFamilies) != 1 || got.UnconfiguredDetectedAIMFamilies[0] != FamilyRadeon {
+		t.Errorf("UnconfiguredDetectedAIMFamilies = %v, want [radeon]", got.UnconfiguredDetectedAIMFamilies)
+	}
+}
+
 func TestComputeFamilyDefaultsExplicitAIMHardwareFamilyNeverOverridden(t *testing.T) {
 	cfg := Config{"GPU_STACK_FAMILY": "", "AIM_HARDWARE_FAMILY": "epyc"}
 	detected := DetectedHardware{GPU: DetectedGPUFamilies{Families: []string{FamilyRadeon}}}
