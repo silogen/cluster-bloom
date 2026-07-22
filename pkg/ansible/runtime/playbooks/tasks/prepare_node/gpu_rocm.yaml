@@ -720,46 +720,120 @@
   failed_when: false
   when: gpu_stack_family_resolved | default('instinct') == 'radeon'
 
-# `rocminfo` can hang when the amdgpu/kfd driver stack is unhealthy -- e.g.
-# /dev/kfd not ready, a wedged GPU, or blocked agent enumeration. Worse, the
-# hang is often *uninterruptible* (the process is blocked in a kernel ioctl on
-# /dev/kfd in D state), where even `timeout`'s SIGTERM/SIGKILL cannot reap it,
-# so a plain `timeout` wrapper still leaves the play stuck waiting on the child.
-# We therefore defend on two fronts:
-#   1. `timeout -s KILL` bounds the ordinary (killable) hang cases.
-#   2. Ansible `async`/`poll` makes the controller enforce a hard wall-clock
-#      limit and move on even if the child is unkillable in D state.
-# A timed-out/killed check leaves rocminfo_check without rc=0 (or without rc at
-# all), which the validation facts below treat as a failed check -- triggering
-# the actionable "install ROCm manually and re-run bloom" failure instead of
-# hanging the run forever.
-- name: Run rocminfo post-install check
-  command: "timeout -s KILL 120 {{ rocminfo_locate.stdout | trim }}"
-  register: rocminfo_check
+# `rocminfo`/`amd-smi` can hang when the amdgpu/kfd driver stack is unhealthy
+# -- e.g. /dev/kfd not ready, a wedged GPU, or blocked agent enumeration. Worse,
+# the hang is often *uninterruptible* (blocked in a kernel ioctl on /dev/kfd in
+# D state), where even `timeout -s KILL` cannot reap the child.
+#
+# We deliberately do NOT use ansible's async/poll here. In bloom's namespaced
+# execution a completed async job's status file can be missing the "finished"
+# marker async_status waits on, so the poll never satisfies and the play hangs
+# on "ASYNC OK ... jid=..." even after the command itself finished -- the same
+# failure that forced the ROCm install tasks above onto a self-driven marker
+# file. We mirror that proven pattern here instead: launch the check fully
+# detached (nohup+setsid) under `timeout -s KILL 120`, have it write its exit
+# code to a marker file as its last act, and poll for that marker with a trivial
+# test+cat under until/retries (30 x 5s = 150s, comfortably past the 120s inner
+# timeout). A genuine D-state hang never writes the marker, so the poll loop
+# exhausts its retries and the validation facts below treat it as a failed check
+# -- triggering the actionable "install ROCm manually" failure instead of
+# hanging the run forever, with no async_status dependency to wedge on.
+- name: Launch rocminfo post-install check in the background
+  shell:
+    executable: /bin/bash
+    cmd: |
+      set -e
+      rm -f /tmp/bloom_rocminfo_check.rc /tmp/bloom_rocminfo_check.done /tmp/bloom_rocminfo_check.out
+      nohup setsid bash -c '
+        timeout -s KILL 120 "{{ rocminfo_locate.stdout | trim }}" > /tmp/bloom_rocminfo_check.out 2>&1
+        echo $? > /tmp/bloom_rocminfo_check.rc
+        touch /tmp/bloom_rocminfo_check.done
+      ' </dev/null >/tmp/bloom_rocminfo_check.launch.log 2>&1 &
   changed_when: false
-  failed_when: false
-  async: 150
-  poll: 5
   when:
     - gpu_stack_family_resolved | default('instinct') == 'radeon'
     - rocminfo_locate.rc | default(1) == 0
     - (rocminfo_locate.stdout | default('') | trim) != ''
 
-- name: Run amd-smi version post-install check (radeon/therock)
-  command: "timeout -s KILL 120 {{ amd_smi_bin }} version"
-  register: amdsmi_version_check
+- name: Wait for rocminfo post-install check to finish
+  shell:
+    executable: /bin/bash
+    cmd: |
+      if [ -f /tmp/bloom_rocminfo_check.done ]; then
+        cat /tmp/bloom_rocminfo_check.rc
+      else
+        echo RUNNING
+      fi
+  register: rocminfo_check_poll
+  until: rocminfo_check_poll.stdout is match('^[0-9]+$')
+  retries: 30
+  delay: 5
   changed_when: false
   failed_when: false
-  async: 150
-  poll: 5
+  when:
+    - gpu_stack_family_resolved | default('instinct') == 'radeon'
+    - rocminfo_locate.rc | default(1) == 0
+    - (rocminfo_locate.stdout | default('') | trim) != ''
+
+- name: Read rocminfo post-install output
+  slurp:
+    src: /tmp/bloom_rocminfo_check.out
+  register: rocminfo_check_out
+  changed_when: false
+  failed_when: false
+  when:
+    - gpu_stack_family_resolved | default('instinct') == 'radeon'
+    - rocminfo_check_poll.stdout | default('') is match('^[0-9]+$')
+
+- name: Launch amd-smi version post-install check in the background (radeon/therock)
+  shell:
+    executable: /bin/bash
+    cmd: |
+      set -e
+      rm -f /tmp/bloom_amdsmi_check.rc /tmp/bloom_amdsmi_check.done /tmp/bloom_amdsmi_check.out
+      nohup setsid bash -c '
+        timeout -s KILL 120 "{{ amd_smi_bin }}" version > /tmp/bloom_amdsmi_check.out 2>&1
+        echo $? > /tmp/bloom_amdsmi_check.rc
+        touch /tmp/bloom_amdsmi_check.done
+      ' </dev/null >/tmp/bloom_amdsmi_check.launch.log 2>&1 &
+  changed_when: false
   when:
     - gpu_stack_family_resolved | default('instinct') == 'radeon'
     - amd_smi_present | bool
 
+- name: Wait for amd-smi version post-install check to finish
+  shell:
+    executable: /bin/bash
+    cmd: |
+      if [ -f /tmp/bloom_amdsmi_check.done ]; then
+        cat /tmp/bloom_amdsmi_check.rc
+      else
+        echo RUNNING
+      fi
+  register: amdsmi_check_poll
+  until: amdsmi_check_poll.stdout is match('^[0-9]+$')
+  retries: 30
+  delay: 5
+  changed_when: false
+  failed_when: false
+  when:
+    - gpu_stack_family_resolved | default('instinct') == 'radeon'
+    - amd_smi_present | bool
+
+- name: Read amd-smi version post-install output
+  slurp:
+    src: /tmp/bloom_amdsmi_check.out
+  register: amdsmi_check_out
+  changed_when: false
+  failed_when: false
+  when:
+    - gpu_stack_family_resolved | default('instinct') == 'radeon'
+    - amdsmi_check_poll.stdout | default('') is match('^[0-9]+$')
+
 - name: Set ROCm 7.13.0 post-install validation facts
   set_fact:
-    rocminfo_ok: "{{ rocminfo_check is defined and rocminfo_check.rc | default(1) == 0 and 'HSA Agents' in (rocminfo_check.stdout | default('')) }}"
-    amdsmi_version_ok: "{{ amdsmi_version_check is defined and amdsmi_version_check.rc | default(1) == 0 and 'ROCm version' in (amdsmi_version_check.stdout | default('')) }}"
+    rocminfo_ok: "{{ (rocminfo_check_poll.stdout | default('') == '0') and ('HSA Agents' in (rocminfo_check_out.content | default('') | b64decode)) }}"
+    amdsmi_version_ok: "{{ (amdsmi_check_poll.stdout | default('') == '0') and ('ROCm version' in (amdsmi_check_out.content | default('') | b64decode)) }}"
   when: gpu_stack_family_resolved | default('instinct') == 'radeon'
 
 - name: Display ROCm 7.13.0 post-install validation
