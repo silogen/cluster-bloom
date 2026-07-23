@@ -380,6 +380,11 @@ func runAnsible(configFile string) {
 		os.Exit(1)
 	}
 
+	// Print the ClusterForge summary from the host (not the ansible child), so it
+	// can check for real deployment evidence via kubectl rather than trusting
+	// config alone. Skipped for export runs (which return earlier).
+	printClusterForgeSummary(cfg, configFile, tags)
+
 	os.Exit(exitCode)
 }
 
