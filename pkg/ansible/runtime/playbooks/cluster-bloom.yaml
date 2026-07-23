@@ -18,6 +18,7 @@
     SERVER_IP: ""
     JOIN_TOKEN: ""
     NO_DISKS_FOR_CLUSTER: false
+    SKIP_DATA_SAFETY: false
     CLUSTER_DISKS: []
     CLUSTER_PREMOUNTED_DISKS: ""
     USE_CERT_MANAGER: false
@@ -50,8 +51,21 @@
     rocm_instinct_min_patch: 3
     rocm_version_exact_required: false
     gpu_stack_family_resolved: instinct
+    # ROCm install model + amdgpu-install download coordinates. Defaults are the
+    # legacy repo.radeon.com path (instinct); ApplyGPUStackVars overrides these for
+    # radeon (therock) with the amdgpu-install 31.x series + --rocmrelease. The
+    # amdgpu_install_* defaults reference rocm_base_url/rocm_deb_package so the
+    # ROCM_BASE_URL / ROCM_DEB_PACKAGE overrides keep working for the legacy model.
+    rocm_install_model: legacy
+    amdgpu_install_base_url: "{{ rocm_base_url }}"
+    amdgpu_install_deb: "{{ rocm_deb_package }}"
+    rocm_release: ""
     rke2_installation_url: "https://get.rke2.io"
 
+    # Fallback for raw `ansible-playbook` runs. `bloom cli` overrides this from
+    # the Go single source of truth (pkg/config/supported_os.go); a Go test
+    # (TestSupportedUbuntuVersionsMatchPlaybook) fails if the two ever drift, so
+    # update pkg/config/supported_os.go and keep this list in sync.
     supported_ubuntu_versions:
       - "20.04"
       - "22.04"
@@ -135,10 +149,6 @@
     - name: Deploy ClusterForge Platform
       tags: [deploy_clusterforge]
       import_tasks: tasks/deploy_clusterforge/main.yaml
-
-    - name: Update Cluster Certificates
-      tags: [update_cert]
-      import_tasks: tasks/update_certificate/main.yaml
 
   handlers:
     - name: Restart multipathd

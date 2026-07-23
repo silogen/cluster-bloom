@@ -382,6 +382,12 @@ func runAnsible(configFile string) {
 		os.Exit(1)
 	}
 
+	// Populate the Ansible OS-check variable from the Go single source of truth
+	// (config.SupportedOSes) so the playbook's validate_node Ubuntu check and the
+	// Go-side sshd guidance never drift. Injected after validation, so it is not
+	// treated as an unknown config key. Overrides the playbook's fallback default.
+	cfg["supported_ubuntu_versions"] = config.SupportedUbuntuVersions()
+
 	// Handle export mode
 	if export {
 		if destroyData {

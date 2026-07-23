@@ -2,6 +2,16 @@
 # This uses YAML-native type definitions instead of JSON Schema
 # Schema Version: 2.0.0-alt
 # Last Updated: 2025-12-10
+#
+# SCOPE: This file defines only USER-FACING config keys (bloom.yaml). It drives
+# Go-side validation (LoadSchema/applyDefaults/Validate), the unknown-key check,
+# and the web UI form; those keys are then passed to Ansible as extra vars.
+#
+# Not everything Ansible consumes is a config key. Some Ansible vars are internal
+# and injected from Go AFTER validation (so they are intentionally NOT listed
+# here and are not user-settable). Notably, the officially supported OS set
+# (`supported_ubuntu_versions`) is owned by pkg/config/supported_os.go — edit
+# that file to change supported OSes, not this schema.
 
 # ========================================
 # Schema Definition

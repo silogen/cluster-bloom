@@ -5,17 +5,31 @@ package runtime
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
+	"time"
 
+	"github.com/silogen/cluster-bloom/pkg/config"
 	"github.com/silogen/cluster-bloom/pkg/ssh"
 	"golang.org/x/sys/unix"
 )
 
 func RunContainer(rootfs, playbookDir, playbook string, extraArgs []string, dryRun bool, tags string, outputMode OutputMode) int {
+	// Pre-flight: bloom drives Ansible over SSH to the local node, so an SSH
+	// server must be listening on 127.0.0.1:22. Check it up front and fail with
+	// actionable guidance instead of letting every Ansible task fail with an
+	// opaque "Connection refused". Done before any SSH key setup so a missing
+	// sshd leaves no side effects.
+	if err := checkLocalSSHReachable(); err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		return 1
+	}
+
 	// Detect the actual user (not root if using sudo)
 	actualUser := os.Getenv("SUDO_USER")
 	if actualUser == "" {
@@ -316,6 +330,39 @@ func pivotRoot(newRoot string) error {
 	}
 
 	return os.RemoveAll(putOld)
+}
+
+// sshInstallGuidance renders the install/start commands for every officially
+// supported OS from the single source of truth (config.SupportedOSes), so the
+// message reflects exactly what bloom supports and never drifts from the
+// validate_node OS check.
+func sshInstallGuidance() string {
+	var b strings.Builder
+	for _, os := range config.SupportedOSes {
+		fmt.Fprintf(&b, "     # %s\n     %s\n", os.Name, os.SSHInstallCmd)
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// checkLocalSSHReachable verifies an SSH server is accepting connections on
+// 127.0.0.1:22. bloom runs Ansible over SSH to the local node, so without a
+// running sshd every task fails with an opaque "Connection refused". This
+// catches that condition once, up front, with actionable guidance.
+func checkLocalSSHReachable() error {
+	const addr = "127.0.0.1:22"
+	conn, err := net.DialTimeout("tcp", addr, 3*time.Second)
+	if err == nil {
+		conn.Close()
+		return nil
+	}
+	return fmt.Errorf(`❌ No SSH server is reachable on %s.
+   bloom runs Ansible over SSH to the local node, so an SSH server must be
+   listening on 127.0.0.1:22. Underlying error: %v
+
+   Install and start sshd, then re-run bloom:
+%s
+
+   Verify with: ss -tlnp | grep ':22 '`, addr, err, sshInstallGuidance())
 }
 
 // setupHostSSHSignalHandling sets up signal handlers for host-based SSH cleanup
