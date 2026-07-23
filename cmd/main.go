@@ -228,6 +228,7 @@ Requires a configuration file (typically bloom.yaml).
 Certificate Updates:
   To update TLS certificates in an existing cluster:
     1. Create cert-update.yaml:
+         FIRST_NODE: true
          NEW_TLS_CERT: /home/ubuntu/tls-cert.pem
          NEW_TLS_KEY: /home/ubuntu/tls-key.pem
          RESTART_ENVOY_PODS: true
