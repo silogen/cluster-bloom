@@ -8,15 +8,18 @@
 - name: Handle /var/lib/rancher validation
   when: not (RANCHER_DISK is defined and RANCHER_DISK != "")
   block:
-    - name: Create /var/lib/rancher directory
-      file:
-        path: /var/lib/rancher
-        state: directory
-        mode: "0755"
-
-    - name: Get partition size
-      shell: df -BG /var/lib/rancher | awk 'NR==2 {print $2}' | sed 's/G//'
+    # READ-ONLY: do NOT create /var/lib/rancher here (validate_node must not
+    # mutate node state). Walk up to the nearest existing ancestor and measure
+    # that filesystem — it is the same one /var/lib/rancher would be created on,
+    # so the reported size is correct without touching the disk. prepare_node
+    # creates the directory when the node is actually provisioned.
+    - name: Get partition size (filesystem that holds or would hold /var/lib/rancher)
+      shell: |
+        p=/var/lib/rancher
+        while [ ! -e "$p" ]; do p=$(dirname "$p"); done
+        df -BG "$p" | awk 'NR==2 {print $2}' | sed 's/G//'
       register: rancher_partition_size
+      changed_when: false
 
     - name: Display partition size information
       debug:
