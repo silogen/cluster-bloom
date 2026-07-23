@@ -29,7 +29,7 @@ const (
 //
 // Unlike the old config-only banner, it looks for actual evidence of a
 // cluster-forge deployment (pods in the app namespaces) before printing the
-// credentials/endpoints. If cluster-forge was deployed in THIS invocation (a
+// endpoints/credentials. If cluster-forge was deployed in THIS invocation (a
 // full run, or --tags deploy_clusterforge), the banner is shown even before
 // pods schedule, since that is the "services are starting up" case. Otherwise,
 // with no evidence, it prints how to deploy cluster-forge instead of a
@@ -55,7 +55,7 @@ func printClusterForgeSummary(cfg config.Config, configFile, tags string) {
 		if domain == "" {
 			return
 		}
-		printClusterForgeCredentials(domain)
+		printClusterForgeCredentials(domain, cfgBool(cfg, "AIWB_ONLY", false))
 		return
 	}
 
@@ -107,57 +107,105 @@ func printClusterForgeNotDetected(configFile string) {
 	fmt.Println()
 }
 
-// printClusterForgeCredentials prints the endpoint + credential retrieval block.
-// Relocated verbatim from the ansible OutputProcessor summary so it can be gated
-// on real deployment evidence from the host.
-func printClusterForgeCredentials(domain string) {
-	fmt.Println()
-	fmt.Println("🚀 ClusterForge Deployment:")
-	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Println("⏳ Services are starting up. Endpoints will be available once envoy-gateway is ready.")
-	fmt.Println()
-	fmt.Println("Run this command to wait for services to be ready (Ctrl+C to exit early):")
-	fmt.Println()
+// clusterForgeEndpoint describes one ClusterForge UI/service endpoint whose
+// credential lives in a Kubernetes secret.
+type clusterForgeEndpoint struct {
+	Emoji           string
+	Label           string
+	Subdomain       string
+	Username        string // literal username, "devuser" to expand to devuser@<domain>, or "" for a token-only credential (e.g. OpenBao)
+	SecretNamespace string
+	SecretName      string
+	SecretJSONPath  string
+}
+
+func (e clusterForgeEndpoint) formatUsername(domain string) string {
+	if e.Username == "devuser" {
+		return fmt.Sprintf("devuser@%s", domain)
+	}
+	return e.Username
+}
+
+// clusterForgeEndpoints is the single source of truth for the endpoints listed
+// in the credential reference block. The AI Resource Manager endpoint only
+// exists on a full (non-AIWB_ONLY) install, so it's omitted for AIWB-only
+// installs where the airm namespace/app is never deployed.
+func clusterForgeEndpoints(aiwbOnly bool) []clusterForgeEndpoint {
+	all := []clusterForgeEndpoint{
+		{"🔐", "AI Resource Manager - DevUser", "airmui", "devuser", "keycloak", "airm-realm-credentials", ".data.KEYCLOAK_INITIAL_DEVUSER_PASSWORD"},
+		{"💼", "AI Workbench - DevUser", "aiwbui", "devuser", "keycloak", "airm-realm-credentials", ".data.KEYCLOAK_INITIAL_DEVUSER_PASSWORD"},
+		{"📦", "ArgoCD - Admin", "argocd", "admin", "argocd", "argocd-initial-admin-secret", ".data.password"},
+		{"🔧", "Gitea - Admin", "gitea", "silogen-admin", "cf-gitea", "gitea-admin-credentials", ".data.password"},
+		{"🔐", "OpenBao - Root Token", "openbao", "", "cf-openbao", "openbao-keys", ".data.root_token"},
+		{"🔑", "Keycloak - Admin", "kc", "silogen-admin", "keycloak", "keycloak-credentials", ".data.KEYCLOAK_INITIAL_ADMIN_PASSWORD"},
+	}
+	if !aiwbOnly {
+		return all
+	}
+	endpoints := make([]clusterForgeEndpoint, 0, len(all)-1)
+	for _, ep := range all {
+		if ep.Subdomain == "airmui" {
+			continue
+		}
+		endpoints = append(endpoints, ep)
+	}
+	return endpoints
+}
+
+// printReadinessScript prints a single copy-pasteable chain of `kubectl wait`
+// commands covering every namespace that needs to be up before the endpoints
+// below are reachable. The airm wait is only included on a full install,
+// since AIWB_ONLY disables the airm app entirely (see DISABLED_APPS in
+// deploy_clusterforge/main.yaml).
+func printReadinessScript(aiwbOnly bool) {
 	fmt.Println("  # Wait for envoy-gateway pods to be ready")
 	fmt.Println("  kubectl wait --for=condition=ready pod --all -n envoy-gateway-system --timeout=600s && \\")
 	fmt.Println("  # Wait for cluster-auth job to complete (creates initial auth configuration)")
 	fmt.Println("  kubectl wait --for=condition=complete job --all -n cluster-auth --timeout=600s && \\")
+	fmt.Println("  # Wait for Keycloak pods to be ready (auth/identity provider)")
+	fmt.Println("  kubectl wait --for=condition=ready pod --all -n keycloak --timeout=600s && \\")
+	fmt.Println("  # Wait for AI Workbench pods to be ready")
+	fmt.Println("  kubectl wait --for=condition=ready pod --all -n aiwb --timeout=600s && \\")
+	if !aiwbOnly {
+		fmt.Println("  # Wait for AI Resource Manager pods to be ready")
+		fmt.Println("  kubectl wait --for=condition=ready pod --all -n airm --timeout=600s && \\")
+	}
 	fmt.Println("  echo ''")
 	fmt.Println("  echo '✅ Services are ready! Endpoints are now accessible.'")
+}
+
+// printClusterForgeCredentials prints the endpoint + credential retrieval block.
+// The endpoint table and readiness script are the same ones cluster-forge
+// exposes; this variant runs on the host and is gated on real deployment
+// evidence by the caller.
+func printClusterForgeCredentials(domain string, aiwbOnly bool) {
+	endpoints := clusterForgeEndpoints(aiwbOnly)
+
+	fmt.Println()
+	fmt.Println("🚀 ClusterForge Deployment:")
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Println("⏳ Services are starting up. Endpoints will be available once everything below is ready.")
+	fmt.Println()
+	fmt.Println("Run this command to wait for services to be ready (Ctrl+C to exit early):")
+	fmt.Println()
+	printReadinessScript(aiwbOnly)
 	fmt.Println()
 	fmt.Println("Once ready, access these endpoints:")
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	fmt.Println()
 	fmt.Println("📋 Credential Information:")
 	fmt.Println()
-	fmt.Printf("🔐 AI Resource Manager - DevUser:\n")
-	fmt.Printf("   URL:      https://airmui.%s\n", domain)
-	fmt.Printf("   Username: devuser@%s\n", domain)
-	fmt.Printf("   Password: kubectl -n keycloak get secret airm-realm-credentials -o jsonpath='{.data.KEYCLOAK_INITIAL_DEVUSER_PASSWORD}' | base64 --decode && echo\n")
-	fmt.Println()
-	fmt.Printf("💼 AI Workbench - DevUser:\n")
-	fmt.Printf("   URL:      https://aiwbui.%s\n", domain)
-	fmt.Printf("   Username: devuser@%s\n", domain)
-	fmt.Printf("   Password: kubectl -n keycloak get secret airm-realm-credentials -o jsonpath='{.data.KEYCLOAK_INITIAL_DEVUSER_PASSWORD}' | base64 --decode && echo\n")
-	fmt.Println()
-	fmt.Printf("📦 ArgoCD - Admin:\n")
-	fmt.Printf("   URL:      https://argocd.%s\n", domain)
-	fmt.Printf("   Username: admin\n")
-	fmt.Printf("   Password: kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 --decode && echo\n")
-	fmt.Println()
-	fmt.Printf("🔧 Gitea - Admin:\n")
-	fmt.Printf("   URL:      https://gitea.%s\n", domain)
-	fmt.Printf("   Username: silogen-admin\n")
-	fmt.Printf("   Password: kubectl -n cf-gitea get secret gitea-admin-credentials -o jsonpath='{.data.password}' | base64 --decode && echo\n")
-	fmt.Println()
-	fmt.Printf("🔐 OpenBao - Root Token:\n")
-	fmt.Printf("   URL:      https://openbao.%s\n", domain)
-	fmt.Printf("   Token:    kubectl -n cf-openbao get secret openbao-keys -o jsonpath='{.data.root_token}' | base64 --decode && echo\n")
-	fmt.Println()
-	fmt.Printf("🔑 Keycloak - Admin:\n")
-	fmt.Printf("   URL:      https://kc.%s\n", domain)
-	fmt.Printf("   Username: silogen-admin\n")
-	fmt.Printf("   Password: kubectl -n keycloak get secret keycloak-credentials -o jsonpath='{.data.KEYCLOAK_INITIAL_ADMIN_PASSWORD}' | base64 --decode && echo\n")
+	for _, ep := range endpoints {
+		fmt.Printf("%s %s:\n", ep.Emoji, ep.Label)
+		fmt.Printf("   URL:      https://%s.%s\n", ep.Subdomain, domain)
+		if ep.Username != "" {
+			fmt.Printf("   Username: %s\n", ep.formatUsername(domain))
+			fmt.Printf("   Password: kubectl -n %s get secret %s -o jsonpath='{%s}' | base64 --decode && echo\n", ep.SecretNamespace, ep.SecretName, ep.SecretJSONPath)
+		} else {
+			fmt.Printf("   Token:    kubectl -n %s get secret %s -o jsonpath='{%s}' | base64 --decode && echo\n", ep.SecretNamespace, ep.SecretName, ep.SecretJSONPath)
+		}
+		fmt.Println()
+	}
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 }
 
