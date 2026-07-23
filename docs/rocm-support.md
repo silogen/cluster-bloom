@@ -38,7 +38,7 @@ What happens with the result:
 - **Any hardware detected (GPU family and/or EPYC CPU), `AIM_HARDWARE_FAMILY` unset** — bloom sets it to the comma-separated list of everything detected (e.g. a Radeon GPU + EPYC CPU box gets `AIM_HARDWARE_FAMILY: epyc,radeon`). This is never ambiguous: the AIM model catalog is multi-select by design, so mixed hardware is valid here and just gets every matching family's models.
 - **GPUs from more than one family detected (the "node ambiguity" case), `GPU_STACK_FAMILY` unset** — host ROCm and the GPU Operator are single-select per node, so bloom cannot guess which stack you intend to run AI workloads on. It prints the detected models for each family and an explanation of why it's asking, then prompts you to pick `instinct` or `radeon` interactively. Running with `--yes`/`--auto-confirm-prompts` (or with no readable stdin) hard-fails instead of guessing, telling you to set `GPU_STACK_FAMILY` explicitly in `bloom.yaml`. EPYC plays no part in this prompt.
 - **Anything explicitly set in `bloom.yaml`** (either variable) is never overridden by detection, regardless of what hardware is found.
-- **`AIM_HARDWARE_FAMILY` explicitly set, but detection finds hardware not in that list** — e.g. `AIM_HARDWARE_FAMILY: "epyc"` on a box that also has a Radeon GPU. The explicit value is used as-is (never overridden), but bloom prints an informational notice naming the detected-but-unconfigured family/families, so a deliberately narrow config doesn't silently hide hardware you may have wanted included.
+- **`AIM_HARDWARE_FAMILY` explicitly set, but detection finds hardware not in that list** — e.g. `AIM_HARDWARE_FAMILY: "epyc"` on a box that also has a Radeon GPU. The explicit value is used as-is (never overridden), but bloom surfaces it in the [hardware / configuration mismatch check](#hardware--configuration-mismatch-check) below, so a deliberately narrow config doesn't silently hide hardware you may have wanted included.
 
 This prompt is safe from the "no TTY" constraint that applies to the [version compatibility guard](#version-compatibility-guard-fail-fast) below: it runs in the top-level `bloom` process directly on the operator's terminal, *before* `bloom` re-execs itself into the namespaced container that drives `ansible-playbook` over an SSH loopback connection (where a `pause`-style prompt genuinely has no TTY and would hang). By the time any ansible task runs, both variables are already resolved.
 
@@ -53,6 +53,29 @@ This prompt is safe from the "no TTY" constraint that applies to the [version co
 ```
 
 `GPU`/`CPU` report `none detected` / `no AMD EPYC CPU detected` when nothing was found. The `->` lines report the final resolved value for each variable and its source — `explicit in bloom.yaml`, `auto-detected`, or (for `GPU_STACK_FAMILY` only) the `instinct` default when nothing was detected and nothing was configured. This is the easiest way to sanity-check detection on a node, e.g. via `bloom cli bloom.yaml --tags validate_node`.
+
+### Hardware / configuration mismatch check
+
+Immediately after the detection summary, and before any playbook task runs (including a `--destroy-data` wipe), bloom runs a consolidated, **non-mutational** pre-flight step:
+
+```
+🔧 Check for hardware autodetection and configuration mismatch
+```
+
+It compares your `bloom.yaml` against what was actually detected on the node and reports any of the following discrepancies:
+
+- **`GPU_NODE` vs. GPU presence** — `GPU_NODE: true` but no AMD GPU was found (GPU/ROCm setup will run and likely fail — set `GPU_NODE: false` for a CPU-only node), or `GPU_NODE: false` while an AMD GPU is present (GPU/ROCm will not be set up).
+- **`GPU_STACK_FAMILY` vs. detected GPU** — `GPU_STACK_FAMILY` is explicitly set to a family this node doesn't have (host ROCm and the GPU Operator target that family, so the wrong driver stack would be installed).
+- **Installed host ROCm version vs. the family's required train** — an *incompatible* ROCm is already installed (e.g. ROCm 7.13 on an `instinct` node, or a pre-7.2.3 ROCm when `instinct` needs 7.2.3). This is **not** flagged when no ROCm is installed at all (that is the normal install path — bloom installs the right version). The check reuses the exact version logic and pins of the authoritative [version compatibility guard](#version-compatibility-guard-fail-fast), so the two never disagree; this dimension is **skipped** when `ROCM_ALLOW_VERSION_MISMATCH` is set.
+- **`AIM_HARDWARE_FAMILY` vs. detected hardware** — the explicit list is missing detected hardware, or lists hardware not present on this node (the latter is expected when that hardware lives on other nodes).
+
+If there are no discrepancies the step prints `✅ No mismatches between detected hardware and configuration.` and continues without prompting. If there are, it prints each finding and asks:
+
+```
+Continue despite the mismatch(es) above? [y/N]:
+```
+
+Answering `n` (the default) aborts the run before anything is changed. This step runs in the top-level `bloom` process on the operator's real terminal — the same reason the [ambiguous-hardware prompt](#gpu-family-auto-detection-and-ambiguous-hardware) above is safe, and the reason it lives in Go rather than in a playbook `pause` (ansible has no TTY here and would hang). Running with `--yes`/`--auto-confirm-prompts` auto-continues past every mismatch (use with caution). There is no separate `AIM_ALLOW_VERSION_MISMATCH`: an `AIM_HARDWARE_FAMILY` discrepancy is a catalog difference rather than a version conflict, so it is governed by this interactive prompt (and `--yes`), not by a version-named flag.
 
 ### ROCm Installation
 Automated installation of ROCm drivers and runtime components:
@@ -177,6 +200,8 @@ Before doing any package, kernel, or repository work, bloom detects the ROCm alr
 If a functional ROCm install (amd-smi / rocm-smi present) is found whose version does not match the required train — for example `radeon` selected on a host that already has ROCm 7.2.3 — bloom **aborts early during the node validation phase** with an "Unsupported ROCm version" message. This runs as early as the installed version can be known, so the deploy stops before any GPU work rather than finishing with a mismatched, unsupported stack.
 
 This guard is a **hard fail with no interactive prompt**: bloom pipes the ansible-playbook output through its own processor over an SSH connection, so there is no TTY for a `[y/N]` prompt (it would hang the run). The escape hatch is the `ROCM_ALLOW_VERSION_MISMATCH` config option instead.
+
+The same incompatibility is also surfaced earlier and interactively by the top-level [hardware / configuration mismatch check](#hardware--configuration-mismatch-check), which does a best-effort read of the installed ROCm version (via `amd-smi` or `/opt/rocm*/.info/version`) and lets you abort at a `[y/N]` prompt before the playbook starts. Both use the same version logic and pins, so they agree; this ansible guard remains the authoritative, non-interactive backstop for `--tags`-scoped or automated runs. Setting `ROCM_ALLOW_VERSION_MISMATCH` suppresses both.
 
 **Override (proceed anyway)** — keep the currently installed ROCm and skip the guard by setting this in `bloom.yaml`:
 

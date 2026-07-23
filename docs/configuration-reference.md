@@ -346,7 +346,7 @@ Configuration sources in priority order (highest to lowest):
 #### ROCM_ALLOW_VERSION_MISMATCH
 - **Type**: Boolean
 - **Default**: `false`
-- **Description**: Force continuation past the early ROCm version guard. On a GPU node, if the already-installed ROCm does not match the train required by `GPU_STACK_FAMILY` (e.g. `radeon` needs ROCm 7.13 but the host has 7.2.3), bloom warns and exits early during node validation. Set this to skip that guard and proceed with the installed ROCm. The guard is a hard fail with no interactive prompt (bloom pipes ansible output over SSH, so there is no TTY).
+- **Description**: Force continuation past the ROCm version guard. On a GPU node, if the already-installed ROCm does not match the train required by `GPU_STACK_FAMILY` (e.g. `radeon` needs ROCm 7.13 but the host has 7.2.3), bloom flags it in two places: the interactive top-level *hardware / configuration mismatch check* (a `[y/N]` prompt before the playbook runs) and, as the authoritative backstop, a hard fail during ansible node validation (no prompt there — bloom pipes ansible output over SSH, so there is no TTY). Setting this to true suppresses the ROCm-version dimension of both, proceeding with the installed ROCm. Note: this flag governs only the ROCm-version check; other mismatches (GPU_NODE, GPU_STACK_FAMILY family, AIM_HARDWARE_FAMILY) are still surfaced by the interactive prompt and bypassed non-interactively with `--yes`/`--auto-confirm-prompts`.
 - **Values**: `true` | `false` (also accepts `TRUE` / `1`)
 - **Applicable**: `GPU_NODE: true`
 - **Example**: `ROCM_ALLOW_VERSION_MISMATCH: true`

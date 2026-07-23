@@ -383,6 +383,16 @@ func runAnsible(configFile string) {
 		return
 	}
 
+	// Consolidated, non-mutational pre-flight: surface any mismatch between the
+	// configuration and the hardware/ROCm actually detected on this node, and
+	// let the operator abort before anything (including a --destroy-data wipe)
+	// runs. --yes/--auto-confirm-prompts auto-continues; ROCM_ALLOW_VERSION_MISMATCH
+	// suppresses the ROCm-version dimension (see checkHardwareConfigMismatch).
+	if err := checkHardwareConfigMismatch(cfg, familyReport); err != nil {
+		fmt.Fprintf(os.Stderr, "❌ %v\n", err)
+		os.Exit(1)
+	}
+
 	// Handle destructive data cleanup if requested
 	if destroyData {
 		if !confirmDestructiveOperation(cfg) {
