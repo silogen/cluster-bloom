@@ -86,11 +86,19 @@ func getUserSSHDir(username string) (string, error) {
 func (e *EphemeralSSHManager) Setup() error {
 	// Generate ephemeral key pair
 	if err := e.generateKey(); err != nil {
+		// Best-effort: remove any partially-written key material so a failed
+		// Setup does not leak the ephemeral private key on disk.
+		e.removeKeyFiles()
 		return fmt.Errorf("failed to generate ephemeral key: %w", err)
 	}
 
 	// Install public key to authorized_keys
 	if err := e.installPublicKey(); err != nil {
+		// The defer'd Cleanup() in the caller is only registered after Setup()
+		// returns nil, so on failure here nothing else removes the generated
+		// key files. Clean them up now to avoid leaving the ephemeral key (and
+		// its work dir) behind.
+		e.removeKeyFiles()
 		return fmt.Errorf("failed to install public key: %w", err)
 	}
 

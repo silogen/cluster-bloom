@@ -32,9 +32,20 @@ func RunContainer(rootfs, playbookDir, playbook string, extraArgs []string, dryR
 		cwd = ""
 	}
 
+	// Ephemeral SSH keys live in a dedicated temp dir rather than the current
+	// working directory, so bloom never drops an `ssh/` folder into whatever
+	// directory it was invoked from (e.g. a git repo). Removed after SSH
+	// cleanup below (defer runs LIFO, so RemoveAll runs after Cleanup).
+	sshWorkDir, err := os.MkdirTemp("", "bloom-ephemeral-ssh-")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create ephemeral SSH work dir: %v\n", err)
+		return 1
+	}
+	defer os.RemoveAll(sshWorkDir)
+
 	// Setup ephemeral SSH key on HOST before starting container
 	fmt.Printf("🔑 Setting up ephemeral SSH key...\n")
-	sshManager, err := ssh.NewEphemeralSSHManager(cwd, actualUser)
+	sshManager, err := ssh.NewEphemeralSSHManager(sshWorkDir, actualUser)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create SSH manager: %v\n", err)
 		return 1
@@ -48,7 +59,7 @@ func RunContainer(rootfs, playbookDir, playbook string, extraArgs []string, dryR
 	InitSignalHandling()
 
 	// Setup host-based signal handling for SSH cleanup
-	setupHostSSHSignalHandling(sshManager)
+	setupHostSSHSignalHandling(sshManager, sshWorkDir)
 
 	// Ensure SSH cleanup happens when function exits
 	defer func() {
@@ -60,7 +71,7 @@ func RunContainer(rootfs, playbookDir, playbook string, extraArgs []string, dryR
 		}
 	}()
 
-	childArgs := []string{"__child__", rootfs, playbookDir, playbook, actualUser, cwd, string(outputMode)}
+	childArgs := []string{"__child__", rootfs, playbookDir, playbook, actualUser, cwd, string(outputMode), sshWorkDir}
 	if dryRun {
 		childArgs = append(childArgs, "--dry-run")
 	}
@@ -97,12 +108,13 @@ func RunChild() {
 	username := os.Args[5]
 	workDir := os.Args[6]
 	outputMode := OutputMode(os.Args[7])
+	sshWorkDir := os.Args[8]
 
 	// Check if --dry-run and --tags flags are present
 	dryRun := false
 	tags := ""
 	extraArgs := []string{}
-	for i := 8; i < len(os.Args); i++ {
+	for i := 9; i < len(os.Args); i++ {
 		if os.Args[i] == "--dry-run" {
 			dryRun = true
 		} else if os.Args[i] == "--tags" && i+1 < len(os.Args) {
@@ -132,8 +144,9 @@ func RunChild() {
 	// Note: SSH key setup and cleanup is now handled on the host, not in container
 	// The ephemeral SSH keys should already be available via bind mount
 
-	// Mount ephemeral SSH directory for container
-	ephemeralSSHDir := filepath.Join(workDir, "ssh")
+	// Mount ephemeral SSH directory for container (from the dedicated temp work
+	// dir, not the invocation cwd).
+	ephemeralSSHDir := filepath.Join(sshWorkDir, "ssh")
 	containerSSHDir := filepath.Join(rootfs, "root", ".ssh")
 
 	// Verify ephemeral SSH directory exists
@@ -307,7 +320,7 @@ func pivotRoot(newRoot string) error {
 
 // setupHostSSHSignalHandling sets up signal handlers for host-based SSH cleanup
 // This ensures that SSH cleanup happens on the host when signals are received
-func setupHostSSHSignalHandling(sshManager *ssh.EphemeralSSHManager) {
+func setupHostSSHSignalHandling(sshManager *ssh.EphemeralSSHManager, sshWorkDir string) {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT)
 
@@ -321,6 +334,10 @@ func setupHostSSHSignalHandling(sshManager *ssh.EphemeralSSHManager) {
 		} else {
 			fmt.Printf("✅ Host SSH cleanup completed successfully - original authorized_keys restored!\n")
 		}
+
+		// Remove the ephemeral SSH work dir too — os.Exit below skips the defer
+		// in RunContainer, so clean it up here to avoid leaving a temp dir.
+		os.RemoveAll(sshWorkDir)
 
 		// Exit with appropriate signal-based exit code
 		switch sig {
