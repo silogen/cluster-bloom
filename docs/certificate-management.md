@@ -161,6 +161,7 @@ You can update TLS certificates in an existing cluster without redeploying using
 2. **Create certificate update configuration:**
    ```yaml
    # cert-update.yaml
+   FIRST_NODE: true
    NEW_TLS_CERT: /home/ubuntu/tls-cert.pem
    NEW_TLS_KEY: /home/ubuntu/tls-key.pem
    RESTART_ENVOY_PODS: true
@@ -183,11 +184,14 @@ The certificate update playbook:
 ### Parameters
 
 **Required:**
+- `FIRST_NODE`: Must be `true` (certificate updates only run on the first node)
 - `NEW_TLS_CERT`: Path to new certificate file on the target node
 - `NEW_TLS_KEY`: Path to new private key file on the target node
 
 **Optional:**
 - `RESTART_ENVOY_PODS`: Whether to restart Envoy pods after update (default: `true`)
+
+**Note:** Certificate updates must run on the first node only. The Kubernetes secret is automatically replicated to all nodes via etcd.
 
 ### Verification
 

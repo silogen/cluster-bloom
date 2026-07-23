@@ -11,8 +11,10 @@
         that:
           - NEW_TLS_CERT != ""
           - NEW_TLS_KEY != ""
-        fail_msg: "NEW_TLS_CERT and NEW_TLS_KEY are required parameters"
-        success_msg: "✓ Required parameters provided"
+          - FIRST_NODE is defined
+          - FIRST_NODE | bool
+        fail_msg: "Certificate updates require NEW_TLS_CERT, NEW_TLS_KEY, and FIRST_NODE: true"
+        success_msg: "✓ Required parameters provided and running on first node"
 
     - name: Check certificate file exists
       stat:
