@@ -306,6 +306,28 @@ func runWebUI(cmd *cobra.Command) {
 	}
 }
 
+// partialConfigTags are tag-scoped runs that perform node-local checks/prep and
+// don't need a complete cluster config. They may run with a minimal or empty
+// bloom.yaml (required-field enforcement is relaxed for them).
+var partialConfigTags = map[string]bool{
+	"validate_node": true,
+}
+
+// tagsAllowPartialConfig reports whether every requested tag is a node-local
+// tag that can run without a full cluster config. Returns false if tags is
+// empty or includes any tag that needs full validation.
+func tagsAllowPartialConfig(tags string) bool {
+	if tags == "" {
+		return false
+	}
+	for _, t := range strings.Split(tags, ",") {
+		if !partialConfigTags[strings.TrimSpace(t)] {
+			return false
+		}
+	}
+	return true
+}
+
 func runAnsible(configFile string) {
 	// Load and validate config file
 	cfg, err := config.LoadConfig(configFile)
@@ -328,17 +350,29 @@ func runAnsible(configFile string) {
 		fmt.Fprintf(os.Stderr, "⚠️  %s\n", w)
 	}
 
-	// Validate config (after injecting CLI flags)
-	// Skip validation for cert update tags to allow separate cert-update-config.yaml
-	if tags == "" || !strings.Contains(tags, "update_cert") {
-		errors := config.Validate(cfg)
-		if len(errors) > 0 {
-			fmt.Fprintln(os.Stderr, "Configuration validation errors:")
-			for _, err := range errors {
-				fmt.Fprintf(os.Stderr, "  - %s\n", err)
-			}
-			os.Exit(1)
+	// Validate config (after injecting CLI flags).
+	//   - update_cert: skip validation entirely (uses a separate
+	//     cert-update-config.yaml with its own keys).
+	//   - node-local diagnostic/prep tags (e.g. validate_node): validate in
+	//     "optional" mode so they run with a minimal or empty bloom.yaml. We
+	//     still flag unknown keys and bad values, but don't require full
+	//     cluster config (DOMAIN, CERT_OPTION, ...).
+	//   - everything else: full validation.
+	var validationErrors []string
+	switch {
+	case tags != "" && strings.Contains(tags, "update_cert"):
+		// skip
+	case tags != "" && tagsAllowPartialConfig(tags):
+		validationErrors = config.ValidateOptional(cfg)
+	default:
+		validationErrors = config.Validate(cfg)
+	}
+	if len(validationErrors) > 0 {
+		fmt.Fprintln(os.Stderr, "Configuration validation errors:")
+		for _, err := range validationErrors {
+			fmt.Fprintf(os.Stderr, "  - %s\n", err)
 		}
+		os.Exit(1)
 	}
 
 	// Resolve GPU-family stack defaults (host ROCm + GPU Operator + DeviceConfig)
