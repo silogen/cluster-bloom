@@ -404,6 +404,13 @@ func runAnsible(configFile string) {
 		os.Exit(1)
 	}
 
+	// Print the post-run ClusterForge summary from the host, where kubectl can
+	// check for real deployment evidence. A failed playbook or a successful
+	// early exit for the mapped-driver reboot did not deploy ClusterForge.
+	if exitCode == 0 && !rebootRequiredForRun(runID) {
+		printClusterForgeSummary(cfg, configFile, tags)
+	}
+
 	os.Exit(maybeHandleRebootRequired(exitCode, runID))
 }
 
@@ -649,6 +656,21 @@ func confirmYesNo(prompt string) bool {
 // directly on the host, so `systemctl reboot` here reboots the real machine.
 func newBloomRunID() string {
 	return fmt.Sprintf("%d-%d", os.Getpid(), time.Now().UnixNano())
+}
+
+// rebootRequiredForRun reports whether this invocation reached the driver
+// reboot handoff. It also prevents a full invocation that ended early at that
+// handoff from being mistaken for a completed ClusterForge deployment.
+func rebootRequiredForRun(runID string) bool {
+	data, err := os.ReadFile(rebootMarkerPath)
+	if err != nil {
+		return false
+	}
+	var marker rebootRequiredMarker
+	return json.Unmarshal(data, &marker) == nil &&
+		!marker.Attempted &&
+		marker.RunID != "" &&
+		marker.RunID == runID
 }
 
 func maybeHandleRebootRequired(exitCode int, runID string) int {
