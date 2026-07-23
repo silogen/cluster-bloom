@@ -234,6 +234,21 @@
     - not (rocm_version_acceptable | bool)
     - ROCM_ALLOW_VERSION_MISMATCH | default(false) | bool
 
+# Shared condition for "installed ROCm is unsupported for the selected family and
+# no override was set". Only a real, functional install (amd-smi/rocm-smi present)
+# counts; a stale directory-only remnant with no working tools is left to the
+# normal install path, which lays down the correct version.
+- name: Record unsupported ROCm version (validate_node collect mode)
+  set_fact:
+    validate_failures: "{{ validate_failures | default([]) + ['Unsupported ROCm version for GPU_STACK_FAMILY=' ~ (gpu_stack_family_resolved | default('instinct')) ~ '. Installed: ROCm ' ~ rocm_version ~ '. Required: ' ~ (('ROCm >= ' ~ rocm_required_version ~ ' (the ' ~ (rocm_required_normalized | default('7.13')) ~ ' train)') if (gpu_stack_family_resolved | default('instinct') == 'radeon') else ('ROCm >= 7.2.' ~ (rocm_instinct_min_patch | default(3)) ~ ' (the 7.2 train)')) ~ '. Override with ROCM_ALLOW_VERSION_MISMATCH: true in bloom.yaml.'] }}"
+  when:
+    - validate_node_collect | default(false) | bool
+    - rocm_tools_present | bool
+    - rocm_version is defined
+    - rocm_version | trim != ''
+    - not (rocm_version_acceptable | bool)
+    - not (ROCM_ALLOW_VERSION_MISMATCH | default(false) | bool)
+
 - name: >-
     detected ROCm version is {{ rocm_version | default('unknown') }} and
     GPU_STACK_FAMILY: {{ gpu_stack_family_resolved | default('instinct') }} needs
@@ -247,9 +262,10 @@
       Continuing would deploy a mismatched, unsupported stack, so ClusterBloom stopped rather than finish with a broken configuration.
       To proceed anyway with the currently installed ROCm, set ROCM_ALLOW_VERSION_MISMATCH: true in bloom.yaml (accepts true|TRUE|1; with `bloom run` you can also pass -e ROCM_ALLOW_VERSION_MISMATCH=true).
   when:
-    # Only stop for a real, functional install (amd-smi/rocm-smi present). A
-    # stale directory-only remnant with no working tools is left to the normal
-    # install path, which lays down the correct version.
+    # In validate_node_collect mode the mismatch is recorded above and surfaced
+    # in the consolidated summary instead of aborting here; prepare_node runs
+    # WITHOUT collect mode so it still fails fast before any GPU work.
+    - not (validate_node_collect | default(false) | bool)
     - rocm_tools_present | bool
     - rocm_version is defined
     - rocm_version | trim != ''

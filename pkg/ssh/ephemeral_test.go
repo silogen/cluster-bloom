@@ -80,6 +80,109 @@ func TestValidateAuthorizedKeysAcceptsCorrectPermissions(t *testing.T) {
 	}
 }
 
+// TestValidateAuthorizedKeysCreatesMissingFile verifies a missing
+// authorized_keys is created empty with 0600 rather than hard-failing.
+func TestValidateAuthorizedKeysCreatesMissingFile(t *testing.T) {
+	sshDir := t.TempDir() // exists, 0700
+	authKeys := filepath.Join(sshDir, "authorized_keys")
+
+	e := &EphemeralSSHManager{Username: "tester", AuthorizedKeysPath: authKeys}
+
+	if err := e.validateAuthorizedKeys(); err != nil {
+		t.Fatalf("validateAuthorizedKeys should create a missing authorized_keys, got error: %v", err)
+	}
+	if !e.createdAuthKeys {
+		t.Errorf("createdAuthKeys = false, want true")
+	}
+	if e.createdSSHDir {
+		t.Errorf("createdSSHDir = true, want false (dir already existed)")
+	}
+	if perm := statPerm(t, authKeys); perm != 0600 {
+		t.Errorf("created authorized_keys perms = %o, want 600", perm)
+	}
+}
+
+// TestValidateAuthorizedKeysCreatesMissingDir verifies a missing ~/.ssh is
+// created 0700 along with the authorized_keys file.
+func TestValidateAuthorizedKeysCreatesMissingDir(t *testing.T) {
+	sshDir := filepath.Join(t.TempDir(), ".ssh") // does not exist yet
+	authKeys := filepath.Join(sshDir, "authorized_keys")
+
+	e := &EphemeralSSHManager{Username: "tester", AuthorizedKeysPath: authKeys}
+
+	if err := e.validateAuthorizedKeys(); err != nil {
+		t.Fatalf("validateAuthorizedKeys should create a missing ~/.ssh, got error: %v", err)
+	}
+	if !e.createdSSHDir || !e.createdAuthKeys {
+		t.Errorf("createdSSHDir=%v createdAuthKeys=%v, want both true", e.createdSSHDir, e.createdAuthKeys)
+	}
+	if perm := statPerm(t, sshDir); perm != 0700 {
+		t.Errorf("created .ssh dir perms = %o, want 700", perm)
+	}
+	if perm := statPerm(t, authKeys); perm != 0600 {
+		t.Errorf("created authorized_keys perms = %o, want 600", perm)
+	}
+}
+
+// TestRemoveCreatedIfEmpty verifies cleanup removes a bloom-created empty file
+// (and dir) but never removes one with real content.
+func TestRemoveCreatedIfEmpty(t *testing.T) {
+	t.Run("removes empty created file and dir", func(t *testing.T) {
+		sshDir := filepath.Join(t.TempDir(), ".ssh")
+		authKeys := filepath.Join(sshDir, "authorized_keys")
+		e := &EphemeralSSHManager{Username: "tester", AuthorizedKeysPath: authKeys}
+		if err := e.validateAuthorizedKeys(); err != nil {
+			t.Fatalf("setup: %v", err)
+		}
+
+		e.removeCreatedIfEmpty()
+
+		if _, err := os.Stat(authKeys); !os.IsNotExist(err) {
+			t.Errorf("authorized_keys should have been removed, stat err = %v", err)
+		}
+		if _, err := os.Stat(sshDir); !os.IsNotExist(err) {
+			t.Errorf(".ssh dir should have been removed, stat err = %v", err)
+		}
+	})
+
+	t.Run("keeps file bloom did not create", func(t *testing.T) {
+		sshDir := t.TempDir()
+		authKeys := filepath.Join(sshDir, "authorized_keys")
+		if err := os.WriteFile(authKeys, []byte(""), 0600); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		// createdAuthKeys stays false because the file already existed.
+		e := &EphemeralSSHManager{Username: "tester", AuthorizedKeysPath: authKeys}
+		if err := e.validateAuthorizedKeys(); err != nil {
+			t.Fatalf("setup: %v", err)
+		}
+
+		e.removeCreatedIfEmpty()
+
+		if _, err := os.Stat(authKeys); err != nil {
+			t.Errorf("pre-existing authorized_keys must not be removed, got %v", err)
+		}
+	})
+
+	t.Run("keeps created file that gained real content", func(t *testing.T) {
+		sshDir := t.TempDir()
+		authKeys := filepath.Join(sshDir, "authorized_keys")
+		e := &EphemeralSSHManager{Username: "tester", AuthorizedKeysPath: authKeys}
+		if err := e.validateAuthorizedKeys(); err != nil {
+			t.Fatalf("setup: %v", err)
+		}
+		if err := os.WriteFile(authKeys, []byte("ssh-ed25519 AAAA... real@key\n"), 0600); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+
+		e.removeCreatedIfEmpty()
+
+		if _, err := os.Stat(authKeys); err != nil {
+			t.Errorf("authorized_keys with real content must not be removed, got %v", err)
+		}
+	})
+}
+
 func statPerm(t *testing.T, path string) os.FileMode {
 	t.Helper()
 	info, err := os.Stat(path)

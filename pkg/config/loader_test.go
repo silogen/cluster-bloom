@@ -56,6 +56,36 @@ func TestValidateOptionalSkipsRequired(t *testing.T) {
 	}
 }
 
+// TestValidateRancherPartitionThresholds covers the numeric + ordering checks on
+// the configurable /var/lib/rancher size thresholds.
+func TestValidateRancherPartitionThresholds(t *testing.T) {
+	cases := []struct {
+		name    string
+		cfg     Config
+		wantErr bool
+	}{
+		{"defaults_absent", Config{}, false},
+		{"valid_string", Config{"RANCHER_PARTITION_MIN_GB": "100", "RANCHER_PARTITION_RECOMMENDED_GB": "500"}, false},
+		{"valid_int", Config{"RANCHER_PARTITION_MIN_GB": 100, "RANCHER_PARTITION_RECOMMENDED_GB": 500}, false},
+		{"equal_ok", Config{"RANCHER_PARTITION_MIN_GB": "500", "RANCHER_PARTITION_RECOMMENDED_GB": "500"}, false},
+		{"min_gt_recommended", Config{"RANCHER_PARTITION_MIN_GB": "600", "RANCHER_PARTITION_RECOMMENDED_GB": "500"}, true},
+		{"non_numeric", Config{"RANCHER_PARTITION_MIN_GB": "lots"}, true},
+		{"negative", Config{"RANCHER_PARTITION_MIN_GB": "-5"}, true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			errs := validateRancherPartitionThresholds(tc.cfg)
+			if tc.wantErr && len(errs) == 0 {
+				t.Errorf("expected an error, got none")
+			}
+			if !tc.wantErr && len(errs) != 0 {
+				t.Errorf("expected no error, got %v", errs)
+			}
+		})
+	}
+}
+
 // TestValidateOptionalStillFlagsUnknownKeys ensures relaxed validation still
 // catches typos / removed keys.
 func TestValidateOptionalStillFlagsUnknownKeys(t *testing.T) {

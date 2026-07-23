@@ -662,6 +662,22 @@ sudo ./bloom cli bloom.yaml --tags deploy_clusterforge
 sudo ./bloom cli bloom.yaml --skip-data-safety
 ```
 
+#### Node validation (`--tags validate_node`)
+
+`validate_node` is a **read-only diagnostic**: it never mutates node state and is designed to be run standalone against a minimal or even empty `bloom.yaml`.
+
+- **Relaxed config validation**: a `--tags validate_node` run validates the config in "optional" mode — it still flags unknown keys and malformed values, but does **not** require full cluster fields (`DOMAIN`, `CERT_OPTION`, ...). This lets you check a node before you have a complete config. An empty `bloom.yaml` is accepted.
+- **Runs all checks, reports once**: instead of aborting at the first failure, `validate_node` runs every check (Ubuntu version, CPU/memory/disk, kernel modules, `/var/lib/rancher` partition size, iptables, and — on GPU nodes — installed ROCm compatibility) and then fails once with a consolidated summary listing every issue found. If all checks pass it prints `✅ All node validation checks passed.`
+
+The `/var/lib/rancher` partition check is two-tier and configurable:
+
+- `RANCHER_PARTITION_RECOMMENDED_GB` (default `500`) — below this the check **warns** but continues.
+- `RANCHER_PARTITION_MIN_GB` (default `100`) — below this the check **records a failure**.
+
+`RANCHER_PARTITION_MIN_GB` must be `<=` `RANCHER_PARTITION_RECOMMENDED_GB` (validated at load time), and both must be whole numbers of GB. Set `SKIP_RANCHER_PARTITION_CHECK: true` to skip the partition check entirely.
+
+Note: when the same ROCm compatibility guard runs as part of `prepare_node` (or a full deploy), it still fails fast before any package/kernel work, since that is a mutating path.
+
 ### Run Command
 
 Execute external Ansible playbook using Bloom's containerized runtime:

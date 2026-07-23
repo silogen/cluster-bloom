@@ -3,6 +3,17 @@
 # Dependencies: supported_ubuntu_versions, GPU_NODE, SKIP_RANCHER_PARTITION_CHECK variables
 # Usage: Imported by main cluster-bloom.yaml playbook
 # Tags: [validate_node]
+#
+# Behavior: validate_node is a diagnostic — it runs ALL checks and reports every
+# problem in a single consolidated summary at the end, instead of aborting at the
+# first failure. Each check appends a message to `validate_failures` rather than
+# failing immediately; the final task fails once if that list is non-empty. This
+# gives a full picture of what's wrong with a node in one run.
+
+- name: Initialize node validation failure list
+  set_fact:
+    validate_failures: []
+  tags: [validate_node]
 
 - name: Validate Ubuntu Version
   include_tasks: ubuntu_version.yaml
@@ -21,11 +32,31 @@
   include_tasks: ip_table_check.yaml
   tags: [validate_node, iptables]
 
-# Detect any ROCm already on GPU nodes and fail fast if it is not a supported
-# version for the selected GPU_STACK_FAMILY, BEFORE any package/kernel/repo work
-# in prepare_node. prepare_node/gpu_rocm.yaml includes the same file again so
-# tag-scoped runs that skip validation still get detection + the guard.
+# Detect any ROCm already on GPU nodes and record whether it is a supported
+# version for the selected GPU_STACK_FAMILY. validate_node_collect makes the
+# guard append to validate_failures instead of failing immediately, so a ROCm
+# mismatch is reported alongside every other issue in the summary below.
+# prepare_node/gpu_rocm.yaml includes the same file WITHOUT collect mode, so it
+# still fails fast before any package/kernel/repo work.
 - name: Validate ROCm compatibility (GPU nodes)
   include_tasks: ../gpu_rocm_detect.yaml
+  vars:
+    validate_node_collect: true
   when: GPU_NODE | default(false) | bool
   tags: [validate_node, gpu, rocm]
+
+- name: Report node validation success
+  debug:
+    msg: "✅ All node validation checks passed."
+  when: validate_failures | length == 0
+  tags: [validate_node]
+
+- name: Fail if any node validation checks failed
+  fail:
+    msg: |-
+      Node validation found {{ validate_failures | length }} issue(s):
+      {% for f in validate_failures %}
+        - {{ f }}
+      {% endfor %}
+  when: validate_failures | length > 0
+  tags: [validate_node]
