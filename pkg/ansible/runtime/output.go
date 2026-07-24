@@ -208,6 +208,23 @@ func (p *OutputProcessor) PrintSummary() {
 	fmt.Printf("Playbook complete: %s\n", p.stats.Summary())
 	fmt.Printf("Total time: %s\n", formatDuration(duration))
 
+	// Collapse the per-status counts into a single, unambiguous verdict. Without
+	// this, a run whose last printed task is a "❌ (failed)" (e.g. the
+	// validate_node consolidated failure) reads as if it broke midway and later
+	// steps never ran — even though the run reached its natural end. The counts
+	// above already show the full picture; this states the bottom line.
+	fmt.Println()
+	switch {
+	case p.stats.Failed > 0 || p.stats.Unreachable > 0:
+		fmt.Printf("❌ Overall status: FAILED — %d task(s) did not pass. All steps ran; review the failures above (full log: bloom.log).\n",
+			p.stats.Failed+p.stats.Unreachable)
+	case p.stats.Ignored > 0:
+		fmt.Printf("⚠️  Overall status: COMPLETED WITH WARNINGS — %d issue(s) were tolerated and did not stop the run.\n",
+			p.stats.Ignored)
+	default:
+		fmt.Println("✅ Overall status: SUCCESS — all steps completed.")
+	}
+
 	// Print join information if available
 	if p.joinInfo != "" {
 		fmt.Println()

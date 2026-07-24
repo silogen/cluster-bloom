@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -37,8 +39,22 @@ const (
 //
 // Gated to first nodes, since cluster-forge is only ever deployed from the first
 // node (see tasks/deploy_clusterforge/main.yaml).
-func printClusterForgeSummary(cfg config.Config, configFile, tags string) {
+//
+// exitCode is the playbook's exit code: a non-zero code means the run failed
+// (e.g. node validation), in which case we don't print a "deploy next" banner
+// (there's nothing to deploy onto yet) and instead surface targeted remediation
+// for known failures.
+func printClusterForgeSummary(cfg config.Config, configFile, tags string, exitCode int) {
 	if !cfgBool(cfg, "FIRST_NODE", true) {
+		return
+	}
+
+	// The run failed. Don't advertise a deploy path onto a node that isn't ready;
+	// print actionable remediation for known failures (e.g. undersized
+	// /var/lib/rancher) instead. Other failures are already self-describing in
+	// the consolidated validation summary above.
+	if exitCode != 0 {
+		printNodeValidationRemediation(cfg)
 		return
 	}
 
@@ -59,7 +75,31 @@ func printClusterForgeSummary(cfg config.Config, configFile, tags string) {
 		return
 	}
 
-	printClusterForgeNotDetected(configFile)
+	// No cluster-forge deployment. What the user should do next depends on
+	// whether a cluster exists at all:
+	//   - cluster reachable (RKE2 up, e.g. after a prepare-only or full run that
+	//     didn't include cluster-forge): guide them to deploy cluster-forge onto
+	//     the running cluster.
+	//   - no cluster (e.g. a standalone --tags validate_node run on a pristine
+	//     node that passed validation): guide them to bloom the node first with
+	//     a full run.
+	if clusterReachable() {
+		printClusterForgeNotDetected(configFile)
+		return
+	}
+	printNodeNotBloomed(configFile)
+}
+
+// printNodeNotBloomed guides the user to run a full bloom on a validated but
+// not-yet-provisioned node (no cluster reachable). Only reached on a successful
+// run, so we know the node passed all validation checks.
+func printNodeNotBloomed(configFile string) {
+	fmt.Println()
+	fmt.Println("✅ Node validation passed, but no cluster is running on this node yet.")
+	fmt.Println("   To provision the cluster, run a full bloom:")
+	fmt.Println()
+	fmt.Printf("     sudo %s cli %s\n", os.Args[0], configFile)
+	fmt.Println()
 }
 
 // detectClusterForge reports whether any cluster-forge application pods are
@@ -93,6 +133,175 @@ func detectClusterForge() bool {
 		}
 	}
 	return false
+}
+
+// clusterReachable reports whether an RKE2 cluster is up and answering on this
+// node. Best-effort: a missing kubeconfig/kubectl or an unreachable API server
+// all count as "not reachable". Used to decide whether the next step is to
+// deploy cluster-forge (cluster up) or to bloom the node (no cluster yet).
+func clusterReachable() bool {
+	if _, err := os.Stat(rke2Kubeconfig); err != nil {
+		return false
+	}
+	kubectl := rke2Kubectl
+	if _, err := os.Stat(kubectl); err != nil {
+		p, lookErr := exec.LookPath("kubectl")
+		if lookErr != nil {
+			return false
+		}
+		kubectl = p
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	err := exec.CommandContext(ctx, kubectl,
+		"--kubeconfig", rke2Kubeconfig,
+		"get", "--raw", "/readyz").Run()
+	return err == nil
+}
+
+// rancherPartitionMinGB mirrors the hard-fail threshold in the validate_node
+// rancher_partition.yaml task. Kept in sync manually; both are fixed (not
+// user-configurable) values.
+const rancherPartitionMinGB = 100
+
+// printNodeValidationRemediation prints actionable guidance for known
+// validation failures. Currently it handles the undersized /var/lib/rancher
+// partition case: it re-measures the partition on the host (the same way the
+// ansible check does) and, if it is the culprit, tells the user how to fix it —
+// either by attaching a dedicated device via RANCHER_DISK (listing candidate
+// devices from lsblk) or, failing that, by skipping the check.
+//
+// It is a no-op when the check was bypassed (SKIP_RANCHER_PARTITION_CHECK), a
+// device is already configured (RANCHER_DISK), or the partition is adequately
+// sized (in which case some other check failed and is self-describing).
+func printNodeValidationRemediation(cfg config.Config) {
+	if cfgBool(cfg, "SKIP_RANCHER_PARTITION_CHECK", false) {
+		return
+	}
+	if cfgString(cfg, "RANCHER_DISK") != "" {
+		return
+	}
+	gb, ok := rancherPartitionGB()
+	if !ok || gb >= rancherPartitionMinGB {
+		return
+	}
+
+	fmt.Println()
+	fmt.Printf("💡 The /var/lib/rancher partition (%dGB) is below the required %dGB minimum.\n", gb, rancherPartitionMinGB)
+	fmt.Println()
+
+	devices := candidateRancherDevices()
+	if len(devices) > 0 {
+		fmt.Println("   To fix this, point RANCHER_DISK at a dedicated device in your bloom.yaml")
+		fmt.Println("   (Bloom will format it and mount it at /var/lib/rancher). Available devices:")
+		fmt.Println()
+		for _, d := range devices {
+			fmt.Printf("     - %s\n", d)
+		}
+		fmt.Println()
+		fmt.Println("   For example:")
+		fmt.Println()
+		fmt.Printf("     RANCHER_DISK: %s\n", firstDeviceName(devices[0]))
+		fmt.Println()
+		fmt.Println("   Alternatively, set SKIP_RANCHER_PARTITION_CHECK: true to skip this check.")
+	} else {
+		fmt.Println("   No spare block devices were found to use for /var/lib/rancher.")
+		fmt.Println("   To proceed on this node, set the following in your bloom.yaml:")
+		fmt.Println()
+		fmt.Println("     SKIP_RANCHER_PARTITION_CHECK: true")
+	}
+	fmt.Println()
+}
+
+// rancherPartitionGB returns the size (in GB) of the filesystem that holds, or
+// would hold, /var/lib/rancher. It mirrors the ansible check: walk up to the
+// nearest existing ancestor and measure that filesystem, without creating the
+// directory. Returns ok=false on any error.
+func rancherPartitionGB() (int, bool) {
+	p := "/var/lib/rancher"
+	for {
+		if _, err := os.Stat(p); err == nil {
+			break
+		}
+		parent := filepath.Dir(p)
+		if parent == p {
+			return 0, false
+		}
+		p = parent
+	}
+	out, err := exec.Command("df", "-BG", p).Output()
+	if err != nil {
+		return 0, false
+	}
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(lines) < 2 {
+		return 0, false
+	}
+	fields := strings.Fields(lines[len(lines)-1])
+	if len(fields) < 2 {
+		return 0, false
+	}
+	gb, err := strconv.Atoi(strings.TrimSuffix(fields[1], "G"))
+	if err != nil {
+		return 0, false
+	}
+	return gb, true
+}
+
+// candidateRancherDevices lists whole-disk block devices that could host
+// /var/lib/rancher, excluding the disk backing the root filesystem. Each entry
+// is formatted as "<device> (<size>)". Best-effort: returns nil on any error.
+func candidateRancherDevices() []string {
+	rootDisk := rootBackingDisk()
+
+	out, err := exec.Command("lsblk", "-dnpo", "NAME,SIZE,TYPE").Output()
+	if err != nil {
+		return nil
+	}
+
+	var devices []string
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 3 {
+			continue
+		}
+		name, size, typ := fields[0], fields[1], fields[2]
+		if typ != "disk" || name == rootDisk {
+			continue
+		}
+		devices = append(devices, fmt.Sprintf("%s (%s)", name, size))
+	}
+	return devices
+}
+
+// rootBackingDisk returns the whole-disk device path backing the root
+// filesystem (e.g. /dev/nvme0n1), so it can be excluded from RANCHER_DISK
+// candidates. Returns "" if it cannot be determined.
+func rootBackingDisk() string {
+	src, err := exec.Command("findmnt", "-no", "SOURCE", "/").Output()
+	if err != nil {
+		return ""
+	}
+	dev := strings.TrimSpace(string(src))
+	if dev == "" {
+		return ""
+	}
+	// Resolve the parent (whole) disk of the root partition. Empty PKNAME means
+	// the source is already a whole disk.
+	if pk, err := exec.Command("lsblk", "-no", "PKNAME", dev).Output(); err == nil {
+		if parent := strings.TrimSpace(string(pk)); parent != "" {
+			return "/dev/" + parent
+		}
+	}
+	return dev
+}
+
+// firstDeviceName extracts the device path from a "<device> (<size>)" entry.
+func firstDeviceName(entry string) string {
+	if i := strings.IndexByte(entry, ' '); i > 0 {
+		return entry[:i]
+	}
+	return entry
 }
 
 func printClusterForgeNotDetected(configFile string) {

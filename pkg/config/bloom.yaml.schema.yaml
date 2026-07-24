@@ -130,20 +130,6 @@ schema:
       desc: Skip /var/lib/rancher partition size check
       section: "💾 Storage Configuration"
 
-    RANCHER_PARTITION_RECOMMENDED_GB:
-      type: str
-      pattern: ^[0-9]+$
-      default: "500"
-      desc: /var/lib/rancher partition size (GB) below which validate_node warns but continues. Must be >= RANCHER_PARTITION_MIN_GB.
-      section: "💾 Storage Configuration"
-
-    RANCHER_PARTITION_MIN_GB:
-      type: str
-      pattern: ^[0-9]+$
-      default: "100"
-      desc: /var/lib/rancher partition size (GB) below which validate_node records a hard failure.
-      section: "💾 Storage Configuration"
-
     RANCHER_DISK:
       type: str
       pattern: ^/dev/[a-zA-Z0-9]+$|^$

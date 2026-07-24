@@ -51,6 +51,14 @@ var deprecatedKeys = map[string]deprecation{
 		RemovedIn: "v2.1.0",
 		Detail:    "local DNS handling was reworked; use FIX_DNS (with DNS_SERVERS) instead.",
 	},
+	"RANCHER_PARTITION_MIN_GB": {
+		Successor: "SKIP_RANCHER_PARTITION_CHECK",
+		Detail:    "the /var/lib/rancher size thresholds are no longer configurable (fixed at 100GB min / 500GB recommended); use SKIP_RANCHER_PARTITION_CHECK to bypass the check, or RANCHER_DISK to attach a dedicated device.",
+	},
+	"RANCHER_PARTITION_RECOMMENDED_GB": {
+		Successor: "SKIP_RANCHER_PARTITION_CHECK",
+		Detail:    "the /var/lib/rancher size thresholds are no longer configurable (fixed at 100GB min / 500GB recommended); use SKIP_RANCHER_PARTITION_CHECK to bypass the check, or RANCHER_DISK to attach a dedicated device.",
+	},
 	"INSTALL_ARGOCD": {
 		RemovedIn: "v2.1.0",
 		Detail:    "ArgoCD is now deployed by ClusterForge, not bloom; remove this key.",

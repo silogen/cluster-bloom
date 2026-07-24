@@ -4,7 +4,6 @@ import (
 	_ "embed"
 	"fmt"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -191,10 +190,6 @@ func validate(cfg Config, enforceRequired bool) []string {
 		}
 	}
 
-	// /var/lib/rancher partition thresholds must be numeric and ordered so the
-	// warn threshold is never below the hard-fail threshold.
-	errors = append(errors, validateRancherPartitionThresholds(cfg)...)
-
 	// Companion validation: DOCKERHUB_USER and DOCKERHUB_TOKEN must be set together
 	dockerUser, userExists := cfg["DOCKERHUB_USER"]
 	dockerToken, tokenExists := cfg["DOCKERHUB_TOKEN"]
@@ -245,53 +240,6 @@ func validate(cfg Config, enforceRequired bool) []string {
 	}
 
 	return errors
-}
-
-// validateRancherPartitionThresholds ensures the two /var/lib/rancher size
-// thresholds are whole numbers and that the warn threshold (RECOMMENDED) is not
-// below the hard-fail threshold (MIN). Values may arrive as strings (from the
-// schema defaults / quoted YAML) or ints (unquoted YAML).
-func validateRancherPartitionThresholds(cfg Config) []string {
-	var errors []string
-
-	minVal, minOK := rancherThresholdGB(cfg, "RANCHER_PARTITION_MIN_GB", &errors)
-	recVal, recOK := rancherThresholdGB(cfg, "RANCHER_PARTITION_RECOMMENDED_GB", &errors)
-
-	if minOK && recOK && minVal > recVal {
-		errors = append(errors, fmt.Sprintf(
-			"RANCHER_PARTITION_MIN_GB (%d) must not exceed RANCHER_PARTITION_RECOMMENDED_GB (%d)",
-			minVal, recVal))
-	}
-
-	return errors
-}
-
-// rancherThresholdGB reads a partition-threshold key as a non-negative integer.
-// It appends a validation error and returns ok=false when the value is present
-// but not a whole number. A missing key returns ok=false without an error.
-func rancherThresholdGB(cfg Config, key string, errors *[]string) (int, bool) {
-	raw, exists := cfg[key]
-	if !exists || raw == nil {
-		return 0, false
-	}
-
-	switch v := raw.(type) {
-	case int:
-		return v, true
-	case string:
-		if v == "" {
-			return 0, false
-		}
-		n, err := strconv.Atoi(strings.TrimSpace(v))
-		if err != nil || n < 0 {
-			*errors = append(*errors, fmt.Sprintf("%s must be a non-negative whole number of GB, got %q", key, v))
-			return 0, false
-		}
-		return n, true
-	default:
-		*errors = append(*errors, fmt.Sprintf("%s must be a non-negative whole number of GB, got %v", key, raw))
-		return 0, false
-	}
 }
 
 // validateGPUStack resolves GPU_STACK_FAMILY against the compatibility matrix
