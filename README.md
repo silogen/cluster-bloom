@@ -11,7 +11,19 @@
 - ROCm setup and configuration for AMD GPU nodes
 - Disk management and Longhorn storage integration
 - Multi-node cluster support with easy node joining
-- ClusterForge integration
+- [ClusterForge](https://github.com/silogen/cluster-forge) integration
+
+## Requirements
+
+Before deploying, ensure each node meets the following requirements. Bloom validates these during node validation (`bloom proof`) and again at the start of `bloom cli`.
+
+- **Operating System**: Ubuntu 20.04, 22.04, or 24.04
+- **Privileges**: `sudo`/root privileges (cluster deployment via `bloom cli` must be run with `sudo`)
+- **CPU**: 2+ cores (4 recommended)
+- **Memory**: 4GB+ RAM (8GB recommended)
+- **Disk**: 20GB+ free on the root partition (see [Sizing your cluster](docs/PRD.md#sizing-your-cluster) for GPU/storage guidance)
+- **Kernel modules**: `overlay` and `br_netfilter` (plus `amdgpu` on GPU nodes)
+- **Network**: Outbound internet access to fetch packages, container images, and releases
 
 ## Getting Started
 
@@ -128,36 +140,36 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | CF_VALUES | Path to ClusterForge values file (optional). Example: "values_cf.yaml" | "" |
 | CLUSTER_DISKS | Comma-separated list of disk devices. Example "/dev/sdb,/dev/sdc". Also skips NVME drive checks. | "" |
 | CLUSTER_LISTEN_IP | Network IP specification for cluster binding. Supports exact IP ("192.168.1.100") or subnet CIDR ("192.168.1.0/24"). Overrides auto-detection for multi-homed systems. | "" |
-| CLUSTER_SIZE | Size category for cluster deployment planning. Options: small, medium, large | medium |
 | CLUSTER_PREMOUNTED_DISKS | Comma-separated list of absolute disk paths to use for Longhorn | "" |
+| CLUSTER_SIZE | Size category for cluster deployment planning. Options: small, medium, large | medium |
 | CLUSTERFORGE_RELEASE | ClusterForge version to deploy. Accepts version tags (e.g. `v2.0.2`), full release URLs, `latest` (fetches newest GitHub release via API), `none`, or `""` to skip | `latest` |
+| CLUSTERFORGE_REPO | ClusterForge git repository URL for ArgoCD-based deployment | https://github.com/silogen/cluster-forge.git |
 | CONTROL_PLANE | Set to true if this node should be a control plane node | false, only applies when FIRST_NODE is false |
-| DOCKERHUB_USER | DockerHub username for authenticated pulls (reduces rate limit errors). Must be set together with `DOCKERHUB_TOKEN`. | "" |
-| DOCKERHUB_TOKEN | DockerHub access token for authenticated pulls. Must be set together with `DOCKERHUB_USER`. | "" |
 | DISABLED_STEPS | Comma-separated list of step names to skip during deployment. Mutually exclusive with `ENABLED_STEPS`. | "" |
-| ENABLED_STEPS | Comma-separated list of steps to run (everything else is skipped). Mutually exclusive with `DISABLED_STEPS`. | "" |
-| DOMAIN | The domain name for the cluster (e.g., "cluster.example.com"). Required for first node. Also needed when joining as a control-plane node. | "" |
 | DNS_SERVERS | Custom DNS servers for RKE2 cluster. If set, these nameservers will be written to /etc/rancher/rke2/resolv.conf instead of copying host DNS. Format as YAML list (e.g., ["8.8.8.8", "1.1.1.1"]) | [] |
-| FIX_DNS | **Opt-in** to allow automatic DNS fixes. Only modifies DNS if broken and external DNS works. Creates backups and auto-rolls back on failure. | false |
+| DOCKERHUB_TOKEN | DockerHub access token for authenticated pulls. Must be set together with `DOCKERHUB_USER`. | "" |
+| DOCKERHUB_USER | DockerHub username for authenticated pulls (reduces rate limit errors). Must be set together with `DOCKERHUB_TOKEN`. | "" |
+| DOMAIN | The domain name for the cluster (e.g., "cluster.example.com"). Required for first node. Also needed when joining as a control-plane node. | "" |
+| ENABLED_STEPS | Comma-separated list of steps to run (everything else is skipped). Mutually exclusive with `DISABLED_STEPS`. | "" |
 | FIRST_NODE | Set to true if this is the first node in the cluster | true |
+| FIX_DNS | **Opt-in** to allow automatic DNS fixes. Only modifies DNS if broken and external DNS works. Creates backups and auto-rolls back on failure. | false |
 | GPU_NODE | Set to true if this node has GPUs | true |
 | GPU_STACK_FAMILY | GPU family that drives ROCm + GPU Operator install defaults (radeon \| instinct). Empty resolves to instinct (current defaults). radeon selects the ROCm 7.13 tech-preview stack. Example: "radeon" | "" |
 | JOIN_TOKEN | The token used to join additional nodes to the cluster | |
 | NO_DISKS_FOR_CLUSTER | Set to true to skip disk-related operations | false |
+| PRELOAD_IMAGES | Comma-separated list of container images to preload | docker.io/rocm/pytorch:rocm6.4_ubuntu24.04_py3.12_pytorch_release_2.6.0,docker.io/rocm/vllm:rocm6.4.1_vllm_0.9.0.1_20250605 |
+| RANCHER_DISK | Device path for dedicated `/var/lib/rancher` storage (e.g. `/dev/nvme2n1`). Primarily for GPU worker nodes with heavy workloads. Bloom formats and mounts this device automatically. Mutually exclusive with `NO_DISKS_FOR_CLUSTER`. | "" |
+| RKE2_EXTRA_CONFIG | Additional RKE2 configuration in YAML format | "" |
+| RKE2_INSTALLATION_URL | RKE2 installation script URL | https://get.rke2.io |
 | RKE2_VERSION | Specific RKE2 version to install (e.g., "v1.34.1+rke2r1") | "" |
+| ROCM_ALLOW_VERSION_MISMATCH | Force continuation past the early ROCm version guard when the installed ROCm does not match the GPU_STACK_FAMILY train (accepts true\|TRUE\|1) | false |
+| ROCM_BASE_URL | ROCm base repository URL | https://repo.radeon.com/amdgpu-install/7.2.3/ubuntu/ |
+| ROCM_DEB_PACKAGE | ROCm DEB package name | amdgpu-install_7.2.3.70203-1_all.deb |
 | SERVER_IP | The IP address of the RKE2 server (required for additional nodes) | |
 | SKIP_RANCHER_PARTITION_CHECK | Set to true to skip /var/lib/rancher partition size check | false |
 | TLS_CERT | Path to TLS certificate file for ingress (required if CERT_OPTION is 'existing') | "" |
 | TLS_KEY | Path to TLS private key file for ingress (required if CERT_OPTION is 'existing') | "" |
 | USE_CERT_MANAGER | Use cert-manager with Let's Encrypt for automatic TLS certificates | false |
-| CLUSTERFORGE_REPO | ClusterForge git repository URL for ArgoCD-based deployment | https://github.com/silogen/cluster-forge.git |
-| PRELOAD_IMAGES | Comma-separated list of container images to preload | docker.io/rocm/pytorch:rocm6.4_ubuntu24.04_py3.12_pytorch_release_2.6.0,docker.io/rocm/vllm:rocm6.4.1_vllm_0.9.0.1_20250605 |
-| RANCHER_DISK | Device path for dedicated `/var/lib/rancher` storage (e.g. `/dev/nvme2n1`). Primarily for GPU worker nodes with heavy workloads. Bloom formats and mounts this device automatically. Mutually exclusive with `NO_DISKS_FOR_CLUSTER`. | "" |
-| RKE2_EXTRA_CONFIG | Additional RKE2 configuration in YAML format | "" |
-| RKE2_INSTALLATION_URL | RKE2 installation script URL | https://get.rke2.io |
-| ROCM_BASE_URL | ROCm base repository URL | https://repo.radeon.com/amdgpu-install/7.2.3/ubuntu/ |
-| ROCM_DEB_PACKAGE | ROCm DEB package name | amdgpu-install_7.2.3.70203-1_all.deb |
-| ROCM_ALLOW_VERSION_MISMATCH | Force continuation past the early ROCm version guard when the installed ROCm does not match the GPU_STACK_FAMILY train (accepts true\|TRUE\|1) | false |
 
 ### OIDC Configuration Examples
 

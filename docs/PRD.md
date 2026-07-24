@@ -258,10 +258,12 @@ This information appears at the end of the deployment summary when using clean o
 
 ClusterBloom validates system requirements before installation:
 
+- **Operating System**: Ubuntu 20.04, 22.04, or 24.04
+- **Privileges**: sudo/root privileges (cluster deployment via `bloom cli` must run with `sudo`)
 - **Disk Space**: 20GB+ root, 10GB+ available, 5GB+ /var, 500GB+ /var/lib/rancher (optional check)
 - **System Resources**: 4GB+ RAM (8GB recommended), 2+ CPU cores (4 recommended)
-- **Ubuntu Version**: 20.04, 22.04, or 24.04
 - **Kernel Modules**: overlay, br_netfilter (amdgpu for GPU nodes)
+- **Network**: Outbound internet access to fetch packages, container images, and releases
 
 See [VALIDATION.md](VALIDATION.md) for complete validation documentation.
 
