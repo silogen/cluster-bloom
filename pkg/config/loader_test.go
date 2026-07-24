@@ -86,6 +86,50 @@ func TestValidateRancherPartitionThresholds(t *testing.T) {
 	}
 }
 
+// TestHostOSIsSupported checks os-release parsing and the supported-OS match.
+func TestHostOSIsSupported(t *testing.T) {
+	cases := []struct {
+		name    string
+		content string
+		want    bool
+	}{
+		{
+			name:    "ubuntu supported version",
+			content: "ID=ubuntu\nVERSION_ID=\"22.04\"\nPRETTY_NAME=\"Ubuntu 22.04.4 LTS\"\n",
+			want:    true,
+		},
+		{
+			name:    "ubuntu unsupported version",
+			content: "ID=ubuntu\nVERSION_ID=\"18.04\"\n",
+			want:    false,
+		},
+		{
+			name:    "opensuse tumbleweed unsupported",
+			content: "ID=\"opensuse-tumbleweed\"\nVERSION_ID=\"20260721\"\nPRETTY_NAME=\"openSUSE Tumbleweed\"\n",
+			want:    false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			host := parseOSRelease(tc.content)
+			if got := host.IsSupported(); got != tc.want {
+				t.Errorf("IsSupported() = %v, want %v (host=%+v)", got, tc.want, host)
+			}
+		})
+	}
+}
+
+// TestHostOSDisplayName verifies the fallback ordering for the OS label.
+func TestHostOSDisplayName(t *testing.T) {
+	if got := parseOSRelease("ID=\"opensuse-tumbleweed\"\nPRETTY_NAME=\"openSUSE Tumbleweed\"\n").DisplayName(); got != "openSUSE Tumbleweed" {
+		t.Errorf("DisplayName() = %q, want PRETTY_NAME", got)
+	}
+	if got := parseOSRelease("ID=ubuntu\nVERSION_ID=\"22.04\"\n").DisplayName(); got != "ubuntu 22.04" {
+		t.Errorf("DisplayName() = %q, want id+version fallback", got)
+	}
+}
+
 // TestValidateOptionalStillFlagsUnknownKeys ensures relaxed validation still
 // catches typos / removed keys.
 func TestValidateOptionalStillFlagsUnknownKeys(t *testing.T) {

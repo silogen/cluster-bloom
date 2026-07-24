@@ -1,5 +1,11 @@
 package config
 
+import (
+	"fmt"
+	"os"
+	"strings"
+)
+
 // SupportedOS describes an operating system cluster-bloom officially supports,
 // including how to install/start an SSH server on it.
 type SupportedOS struct {
@@ -39,4 +45,80 @@ func SupportedUbuntuVersions() []string {
 		versions = append(versions, os.Versions...)
 	}
 	return versions
+}
+
+// SupportedOSSummary renders a human-readable, one-per-line summary of the
+// officially supported OSes and versions, e.g. "Ubuntu 20.04 / 22.04 / 24.04".
+func SupportedOSSummary() string {
+	parts := make([]string, 0, len(SupportedOSes))
+	for _, o := range SupportedOSes {
+		parts = append(parts, fmt.Sprintf("%s %s", o.Name, strings.Join(o.Versions, " / ")))
+	}
+	return strings.Join(parts, "\n     ")
+}
+
+// HostOSInfo is the local machine's OS identity, parsed from os-release.
+type HostOSInfo struct {
+	ID         string // os-release ID, e.g. "ubuntu", "opensuse-tumbleweed"
+	VersionID  string // os-release VERSION_ID, e.g. "22.04"
+	PrettyName string // os-release PRETTY_NAME, e.g. "openSUSE Tumbleweed"
+}
+
+// DetectHostOS reads /etc/os-release (falling back to /usr/lib/os-release) and
+// returns the local OS identity.
+func DetectHostOS() (HostOSInfo, error) {
+	for _, p := range []string{"/etc/os-release", "/usr/lib/os-release"} {
+		data, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		return parseOSRelease(string(data)), nil
+	}
+	return HostOSInfo{}, fmt.Errorf("no os-release file found")
+}
+
+func parseOSRelease(content string) HostOSInfo {
+	m := map[string]string{}
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		k, v, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		m[strings.TrimSpace(k)] = strings.Trim(strings.TrimSpace(v), `"'`)
+	}
+	return HostOSInfo{ID: m["ID"], VersionID: m["VERSION_ID"], PrettyName: m["PRETTY_NAME"]}
+}
+
+// IsSupported reports whether this host's OS and version are officially
+// supported (matched against SupportedOSes by os-release ID + version).
+func (h HostOSInfo) IsSupported() bool {
+	for _, o := range SupportedOSes {
+		if !strings.EqualFold(o.OSReleaseID, h.ID) {
+			continue
+		}
+		for _, v := range o.Versions {
+			if v == h.VersionID {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// DisplayName returns the best available human-readable OS name.
+func (h HostOSInfo) DisplayName() string {
+	switch {
+	case h.PrettyName != "":
+		return h.PrettyName
+	case h.ID != "" && h.VersionID != "":
+		return h.ID + " " + h.VersionID
+	case h.ID != "":
+		return h.ID
+	default:
+		return "unknown OS"
+	}
 }

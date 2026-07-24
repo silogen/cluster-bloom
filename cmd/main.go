@@ -313,6 +313,17 @@ var partialConfigTags = map[string]bool{
 	"validate_node": true,
 }
 
+// envIsTrue reports whether an environment variable is set to a truthy value
+// (true/TRUE/1/yes), matching the loose bypass-flag parsing used elsewhere.
+func envIsTrue(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
+	case "true", "1", "yes":
+		return true
+	default:
+		return false
+	}
+}
+
 // tagsAllowPartialConfig reports whether every requested tag is a node-local
 // tag that can run without a full cluster config. Returns false if tags is
 // empty or includes any tag that needs full validation.
@@ -399,6 +410,25 @@ func runAnsible(configFile string) {
 			os.Exit(1)
 		}
 		return
+	}
+
+	// Host OS support pre-flight: fail early and clearly by name on an
+	// unsupported OS (e.g. openSUSE) instead of surfacing Ubuntu-specific sshd
+	// guidance or an opaque Ansible failure. Bypass with
+	// BLOOM_ALLOW_UNSUPPORTED_OS=true for development/testing on other distros.
+	if host, err := config.DetectHostOS(); err != nil {
+		fmt.Fprintf(os.Stderr, "⚠️  Could not determine host OS (%v); skipping OS support check.\n", err)
+	} else if !host.IsSupported() {
+		if envIsTrue("BLOOM_ALLOW_UNSUPPORTED_OS") {
+			fmt.Fprintf(os.Stderr, "⚠️  %s is not a supported OS; proceeding anyway because BLOOM_ALLOW_UNSUPPORTED_OS is set.\n", host.DisplayName())
+		} else {
+			fmt.Fprintf(os.Stderr, `❌ %s is not a supported operating system.
+   cluster-bloom officially supports:
+     %s
+   Run bloom on a supported OS, or set BLOOM_ALLOW_UNSUPPORTED_OS=true to proceed anyway (unsupported).
+`, host.DisplayName(), config.SupportedOSSummary())
+			os.Exit(1)
+		}
 	}
 
 	// Handle destructive data cleanup if requested
