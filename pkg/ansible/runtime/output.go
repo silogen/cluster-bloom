@@ -208,6 +208,23 @@ func (p *OutputProcessor) PrintSummary() {
 	fmt.Printf("Playbook complete: %s\n", p.stats.Summary())
 	fmt.Printf("Total time: %s\n", formatDuration(duration))
 
+	// Collapse the per-status counts into a single, unambiguous verdict. Without
+	// this, a run whose last printed task is a "❌ (failed)" (e.g. the
+	// validate_node consolidated failure) reads as if it broke midway and later
+	// steps never ran — even though the run reached its natural end. The counts
+	// above already show the full picture; this states the bottom line.
+	fmt.Println()
+	switch {
+	case p.stats.Failed > 0 || p.stats.Unreachable > 0:
+		fmt.Printf("❌ Overall status: FAILED — %d task(s) did not pass. All steps ran; review the failures above (full log: bloom.log).\n",
+			p.stats.Failed+p.stats.Unreachable)
+	case p.stats.Ignored > 0:
+		fmt.Printf("⚠️  Overall status: COMPLETED WITH WARNINGS — %d issue(s) were tolerated and did not stop the run.\n",
+			p.stats.Ignored)
+	default:
+		fmt.Println("✅ Overall status: SUCCESS — all steps completed.")
+	}
+
 	// Print join information if available
 	if p.joinInfo != "" {
 		fmt.Println()
@@ -215,62 +232,13 @@ func (p *OutputProcessor) PrintSummary() {
 		fmt.Println()
 	}
 
-	// Print credential information if CLUSTERFORGE_RELEASE is configured
-	if p.config != nil {
-		clusterforgeRelease := p.config["CLUSTERFORGE_RELEASE"]
-		domain := p.config["DOMAIN"]
-
-		if clusterforgeRelease != "" && clusterforgeRelease != "none" && domain != "" {
-			fmt.Println()
-			fmt.Println("🚀 ClusterForge Deployment:")
-			fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-			fmt.Println("⏳ Services are starting up. Endpoints will be available once envoy-gateway is ready.")
-			fmt.Println()
-			fmt.Println("Run this command to wait for services to be ready (Ctrl+C to exit early):")
-			fmt.Println()
-			fmt.Println("  # Wait for envoy-gateway pods to be ready")
-			fmt.Println("  kubectl wait --for=condition=ready pod --all -n envoy-gateway-system --timeout=600s && \\")
-			fmt.Println("  # Wait for cluster-auth job to complete (creates initial auth configuration)")
-			fmt.Println("  kubectl wait --for=condition=complete job --all -n cluster-auth --timeout=600s && \\")
-			fmt.Println("  echo ''")
-			fmt.Println("  echo '✅ Services are ready! Endpoints are now accessible.'")
-			fmt.Println()
-			fmt.Println("Once ready, access these endpoints:")
-			fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-			fmt.Println()
-			fmt.Println("📋 Credential Information:")
-			fmt.Println()
-			fmt.Printf("🔐 AI Resource Manager - DevUser:\n")
-			fmt.Printf("   URL:      https://airmui.%s\n", domain)
-			fmt.Printf("   Username: devuser@%s\n", domain)
-			fmt.Printf("   Password: kubectl -n keycloak get secret airm-realm-credentials -o jsonpath='{.data.KEYCLOAK_INITIAL_DEVUSER_PASSWORD}' | base64 --decode && echo\n")
-			fmt.Println()
-			fmt.Printf("💼 AI Workbench - DevUser:\n")
-			fmt.Printf("   URL:      https://aiwbui.%s\n", domain)
-			fmt.Printf("   Username: devuser@%s\n", domain)
-			fmt.Printf("   Password: kubectl -n keycloak get secret airm-realm-credentials -o jsonpath='{.data.KEYCLOAK_INITIAL_DEVUSER_PASSWORD}' | base64 --decode && echo\n")
-			fmt.Println()
-			fmt.Printf("📦 ArgoCD - Admin:\n")
-			fmt.Printf("   URL:      https://argocd.%s\n", domain)
-			fmt.Printf("   Username: admin\n")
-			fmt.Printf("   Password: kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 --decode && echo\n")
-			fmt.Println()
-			fmt.Printf("🔧 Gitea - Admin:\n")
-			fmt.Printf("   URL:      https://gitea.%s\n", domain)
-			fmt.Printf("   Username: silogen-admin\n")
-			fmt.Printf("   Password: kubectl -n cf-gitea get secret gitea-admin-credentials -o jsonpath='{.data.password}' | base64 --decode && echo\n")
-			fmt.Println()
-			fmt.Printf("🔐 OpenBao - Root Token:\n")
-			fmt.Printf("   URL:      https://openbao.%s\n", domain)
-			fmt.Printf("   Token:    kubectl -n cf-openbao get secret openbao-keys -o jsonpath='{.data.root_token}' | base64 --decode && echo\n")
-			fmt.Println()
-			fmt.Printf("🔑 Keycloak - Admin:\n")
-			fmt.Printf("   URL:      https://kc.%s\n", domain)
-			fmt.Printf("   Username: silogen-admin\n")
-			fmt.Printf("   Password: kubectl -n keycloak get secret keycloak-credentials -o jsonpath='{.data.KEYCLOAK_INITIAL_ADMIN_PASSWORD}' | base64 --decode && echo\n")
-			fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		}
-	}
+	// The ClusterForge deployment banner + credentials block used to print here
+	// based on config alone (CLUSTERFORGE_RELEASE + DOMAIN set), regardless of
+	// whether cluster-forge was actually deployed. It now lives in the top-level
+	// bloom process (cmd.printClusterForgeSummary), which runs on the host and
+	// can check for real deployment evidence via kubectl before printing — this
+	// ansible child pivot-roots into a bundled rootfs and cannot reliably query
+	// the cluster.
 }
 
 // extractJoinInfoMessage extracts join information from Ansible debug output

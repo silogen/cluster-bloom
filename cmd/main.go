@@ -103,7 +103,7 @@ func newRootCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:   "bloom",
 		Short: "Kubernetes Cluster Deployment Tool",
-		Long:  `Bloom - A tool for generating bloom.yaml configurations and deploying Kubernetes clusters.
+		Long: `Bloom - A tool for generating bloom.yaml configurations and deploying Kubernetes clusters.
 
 Certificate Updates:
   To update TLS certificates in an existing cluster, use a separate config with --tags:
@@ -307,6 +307,39 @@ func runWebUI(cmd *cobra.Command) {
 	}
 }
 
+// partialConfigTags are tag-scoped runs that perform node-local checks/prep and
+// don't need a complete cluster config. They may run with a minimal or empty
+// bloom.yaml (required-field enforcement is relaxed for them).
+var partialConfigTags = map[string]bool{
+	"validate_node": true,
+}
+
+// envIsTrue reports whether an environment variable is set to a truthy value
+// (true/TRUE/1/yes), matching the loose bypass-flag parsing used elsewhere.
+func envIsTrue(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
+	case "true", "1", "yes":
+		return true
+	default:
+		return false
+	}
+}
+
+// tagsAllowPartialConfig reports whether every requested tag is a node-local
+// tag that can run without a full cluster config. Returns false if tags is
+// empty or includes any tag that needs full validation.
+func tagsAllowPartialConfig(tags string) bool {
+	if tags == "" {
+		return false
+	}
+	for _, t := range strings.Split(tags, ",") {
+		if !partialConfigTags[strings.TrimSpace(t)] {
+			return false
+		}
+	}
+	return true
+}
+
 func runAnsible(configFile string) {
 	// Load and validate config file
 	cfg, err := config.LoadConfig(configFile)
@@ -320,17 +353,38 @@ func runAnsible(configFile string) {
 		cfg["CLUSTER_LISTEN_IP"] = clusterListenIP
 	}
 
-	// Validate config (after injecting CLI flags)
-	// Skip validation for cert update tags to allow separate cert-update-config.yaml
-	if tags == "" || !strings.Contains(tags, "update_cert") {
-		errors := config.Validate(cfg)
-		if len(errors) > 0 {
-			fmt.Fprintln(os.Stderr, "Configuration validation errors:")
-			for _, err := range errors {
-				fmt.Fprintf(os.Stderr, "  - %s\n", err)
-			}
-			os.Exit(1)
+	// Strip keys from older bloom releases (warn-and-continue) so a stale
+	// bloom.yaml keeps working with clear migration guidance, instead of
+	// hard-failing on an "Unknown configuration key" that can't distinguish a
+	// removed key from a typo. Must run before Validate (which flags unknown
+	// keys) so the deprecated keys are already gone by then.
+	for _, w := range config.ApplyDeprecations(cfg) {
+		fmt.Fprintf(os.Stderr, "⚠️  %s\n", w)
+	}
+
+	// Validate config (after injecting CLI flags).
+	//   - update_cert: skip validation entirely (uses a separate
+	//     cert-update-config.yaml with its own keys).
+	//   - node-local diagnostic/prep tags (e.g. validate_node): validate in
+	//     "optional" mode so they run with a minimal or empty bloom.yaml. We
+	//     still flag unknown keys and bad values, but don't require full
+	//     cluster config (DOMAIN, CERT_OPTION, ...).
+	//   - everything else: full validation.
+	var validationErrors []string
+	switch {
+	case tags != "" && strings.Contains(tags, "update_cert"):
+		// skip
+	case tags != "" && tagsAllowPartialConfig(tags):
+		validationErrors = config.ValidateOptional(cfg)
+	default:
+		validationErrors = config.Validate(cfg)
+	}
+	if len(validationErrors) > 0 {
+		fmt.Fprintln(os.Stderr, "Configuration validation errors:")
+		for _, err := range validationErrors {
+			fmt.Fprintf(os.Stderr, "  - %s\n", err)
 		}
+		os.Exit(1)
 	}
 
 	// Resolve GPU-family stack defaults (host ROCm + GPU Operator + DeviceConfig)
@@ -339,6 +393,12 @@ func runAnsible(configFile string) {
 		fmt.Fprintf(os.Stderr, "Error resolving GPU stack defaults: %v\n", err)
 		os.Exit(1)
 	}
+
+	// Populate the Ansible OS-check variable from the Go single source of truth
+	// (config.SupportedOSes) so the playbook's validate_node Ubuntu check and the
+	// Go-side sshd guidance never drift. Injected after validation, so it is not
+	// treated as an unknown config key. Overrides the playbook's fallback default.
+	cfg["supported_ubuntu_versions"] = config.SupportedUbuntuVersions()
 
 	// Handle export mode
 	if export {
@@ -351,6 +411,25 @@ func runAnsible(configFile string) {
 			os.Exit(1)
 		}
 		return
+	}
+
+	// Host OS support pre-flight: fail early and clearly by name on an
+	// unsupported OS (e.g. openSUSE) instead of surfacing Ubuntu-specific sshd
+	// guidance or an opaque Ansible failure. Bypass with
+	// BLOOM_ALLOW_UNSUPPORTED_OS=true for development/testing on other distros.
+	if host, err := config.DetectHostOS(); err != nil {
+		fmt.Fprintf(os.Stderr, "⚠️  Could not determine host OS (%v); skipping OS support check.\n", err)
+	} else if !host.IsSupported() {
+		if envIsTrue("BLOOM_ALLOW_UNSUPPORTED_OS") {
+			fmt.Fprintf(os.Stderr, "⚠️  %s is not a supported OS; proceeding anyway because BLOOM_ALLOW_UNSUPPORTED_OS is set.\n", host.DisplayName())
+		} else {
+			fmt.Fprintf(os.Stderr, `❌ %s is not a supported operating system.
+   cluster-bloom officially supports:
+     %s
+   Run bloom on a supported OS, or set BLOOM_ALLOW_UNSUPPORTED_OS=true to proceed anyway (unsupported).
+`, host.DisplayName(), config.SupportedOSSummary())
+			os.Exit(1)
+		}
 	}
 
 	// Handle destructive data cleanup if requested
@@ -371,6 +450,13 @@ func runAnsible(configFile string) {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
+
+	// Print the post-run summary from the host (not the ansible child), so it
+	// can check for real deployment evidence via kubectl rather than trusting
+	// config alone. Skipped for export runs (which return earlier). The playbook
+	// exit code gates which guidance is shown (deploy banner only on success,
+	// remediation hints on failure).
+	printClusterForgeSummary(cfg, configFile, tags, exitCode)
 
 	os.Exit(exitCode)
 }

@@ -19,6 +19,12 @@ func LoadConfig(filepath string) (Config, error) {
 		return nil, fmt.Errorf("parse config file: %w", err)
 	}
 
+	// An empty (or comment-only) file unmarshals to a nil map; initialize it so
+	// applyDefaults and CLI-flag injection can write into it without panicking.
+	if config == nil {
+		config = Config{}
+	}
+
 	// Apply defaults from schema
 	if err := applyDefaults(&config); err != nil {
 		return nil, fmt.Errorf("apply defaults: %w", err)

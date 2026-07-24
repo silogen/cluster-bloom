@@ -3,47 +3,56 @@
 # Dependencies: None (uses system information directly)
 # Usage: Imported by validate_node/main.yaml
 # Tags: [validate_node]
+#
+# Each check records failures into validate_failures (initialized in main.yaml)
+# instead of asserting, so validate_node reports every problem at the end rather
+# than stopping at the first one.
 
 - name: Check disk space on root partition
   shell: df -BG / | awk 'NR==2 {print $4}' | sed 's/G//'
   register: root_disk_space
   changed_when: false
 
-- name: Validate root partition has at least 20GB
-  assert:
-    that: root_disk_space.stdout | int >= 20
-    fail_msg: "Root partition requires at least 20GB free space (found {{ root_disk_space.stdout }}GB)"
+- name: Record insufficient root partition space
+  set_fact:
+    validate_failures: "{{ validate_failures + ['Root partition requires at least 20GB free space (found ' ~ root_disk_space.stdout ~ 'GB)'] }}"
+  when: root_disk_space.stdout | int < 20
 
 - name: Check total memory
   shell: grep MemTotal /proc/meminfo | awk '{print int($2/1024/1024)}'
   register: total_memory
   changed_when: false
 
-- name: Validate minimum 4GB RAM
-  assert:
-    that: total_memory.stdout | int >= 4
-    fail_msg: "System requires at least 4GB RAM (found {{ total_memory.stdout }}GB)"
+- name: Record insufficient memory
+  set_fact:
+    validate_failures: "{{ validate_failures + ['System requires at least 4GB RAM (found ' ~ total_memory.stdout ~ 'GB)'] }}"
+  when: total_memory.stdout | int < 4
 
 - name: Check CPU cores
   shell: grep -c ^processor /proc/cpuinfo
   register: cpu_cores
   changed_when: false
 
-- name: Validate minimum 2 CPU cores
-  assert:
-    that: cpu_cores.stdout | int >= 2
-    fail_msg: "System requires at least 2 CPU cores (found {{ cpu_cores.stdout }})"
+- name: Record insufficient CPU cores
+  set_fact:
+    validate_failures: "{{ validate_failures + ['System requires at least 2 CPU cores (found ' ~ cpu_cores.stdout ~ ')'] }}"
+  when: cpu_cores.stdout | int < 2
 
 - name: Check required kernel modules
   shell: |
+    missing=""
     for mod in overlay br_netfilter; do
       if ! lsmod | grep -q "^$mod"; then
         if ! modinfo $mod >/dev/null 2>&1; then
-          echo "MISSING:$mod"
-          exit 1
+          missing="$missing $mod"
         fi
       fi
     done
+    echo "$missing" | xargs
   register: kernel_modules_check
-  failed_when: kernel_modules_check.rc != 0
   changed_when: false
+
+- name: Record missing kernel modules
+  set_fact:
+    validate_failures: "{{ validate_failures + ['Missing required kernel modules: ' ~ (kernel_modules_check.stdout | trim)] }}"
+  when: kernel_modules_check.stdout | trim != ""

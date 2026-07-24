@@ -46,8 +46,21 @@ func loadTypePatterns() (map[string]*regexp.Regexp, error) {
 	return patterns, nil
 }
 
-// Validate validates a configuration against the schema
+// Validate validates a configuration against the schema, enforcing required
+// fields. Use this for full deployments that need a complete cluster config.
 func Validate(cfg Config) []string {
+	return validate(cfg, true)
+}
+
+// ValidateOptional validates a configuration but does not hard-fail on missing
+// required fields. Node-local diagnostic/prep runs (e.g. --tags validate_node)
+// use this so they work with a minimal or empty bloom.yaml. Unknown keys and
+// bad values are still reported.
+func ValidateOptional(cfg Config) []string {
+	return validate(cfg, false)
+}
+
+func validate(cfg Config, enforceRequired bool) []string {
 	var errors []string
 	schema := Schema()
 
@@ -80,7 +93,7 @@ func Validate(cfg Config) []string {
 		value, exists := cfg[arg.Key]
 
 		// Check required fields
-		if arg.Required {
+		if arg.Required && enforceRequired {
 			if !exists || value == nil || value == "" {
 				errors = append(errors, fmt.Sprintf("%s is required", arg.Key))
 				continue

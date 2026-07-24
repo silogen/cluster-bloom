@@ -9,9 +9,14 @@
   register: ubuntu_version
   changed_when: false
 
-- name: Check if Ubuntu version is supported
-  assert:
-    that:
-      - ubuntu_version.stdout in supported_ubuntu_versions
-    fail_msg: "Ubuntu {{ ubuntu_version.stdout }} is not supported. Supported versions: {{ supported_ubuntu_versions | join(', ') }}"
-    success_msg: "Running on supported Ubuntu {{ ubuntu_version.stdout }}"
+- name: Report Ubuntu version support
+  debug:
+    msg: >-
+      {{ ('✅ Running on supported Ubuntu ' ~ ubuntu_version.stdout)
+         if (ubuntu_version.stdout in supported_ubuntu_versions)
+         else ('❌ Ubuntu ' ~ ubuntu_version.stdout ~ ' is not supported') }}
+
+- name: Record unsupported Ubuntu version
+  set_fact:
+    validate_failures: "{{ validate_failures + ['Ubuntu ' ~ ubuntu_version.stdout ~ ' is not supported. Supported versions: ' ~ (supported_ubuntu_versions | join(', '))] }}"
+  when: ubuntu_version.stdout not in supported_ubuntu_versions
