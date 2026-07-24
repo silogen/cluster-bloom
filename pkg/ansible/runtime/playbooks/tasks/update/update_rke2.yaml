@@ -37,7 +37,7 @@
 
         - name: Build updated tls-san list
           set_fact:
-            updated_tls_san_list: "{{ ['k8s.' + CURRENT_DOMAIN, 'k8s.' + NEW_DOMAIN] + (additional_sans_result.stdout_lines | default([])) }}"
+            updated_tls_san_list: "{{ (['k8s.' + CURRENT_DOMAIN, 'k8s.' + NEW_DOMAIN] + (additional_sans_result.stdout_lines | default([]))) | unique }}"
 
         - name: Display tls-san update
           debug:
@@ -57,11 +57,9 @@
               {% for san in updated_tls_san_list %}
                 - {{ san }}
               {% endfor %}
-
         - name: Display tls-san update result
           debug:
             msg: "  ✅ Updated /etc/rancher/rke2/config.yaml tls-san"
-
         # Step 3: Update OIDC authentication config
         - name: Update OIDC issuer URL in auth-config.yaml
           copy:
