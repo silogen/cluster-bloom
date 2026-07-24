@@ -1,0 +1,83 @@
+---
+# Purpose: Post-update verification
+# Dependencies: NEW_DOMAIN, DRY_RUN variables
+# Usage: Imported by update.yaml
+
+- name: Verify domain update
+  block:
+    - name: Display dry-run skip message
+      debug:
+        msg: "✓ [DRY RUN] Skipping verification"
+      when: DRY_RUN
+
+    - name: Run verification checks
+      when: not DRY_RUN
+      block:
+        - name: Display verification header
+          debug:
+            msg:
+              - "🔍 Verifying update..."
+              - ""
+
+        - name: Wait for changes to propagate
+          pause:
+            seconds: 10
+
+        # Verify ConfigMap
+        - name: Verify ConfigMap update
+          command: /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get configmap cluster-domain -n default -o jsonpath='{.data.DOMAIN}'
+          register: verify_configmap
+          changed_when: false
+          retries: 3
+          delay: 10
+          until: verify_configmap.stdout == NEW_DOMAIN
+
+        - name: Display ConfigMap verification result
+          debug:
+            msg: "  ✓ Checking ConfigMap update... ✅"
+
+        # Verify Gateway (may take time to update)
+        - name: Check Gateway configuration
+          command: /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get gateway https -n envoy-gateway-system -o jsonpath='{.spec.listeners[0].hostname}'
+          register: verify_gateway
+          changed_when: false
+          failed_when: false
+
+        - name: Display Gateway verification result
+          debug:
+            msg: "{{ '  ✓ Checking Gateway configuration... ✅' if verify_gateway.stdout == '*.' + NEW_DOMAIN else '  ✓ Checking Gateway configuration... ⏳ (updating...)' }}"
+
+        # Display ArgoCD monitoring info
+        - name: Display ArgoCD sync status
+          debug:
+            msg:
+              - "  ✓ Monitoring ArgoCD sync status... ⏳"
+              - ""
+              - "  ℹ️  ArgoCD will now sync all applications with the new domain."
+              - "  ℹ️  You can monitor progress with:"
+              - ""
+              - "    /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get applications -n argocd"
+              - "    argocd app get cluster-forge"
+              - ""
+
+# Display post-update instructions
+- name: Display post-update instructions
+  debug:
+    msg:
+      - "📚 Next Steps"
+      - "============="
+      - ""
+      - "1. Update DNS records (see DNS requirements above)"
+      - "2. Wait for ArgoCD to sync all applications (~5-10 minutes)"
+      - "3. Update any external references:"
+      - "   - Update kubeconfig for k8s.{{ NEW_DOMAIN }}"
+      - "   - Update any external integrations or bookmarks"
+      - "4. Test application access:"
+      - "   - ArgoCD:  https://argocd.{{ NEW_DOMAIN }}"
+      - "   - Gitea:   https://gitea.{{ NEW_DOMAIN }}"
+      - "   - AIWB:    https://aiwb.{{ NEW_DOMAIN }}"
+      - ""
+      - "Monitor ArgoCD sync progress:"
+      - "  /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get applications -n argocd"
+      - "  argocd app list"
+      - ""

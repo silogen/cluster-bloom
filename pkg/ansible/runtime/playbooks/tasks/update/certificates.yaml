@@ -1,0 +1,225 @@
+---
+# Purpose: Handle TLS certificate generation and updates
+# Dependencies: CERT_OPTION, NEW_DOMAIN, CERT_PATH, KEY_PATH, DRY_RUN variables
+# Usage: Imported by update.yaml
+
+- name: Handle certificate operations
+  block:
+    # ============================================================================
+    # Option 1: Generate self-signed certificate
+    # ============================================================================
+    - name: Generate self-signed certificate
+      when: CERT_OPTION == 'generate'
+      block:
+        - name: Display certificate generation header
+          debug:
+            msg: "🔐 Generating self-signed TLS certificate..."
+
+        - name: Create temporary directory for certificates
+          tempfile:
+            state: directory
+            suffix: .bloom-certs
+          register: cert_tmpdir
+
+        - name: Build Subject Alternative Names
+          set_fact:
+            CERT_SANS: "DNS:k8s.{{ NEW_DOMAIN }},DNS:kc.{{ NEW_DOMAIN }},DNS:*.{{ NEW_DOMAIN }}"
+
+        - name: Generate certificate with openssl
+          command: >
+            openssl req -x509 -nodes -days 365 -newkey rsa:2048
+            -keyout {{ cert_tmpdir.path }}/tls.key
+            -out {{ cert_tmpdir.path }}/tls.crt
+            -subj "/CN={{ NEW_DOMAIN }}"
+            -addext "subjectAltName={{ CERT_SANS }}"
+          register: cert_gen_result
+
+        - name: Set certificate paths
+          set_fact:
+            FINAL_CERT_PATH: "{{ cert_tmpdir.path }}/tls.crt"
+            FINAL_KEY_PATH: "{{ cert_tmpdir.path }}/tls.key"
+
+        - name: Display certificate generation result
+          debug:
+            msg: "  ✅ Certificate generated with SANs: {{ CERT_SANS }}"
+
+    # ============================================================================
+    # Option 2: Use provided certificates
+    # ============================================================================
+    - name: Use provided certificates
+      when: CERT_OPTION == 'provide'
+      block:
+        - name: Display certificate validation header
+          debug:
+            msg: "🔐 Validating provided TLS certificate..."
+
+        - name: Check certificate file exists
+          stat:
+            path: "{{ CERT_PATH }}"
+          register: cert_file
+
+        - name: Fail if certificate not found
+          fail:
+            msg: "Certificate file not found: {{ CERT_PATH }}"
+          when: not cert_file.stat.exists
+
+        - name: Check key file exists
+          stat:
+            path: "{{ KEY_PATH }}"
+          register: key_file
+
+        - name: Fail if key not found
+          fail:
+            msg: "Private key file not found: {{ KEY_PATH }}"
+          when: not key_file.stat.exists
+
+        - name: Extract certificate subject
+          command: openssl x509 -in {{ CERT_PATH }} -noout -subject
+          register: cert_subject
+          changed_when: false
+
+        - name: Display certificate subject
+          debug:
+            msg: "  ℹ️  Certificate subject: {{ cert_subject.stdout }}"
+
+        - name: Extract certificate text
+          command: openssl x509 -in {{ CERT_PATH }} -noout -text
+          register: cert_text
+          changed_when: false
+
+        - name: Check if domain is in certificate
+          set_fact:
+            DOMAIN_IN_CERT: "{{ NEW_DOMAIN in cert_text.stdout }}"
+
+        - name: Warn if domain not in SANs
+          when: not DOMAIN_IN_CERT
+          block:
+            - name: Display warning
+              debug:
+                msg:
+                  - ""
+                  - "  ⚠️  Warning: Certificate may not include {{ NEW_DOMAIN }} in Subject Alternative Names"
+                  - ""
+
+            - name: Extract SANs if present
+              shell: echo "{{ cert_text.stdout }}" | grep -A1 "Subject Alternative Name:" | tail -1
+              register: cert_sans
+              failed_when: false
+              changed_when: false
+
+            - name: Display SANs
+              debug:
+                msg: "  Found SANs: {{ cert_sans.stdout | trim }}"
+              when: cert_sans.rc == 0 and cert_sans.stdout != ""
+
+            - name: Display no SANs message
+              debug:
+                msg: "  No Subject Alternative Names found in certificate"
+              when: cert_sans.rc != 0 or cert_sans.stdout == ""
+
+            - name: Prompt to continue
+              pause:
+                prompt: "Continue anyway? [y/N]"
+              register: continue_cert_prompt
+
+            - name: Abort if user declines
+              fail:
+                msg: "Certificate validation aborted by user"
+              when: continue_cert_prompt.user_input | lower not in ['y', 'yes']
+
+        - name: Set certificate paths
+          set_fact:
+            FINAL_CERT_PATH: "{{ CERT_PATH }}"
+            FINAL_KEY_PATH: "{{ KEY_PATH }}"
+
+        - name: Display certificate validation result
+          debug:
+            msg: "  ✅ Certificate files validated"
+
+    # ============================================================================
+    # Update cluster-tls secret (for generate and provide options)
+    # ============================================================================
+    - name: Update cluster-tls secret
+      when: CERT_OPTION in ['generate', 'provide']
+      block:
+        - name: Display dry-run message for secret update
+          debug:
+            msg: "🔐 [DRY RUN] Would update cluster-tls secret in envoy-gateway-system namespace"
+          when: DRY_RUN
+
+        - name: Update secret in cluster
+          when: not DRY_RUN
+          block:
+            - name: Display secret update header
+              debug:
+                msg: "🔐 Updating cluster-tls secret..."
+
+            - name: Create cluster-tls secret
+              shell: |
+                /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml create secret tls cluster-tls \
+                  --cert={{ FINAL_CERT_PATH }} \
+                  --key={{ FINAL_KEY_PATH }} \
+                  -n envoy-gateway-system \
+                  --dry-run=client -o yaml | /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml apply -f -
+              register: secret_update
+
+            - name: Display secret update result
+              debug:
+                msg: "  ✅ cluster-tls secret updated"
+
+        - name: Cleanup temporary certificate directory
+          file:
+            path: "{{ cert_tmpdir.path }}"
+            state: absent
+          when: CERT_OPTION == 'generate' and cert_tmpdir is defined
+
+    # ============================================================================
+    # Option 3: Update cert-manager Certificate resource
+    # ============================================================================
+    - name: Update cert-manager Certificate
+      when: CERT_OPTION == 'cert-manager'
+      block:
+        - name: Display dry-run message for cert-manager
+          debug:
+            msg: "🔐 [DRY RUN] Would update cert-manager Certificate resource"
+          when: DRY_RUN
+
+        - name: Update Certificate resource in cluster
+          when: not DRY_RUN
+          block:
+            - name: Display cert-manager header
+              debug:
+                msg: "🔐 Updating cert-manager Certificate resource..."
+
+            - name: Check if Certificate resource exists
+              command: /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get certificate cluster-tls -n envoy-gateway-system -o jsonpath='{.metadata.name}'
+              register: cert_exists
+              failed_when: false
+              changed_when: false
+
+            - name: Fail if Certificate resource not found
+              fail:
+                msg: |
+                  Certificate resource not found: cluster-tls in envoy-gateway-system namespace
+
+                  Note: cert-manager appears to be configured but Certificate resource is missing.
+                  You may need to create it manually or use a different cert-option.
+              when: cert_exists.rc != 0 or cert_exists.stdout != "cluster-tls"
+
+            - name: Patch Certificate resource with new dnsNames
+              command: >
+                /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml patch certificate cluster-tls
+                -n envoy-gateway-system
+                --type=merge
+                -p '{"spec":{"dnsNames":["*.{{ NEW_DOMAIN }}","k8s.{{ NEW_DOMAIN }}","kc.{{ NEW_DOMAIN }}"]}}'
+              register: cert_patch
+
+            - name: Display cert-manager update result
+              debug:
+                msg:
+                  - "  ✅ Certificate resource updated, cert-manager will issue new certificate"
+                  - "  ℹ️  This may take a few minutes depending on your issuer configuration"
+
+- name: Display certificates section complete
+  debug:
+    msg: ""

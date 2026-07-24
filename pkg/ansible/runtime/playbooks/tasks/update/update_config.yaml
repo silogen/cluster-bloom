@@ -1,0 +1,294 @@
+---
+# Purpose: Update cluster configuration for new domain
+# Dependencies: NEW_DOMAIN, DRY_RUN, FIRST_NODE variables
+# Usage: Imported by update.yaml
+# Note: Kubernetes-level updates run only on FIRST_NODE to avoid duplicates
+
+- name: Display update summary
+  when: FIRST_NODE
+  debug:
+    msg:
+      - "📋 Domain Update Summary"
+      - "========================"
+      - "  Current domain:  {{ CURRENT_DOMAIN }}"
+      - "  New domain:      {{ NEW_DOMAIN }}"
+      - "  Certificate:     {{ CERT_OPTION }}"
+      - "{{ '  Mode:            DRY RUN (no changes will be applied)' if DRY_RUN else '' }}"
+      - ""
+
+- name: Display DNS requirements
+  when: FIRST_NODE
+  block:
+    - name: Get LoadBalancer IP
+      shell: >
+        /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get service
+        -n envoy-gateway-system
+        -l gateway.envoyproxy.io/owning-gateway-name=https
+        -o jsonpath='{.items[0].status.loadBalancer.ingress[0].ip}'
+      register: lb_ip
+      changed_when: false
+      failed_when: false
+
+    - name: Display DNS configuration requirements
+      debug:
+        msg:
+          - "📡 DNS Configuration Required"
+          - "============================="
+          - ""
+          - "Before the new domain will work, you must update your DNS records:"
+          - ""
+          - "{{ '  A record: *.' + NEW_DOMAIN + ' -> ' + lb_ip.stdout if lb_ip.stdout != '' else '  A record: *.' + NEW_DOMAIN + ' -> <your-loadbalancer-ip>' }}"
+          - "{{ '  A record: k8s.' + NEW_DOMAIN + ' -> ' + lb_ip.stdout if lb_ip.stdout != '' else '  A record: k8s.' + NEW_DOMAIN + ' -> <your-loadbalancer-ip>' }}"
+          - ""
+          - "For silogen.ai domains, you can use kaytoo:"
+          - ""
+          - "{{ '  kaytoo setup_dns_cert --domain ' + NEW_DOMAIN + ' --ip ' + lb_ip.stdout if lb_ip.stdout != '' else '  kaytoo setup_dns_cert --domain ' + NEW_DOMAIN + ' --ip <loadbalancer-ip>' }}"
+          - ""
+          - "================================"
+          - ""
+
+- name: Confirm domain update
+  when: FIRST_NODE and not DRY_RUN
+  block:
+    - name: Prompt for confirmation
+      pause:
+        prompt: "Proceed with domain update? [y/N]"
+      register: update_confirm
+
+    - name: Abort if user declines
+      fail:
+        msg: "Domain update aborted by user"
+      when: update_confirm.user_input | lower not in ['y', 'yes']
+
+    - name: Display proceeding message
+      debug:
+        msg: ""
+
+# ============================================================================
+# Update cluster-domain ConfigMap
+# ============================================================================
+- name: Update cluster-domain ConfigMap
+  when: FIRST_NODE
+  block:
+    - name: Display dry-run message for ConfigMap
+      debug:
+        msg: "📝 [DRY RUN] Would update cluster-domain ConfigMap"
+      when: DRY_RUN
+
+    - name: Update ConfigMap in cluster
+      when: not DRY_RUN
+      block:
+        - name: Display ConfigMap update header
+          debug:
+            msg: "📝 Updating cluster-domain ConfigMap..."
+
+        - name: Patch ConfigMap
+          command: >
+            /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml patch configmap cluster-domain
+            -n default
+            --type=merge
+            -p '{"data":{"DOMAIN":"{{ NEW_DOMAIN }}"}}'
+          register: configmap_result
+
+        - name: Display ConfigMap update result
+          debug:
+            msg: "  ✅ ConfigMap updated"
+
+# ============================================================================
+# Update OpenBao secret
+# ============================================================================
+- name: Update OpenBao secret
+  when: FIRST_NODE
+  block:
+    - name: Display dry-run message for OpenBao
+      debug:
+        msg: "🔑 [DRY RUN] Would update OpenBao secret: secrets/cluster-domain"
+      when: DRY_RUN
+
+    - name: Update OpenBao secret in cluster
+      when: not DRY_RUN
+      block:
+        - name: Display OpenBao update header
+          debug:
+            msg: "🔑 Updating OpenBao secret..."
+
+        - name: Update secret via /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml exec
+          command: >
+            /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml exec -n cf-openbao openbao-0 --
+            bao kv put secret/cluster-domain value={{ NEW_DOMAIN }}
+          register: openbao_result
+          failed_when: false
+
+        - name: Display OpenBao success
+          debug:
+            msg: "  ✅ OpenBao secret updated"
+          when: openbao_result.rc == 0
+
+        - name: Warn if OpenBao update failed
+          debug:
+            msg:
+              - "  ⚠️  OpenBao update failed. You may need to update manually:"
+              - "  /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml exec -n cf-openbao openbao-0 -- bao kv put secret/cluster-domain value={{ NEW_DOMAIN }}"
+          when: openbao_result.rc != 0
+
+# ============================================================================
+# Update cluster-values repository
+# ============================================================================
+- name: Update cluster-values repository
+  when: FIRST_NODE
+  block:
+    - name: Display dry-run message for ArgoCD
+      debug:
+        msg: "🎯 [DRY RUN] Would update ArgoCD Application global.domain parameter"
+      when: DRY_RUN
+
+    - name: Update cluster-values repository via Gitea API
+      when: not DRY_RUN
+      block:
+        - name: Display Gitea update header
+          debug:
+            msg: "🎯 Updating cluster-values repository..."
+
+        - name: Get Gitea admin token
+          command: /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get secret gitea-admin-token -n cf-gitea -o jsonpath='{.data.token}'
+          register: gitea_token_b64
+          changed_when: false
+          no_log: false
+
+        - name: Decode Gitea token
+          set_fact:
+            gitea_token: "{{ gitea_token_b64.stdout | b64decode }}"
+          no_log: false
+
+        - name: Fetch current values.yaml from cluster-values repo via kubectl exec
+          shell: |
+            /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml exec -n cf-gitea deploy/gitea -c gitea -- \
+              curl -s -H "Authorization: token {{ gitea_token }}" \
+              http://gitea-http.cf-gitea.svc:3000/api/v1/repos/cluster-org/cluster-values/contents/values.yaml
+          register: current_values_response
+          changed_when: false
+          no_log: false
+
+        - name: Parse current values response
+          set_fact:
+            current_values_json: "{{ current_values_response.stdout | from_json }}"
+
+        - name: Decode current values.yaml content
+          set_fact:
+            current_values_content: "{{ current_values_json.content | b64decode }}"
+            current_values_sha: "{{ current_values_json.sha }}"
+
+        - name: Create temporary file for values update
+          tempfile:
+            state: file
+            suffix: .values.yaml
+          register: values_temp_file
+
+        - name: Write current values to temp file
+          copy:
+            content: "{{ current_values_content }}"
+            dest: "{{ values_temp_file.path }}"
+
+        - name: Update global.domain in values.yaml
+          shell: |
+            yq eval '.global.domain = "{{ NEW_DOMAIN }}"' -i "{{ values_temp_file.path }}"
+          changed_when: false
+
+        - name: Read updated values content
+          slurp:
+            src: "{{ values_temp_file.path }}"
+          register: updated_values_file
+
+        - name: Encode updated values to base64
+          set_fact:
+            updated_values_b64: "{{ updated_values_file.content }}"
+
+        - name: Prepare API request body as dict
+          set_fact:
+            gitea_api_body_dict:
+              message: "Update domain to {{ NEW_DOMAIN }}"
+              content: "{{ updated_values_b64 }}"
+              sha: "{{ current_values_sha }}"
+              branch: "main"
+
+        - name: Commit updated values.yaml to Gitea via kubectl exec
+          shell: |
+            /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml exec -n cf-gitea deploy/gitea -c gitea -- \
+              curl -s -X PUT \
+              -H "Authorization: token {{ gitea_token }}" \
+              -H "Content-Type: application/json" \
+              -d '{{ gitea_api_body_dict | to_json }}' \
+              http://gitea-http.cf-gitea.svc:3000/api/v1/repos/cluster-org/cluster-values/contents/values.yaml
+          register: gitea_commit_result
+          changed_when: false
+          no_log: false
+
+        - name: Clean up temp file
+          file:
+            path: "{{ values_temp_file.path }}"
+            state: absent
+
+        - name: Display Gitea update result
+          debug:
+            msg: "  ✅ cluster-values repository updated"
+
+# ============================================================================
+# Update Keycloak client redirect URIs
+# ============================================================================
+- import_tasks: update_keycloak.yaml
+  when: FIRST_NODE
+
+# ============================================================================
+# Update AIRM cluster records
+# ============================================================================
+- import_tasks: update_airm_clusters.yaml
+  when: FIRST_NODE
+
+# ============================================================================
+# Update RKE2 layer configuration
+# ============================================================================
+- import_tasks: update_rke2.yaml
+  when: not SKIP_RKE2
+
+# ============================================================================
+# Trigger ArgoCD sync
+# ============================================================================
+- name: Trigger ArgoCD sync
+  when: FIRST_NODE
+  block:
+    - name: Display dry-run message for sync
+      debug:
+        msg: "🔄 [DRY RUN] Would trigger ArgoCD sync"
+      when: DRY_RUN
+
+    - name: Trigger sync in cluster
+      when: not DRY_RUN
+      block:
+        - name: Display sync header
+          debug:
+            msg:
+              - "🔄 Triggering ArgoCD sync..."
+              - "  ℹ️  This may take several minutes as updates cascade through applications"
+              - ""
+
+        - name: Get current timestamp
+          command: date -u +"%Y-%m-%dT%H:%M:%SZ"
+          register: timestamp
+          changed_when: false
+
+        - name: Annotate Application to trigger hard refresh
+          command: >
+            /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml patch application cluster-forge
+            -n argocd
+            --type=merge
+            -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard","bloom.domain.update/timestamp":"{{ timestamp.stdout }}"}}}'
+          register: argocd_refresh_result
+
+        - name: Display sync trigger result
+          debug:
+            msg: "  ✅ ArgoCD sync triggered"
+
+- name: Display config update complete
+  when: FIRST_NODE
+  debug:
+    msg: ""

@@ -1,0 +1,326 @@
+---
+# Purpose: Update Keycloak client redirect URIs for new domain
+# Dependencies: NEW_DOMAIN, DRY_RUN variables
+# Usage: Imported by update_config.yaml
+
+- name: Update Keycloak client redirect URIs
+  block:
+    - name: Display dry-run message for Keycloak
+      debug:
+        msg: "🔐 [DRY RUN] Would update Keycloak client redirect URIs"
+      when: DRY_RUN
+
+    - name: Update Keycloak clients in cluster
+      when: not DRY_RUN
+      block:
+        - name: Display Keycloak update header
+          debug:
+            msg: "🔐 Updating Keycloak client redirect URIs..."
+
+        - name: Get AIRM admin client credentials from secrets
+          shell: |
+            ADMIN_CLIENT_ID=$(/var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get secret airm-realm-credentials -n keycloak -o jsonpath='{.data.ADMIN_CLIENT_ID}' 2>/dev/null | base64 -d || echo "")
+            ADMIN_CLIENT_SECRET=$(/var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get secret airm-realm-credentials -n keycloak -o jsonpath='{.data.ADMIN_CLIENT_SECRET}' 2>/dev/null | base64 -d || echo "")
+
+            echo "${ADMIN_CLIENT_ID}|${ADMIN_CLIENT_SECRET}"
+          register: airm_admin_client_creds_result
+          changed_when: false
+          no_log: false
+
+        - name: Parse AIRM admin client credentials
+          set_fact:
+            airm_admin_client_id: "{{ airm_admin_client_creds_result.stdout.split('|')[0] }}"
+            airm_admin_client_secret: "{{ airm_admin_client_creds_result.stdout.split('|')[1] }}"
+          no_log: false
+
+        - name: Create ConfigMap with Keycloak update script
+          shell: |
+            cat <<'EOF' | /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml apply -f -
+            apiVersion: v1
+            kind: ConfigMap
+            metadata:
+              name: keycloak-domain-update
+              namespace: default
+            data:
+              update-clients.sh: |
+                #!/bin/bash
+                set -e
+
+                KC_URL="http://keycloak.keycloak.svc:8080"
+                NEW_DOMAIN="{{ NEW_DOMAIN }}"
+                ADMIN_CLIENT_ID="{{ airm_admin_client_id }}"
+                ADMIN_CLIENT_SECRET="{{ airm_admin_client_secret }}"
+
+                # Get admin token using client_credentials
+                echo "Getting Keycloak admin token..."
+                KC_TOKEN=$(curl -s -X POST "${KC_URL}/realms/airm/protocol/openid-connect/token" \
+                  -H "Content-Type: application/x-www-form-urlencoded" \
+                  -d "grant_type=client_credentials" \
+                  -d "client_id=${ADMIN_CLIENT_ID}" \
+                  -d "client_secret=${ADMIN_CLIENT_SECRET}" | jq -r '.access_token')
+
+                if [ "$KC_TOKEN" = "null" ] || [ -z "$KC_TOKEN" ]; then
+                  echo "Failed to get Keycloak admin token"
+                  exit 1
+                fi
+
+                echo "Token obtained successfully"
+
+                # Function to update a client by clientId
+                update_client() {
+                  local CLIENT_ID="$1"
+                  shift
+                  local REDIRECT_URIS=("$@")
+
+                  echo "Looking up client: ${CLIENT_ID}..."
+
+                  # Get all clients and find the one with matching clientId
+                  CLIENT_UUID=$(curl -s -X GET \
+                    "${KC_URL}/admin/realms/airm/clients" \
+                    -H "Authorization: Bearer ${KC_TOKEN}" | \
+                    jq -r --arg cid "$CLIENT_ID" '.[] | select(.clientId == $cid) | .id')
+
+                  if [ -z "$CLIENT_UUID" ] || [ "$CLIENT_UUID" = "null" ]; then
+                    echo "  ⚠️  Client ${CLIENT_ID} not found, skipping"
+                    return 0
+                  fi
+
+                  echo "  Found client UUID: ${CLIENT_UUID}"
+                  echo "  Updating redirect URIs..."
+
+                  # Get current client configuration
+                  CURRENT_CLIENT=$(curl -s -X GET \
+                    "${KC_URL}/admin/realms/airm/clients/${CLIENT_UUID}" \
+                    -H "Authorization: Bearer ${KC_TOKEN}")
+
+                  # Build redirect URIs JSON array
+                  REDIRECT_JSON=$(printf '%s\n' "${REDIRECT_URIS[@]}" | jq -R . | jq -s .)
+
+                  # Update client with new redirect URIs
+                  UPDATED_CLIENT=$(echo "$CURRENT_CLIENT" | jq \
+                    --argjson uris "$REDIRECT_JSON" \
+                    '.redirectUris = $uris')
+
+                  curl -s -X PUT \
+                    "${KC_URL}/admin/realms/airm/clients/${CLIENT_UUID}" \
+                    -H "Authorization: Bearer ${KC_TOKEN}" \
+                    -H "Content-Type: application/json" \
+                    -d "$UPDATED_CLIENT"
+
+                  echo "  ✓ Updated ${CLIENT_ID}"
+                }
+
+                # Function to update post logout redirect URIs for a client
+                update_client_post_logout_uris() {
+                  local CLIENT_ID="$1"
+                  shift
+                  local POST_LOGOUT_URIS=("$@")
+
+                  echo "Updating post logout redirect URIs for: ${CLIENT_ID}..."
+
+                  # Get all clients and find the one with matching clientId
+                  CLIENT_UUID=$(curl -s -X GET \
+                    "${KC_URL}/admin/realms/airm/clients" \
+                    -H "Authorization: Bearer ${KC_TOKEN}" | \
+                    jq -r --arg cid "$CLIENT_ID" '.[] | select(.clientId == $cid) | .id')
+
+                  if [ -z "$CLIENT_UUID" ] || [ "$CLIENT_UUID" = "null" ]; then
+                    echo "  ⚠️  Client ${CLIENT_ID} not found, skipping"
+                    return 0
+                  fi
+
+                  echo "  Found client UUID: ${CLIENT_UUID}"
+
+                  # Get current client configuration
+                  CURRENT_CLIENT=$(curl -s -X GET \
+                    "${KC_URL}/admin/realms/airm/clients/${CLIENT_UUID}" \
+                    -H "Authorization: Bearer ${KC_TOKEN}")
+
+                  # Build post logout URIs as newline-delimited string
+                  POST_LOGOUT_STRING=$(printf '%s\n' "${POST_LOGOUT_URIS[@]}" | sed ':a;N;$!ba;s/\n/\\n/g')
+
+                  # Update client with new post logout redirect URIs
+                  UPDATED_CLIENT=$(echo "$CURRENT_CLIENT" | jq \
+                    --arg uris "$POST_LOGOUT_STRING" \
+                    '.attributes["post.logout.redirect.uris"] = $uris')
+
+                  curl -s -X PUT \
+                    "${KC_URL}/admin/realms/airm/clients/${CLIENT_UUID}" \
+                    -H "Authorization: Bearer ${KC_TOKEN}" \
+                    -H "Content-Type: application/json" \
+                    -d "$UPDATED_CLIENT"
+
+                  echo "  ✓ Updated post logout redirect URIs for ${CLIENT_ID}"
+                }
+
+                # Function to update rootUrl for a client
+                update_client_root_url() {
+                  local CLIENT_ID="$1"
+                  local ROOT_URL="$2"
+
+                  echo "Updating rootUrl for: ${CLIENT_ID}..."
+
+                  # Get all clients and find the one with matching clientId
+                  CLIENT_UUID=$(curl -s -X GET \
+                    "${KC_URL}/admin/realms/airm/clients" \
+                    -H "Authorization: Bearer ${KC_TOKEN}" | \
+                    jq -r --arg cid "$CLIENT_ID" '.[] | select(.clientId == $cid) | .id')
+
+                  if [ -z "$CLIENT_UUID" ] || [ "$CLIENT_UUID" = "null" ]; then
+                    echo "  ⚠️  Client ${CLIENT_ID} not found, skipping"
+                    return 0
+                  fi
+
+                  echo "  Found client UUID: ${CLIENT_UUID}"
+
+                  # Get current client configuration
+                  CURRENT_CLIENT=$(curl -s -X GET \
+                    "${KC_URL}/admin/realms/airm/clients/${CLIENT_UUID}" \
+                    -H "Authorization: Bearer ${KC_TOKEN}")
+
+                  # Update client with new rootUrl
+                  UPDATED_CLIENT=$(echo "$CURRENT_CLIENT" | jq \
+                    --arg url "$ROOT_URL" \
+                    '.rootUrl = $url')
+
+                  curl -s -X PUT \
+                    "${KC_URL}/admin/realms/airm/clients/${CLIENT_UUID}" \
+                    -H "Authorization: Bearer ${KC_TOKEN}" \
+                    -H "Content-Type: application/json" \
+                    -d "$UPDATED_CLIENT"
+
+                  echo "  ✓ Updated rootUrl for ${CLIENT_ID}"
+                }
+
+                # Function to update adminUrl for a client
+                update_client_admin_url() {
+                  local CLIENT_ID="$1"
+                  local ADMIN_URL="$2"
+
+                  echo "Updating adminUrl for: ${CLIENT_ID}..."
+
+                  # Get all clients and find the one with matching clientId
+                  CLIENT_UUID=$(curl -s -X GET \
+                    "${KC_URL}/admin/realms/airm/clients" \
+                    -H "Authorization: Bearer ${KC_TOKEN}" | \
+                    jq -r --arg cid "$CLIENT_ID" '.[] | select(.clientId == $cid) | .id')
+
+                  if [ -z "$CLIENT_UUID" ] || [ "$CLIENT_UUID" = "null" ]; then
+                    echo "  ⚠️  Client ${CLIENT_ID} not found, skipping"
+                    return 0
+                  fi
+
+                  echo "  Found client UUID: ${CLIENT_UUID}"
+
+                  # Get current client configuration
+                  CURRENT_CLIENT=$(curl -s -X GET \
+                    "${KC_URL}/admin/realms/airm/clients/${CLIENT_UUID}" \
+                    -H "Authorization: Bearer ${KC_TOKEN}")
+
+                  # Update client with new adminUrl
+                  UPDATED_CLIENT=$(echo "$CURRENT_CLIENT" | jq \
+                    --arg url "$ADMIN_URL" \
+                    '.adminUrl = $url')
+
+                  curl -s -X PUT \
+                    "${KC_URL}/admin/realms/airm/clients/${CLIENT_UUID}" \
+                    -H "Authorization: Bearer ${KC_TOKEN}" \
+                    -H "Content-Type: application/json" \
+                    -d "$UPDATED_CLIENT"
+
+                  echo "  ✓ Updated adminUrl for ${CLIENT_ID}"
+                }
+
+                # Check client IDs, add minio, gitea and argocd..
+
+                # Update AIRM UI Client (fixed UUID-based clientId)
+                echo "Updating AIRM UI Client..."
+                update_client "354a0fa1-35ac-4a6d-9c4d-d661129c2cd0" \
+                  "https://${NEW_DOMAIN}/*" \
+                  "https://airmui.${NEW_DOMAIN}/*" \
+                  "https://airmapi.${NEW_DOMAIN}/*" \
+                  "https://aiwbui.${NEW_DOMAIN}/*" \
+                  "https://aiwbapi.${NEW_DOMAIN}/*"
+
+                # Update Argocd Client 
+                echo "Updating Argocd Client..."
+                update_client "argocd" \
+                  "https://argocd.${NEW_DOMAIN}/*"
+
+                update_client_post_logout_uris "argocd" \
+                  "https://argocd.${NEW_DOMAIN}/auth/callback"
+
+                update_client_root_url "argocd" \
+                  "https://argocd.${NEW_DOMAIN}"                  
+
+                update_client_admin_url "argocd" \
+                "https://argocd.${NEW_DOMAIN}"
+
+                # Update Gitea Client 
+                echo "Updating Gitea Client..."
+                update_client "gitea" \
+                  "https://gitea.${NEW_DOMAIN}/*"
+
+                # Update minio Client
+                echo "Updating Minio Client..."
+                update_client "minio" \
+                  "https://minio.${NEW_DOMAIN}/*"
+
+                echo "All Keycloak clients updated successfully"
+            EOF
+          changed_when: true
+          no_log: false
+
+        - name: Create Job to update Keycloak clients
+          shell: |
+            cat <<'EOF' | /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml apply -f -
+            apiVersion: batch/v1
+            kind: Job
+            metadata:
+              name: keycloak-domain-update
+              namespace: default
+            spec:
+              ttlSecondsAfterFinished: 300
+              template:
+                spec:
+                  restartPolicy: Never
+                  containers:
+                  - name: update-keycloak
+                    image: amdenterpriseai/cluster-tool:latest
+                    command: ["/bin/bash", "/scripts/update-clients.sh"]
+                    volumeMounts:
+                    - name: script
+                      mountPath: /scripts
+                  volumes:
+                  - name: script
+                    configMap:
+                      name: keycloak-domain-update
+                      defaultMode: 0755
+            EOF
+          changed_when: true
+
+        - name: Wait for Keycloak update job to complete
+          command: /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml wait --for=condition=complete --timeout=60s job/keycloak-domain-update -n default
+          register: job_wait
+          changed_when: false
+          failed_when: false
+
+        - name: Get job logs
+          command: /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml logs job/keycloak-domain-update -n default
+          register: job_logs
+          changed_when: false
+          failed_when: false
+
+        - name: Display job logs
+          debug:
+            msg: "{{ job_logs.stdout_lines }}"
+          when: job_logs.stdout_lines is defined
+
+        - name: Check job status
+          fail:
+            msg: "Keycloak update job failed. Check logs above."
+          when: job_wait.rc != 0
+
+        - name: Display Keycloak update result
+          debug:
+            msg: "  ✅ Keycloak client redirect URIs updated"

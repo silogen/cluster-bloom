@@ -69,10 +69,45 @@ Show all available commands and complete configuration reference:
 Get help for specific commands:
 
 ```sh
-./bloom cleanup --help  # Remove existing cluster installation
-./bloom cli --help      # Deploy cluster using configuration file
-./bloom run --help      # Run exported Ansible playbook
+./bloom cleanup --help        # Remove existing cluster installation
+./bloom cli --help            # Deploy cluster using configuration file
+./bloom run --help            # Run exported Ansible playbook
+./bloom update-domain --help  # Update domain for existing installation
 ```
+
+### Domain Management
+
+Update the domain for an existing cluster-forge installation:
+
+```sh
+# Update with generated self-signed certificate
+./bloom update-domain \
+  --new-domain new.example.com \
+  --cert-option generate
+
+# Update with provided certificate
+./bloom update-domain \
+  --new-domain new.example.com \
+  --cert-option provide \
+  --cert-path /path/to/cert.pem \
+  --key-path /path/to/key.pem
+
+# Update with cert-manager
+./bloom update-domain \
+  --new-domain new.example.com \
+  --cert-option cert-manager
+
+# Check DNS configuration before updating
+./bloom update-domain --check-dns new.example.com
+
+# Preview changes without applying
+./bloom update-domain \
+  --new-domain new.example.com \
+  --cert-option generate \
+  --dry-run
+```
+
+**Note:** DNS records must be updated manually. The command displays required DNS changes. See [Change Domain Documentation](https://github.com/silogen/cluster-forge/blob/main/docs/operations/change-domain.md) for details.
 
 ### Playbook Export and Debugging
 
