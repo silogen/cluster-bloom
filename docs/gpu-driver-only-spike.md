@@ -63,10 +63,13 @@ sudo ./bloom cli bloom.yaml --tags prep_node,gpu      # prompts to reboot if nee
 sudo ./bloom cli bloom.yaml --tags prep_node,gpu -y    # auto-confirms and reboots
 ```
 
-Re-running bloom after a reboot is idempotent (the driver-only step detects the loaded
-`amdgpu` module and skips straight to verification), so no `--continue`/resume flag is
-needed. A loop-guard prevents bloom from offering — or automatically triggering — a
-reboot more than once for the same unresolved condition.
+Re-running bloom after a reboot is idempotent: the driver-only step verifies that the
+installed `amdgpu-dkms` package is the exact candidate from the family-mapped installer
+repository, that DKMS built it for the running kernel, and that the active module matches
+the mapped module on disk. A preloaded Ubuntu inbox `amdgpu` module does **not** satisfy
+this check. If the mapped package/build is already correct, installation is skipped and
+bloom proceeds to verification. A loop-guard prevents bloom from offering — or
+automatically triggering — a reboot more than once for the same unresolved condition.
 
 ## Manual test plan
 

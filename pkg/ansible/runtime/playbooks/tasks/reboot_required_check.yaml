@@ -12,12 +12,11 @@
 # reboot) applies identically here even though this branch installs only the
 # amdgpu driver, not ROCm.
 #
-# Detection relies on the OS's own standard signal instead of bespoke
-# heuristics: Debian/Ubuntu package postinst hooks write /var/run/reboot-required
-# (and list the triggering packages in /var/run/reboot-required.pkgs) whenever a
-# kernel or DKMS module package needs a reboot to take effect. This is the same
-# signal MOTD/unattended-upgrades key off, so it also catches reboot-needs from
-# anything else on the box, not just what bloom itself just installed.
+# Detection uses both the OS's standard /var/run/reboot-required signal and
+# gpu_driver_reboot_required from gpu_driver_only.yaml. The latter compares the
+# active amdgpu module's srcversion with the mapped DKMS module on disk; this is
+# required because DKMS does not consistently create /var/run/reboot-required
+# when replacing an already-loaded inbox amdgpu module.
 #
 # State is tracked in /var/lib/bloom/reboot-required.json (host-level, not
 # BLOOM_DIR-relative, so it persists regardless of which directory the user
@@ -38,12 +37,20 @@
   register: bloom_reboot_required_stat
   changed_when: false
 
+- name: Resolve effective reboot requirement
+  set_fact:
+    bloom_reboot_required: >-
+      {{
+        bloom_reboot_required_stat.stat.exists or
+        (gpu_driver_reboot_required | default(false) | bool)
+      }}
+
 - name: Check for the packages that triggered the reboot-required flag
   stat:
     path: /var/run/reboot-required.pkgs
   register: bloom_reboot_pkgs_stat
   changed_when: false
-  when: bloom_reboot_required_stat.stat.exists
+  when: bloom_reboot_required | bool
 
 - name: Check for a prior bloom reboot-required marker (loop guard)
   stat:
@@ -66,7 +73,7 @@
     path: /var/lib/bloom/reboot-required.json
     state: absent
   when:
-    - not bloom_reboot_required_stat.stat.exists
+    - not (bloom_reboot_required | bool)
     - bloom_reboot_marker_stat.stat.exists
 
 - name: Fail if bloom already rebooted for this and the system still requires one
@@ -88,20 +95,26 @@
       Once resolved, remove the marker and re-run bloom:
         sudo rm -f /var/lib/bloom/reboot-required.json
   when:
-    - bloom_reboot_required_stat.stat.exists
+    - bloom_reboot_required | bool
     - bloom_reboot_marker.attempted | default(false) | bool
 
 - name: Build reboot-required marker content
   set_fact:
     bloom_reboot_marker_new:
       reason: >-
-        A kernel or amdgpu driver package update requires a reboot before the
-        GPU is usable.
-      packages: "{{ (lookup('file', '/var/run/reboot-required.pkgs') if bloom_reboot_pkgs_stat.stat.exists | default(false) else '') .split('\n') | select('truthy') | list }}"
+        The active amdgpu module does not match the mapped DKMS driver on disk,
+        or the OS reports a pending kernel/package update. A reboot is required
+        before the GPU is usable with the mapped driver.
+      packages: >-
+        {{
+          ((lookup('file', '/var/run/reboot-required.pkgs').split('\n') | select('truthy') | list)
+          if bloom_reboot_pkgs_stat.stat.exists | default(false)
+          else ['amdgpu-dkms'])
+        }}
       attempted: false
       detected_at: "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
   when:
-    - bloom_reboot_required_stat.stat.exists
+    - bloom_reboot_required | bool
     - not (bloom_reboot_marker.attempted | default(false) | bool)
 
 - name: Write reboot-required marker for bloom's CLI to act on
@@ -110,15 +123,15 @@
     mode: "0644"
     content: "{{ bloom_reboot_marker_new | to_nice_json }}"
   when:
-    - bloom_reboot_required_stat.stat.exists
+    - bloom_reboot_required | bool
     - not (bloom_reboot_marker.attempted | default(false) | bool)
 
 - name: Prompt for reboot (kernel / amdgpu driver package update)
   debug:
     msg: >-
-      Reboot required before the GPU is usable (/var/run/reboot-required
-      present). Bloom will offer to reboot on exit; pass --yes to auto-confirm,
-      or just re-run bloom after rebooting (steps are idempotent).
+      Reboot required before the mapped amdgpu DKMS driver is active. Bloom
+      will offer to reboot on exit; pass --yes to auto-confirm, or just re-run
+      bloom after rebooting (steps are idempotent).
   when:
-    - bloom_reboot_required_stat.stat.exists
+    - bloom_reboot_required | bool
     - not (bloom_reboot_marker.attempted | default(false) | bool)

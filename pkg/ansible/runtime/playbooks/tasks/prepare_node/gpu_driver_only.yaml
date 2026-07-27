@@ -35,41 +35,29 @@
       leave this node's GPU stack untouched and proceed with the rest of the run.
   when: gpu_driver_rocm_present.rc == 0
 
-# Idempotency: if the amdgpu module is already loaded, there is nothing to do.
-- name: Check whether the amdgpu kernel module is already loaded
-  shell: lsmod | grep -q '^amdgpu '
-  register: gpu_driver_module_loaded
-  changed_when: false
-  failed_when: false
-
 - name: Resolve amdgpu-install version/build to use
   set_fact:
     gpu_driver_version_resolved: "{{ (GPU_DRIVER_VERSION | default('') | trim) if (GPU_DRIVER_VERSION | default('') | trim != '') else gpu_driver_default_version }}"
     gpu_driver_build_resolved: "{{ (GPU_DRIVER_BUILD | default('') | trim) if (GPU_DRIVER_BUILD | default('') | trim != '') else gpu_driver_default_build }}"
-  when: gpu_driver_module_loaded.rc != 0
 
 - name: Set amdgpu-install download coordinates
   set_fact:
     gpu_driver_base_url: "https://repo.radeon.com/amdgpu-install/{{ gpu_driver_version_resolved }}/ubuntu/"
     gpu_driver_deb_package: "amdgpu-install_{{ gpu_driver_version_resolved }}.{{ gpu_driver_build_resolved }}_all.deb"
-  when: gpu_driver_module_loaded.rc != 0
 
 - name: Report resolved amdgpu driver package
   debug:
-    msg: "Installing amdgpu driver only (no ROCm): {{ gpu_driver_deb_package }} from {{ gpu_driver_base_url }}"
-  when: gpu_driver_module_loaded.rc != 0
+    msg: "Validating mapped amdgpu driver (no ROCm): {{ gpu_driver_deb_package }} from {{ gpu_driver_base_url }}"
 
 - name: Get Ubuntu codename
   shell: grep VERSION_CODENAME /etc/os-release | cut -d= -f2
   register: ubuntu_codename
   changed_when: false
-  when: gpu_driver_module_loaded.rc != 0
 
 - name: Get kernel version
   shell: uname -r
   register: kernel_version
   changed_when: false
-  when: gpu_driver_module_loaded.rc != 0
 
 - name: Install kernel headers and modules
   apt:
@@ -79,7 +67,6 @@
       - python3-setuptools
       - python3-wheel
     state: present
-  when: gpu_driver_module_loaded.rc != 0
   environment:
     DEBIAN_FRONTEND: noninteractive
     NEEDRESTART_MODE: l
@@ -97,17 +84,84 @@
   until: gpu_driver_install_download is succeeded
   retries: 5
   delay: 10
-  when: gpu_driver_module_loaded.rc != 0
 
-- name: Install amdgpu-install package
+- name: Read expected amdgpu-install package version
+  shell: "dpkg-deb -f /tmp/{{ gpu_driver_deb_package }} Version"
+  register: gpu_driver_installer_expected_version
+  changed_when: false
+
+- name: Read installed amdgpu-install package version
+  shell: "dpkg-query -W -f='${Version}' amdgpu-install 2>/dev/null || true"
+  register: gpu_driver_installer_installed_version
+  changed_when: false
+
+- name: Install the mapped amdgpu-install package
   apt:
     deb: "/tmp/{{ gpu_driver_deb_package }}"
     state: present
-  when: gpu_driver_module_loaded.rc != 0
+    allow_downgrade: true
+  when: (gpu_driver_installer_installed_version.stdout | trim) != (gpu_driver_installer_expected_version.stdout | trim)
   environment:
     DEBIAN_FRONTEND: noninteractive
     NEEDRESTART_MODE: l
     NEEDRESTART_SUSPEND: "1"
+
+# The installer package configures the repository containing the actual
+# amdgpu-dkms package. Its candidate version is the authoritative mapping from
+# the selected installer train to the driver package — do not treat a loaded
+# inbox amdgpu module as sufficient.
+- name: Refresh apt metadata for the mapped driver repository
+  apt:
+    update_cache: true
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+
+- name: Read mapped amdgpu-dkms candidate version
+  shell: "apt-cache policy amdgpu-dkms | awk '/Candidate:/ { print $2; exit }'"
+  register: gpu_driver_candidate_version
+  changed_when: false
+
+- name: Fail if the mapped repository has no amdgpu-dkms candidate
+  fail:
+    msg: |
+      {{ gpu_driver_deb_package }} was installed, but apt found no amdgpu-dkms
+      candidate in the configured repository. Inspect:
+        apt-cache policy amdgpu-dkms
+        ls -l /etc/apt/sources.list.d/
+  when: gpu_driver_candidate_version.stdout | trim in ['', '(none)']
+
+- name: Read installed amdgpu-dkms package version
+  shell: "dpkg-query -W -f='${Version}' amdgpu-dkms 2>/dev/null || true"
+  register: gpu_driver_installed_version
+  changed_when: false
+
+- name: Check mapped DKMS module for the running kernel
+  shell: |
+    set -o pipefail
+    dkms status -m amdgpu 2>/dev/null \
+      | grep -F ", {{ kernel_version.stdout }}," \
+      | grep -q ': installed$'
+  args:
+    executable: /bin/bash
+  register: gpu_driver_dkms_for_kernel
+  changed_when: false
+  failed_when: false
+
+- name: Decide whether the mapped amdgpu driver needs installation
+  set_fact:
+    gpu_driver_needs_install: >-
+      {{
+        (gpu_driver_installed_version.stdout | trim) !=
+        (gpu_driver_candidate_version.stdout | trim)
+        or gpu_driver_dkms_for_kernel.rc != 0
+      }}
+    gpu_driver_changed: false
+
+- name: Check whether an amdgpu module is already loaded
+  shell: lsmod | grep -q '^amdgpu '
+  register: gpu_driver_module_loaded_before
+  changed_when: false
+  failed_when: false
 
 # --usecase=dkms only: installs the amdgpu kernel driver, deliberately WITHOUT
 # the `rocm` usecase — no ROCm userspace is installed on this branch.
@@ -132,7 +186,7 @@
         echo $? > /tmp/bloom_driver_install.rc
         touch /tmp/bloom_driver_install.done
       ' </dev/null >/tmp/bloom_driver_install.launch.log 2>&1 &
-  when: gpu_driver_module_loaded.rc != 0
+  when: gpu_driver_needs_install | bool
   changed_when: true
   environment:
     DEBIAN_FRONTEND: noninteractive
@@ -153,7 +207,7 @@
   retries: 240
   delay: 15
   changed_when: false
-  when: gpu_driver_module_loaded.rc != 0
+  when: gpu_driver_needs_install | bool
 
 - name: Fail if the backgrounded amdgpu driver install did not succeed
   fail:
@@ -161,9 +215,49 @@
       amdgpu driver install failed (background job exit code {{ gpu_driver_install_poll.stdout }}).
       Full output: /tmp/bloom_driver_install.log on the node.
   when:
-    - gpu_driver_module_loaded.rc != 0
+    - gpu_driver_needs_install | bool
     - gpu_driver_install_poll.stdout is defined
     - gpu_driver_install_poll.stdout != '0'
+
+- name: Record mapped amdgpu driver installation
+  set_fact:
+    gpu_driver_changed: true
+  when:
+    - gpu_driver_needs_install | bool
+    - gpu_driver_install_poll.stdout | default('1') == '0'
+
+- name: Re-read installed amdgpu-dkms package version
+  shell: "dpkg-query -W -f='${Version}' amdgpu-dkms 2>/dev/null || true"
+  register: gpu_driver_installed_version_after
+  changed_when: false
+
+- name: Re-check mapped DKMS module for the running kernel
+  shell: |
+    set -o pipefail
+    dkms status -m amdgpu 2>/dev/null \
+      | grep -F ", {{ kernel_version.stdout }}," \
+      | grep -q ': installed$'
+  args:
+    executable: /bin/bash
+  register: gpu_driver_dkms_for_kernel_after
+  changed_when: false
+  failed_when: false
+
+- name: Fail if the mapped amdgpu driver is not installed
+  fail:
+    msg: |
+      The mapped amdgpu driver did not validate after installation.
+      Required amdgpu-dkms package: {{ gpu_driver_candidate_version.stdout | trim }}
+      Installed amdgpu-dkms package: {{ gpu_driver_installed_version_after.stdout | trim | default('none', true) }}
+      Running kernel: {{ kernel_version.stdout }}
+      Inspect:
+        dkms status -m amdgpu
+        apt-cache policy amdgpu-dkms
+        cat /tmp/bloom_driver_install.log
+  when: >-
+    (gpu_driver_installed_version_after.stdout | trim) !=
+    (gpu_driver_candidate_version.stdout | trim)
+    or gpu_driver_dkms_for_kernel_after.rc != 0
 
 - name: Un-blacklist amdgpu module
   shell: sed -i '/^blacklist amdgpu/s/^/# /' /etc/modprobe.d/*.conf
@@ -174,6 +268,55 @@
     name: amdgpu
     state: present
   ignore_errors: yes
+  when: gpu_driver_module_loaded_before.rc != 0
+
+- name: Verify modprobe selects the mapped DKMS module
+  shell: modinfo -n amdgpu
+  register: gpu_driver_selected_module
+  changed_when: false
+  failed_when: false
+
+- name: Fail if modprobe still selects the inbox amdgpu module
+  fail:
+    msg: |
+      amdgpu-dkms {{ gpu_driver_candidate_version.stdout | trim }} is installed
+      for kernel {{ kernel_version.stdout }}, but modprobe resolves amdgpu to:
+        {{ gpu_driver_selected_module.stdout | default('module not found') }}
+      Expected a module under updates/dkms. Run `depmod -a` and inspect
+      `dkms status -m amdgpu` before retrying.
+  when: >-
+    gpu_driver_selected_module.rc != 0 or
+    '/updates/dkms/' not in (gpu_driver_selected_module.stdout | trim)
+
+# modinfo resolves the module that would be loaded now (the mapped DKMS
+# module), while /sys/module exposes the module already active in this boot.
+# Comparing srcversion distinguishes a preloaded inbox module from the mapped
+# DKMS module without relying on marketing/version strings.
+- name: Check whether the active amdgpu module matches the mapped DKMS module
+  shell: |
+    set -e
+    active_src="$(cat /sys/module/amdgpu/srcversion 2>/dev/null || true)"
+    mapped_src="$(modinfo -F srcversion amdgpu 2>/dev/null || true)"
+    if [ -n "$active_src" ] && [ -n "$mapped_src" ]; then
+      test "$active_src" = "$mapped_src"
+      exit
+    fi
+    active_version="$(cat /sys/module/amdgpu/version 2>/dev/null || true)"
+    mapped_version="$(modinfo -F version amdgpu 2>/dev/null || true)"
+    if [ -n "$active_version" ] && [ -n "$mapped_version" ]; then
+      test "$active_version" = "$mapped_version"
+      exit
+    fi
+    # Last-resort fallback for kernels/modules that expose neither field:
+    # out-of-tree DKMS modules carry the O taint; inbox modules do not.
+    grep -q 'O' /sys/module/amdgpu/taint
+  register: gpu_driver_active_module_matches
+  changed_when: false
+  failed_when: false
+
+- name: Set mapped-driver reboot requirement
+  set_fact:
+    gpu_driver_reboot_required: "{{ gpu_driver_active_module_matches.rc != 0 }}"
 
 # No ROCm tooling (amd-smi/rocm-smi) is installed on this branch, so verify
 # purely via the kernel driver and device nodes.
@@ -195,5 +338,9 @@
 - name: Report amdgpu driver verification
   debug:
     msg: |
-      amdgpu module loaded: {{ 'yes' if gpu_driver_verify_module.rc == 0 else 'NO (a reboot may be required — see next step)' }}
-      /dev/kfd + /dev/dri/renderD* present: {{ 'yes' if gpu_driver_verify_devices.rc == 0 else 'NO (a reboot may be required — see next step)' }}
+      Mapped amdgpu-dkms package: {{ gpu_driver_candidate_version.stdout | trim }}
+      DKMS module for {{ kernel_version.stdout }}: installed
+      Selected module: {{ gpu_driver_selected_module.stdout | trim }}
+      Active module matches mapped DKMS module: {{ 'yes' if not (gpu_driver_reboot_required | bool) else 'NO — reboot required' }}
+      amdgpu module loaded: {{ 'yes' if gpu_driver_verify_module.rc == 0 else 'NO — reboot required' }}
+      /dev/kfd + /dev/dri/renderD* present: {{ 'yes' if gpu_driver_verify_devices.rc == 0 else 'NO — reboot required' }}
