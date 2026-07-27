@@ -57,15 +57,15 @@ Configuration sources in priority order (highest to lowest):
 #### GPU_STACK_FAMILY
 - **Type**: String (single value)
 - **Default**: `""` (empty, resolves to `instinct`)
-- **Description**: Selects the ROCm + GPU Operator install defaults by GPU family. This is independent of `AIM_HARDWARE_FAMILY` (which selects the AIM model catalog). Empty or `instinct` keeps the current qualified defaults (host ROCm `7.2.3`, GPU Operator `v1.4.1`, DeviceConfig ROCm driver `7.0`), so existing installs are unchanged. `radeon` selects the ROCm 7.13 tech-preview stack.
+- **Description**: Selects the GPU Operator install defaults and the default amdgpu driver package by GPU family. This is independent of `AIM_HARDWARE_FAMILY` (which selects the AIM model catalog). Empty or `instinct` keeps the current qualified defaults (GPU Operator `v1.4.1`, DeviceConfig ROCm driver `7.0`, amdgpu driver package `7.2.3.70203-1`), so existing installs are unchanged. `radeon` selects the ROCm 7.13 tech-preview GPU Operator stack and the `31.30.313000-1` amdgpu driver package.
 - **Values**: `radeon` | `instinct` (lowercase, single value)
 - **Example**: `GPU_STACK_FAMILY: "radeon"`
 - **Notes**:
-  - Single-select by design: host ROCm is one version per node, so a heterogeneous Radeon + Instinct GPU stack cannot be expressed here. The AIM catalog (`AIM_HARDWARE_FAMILY`) can still be heterogeneous.
-  - Selecting `radeon` defaults host ROCm and the GPU Operator to the ROCm 7.13 tech-preview train. These components are tech preview, not production qualified, and bloom prints a notice at install time.
+  - Single-select by design: the amdgpu driver is one version per node, so a heterogeneous Radeon + Instinct GPU stack cannot be expressed here. The AIM catalog (`AIM_HARDWARE_FAMILY`) can still be heterogeneous.
+  - Selecting `radeon` defaults the GPU Operator to the ROCm 7.13 tech-preview train. This component is tech preview, not production qualified, and bloom prints a notice at install time.
   - Unsupported combinations (for example a Radeon stack resolving to ROCm 7.2) fail validation before install with an error naming the incompatible component.
-  - **Overriding the version guard**: when a GPU node already has ROCm installed that does not match the selected family's train (e.g. `radeon` on a host with ROCm 7.2.3), bloom aborts early during node validation with an "Unsupported ROCm version" message. This guard is a hard fail (no interactive prompt, because bloom pipes ansible output over SSH with no TTY). To proceed anyway with the currently installed ROCm, set [`ROCM_ALLOW_VERSION_MISMATCH`](#rocm_allow_version_mismatch) in `bloom.yaml`.
   - The exact ROCm 7.13 tech-preview version strings and the vendored GPU Operator chart are tracked in EAI-5906; until that lands the `radeon` row carries placeholder pins.
+  - **EAI-5657 spike branch note**: on this branch, bloom installs only the amdgpu kernel driver (no host ROCm at all) — see [`GPU_DRIVER_VERSION` / `GPU_DRIVER_BUILD`](#gpu_driver_version) to override the default driver package, and [docs/gpu-driver-only-spike.md](gpu-driver-only-spike.md) for details. `ROCM_ALLOW_VERSION_MISMATCH` / `ROCM_BASE_URL` / `ROCM_DEB_PACKAGE` do not exist on this branch.
 
 ### Cluster Joining Configuration
 
@@ -343,14 +343,27 @@ Configuration sources in priority order (highest to lowest):
 - **Values**: `true` | `false`
 - **Example**: `SKIP_RANCHER_PARTITION_CHECK: true`
 
-#### ROCM_ALLOW_VERSION_MISMATCH
+#### GPU_DRIVER_SKIP_INSTALL
 - **Type**: Boolean
 - **Default**: `false`
-- **Description**: Force continuation past the early ROCm version guard. On a GPU node, if the already-installed ROCm does not match the train required by `GPU_STACK_FAMILY` (e.g. `radeon` needs ROCm 7.13 but the host has 7.2.3), bloom warns and exits early during node validation. Set this to skip that guard and proceed with the installed ROCm. The guard is a hard fail with no interactive prompt (bloom pipes ansible output over SSH, so there is no TTY).
+- **Description**: (EAI-5657 spike branch) Skip the amdgpu driver install step entirely — e.g. a pre-provisioned node, or the operator wants to manage the driver manually. Also skips the guard that fails when ROCm is already installed on the node.
 - **Values**: `true` | `false` (also accepts `TRUE` / `1`)
 - **Applicable**: `GPU_NODE: true`
-- **Example**: `ROCM_ALLOW_VERSION_MISMATCH: true`
-- **Notes**: Works with `bloom cli bloom.yaml`. With `bloom run` it can also be passed as an extra-var: `-e ROCM_ALLOW_VERSION_MISMATCH=true`.
+- **Example**: `GPU_DRIVER_SKIP_INSTALL: true`
+
+#### GPU_DRIVER_VERSION
+- **Type**: String
+- **Default**: `""` (empty, uses the `GPU_STACK_FAMILY` default)
+- **Description**: (EAI-5657 spike branch) Force a specific `amdgpu-install` version (e.g. `7.2.3` or `31.30`) instead of the `GPU_STACK_FAMILY` default. Must be paired with `GPU_DRIVER_BUILD`.
+- **Applicable**: `GPU_NODE: true`
+- **Example**: `GPU_DRIVER_VERSION: "31.30"`
+
+#### GPU_DRIVER_BUILD
+- **Type**: String
+- **Default**: `""` (empty, uses the `GPU_STACK_FAMILY` default)
+- **Description**: (EAI-5657 spike branch) Build suffix paired with `GPU_DRIVER_VERSION` (e.g. `70203-1` or `313000-1`), forming the `amdgpu-install_<version>.<build>_all.deb` filename. Ignored unless `GPU_DRIVER_VERSION` is also set.
+- **Applicable**: `GPU_NODE: true`
+- **Example**: `GPU_DRIVER_BUILD: "313000-1"`
 
 #### RANCHER_DISK
 - **Type**: String (device path)

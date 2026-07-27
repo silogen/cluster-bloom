@@ -148,9 +148,9 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | RANCHER_DISK | Device path for dedicated `/var/lib/rancher` storage (e.g. `/dev/nvme2n1`). Primarily for GPU worker nodes with heavy workloads. Bloom formats and mounts this device automatically. Mutually exclusive with `NO_DISKS_FOR_CLUSTER`. | "" |
 | RKE2_EXTRA_CONFIG | Additional RKE2 configuration in YAML format | "" |
 | RKE2_INSTALLATION_URL | RKE2 installation script URL | https://get.rke2.io |
-| ROCM_BASE_URL | ROCm base repository URL | https://repo.radeon.com/amdgpu-install/7.2.3/ubuntu/ |
-| ROCM_DEB_PACKAGE | ROCm DEB package name | amdgpu-install_7.2.3.70203-1_all.deb |
-| ROCM_ALLOW_VERSION_MISMATCH | Force continuation past the early ROCm version guard when the installed ROCm does not match the GPU_STACK_FAMILY train (accepts true\|TRUE\|1) | false |
+| GPU_DRIVER_SKIP_INSTALL | Skip the amdgpu driver install step entirely (also skips the existing-ROCm guard) | false |
+| GPU_DRIVER_VERSION | Force a specific amdgpu-install version (e.g. `7.2.3` or `31.30`) instead of the GPU_STACK_FAMILY default; must be paired with GPU_DRIVER_BUILD | "" |
+| GPU_DRIVER_BUILD | Build suffix paired with GPU_DRIVER_VERSION (e.g. `70203-1` or `313000-1`) | "" |
 
 ### OIDC Configuration Examples
 
@@ -312,13 +312,7 @@ sudo ./bloom run bloom-playbook/cluster-bloom.yaml --config additional-config.ya
 sudo ./bloom run bloom-playbook/cluster-bloom.yaml --verbose
 ```
 
-> **GPU nodes — ROCm version guard**: On a GPU node whose already-installed ROCm does not match the train required by `GPU_STACK_FAMILY` (e.g. `radeon` on a host with ROCm 7.2.3), bloom fails fast during node validation. To proceed anyway with the installed ROCm, set this in `bloom.yaml`:
->
-> ```yaml
-> ROCM_ALLOW_VERSION_MISMATCH: true   # accepts true|TRUE|1
-> ```
->
-> With `bloom run` you can also pass it as an extra-var (`-e ROCM_ALLOW_VERSION_MISMATCH=true`). See [docs/rocm-support.md](docs/rocm-support.md#version-compatibility-guard-fail-fast) for details.
+> **EAI-5657 spike branch — GPU driver only, no host ROCm**: on this branch, GPU nodes get only the `amdgpu` kernel driver installed (`amdgpu-install --usecase=dkms`) — no ROCm userspace at all. Bloom fails fast if ROCm is already installed on the node. See [docs/gpu-driver-only-spike.md](docs/gpu-driver-only-spike.md) for details, flags, and the manual test plan.
 
 ## Installation Process
 

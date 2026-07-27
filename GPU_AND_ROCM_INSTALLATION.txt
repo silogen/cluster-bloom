@@ -2,6 +2,13 @@
 GPU AND ROCM INSTALLATION INSTRUCTIONS FOR CLUSTERBLOOM
 ================================================================================
 
+NOTE (EAI-5657 spike branch): this file describes main's ROCm(+driver) install.
+On the EAI-5657_gpudriver_over_rocm_spike branch, bloom installs ONLY the amdgpu
+kernel driver on GPU nodes -- no host ROCm at all. See docs/gpu-driver-only-spike.md
+for what that branch actually does; ROCM_ALLOW_VERSION_MISMATCH / ROCM_BASE_URL /
+ROCM_DEB_PACKAGE do not exist on that branch.
+================================================================================
+
 TABLE OF CONTENTS
 -----------------
 1. Overview

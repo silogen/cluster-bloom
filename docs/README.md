@@ -15,6 +15,7 @@ This documentation provides complete guidance for deploying, configuring, and ma
 ### Core Deployment
 - [**RKE2 Deployment**](rke2-deployment.md) - Kubernetes cluster foundation setup and configuration
 - [**ROCm Support**](rocm-support.md) - AMD GPU support and ROCm integration for AI workloads
+- [**GPU Driver-Only Spike (EAI-5657)**](gpu-driver-only-spike.md) - Branch-specific: installs only the amdgpu driver (no host ROCm) to test the reference stack
 - [**Storage Management**](storage-management.md) - Longhorn distributed storage configuration and management
 - [**Longhorn Drive Setup and Recovery**](longhorn-drive-setup-and-recovery.md) - Detailed drive recovery, RAID handling, and storage troubleshooting
 

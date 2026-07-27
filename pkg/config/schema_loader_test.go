@@ -15,7 +15,8 @@ func TestLoadSchema(t *testing.T) {
 	}
 
 	// Check that we have expected number of fields (38 fields in schema including
-	// CLUSTER_SIZE, AIM_HARDWARE_FAMILY, GPU_STACK_FAMILY and ROCM_ALLOW_VERSION_MISMATCH)
+	// CLUSTER_SIZE, AIM_HARDWARE_FAMILY, GPU_STACK_FAMILY, GPU_DRIVER_SKIP_INSTALL,
+	// GPU_DRIVER_VERSION and GPU_DRIVER_BUILD)
 	if len(args) != 38 {
 		t.Errorf("Expected 38 arguments, got %d", len(args))
 	}

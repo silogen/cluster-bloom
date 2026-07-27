@@ -12,10 +12,18 @@
   include_tasks: multipath.yaml
   tags: [storage, prep_node]
 
-- name: Setup and Check ROCm
-  include_tasks: gpu_rocm.yaml
-  when: GPU_NODE
-  tags: [gpu, rocm, prep_node]
+# EAI-5657 SPIKE: driver-only GPU node prep (no host ROCm) — see
+# docs/gpu-driver-only-spike.md. Replaces the ROCm(+driver) install from
+# EAI-7530 for this branch.
+- name: Install GPU driver (no ROCm)
+  include_tasks: gpu_driver_only.yaml
+  when: GPU_NODE and not (GPU_DRIVER_SKIP_INSTALL | default(false) | bool)
+  tags: [gpu, prep_node]
+
+- name: Check for pending reboot after GPU driver install
+  include_tasks: ../reboot_required_check.yaml
+  when: GPU_NODE and not (GPU_DRIVER_SKIP_INSTALL | default(false) | bool)
+  tags: [gpu, prep_node]
 
 - name: Update Modprobe (GPU nodes)
   include_tasks: gpu_modprobe.yaml

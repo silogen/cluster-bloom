@@ -37,7 +37,7 @@ func TestResolveStackProfile(t *testing.T) {
 			if profile.TechPreview != tt.wantTP {
 				t.Errorf("techPreview: got %v, want %v", profile.TechPreview, tt.wantTP)
 			}
-			if profile.HostRocmVersion == "" || profile.OperatorPath == "" || profile.DeviceConfigDriverVersion == "" {
+			if profile.DriverPackageVersion == "" || profile.OperatorPath == "" || profile.DeviceConfigDriverVersion == "" {
 				t.Errorf("profile has empty pins: %+v", profile)
 			}
 		})
@@ -51,11 +51,11 @@ func TestInstinctMatchesExistingDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if profile.HostRocmVersion != "7.2.3" {
-		t.Errorf("instinct host ROCm: got %q, want 7.2.3", profile.HostRocmVersion)
+	if profile.DriverPackageVersion != "7.2.3" {
+		t.Errorf("instinct driver package version: got %q, want 7.2.3", profile.DriverPackageVersion)
 	}
-	if profile.HostRocmDebBuild != "70203-1" {
-		t.Errorf("instinct deb build: got %q, want 70203-1", profile.HostRocmDebBuild)
+	if profile.DriverPackageBuild != "70203-1" {
+		t.Errorf("instinct driver package build: got %q, want 70203-1", profile.DriverPackageBuild)
 	}
 	if profile.OperatorPath != "amd-gpu-operator/v1.4.1" {
 		t.Errorf("instinct operator path: got %q, want amd-gpu-operator/v1.4.1", profile.OperatorPath)
@@ -81,6 +81,12 @@ func TestRadeonSelectsBetaOperator(t *testing.T) {
 	if profile.OperatorConfigPath != "amd-gpu-operator-config/v1.5.1-beta.0" {
 		t.Errorf("radeon operator config path: got %q, want amd-gpu-operator-config/v1.5.1-beta.0", profile.OperatorConfigPath)
 	}
+	if profile.DriverPackageVersion != "31.30" {
+		t.Errorf("radeon driver package version: got %q, want 31.30", profile.DriverPackageVersion)
+	}
+	if profile.DriverPackageBuild != "313000-1" {
+		t.Errorf("radeon driver package build: got %q, want 313000-1", profile.DriverPackageBuild)
+	}
 }
 
 func TestCheckRadeonSupportedRejectsTooOldRocm(t *testing.T) {
@@ -105,8 +111,11 @@ func TestApplyGPUStackVars(t *testing.T) {
 	if err := ApplyGPUStackVars(cfg); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg["rocm_required_version"] != "7.2.3" {
-		t.Errorf("rocm_required_version: got %v, want 7.2.3", cfg["rocm_required_version"])
+	if cfg["gpu_driver_default_version"] != "7.2.3" {
+		t.Errorf("gpu_driver_default_version: got %v, want 7.2.3", cfg["gpu_driver_default_version"])
+	}
+	if cfg["gpu_driver_default_build"] != "70203-1" {
+		t.Errorf("gpu_driver_default_build: got %v, want 70203-1", cfg["gpu_driver_default_build"])
 	}
 	if cfg["gpu_operator_path"] != "amd-gpu-operator/v1.4.1" {
 		t.Errorf("gpu_operator_path: got %v", cfg["gpu_operator_path"])
@@ -117,11 +126,18 @@ func TestApplyGPUStackVars(t *testing.T) {
 	if cfg["gpu_stack_family_resolved"] != "instinct" {
 		t.Errorf("gpu_stack_family_resolved: got %v", cfg["gpu_stack_family_resolved"])
 	}
-	if cfg["rocm_version_exact_required"] != false {
-		t.Errorf("rocm_version_exact_required: got %v, want false", cfg["rocm_version_exact_required"])
+}
+
+func TestApplyGPUStackVarsRadeon(t *testing.T) {
+	cfg := Config{"GPU_STACK_FAMILY": "radeon"}
+	if err := ApplyGPUStackVars(cfg); err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg["rocm_instinct_min_patch"] != 3 {
-		t.Errorf("rocm_instinct_min_patch: got %v, want 3", cfg["rocm_instinct_min_patch"])
+	if cfg["gpu_driver_default_version"] != "31.30" {
+		t.Errorf("gpu_driver_default_version: got %v, want 31.30", cfg["gpu_driver_default_version"])
+	}
+	if cfg["gpu_driver_default_build"] != "313000-1" {
+		t.Errorf("gpu_driver_default_build: got %v, want 313000-1", cfg["gpu_driver_default_build"])
 	}
 }
 
@@ -132,55 +148,5 @@ func TestApplyGPUStackVarsEmptyDefaultsInstinct(t *testing.T) {
 	}
 	if cfg["gpu_stack_family_resolved"] != "instinct" {
 		t.Errorf("empty family should resolve to instinct, got %v", cfg["gpu_stack_family_resolved"])
-	}
-}
-
-func TestHostRocmVersionAcceptableInstinct(t *testing.T) {
-	tests := []struct {
-		version string
-		want    bool
-	}{
-		{version: "7.2.3", want: true},
-		{version: "7.2.4", want: true},
-		{version: "7.2.10", want: true},
-		{version: "7.2.2", want: false},
-		{version: "7.13.0", want: false},
-		{version: "7.3.0", want: false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.version, func(t *testing.T) {
-			ok, err := HostRocmVersionAcceptable("instinct", tt.version, "7.2.3")
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if ok != tt.want {
-				t.Errorf("HostRocmVersionAcceptable(instinct, %q) = %v, want %v", tt.version, ok, tt.want)
-			}
-		})
-	}
-}
-
-func TestHostRocmVersionAcceptableRadeon(t *testing.T) {
-	tests := []struct {
-		version string
-		want    bool
-	}{
-		{version: "7.13.0", want: true},
-		{version: "7.13.1", want: true},
-		{version: "7.13.4", want: true},
-		{version: "7.12.9", want: false},
-		{version: "7.14.0", want: false},
-		{version: "7.2.4", want: false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.version, func(t *testing.T) {
-			ok, err := HostRocmVersionAcceptable("radeon", tt.version, "7.13.0")
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if ok != tt.want {
-				t.Errorf("HostRocmVersionAcceptable(radeon, %q) = %v, want %v", tt.version, ok, tt.want)
-			}
-		})
 	}
 }

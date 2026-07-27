@@ -1,0 +1,199 @@
+---
+# Purpose: Install ONLY the amdgpu kernel driver on a GPU node — no host ROCm.
+# EAI-5657 SPIKE: replaces the old ROCm(+driver) install (EAI-7530) for this
+# branch, to test whether the AIM/AIWB/AIRM reference stack works against a
+# driver-only host. See docs/gpu-driver-only-spike.md.
+# Dependencies: GPU_NODE, GPU_DRIVER_SKIP_INSTALL, GPU_DRIVER_VERSION,
+#               GPU_DRIVER_BUILD, gpu_driver_default_version/build (from
+#               config.ApplyGPUStackVars, per GPU_STACK_FAMILY)
+# Usage: Imported by prepare_node/main.yaml (conditional on GPU_NODE and not
+#        GPU_DRIVER_SKIP_INSTALL)
+# Tags: [gpu, prep_node]
+
+# This branch does not know how to reconcile a node that already has ROCm
+# installed (that would need an uninstall/remediation flow, which is explicitly
+# out of scope for this spike — see EAI-5657). Fail fast with a clear message
+# rather than attempting a driver-only install on top of an existing ROCm.
+- name: Check whether ROCm is already installed
+  shell: |
+    set -e
+    dpkg-query -W -f='${Package}\n' 2>/dev/null | grep -qE '^(rocm|amd-smi|hip-runtime-amd)' && exit 0
+    ls -d /opt/rocm* >/dev/null 2>&1 && exit 0
+    exit 1
+  register: gpu_driver_rocm_present
+  changed_when: false
+  failed_when: false
+
+- name: Fail if ROCm is already installed on this node
+  fail:
+    msg: |
+      This node already has ROCm installed (found a rocm/amd-smi/hip-runtime-amd
+      package or /opt/rocm*). The EAI-5657 driver-only spike branch does not
+      support nodes with an existing ROCm install — it only knows how to install
+      the amdgpu driver on a clean node.
+      Use a clean node, or set GPU_DRIVER_SKIP_INSTALL: true if you want bloom to
+      leave this node's GPU stack untouched and proceed with the rest of the run.
+  when: gpu_driver_rocm_present.rc == 0
+
+# Idempotency: if the amdgpu module is already loaded, there is nothing to do.
+- name: Check whether the amdgpu kernel module is already loaded
+  shell: lsmod | grep -q '^amdgpu '
+  register: gpu_driver_module_loaded
+  changed_when: false
+  failed_when: false
+
+- name: Resolve amdgpu-install version/build to use
+  set_fact:
+    gpu_driver_version_resolved: "{{ (GPU_DRIVER_VERSION | default('') | trim) if (GPU_DRIVER_VERSION | default('') | trim != '') else gpu_driver_default_version }}"
+    gpu_driver_build_resolved: "{{ (GPU_DRIVER_BUILD | default('') | trim) if (GPU_DRIVER_BUILD | default('') | trim != '') else gpu_driver_default_build }}"
+  when: gpu_driver_module_loaded.rc != 0
+
+- name: Set amdgpu-install download coordinates
+  set_fact:
+    gpu_driver_base_url: "https://repo.radeon.com/amdgpu-install/{{ gpu_driver_version_resolved }}/ubuntu/"
+    gpu_driver_deb_package: "amdgpu-install_{{ gpu_driver_version_resolved }}.{{ gpu_driver_build_resolved }}_all.deb"
+  when: gpu_driver_module_loaded.rc != 0
+
+- name: Report resolved amdgpu driver package
+  debug:
+    msg: "Installing amdgpu driver only (no ROCm): {{ gpu_driver_deb_package }} from {{ gpu_driver_base_url }}"
+  when: gpu_driver_module_loaded.rc != 0
+
+- name: Get Ubuntu codename
+  shell: grep VERSION_CODENAME /etc/os-release | cut -d= -f2
+  register: ubuntu_codename
+  changed_when: false
+  when: gpu_driver_module_loaded.rc != 0
+
+- name: Get kernel version
+  shell: uname -r
+  register: kernel_version
+  changed_when: false
+  when: gpu_driver_module_loaded.rc != 0
+
+- name: Install kernel headers and modules
+  apt:
+    name:
+      - "linux-headers-{{ kernel_version.stdout }}"
+      - "linux-modules-extra-{{ kernel_version.stdout }}"
+      - python3-setuptools
+      - python3-wheel
+    state: present
+  when: gpu_driver_module_loaded.rc != 0
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+    NEEDRESTART_MODE: l
+    NEEDRESTART_SUSPEND: "1"
+
+# Retry the download: the amdgpu-install .deb is served from repo.radeon.com,
+# which can intermittently fail the request even though the URL is valid.
+- name: Download amdgpu-install package
+  get_url:
+    url: "{{ gpu_driver_base_url }}/{{ ubuntu_codename.stdout }}/{{ gpu_driver_deb_package }}"
+    dest: "/tmp/{{ gpu_driver_deb_package }}"
+    mode: "0644"
+    timeout: 60
+  register: gpu_driver_install_download
+  until: gpu_driver_install_download is succeeded
+  retries: 5
+  delay: 10
+  when: gpu_driver_module_loaded.rc != 0
+
+- name: Install amdgpu-install package
+  apt:
+    deb: "/tmp/{{ gpu_driver_deb_package }}"
+    state: present
+  when: gpu_driver_module_loaded.rc != 0
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+    NEEDRESTART_MODE: l
+    NEEDRESTART_SUSPEND: "1"
+
+# --usecase=dkms only: installs the amdgpu kernel driver, deliberately WITHOUT
+# the `rocm` usecase — no ROCm userspace is installed on this branch.
+# --allow-downgrades is required because pre-provisioned nodes may already
+# carry a newer-versioned amdgpu-install; NEEDRESTART_MODE=l (list-only, not
+# auto-restart) so a large apt transaction doesn't restart sshd mid-run and
+# tear down bloom's SSH loopback connection.
+# Run fully detached (nohup+setsid, own log + exit-code marker file) and poll
+# for the marker with a plain shell task rather than ansible's async/
+# async_status: a kernel/DKMS install can pull an openssh-server or glibc
+# upgrade whose OWN postinst restarts sshd right at completion, which has been
+# observed to wedge both a plain synchronous task and ansible's async wrapper.
+# Driving our own marker file sidesteps that entirely.
+- name: Launch amdgpu driver install in the background
+  shell:
+    executable: /bin/bash
+    cmd: |
+      set -e
+      rm -f /tmp/bloom_driver_install.rc /tmp/bloom_driver_install.done
+      nohup setsid bash -c '
+        amdgpu-install --usecase=dkms --yes --allow-downgrades > /tmp/bloom_driver_install.log 2>&1
+        echo $? > /tmp/bloom_driver_install.rc
+        touch /tmp/bloom_driver_install.done
+      ' </dev/null >/tmp/bloom_driver_install.launch.log 2>&1 &
+  when: gpu_driver_module_loaded.rc != 0
+  changed_when: true
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+    NEEDRESTART_MODE: l
+    NEEDRESTART_SUSPEND: "1"
+
+- name: Wait for amdgpu driver install to finish
+  shell:
+    executable: /bin/bash
+    cmd: |
+      if [ -f /tmp/bloom_driver_install.done ]; then
+        cat /tmp/bloom_driver_install.rc
+      else
+        echo RUNNING
+      fi
+  register: gpu_driver_install_poll
+  until: gpu_driver_install_poll.stdout is match('^[0-9]+$')
+  retries: 240
+  delay: 15
+  changed_when: false
+  when: gpu_driver_module_loaded.rc != 0
+
+- name: Fail if the backgrounded amdgpu driver install did not succeed
+  fail:
+    msg: |
+      amdgpu driver install failed (background job exit code {{ gpu_driver_install_poll.stdout }}).
+      Full output: /tmp/bloom_driver_install.log on the node.
+  when:
+    - gpu_driver_module_loaded.rc != 0
+    - gpu_driver_install_poll.stdout is defined
+    - gpu_driver_install_poll.stdout != '0'
+
+- name: Un-blacklist amdgpu module
+  shell: sed -i '/^blacklist amdgpu/s/^/# /' /etc/modprobe.d/*.conf
+  ignore_errors: yes
+
+- name: Load amdgpu kernel module
+  modprobe:
+    name: amdgpu
+    state: present
+  ignore_errors: yes
+
+# No ROCm tooling (amd-smi/rocm-smi) is installed on this branch, so verify
+# purely via the kernel driver and device nodes.
+- name: Verify amdgpu kernel module is loaded
+  shell: lsmod | grep '^amdgpu '
+  register: gpu_driver_verify_module
+  changed_when: false
+  failed_when: false
+
+- name: Verify GPU device nodes are present
+  shell: |
+    set -e
+    ls /dev/kfd
+    ls /dev/dri/renderD* 2>/dev/null | head -1
+  register: gpu_driver_verify_devices
+  changed_when: false
+  failed_when: false
+
+- name: Report amdgpu driver verification
+  debug:
+    msg: |
+      amdgpu module loaded: {{ 'yes' if gpu_driver_verify_module.rc == 0 else 'NO (a reboot may be required — see next step)' }}
+      /dev/kfd + /dev/dri/renderD* present: {{ 'yes' if gpu_driver_verify_devices.rc == 0 else 'NO (a reboot may be required — see next step)' }}

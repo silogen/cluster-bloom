@@ -43,12 +43,13 @@
     
     CLUSTERFORGE_REPO: "https://github.com/silogen/cluster-forge.git"
     BLOOM_DIR: "/tmp/bloom"
-    rocm_required_version: "7.2.3"  # single source of truth — update this to change ROCm version
-    rocm_deb_build: "70203-1"  # build identifier paired with rocm_required_version
-    rocm_base_url: "https://repo.radeon.com/amdgpu-install/{{ rocm_required_version }}/ubuntu/"
-    rocm_deb_package: "amdgpu-install_{{ rocm_required_version }}.{{ rocm_deb_build }}_all.deb"
-    rocm_instinct_min_patch: 3
-    rocm_version_exact_required: false
+    # EAI-5657 SPIKE: driver-only GPU node prep (no host ROCm). Defaults below
+    # are overridden per GPU_STACK_FAMILY by config.ApplyGPUStackVars
+    # (gpu_driver_default_version/gpu_driver_default_build); these play-level
+    # values only apply when bloom's Go layer is bypassed (e.g. a raw
+    # ansible-playbook run against an exported playbook).
+    gpu_driver_default_version: "7.2.3"
+    gpu_driver_default_build: "70203-1"
     gpu_stack_family_resolved: instinct
     rke2_installation_url: "https://get.rke2.io"
 

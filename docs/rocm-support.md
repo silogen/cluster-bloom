@@ -1,5 +1,14 @@
 # AMD GPU Support with ROCm
 
+> **EAI-5657 spike branch note**: this document describes `main`'s ROCm(+driver)
+> install behavior. On the `EAI-5657_gpudriver_over_rocm_spike` branch, bloom installs
+> **only** the amdgpu kernel driver — no host ROCm at all — to test whether the
+> AIM/AIWB/AIRM reference stack needs host ROCm beyond the driver. The
+> `ROCM_ALLOW_VERSION_MISMATCH` / `ROCM_BASE_URL` / `ROCM_DEB_PACKAGE` flags and the ROCm
+> version-compatibility guard described below do not exist on that branch. See
+> [docs/gpu-driver-only-spike.md](gpu-driver-only-spike.md) for what that branch actually
+> does.
+
 ## Overview
 
 ClusterBloom provides automated AMD GPU support through ROCm driver installation and configuration, enabling GPU-accelerated workloads on Kubernetes clusters.

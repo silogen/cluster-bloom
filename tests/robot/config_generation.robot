@@ -51,19 +51,19 @@ Test Generate Config With TLS Certificates
     Should Contain    ${yamlContent}    CERT_OPTION: existing
 
 Test Generate Config With Advanced Options
-    [Documentation]    Generate config with advanced ROCm and RKE2 settings
+    [Documentation]    Generate config with advanced GPU driver and RKE2 settings
     Setup Minimal Valid First Node Config
     Check Checkbox    id=GPU_NODE
-    Wait For Elements State    id=ROCM_BASE_URL    visible    timeout=2s
-    Fill Text    id=ROCM_BASE_URL    https://custom.repo.com/rocm/
-    Fill Text    id=ROCM_DEB_PACKAGE    custom-rocm-7.0.deb
+    Wait For Elements State    id=GPU_DRIVER_VERSION    visible    timeout=2s
+    Fill Text    id=GPU_DRIVER_VERSION    31.30
+    Fill Text    id=GPU_DRIVER_BUILD    313000-1
     Fill Text    id=RKE2_VERSION    v1.33.0+rke2r1
     Fill Text    id=RKE2_INSTALLATION_URL    https://custom.rke2.install
     Fill Text    id=CLUSTER_PREMOUNTED_DISKS    /mnt/disk1
     Submit And Wait For Preview
     ${yamlContent}=    Get Text    css=pre
-    Should Contain    ${yamlContent}    ROCM_BASE_URL: "https://custom.repo.com/rocm/"
-    Should Contain    ${yamlContent}    ROCM_DEB_PACKAGE: custom-rocm-7.0.deb
+    Should Contain    ${yamlContent}    GPU_DRIVER_VERSION: "31.30"
+    Should Contain    ${yamlContent}    GPU_DRIVER_BUILD: 313000-1
     Should Contain    ${yamlContent}    RKE2_VERSION: v1.33.0+rke2r1
 
 Test API Generate Endpoint

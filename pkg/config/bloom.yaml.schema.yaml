@@ -186,24 +186,28 @@ schema:
       section: "🔒 SSL/TLS Configuration"
 
     # ⚙️ Advanced Configuration
-    ROCM_BASE_URL:
-      type: url
-      default: https://repo.radeon.com/amdgpu-install/7.2.3/ubuntu/
-      desc: ROCm base repository URL
-      applicable: when(GPU_NODE == true)
-      section: "⚙️ Advanced Configuration"
-
-    ROCM_DEB_PACKAGE:
-      type: str
-      default: amdgpu-install_7.2.3.70203-1_all.deb
-      desc: ROCm DEB package name
-      applicable: when(GPU_NODE == true)
-      section: "⚙️ Advanced Configuration"
-
-    ROCM_ALLOW_VERSION_MISMATCH:
+    #
+    # EAI-5657 SPIKE: this branch installs ONLY the amdgpu kernel driver on GPU
+    # nodes (no host ROCm at all), to test whether the AIM/AIWB/AIRM reference
+    # stack works against a driver-only host. See docs/gpu-driver-only-spike.md.
+    GPU_DRIVER_SKIP_INSTALL:
       type: bool
       default: false
-      desc: "Force continuation past the early ROCm version guard when a GPU node's already-installed ROCm does not match the train required by GPU_STACK_FAMILY (e.g. radeon needs 7.13 but host has 7.2.3). Normally this warns and exits early; set true (accepts true|TRUE|1) to proceed anyway with the installed ROCm."
+      desc: "Skip the amdgpu driver install step entirely (e.g. pre-provisioned node, or the operator wants to manage the driver manually). Also skips the guard that fails when ROCm is already installed on the node."
+      applicable: when(GPU_NODE == true)
+      section: "⚙️ Advanced Configuration"
+
+    GPU_DRIVER_VERSION:
+      type: str
+      default: ""
+      desc: "Force a specific amdgpu-install version (e.g. '7.2.3' or '31.30') instead of the GPU_STACK_FAMILY default (instinct: 7.2.3, radeon: 31.30). Must be paired with GPU_DRIVER_BUILD."
+      applicable: when(GPU_NODE == true)
+      section: "⚙️ Advanced Configuration"
+
+    GPU_DRIVER_BUILD:
+      type: str
+      default: ""
+      desc: "Build suffix paired with GPU_DRIVER_VERSION (e.g. '70203-1' or '313000-1'), forming the amdgpu-install_<version>.<build>_all.deb filename. Ignored unless GPU_DRIVER_VERSION is also set."
       applicable: when(GPU_NODE == true)
       section: "⚙️ Advanced Configuration"
 

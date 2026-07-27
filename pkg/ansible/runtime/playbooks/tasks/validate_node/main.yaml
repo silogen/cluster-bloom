@@ -21,11 +21,7 @@
   include_tasks: ip_table_check.yaml
   tags: [validate_node, iptables]
 
-# Detect any ROCm already on GPU nodes and fail fast if it is not a supported
-# version for the selected GPU_STACK_FAMILY, BEFORE any package/kernel/repo work
-# in prepare_node. prepare_node/gpu_rocm.yaml includes the same file again so
-# tag-scoped runs that skip validation still get detection + the guard.
-- name: Validate ROCm compatibility (GPU nodes)
-  include_tasks: ../gpu_rocm_detect.yaml
-  when: GPU_NODE | default(false) | bool
-  tags: [validate_node, gpu, rocm]
+# EAI-5657 SPIKE: the driver-only ROCm-presence guard (fail if ROCm is already
+# installed) now lives inline in prepare_node/gpu_driver_only.yaml, since this
+# branch does no version-matrix validation (there is no ROCm version to check
+# against). No early validate_node guard is needed for this minimal spike.
