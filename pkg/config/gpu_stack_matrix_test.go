@@ -44,18 +44,16 @@ func TestResolveStackProfile(t *testing.T) {
 	}
 }
 
-func TestInstinctMatchesExistingDefaults(t *testing.T) {
-	// The instinct row must reproduce today's hardcoded defaults so existing
-	// installs see no change.
+func TestInstinctUsesProductionDriverDefault(t *testing.T) {
 	profile, err := ResolveStackProfile("instinct")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if profile.DriverPackageVersion != "7.2.3" {
-		t.Errorf("instinct driver package version: got %q, want 7.2.3", profile.DriverPackageVersion)
+	if profile.DriverPackageVersion != "31.40" {
+		t.Errorf("instinct driver package version: got %q, want 31.40", profile.DriverPackageVersion)
 	}
-	if profile.DriverPackageBuild != "70203-1" {
-		t.Errorf("instinct driver package build: got %q, want 70203-1", profile.DriverPackageBuild)
+	if profile.DriverPackageBuild != "314000-1" {
+		t.Errorf("instinct driver package build: got %q, want 314000-1", profile.DriverPackageBuild)
 	}
 	if profile.OperatorPath != "amd-gpu-operator/v1.4.1" {
 		t.Errorf("instinct operator path: got %q, want amd-gpu-operator/v1.4.1", profile.OperatorPath)
@@ -81,11 +79,11 @@ func TestRadeonSelectsBetaOperator(t *testing.T) {
 	if profile.OperatorConfigPath != "amd-gpu-operator-config/v1.5.1-beta.0" {
 		t.Errorf("radeon operator config path: got %q, want amd-gpu-operator-config/v1.5.1-beta.0", profile.OperatorConfigPath)
 	}
-	if profile.DriverPackageVersion != "31.30" {
-		t.Errorf("radeon driver package version: got %q, want 31.30", profile.DriverPackageVersion)
+	if profile.DriverPackageVersion != "31.40" {
+		t.Errorf("radeon driver package version: got %q, want 31.40", profile.DriverPackageVersion)
 	}
-	if profile.DriverPackageBuild != "313000-1" {
-		t.Errorf("radeon driver package build: got %q, want 313000-1", profile.DriverPackageBuild)
+	if profile.DriverPackageBuild != "314000-1" {
+		t.Errorf("radeon driver package build: got %q, want 314000-1", profile.DriverPackageBuild)
 	}
 }
 
@@ -111,11 +109,11 @@ func TestApplyGPUStackVars(t *testing.T) {
 	if err := ApplyGPUStackVars(cfg); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg["gpu_driver_default_version"] != "7.2.3" {
-		t.Errorf("gpu_driver_default_version: got %v, want 7.2.3", cfg["gpu_driver_default_version"])
+	if cfg["gpu_driver_default_version"] != "31.40" {
+		t.Errorf("gpu_driver_default_version: got %v, want 31.40", cfg["gpu_driver_default_version"])
 	}
-	if cfg["gpu_driver_default_build"] != "70203-1" {
-		t.Errorf("gpu_driver_default_build: got %v, want 70203-1", cfg["gpu_driver_default_build"])
+	if cfg["gpu_driver_default_build"] != "314000-1" {
+		t.Errorf("gpu_driver_default_build: got %v, want 314000-1", cfg["gpu_driver_default_build"])
 	}
 	if cfg["gpu_operator_path"] != "amd-gpu-operator/v1.4.1" {
 		t.Errorf("gpu_operator_path: got %v", cfg["gpu_operator_path"])
@@ -133,11 +131,34 @@ func TestApplyGPUStackVarsRadeon(t *testing.T) {
 	if err := ApplyGPUStackVars(cfg); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg["gpu_driver_default_version"] != "31.30" {
-		t.Errorf("gpu_driver_default_version: got %v, want 31.30", cfg["gpu_driver_default_version"])
+	if cfg["gpu_driver_default_version"] != "31.40" {
+		t.Errorf("gpu_driver_default_version: got %v, want 31.40", cfg["gpu_driver_default_version"])
 	}
-	if cfg["gpu_driver_default_build"] != "313000-1" {
-		t.Errorf("gpu_driver_default_build: got %v, want 313000-1", cfg["gpu_driver_default_build"])
+	if cfg["gpu_driver_default_build"] != "314000-1" {
+		t.Errorf("gpu_driver_default_build: got %v, want 314000-1", cfg["gpu_driver_default_build"])
+	}
+}
+
+func TestSupportedGPUDriversIncludesValidatedTuples(t *testing.T) {
+	want := map[string]string{
+		"30.20.1": "7.1.1",
+		"30.30.3": "7.2.3",
+		"31.30.0": "7.13",
+		"31.40.0": "7.14",
+	}
+	for _, driver := range supportedGPUDrivers {
+		if paired, ok := want[driver.DriverRelease]; !ok {
+			t.Errorf("unexpected driver release in support table: %s", driver.DriverRelease)
+		} else if driver.PairedROCm != paired {
+			t.Errorf("%s paired ROCm: got %q, want %q", driver.DriverRelease, driver.PairedROCm, paired)
+		}
+		if driver.DKMSModuleVersion == "" || driver.DKMSPackageCode == "" || driver.HostToolsPackage == "" {
+			t.Errorf("incomplete support tuple: %+v", driver)
+		}
+		delete(want, driver.DriverRelease)
+	}
+	if len(want) != 0 {
+		t.Errorf("support table is missing tuples: %v", want)
 	}
 }
 

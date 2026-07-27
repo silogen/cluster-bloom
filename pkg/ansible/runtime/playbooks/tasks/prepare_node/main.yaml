@@ -12,10 +12,9 @@
   include_tasks: multipath.yaml
   tags: [storage, prep_node]
 
-# EAI-5657 SPIKE: driver-only GPU node prep (no host ROCm) — see
-# docs/gpu-driver-only-spike.md. Replaces the ROCm(+driver) install from
-# EAI-7530 for this branch.
-- name: Install GPU driver (no ROCm)
+# EAI-5657: retain an allowlisted amdgpu DKMS driver or install the production
+# driver on a fresh node. Host ROCm is neither required nor installed.
+- name: Reconcile supported GPU driver (no ROCm install)
   include_tasks: gpu_driver_only.yaml
   when: GPU_NODE and not (GPU_DRIVER_SKIP_INSTALL | default(false) | bool)
   tags: [gpu, prep_node]
@@ -25,9 +24,19 @@
   when: GPU_NODE and not (GPU_DRIVER_SKIP_INSTALL | default(false) | bool)
   tags: [gpu, prep_node]
 
+- name: Ensure standalone AMD-SMI host diagnostics
+  include_tasks: gpu_host_tools.yaml
+  when:
+    - GPU_NODE
+    - not (GPU_DRIVER_SKIP_INSTALL | default(false) | bool)
+    - GPU_INSTALL_HOST_TOOLS | default(true) | bool
+  tags: [gpu, prep_node]
+
 - name: Update Modprobe (GPU nodes)
   include_tasks: gpu_modprobe.yaml
-  when: GPU_NODE
+  when:
+    - GPU_NODE
+    - not (GPU_DRIVER_SKIP_INSTALL | default(false) | bool)
   tags: [gpu, prep_node]
 
 - name: Prepare bloom fstab section markers

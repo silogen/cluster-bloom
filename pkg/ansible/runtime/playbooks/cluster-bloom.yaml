@@ -43,13 +43,48 @@
     
     CLUSTERFORGE_REPO: "https://github.com/silogen/cluster-forge.git"
     BLOOM_DIR: "/tmp/bloom"
-    # EAI-5657 SPIKE: driver-only GPU node prep (no host ROCm). Defaults below
-    # are overridden per GPU_STACK_FAMILY by config.ApplyGPUStackVars
-    # (gpu_driver_default_version/gpu_driver_default_build); these play-level
-    # values only apply when bloom's Go layer is bypassed (e.g. a raw
-    # ansible-playbook run against an exported playbook).
-    gpu_driver_default_version: "7.2.3"
-    gpu_driver_default_build: "70203-1"
+    # EAI-5657: exact driver compatibility policy. These play-level defaults
+    # also support direct ansible-playbook use when Bloom's Go layer is bypassed.
+    GPU_INSTALL_HOST_TOOLS: true
+    gpu_driver_default_version: "31.40"
+    gpu_driver_default_build: "314000-1"
+    gpu_driver_supported:
+      - DriverRelease: "30.20.1"
+        InstallerVersion: "7.1.1"
+        InstallerBuild: "70101-1"
+        DKMSModuleVersion: "6.16.6"
+        DKMSBuild: "2255209"
+        DKMSPackageCode: "30200100"
+        PairedROCm: "7.1.1"
+        HostToolsChannel: legacy
+        HostToolsPackage: amd-smi-lib
+      - DriverRelease: "30.30.3"
+        InstallerVersion: "7.2.3"
+        InstallerBuild: "70203-1"
+        DKMSModuleVersion: "6.16.13"
+        DKMSBuild: "2327507"
+        DKMSPackageCode: "30300300"
+        PairedROCm: "7.2.3"
+        HostToolsChannel: legacy
+        HostToolsPackage: amd-smi-lib
+      - DriverRelease: "31.30.0"
+        InstallerVersion: "31.30"
+        InstallerBuild: "313000-1"
+        DKMSModuleVersion: "6.19.4"
+        DKMSBuild: "2337710"
+        DKMSPackageCode: "31300000"
+        PairedROCm: "7.13"
+        HostToolsChannel: core
+        HostToolsPackage: amdrocm-amdsmi7.13
+      - DriverRelease: "31.40.0"
+        InstallerVersion: "31.40"
+        InstallerBuild: "314000-1"
+        DKMSModuleVersion: "6.19.14"
+        DKMSBuild: "2364437"
+        DKMSPackageCode: "31400000"
+        PairedROCm: "7.14"
+        HostToolsChannel: core-multiarch
+        HostToolsPackage: amdrocm-amdsmi7.14
     gpu_stack_family_resolved: instinct
     rke2_installation_url: "https://get.rke2.io"
 

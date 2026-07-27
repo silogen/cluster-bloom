@@ -162,9 +162,10 @@ EOF
 
 ### Phase 3: GPU Setup (GPU Nodes Only)
 
-> **EAI-5657 spike branch note**: on this branch, bloom's automated GPU node prep
-> installs *only* the amdgpu kernel driver (`amdgpu-install --usecase=dkms`) — it does
-> **not** install ROCm, and `ROCM_ALLOW_VERSION_MISMATCH` / `ROCM_BASE_URL` /
+> **EAI-5657 branch note**: on this branch, Bloom's automated GPU node prep
+> retains an exact supported amdgpu DKMS driver or installs production driver
+> 31.40.0 with `amdgpu-install --usecase=dkms`. It does **not** install ROCm;
+> standalone AMD-SMI is enabled by default. `ROCM_ALLOW_VERSION_MISMATCH` / `ROCM_BASE_URL` /
 > `ROCM_DEB_PACKAGE` do not exist on this branch. See
 > [docs/gpu-driver-only-spike.md](gpu-driver-only-spike.md). The manual steps below
 > describe a full ROCm install (`main`'s behavior) and remain useful as general/manual

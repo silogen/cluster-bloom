@@ -14,16 +14,17 @@ func TestLoadSchema(t *testing.T) {
 		t.Fatal("LoadSchema() returned no arguments")
 	}
 
-	// Check that we have expected number of fields (38 fields in schema including
+	// Check that we have expected number of fields (39 fields in schema including
 	// CLUSTER_SIZE, AIM_HARDWARE_FAMILY, GPU_STACK_FAMILY, GPU_DRIVER_SKIP_INSTALL,
-	// GPU_DRIVER_VERSION and GPU_DRIVER_BUILD)
-	if len(args) != 38 {
-		t.Errorf("Expected 38 arguments, got %d", len(args))
+	// GPU_INSTALL_HOST_TOOLS, GPU_DRIVER_VERSION and GPU_DRIVER_BUILD)
+	if len(args) != 39 {
+		t.Errorf("Expected 39 arguments, got %d", len(args))
 	}
 
 	// Verify critical fields are present
 	foundDomain := false
 	foundServerIP := false
+	foundGPUHostTools := false
 	for _, arg := range args {
 		if arg.Key == "DOMAIN" {
 			foundDomain = true
@@ -49,6 +50,12 @@ func TestLoadSchema(t *testing.T) {
 				t.Errorf("SERVER_IP dependencies should be 'FIRST_NODE=false', got '%s'", arg.Dependencies)
 			}
 		}
+		if arg.Key == "GPU_INSTALL_HOST_TOOLS" {
+			foundGPUHostTools = true
+			if value, ok := arg.Default.(bool); !ok || !value {
+				t.Errorf("GPU_INSTALL_HOST_TOOLS default should be true, got %#v", arg.Default)
+			}
+		}
 	}
 
 	if !foundDomain {
@@ -56,6 +63,9 @@ func TestLoadSchema(t *testing.T) {
 	}
 	if !foundServerIP {
 		t.Error("SERVER_IP field not found in loaded schema")
+	}
+	if !foundGPUHostTools {
+		t.Error("GPU_INSTALL_HOST_TOOLS field not found in loaded schema")
 	}
 }
 

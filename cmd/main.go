@@ -125,7 +125,7 @@ func newRootCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:   "bloom",
 		Short: "Kubernetes Cluster Deployment Tool",
-		Long:  `Bloom - A tool for generating bloom.yaml configurations and deploying Kubernetes clusters.
+		Long: `Bloom - A tool for generating bloom.yaml configurations and deploying Kubernetes clusters.
 
 Certificate Updates:
   To update TLS certificates in an existing cluster, use a separate config with --tags:
@@ -359,8 +359,8 @@ func runAnsible(configFile string) {
 		}
 	}
 
-	// Resolve GPU-family stack defaults (host ROCm + GPU Operator + DeviceConfig)
-	// and inject them as ansible vars before export/run.
+	// Resolve host-driver policy plus GPU Operator/DeviceConfig defaults and
+	// inject them as ansible vars before export/run.
 	if err := config.ApplyGPUStackVars(cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "Error resolving GPU stack defaults: %v\n", err)
 		os.Exit(1)

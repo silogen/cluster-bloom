@@ -21,7 +21,9 @@
   include_tasks: ip_table_check.yaml
   tags: [validate_node, iptables]
 
-# EAI-5657 SPIKE: the driver-only ROCm-presence guard (fail if ROCm is already
-# installed) now lives inline in prepare_node/gpu_driver_only.yaml, since this
-# branch does no version-matrix validation (there is no ROCm version to check
-# against). No early validate_node guard is needed for this minimal spike.
+- name: Validate existing AMD GPU driver compatibility
+  include_tasks: ../gpu_driver_detect.yaml
+  when:
+    - GPU_NODE | default(false) | bool
+    - not (GPU_DRIVER_SKIP_INSTALL | default(false) | bool)
+  tags: [validate_node, gpu]

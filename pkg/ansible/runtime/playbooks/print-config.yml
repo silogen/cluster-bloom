@@ -71,6 +71,7 @@
           🎮 GPU Configuration:
             GPU_STACK_FAMILY: {{ gpu_stack_family_resolved | default(GPU_STACK_FAMILY) | default('instinct') }}
             GPU_DRIVER_SKIP_INSTALL: {{ GPU_DRIVER_SKIP_INSTALL | default(false) }}
+            GPU_INSTALL_HOST_TOOLS: {{ GPU_INSTALL_HOST_TOOLS | default(true) }}
             amdgpu driver package (no ROCm): {{ GPU_DRIVER_VERSION | default(gpu_driver_default_version) | default('NOT SET') }}.{{ GPU_DRIVER_BUILD | default(gpu_driver_default_build) | default('NOT SET') }}
             GPU Operator: {{ gpu_operator_path | default('NOT SET') }}
             GPU Operator config: {{ gpu_operator_config_path | default('NOT SET') }}
@@ -79,7 +80,16 @@
             ⚠️  TECH PREVIEW: the {{ gpu_stack_family_resolved | default('radeon') }} Enterprise AI stack
                 (GPU Operator) for this release is a tech preview, not production qualified.
           {% endif %}
-            ⚠️  EAI-5657 SPIKE BRANCH: no host ROCm is installed on GPU nodes, only the amdgpu kernel driver.
+            Driver policy synopsis:
+              - Existing 30.20.1 (ROCm 7.1.1 pair), 30.30.3 (7.2.3),
+                31.30.0 (7.13), or 31.40.0 (7.14): retain and continue.
+              - Existing unrecognized amdgpu DKMS driver: halt with remediation instructions.
+              - Existing host ROCm without an identifiable supported DKMS driver:
+                halt rather than replace its inbox/unknown driver.
+              - Fresh/inbox-only host: install 31.40.314000-1 -> driver 31.40.0
+                -> DKMS 6.19.14; host ROCm is not installed or required.
+              - Missing amd-smi with host tools enabled: install the standalone
+                package matching the effective driver, with minimal dependencies.
 
     - name: Print RKE2 Configuration
       debug:

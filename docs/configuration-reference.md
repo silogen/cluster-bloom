@@ -57,15 +57,15 @@ Configuration sources in priority order (highest to lowest):
 #### GPU_STACK_FAMILY
 - **Type**: String (single value)
 - **Default**: `""` (empty, resolves to `instinct`)
-- **Description**: Selects the GPU Operator install defaults and the default amdgpu driver package by GPU family. This is independent of `AIM_HARDWARE_FAMILY` (which selects the AIM model catalog). Empty or `instinct` keeps the current qualified defaults (GPU Operator `v1.4.1`, DeviceConfig ROCm driver `7.0`, amdgpu driver package `7.2.3.70203-1`), so existing installs are unchanged. `radeon` selects the ROCm 7.13 tech-preview GPU Operator stack and the `31.30.313000-1` amdgpu driver package.
+- **Description**: Selects GPU Operator defaults by GPU family. Host driver policy is shared across both families: retain an exact supported DKMS driver or install production driver `31.40.0` on a fresh node. This is independent of `AIM_HARDWARE_FAMILY`, which selects the AIM model catalog.
 - **Values**: `radeon` | `instinct` (lowercase, single value)
 - **Example**: `GPU_STACK_FAMILY: "radeon"`
 - **Notes**:
-  - Single-select by design: the amdgpu driver is one version per node, so a heterogeneous Radeon + Instinct GPU stack cannot be expressed here. The AIM catalog (`AIM_HARDWARE_FAMILY`) can still be heterogeneous.
+  - Single-select by design for GPU Operator configuration. The AIM catalog (`AIM_HARDWARE_FAMILY`) can still be heterogeneous.
   - Selecting `radeon` defaults the GPU Operator to the ROCm 7.13 tech-preview train. This component is tech preview, not production qualified, and bloom prints a notice at install time.
   - Unsupported combinations (for example a Radeon stack resolving to ROCm 7.2) fail validation before install with an error naming the incompatible component.
   - The exact ROCm 7.13 tech-preview version strings and the vendored GPU Operator chart are tracked in EAI-5906; until that lands the `radeon` row carries placeholder pins.
-  - **EAI-5657 spike branch note**: on this branch, bloom installs only the amdgpu kernel driver (no host ROCm at all) — see [`GPU_DRIVER_VERSION` / `GPU_DRIVER_BUILD`](#gpu_driver_version) to override the default driver package, and [docs/gpu-driver-only-spike.md](gpu-driver-only-spike.md) for details. `ROCM_ALLOW_VERSION_MISMATCH` / `ROCM_BASE_URL` / `ROCM_DEB_PACKAGE` do not exist on this branch.
+  - **EAI-5657 branch note**: host ROCm is not required or installed. See [GPU Driver-Only Host Policy](gpu-driver-only-spike.md) for the exact supported driver tuples and standalone AMD-SMI flow.
 
 ### Cluster Joining Configuration
 
@@ -346,24 +346,32 @@ Configuration sources in priority order (highest to lowest):
 #### GPU_DRIVER_SKIP_INSTALL
 - **Type**: Boolean
 - **Default**: `false`
-- **Description**: (EAI-5657 spike branch) Skip the amdgpu driver install step entirely — e.g. a pre-provisioned node, or the operator wants to manage the driver manually. Also skips the guard that fails when ROCm is already installed on the node.
+- **Description**: Skip driver compatibility validation, driver installation, and standalone AMD-SMI installation. Bloom leaves the node's GPU stack untouched.
 - **Values**: `true` | `false` (also accepts `TRUE` / `1`)
 - **Applicable**: `GPU_NODE: true`
 - **Example**: `GPU_DRIVER_SKIP_INSTALL: true`
 
+#### GPU_INSTALL_HOST_TOOLS
+- **Type**: Boolean
+- **Default**: `true`
+- **Description**: After a supported DKMS driver is active, retain an existing `amd-smi` or install the standalone package matched to the driver. Only AMD-SMI and its minimal dependencies are requested; Bloom does not install full ROCm, HIP, or the SDK.
+- **Values**: `true` | `false`
+- **Applicable**: `GPU_NODE: true`
+- **Example**: `GPU_INSTALL_HOST_TOOLS: false`
+
 #### GPU_DRIVER_VERSION
 - **Type**: String
-- **Default**: `""` (empty, uses the `GPU_STACK_FAMILY` default)
-- **Description**: (EAI-5657 spike branch) Force a specific `amdgpu-install` version (e.g. `7.2.3` or `31.30`) instead of the `GPU_STACK_FAMILY` default. Must be paired with `GPU_DRIVER_BUILD`.
+- **Default**: `""` (empty resolves to production installer `31.40`)
+- **Description**: Force an exact validated `amdgpu-install` version. Supported values are `7.1.1`, `7.2.3`, `31.30`, and `31.40`. Must be paired with the corresponding `GPU_DRIVER_BUILD`.
 - **Applicable**: `GPU_NODE: true`
-- **Example**: `GPU_DRIVER_VERSION: "31.30"`
+- **Example**: `GPU_DRIVER_VERSION: "7.1.1"`
 
 #### GPU_DRIVER_BUILD
 - **Type**: String
-- **Default**: `""` (empty, uses the `GPU_STACK_FAMILY` default)
-- **Description**: (EAI-5657 spike branch) Build suffix paired with `GPU_DRIVER_VERSION` (e.g. `70203-1` or `313000-1`), forming the `amdgpu-install_<version>.<build>_all.deb` filename. Ignored unless `GPU_DRIVER_VERSION` is also set.
+- **Default**: `""` (empty resolves to `314000-1`)
+- **Description**: Build suffix paired with `GPU_DRIVER_VERSION`: `70101-1`, `70203-1`, `313000-1`, or `314000-1`. Unsupported combinations fail before download.
 - **Applicable**: `GPU_NODE: true`
-- **Example**: `GPU_DRIVER_BUILD: "313000-1"`
+- **Example**: `GPU_DRIVER_BUILD: "70101-1"`
 
 #### RANCHER_DISK
 - **Type**: String (device path)

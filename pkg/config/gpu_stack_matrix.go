@@ -4,41 +4,66 @@ import "fmt"
 
 // GPU stack version pins, by GPU family.
 //
-// EAI-5657 SPIKE: this branch does not install ROCm on the host at all — only
-// the amdgpu kernel driver (`amdgpu-install --usecase=dkms`), to test whether
-// the AIM/AIWB/AIRM reference stack works against a driver-only host (see
-// EAI-5657). The DriverPackage* fields below pick a known-good amdgpu-install
-// .deb per family; they are NOT a ROCm version and do not drive any ROCm
-// install or version-compatibility check (there is none in this branch).
-// GPU_DRIVER_VERSION / GPU_DRIVER_BUILD let an operator override these
-// defaults directly (see ApplyGPUStackVars).
+// EAI-5657 installs no host ROCm runtime. It manages an allowlisted amdgpu DKMS
+// driver and, by default, the standalone AMD-SMI diagnostics package. ROCm
+// versions in DriverCompatibility document the release paired with each driver;
+// ROCm itself is neither required nor installed by the driver flow.
 //
 // The OperatorPath pins are unrelated to the host driver: instinct uses the
 // qualified v1.4.1 chart and radeon uses the v1.5.1-beta.0 tech-preview chart,
 // both vendored under cluster-forge sources/amd-gpu-operator. These still
 // drive the (unchanged) GPU Operator + DeviceConfig deploy in cluster-forge.
 const (
-	// Instinct: known-good amdgpu-install coordinates (legacy repo.radeon.com
-	// series). Only used to install the amdgpu DKMS driver in this branch.
-	instinctDriverPackageVersion = "7.2.3"
-	instinctDriverPackageBuild   = "70203-1"
-	instinctOperatorPath         = "amd-gpu-operator/v1.4.1"
-	instinctOperatorConfigPath   = "amd-gpu-operator-config/v1.4.1"
-	instinctDriverVersion        = "7.0"
+	defaultDriverPackageVersion = "31.40"
+	defaultDriverPackageBuild   = "314000-1"
 
-	// Radeon: newer amdgpu-install series (31.30), chosen because it is the
-	// version known to detect/support newer RDNA (radeon) cards; carried over
-	// from EAI-7530's radeon/therock installer selection, but here it drives
-	// ONLY the driver install (no repo.amd.com ROCm packages are touched).
-	// Treat as a starting default for the EAI-5657 spike, not an authoritative
-	// pin — override with GPU_DRIVER_VERSION / GPU_DRIVER_BUILD if it turns out
-	// to be wrong for the hardware under test.
-	radeonDriverPackageVersion = "31.30"
-	radeonDriverPackageBuild   = "313000-1"
-	radeonOperatorPath         = "amd-gpu-operator/v1.5.1-beta.0"
-	radeonOperatorConfigPath   = "amd-gpu-operator-config/v1.5.1-beta.0"
-	radeonDriverVersion        = "7.13"
+	instinctOperatorPath       = "amd-gpu-operator/v1.4.1"
+	instinctOperatorConfigPath = "amd-gpu-operator-config/v1.4.1"
+	instinctDriverVersion      = "7.0"
+
+	radeonOperatorPath       = "amd-gpu-operator/v1.5.1-beta.0"
+	radeonOperatorConfigPath = "amd-gpu-operator-config/v1.5.1-beta.0"
+	radeonDriverVersion      = "7.13"
 )
+
+// DriverCompatibility is an exact, validated driver tuple. Do not replace this
+// allowlist with a >= comparison: the driver release, DKMS source and paired
+// ROCm train need to be reviewed together. PairedROCm is informational and is
+// also used to select a matching standalone AMD-SMI package.
+type DriverCompatibility struct {
+	DriverRelease     string
+	InstallerVersion  string
+	InstallerBuild    string
+	DKMSModuleVersion string
+	DKMSBuild         string
+	DKMSPackageCode   string
+	PairedROCm        string
+	HostToolsChannel  string
+	HostToolsPackage  string
+}
+
+var supportedGPUDrivers = []DriverCompatibility{
+	{
+		DriverRelease: "30.20.1", InstallerVersion: "7.1.1", InstallerBuild: "70101-1",
+		DKMSModuleVersion: "6.16.6", DKMSBuild: "2255209", DKMSPackageCode: "30200100", PairedROCm: "7.1.1",
+		HostToolsChannel: "legacy", HostToolsPackage: "amd-smi-lib",
+	},
+	{
+		DriverRelease: "30.30.3", InstallerVersion: "7.2.3", InstallerBuild: "70203-1",
+		DKMSModuleVersion: "6.16.13", DKMSBuild: "2327507", DKMSPackageCode: "30300300", PairedROCm: "7.2.3",
+		HostToolsChannel: "legacy", HostToolsPackage: "amd-smi-lib",
+	},
+	{
+		DriverRelease: "31.30.0", InstallerVersion: "31.30", InstallerBuild: "313000-1",
+		DKMSModuleVersion: "6.19.4", DKMSBuild: "2337710", DKMSPackageCode: "31300000", PairedROCm: "7.13",
+		HostToolsChannel: "core", HostToolsPackage: "amdrocm-amdsmi7.13",
+	},
+	{
+		DriverRelease: "31.40.0", InstallerVersion: "31.40", InstallerBuild: "314000-1",
+		DKMSModuleVersion: "6.19.14", DKMSBuild: "2364437", DKMSPackageCode: "31400000", PairedROCm: "7.14",
+		HostToolsChannel: "core-multiarch", HostToolsPackage: "amdrocm-amdsmi7.14",
+	},
+}
 
 // minRadeonRocmMajor / minRadeonRocmMinor express the unsupported-combination
 // rule from EAI-6030: Radeon requires the ROCm 7.13 tech-preview
@@ -73,8 +98,8 @@ func ResolveStackProfile(family string) (StackProfile, error) {
 	case "", "instinct":
 		return StackProfile{
 			Family:                    "instinct",
-			DriverPackageVersion:      instinctDriverPackageVersion,
-			DriverPackageBuild:        instinctDriverPackageBuild,
+			DriverPackageVersion:      defaultDriverPackageVersion,
+			DriverPackageBuild:        defaultDriverPackageBuild,
 			OperatorPath:              instinctOperatorPath,
 			OperatorConfigPath:        instinctOperatorConfigPath,
 			DeviceConfigDriverVersion: instinctDriverVersion,
@@ -83,8 +108,8 @@ func ResolveStackProfile(family string) (StackProfile, error) {
 	case "radeon":
 		profile := StackProfile{
 			Family:                    "radeon",
-			DriverPackageVersion:      radeonDriverPackageVersion,
-			DriverPackageBuild:        radeonDriverPackageBuild,
+			DriverPackageVersion:      defaultDriverPackageVersion,
+			DriverPackageBuild:        defaultDriverPackageBuild,
 			OperatorPath:              radeonOperatorPath,
 			OperatorConfigPath:        radeonOperatorConfigPath,
 			DeviceConfigDriverVersion: radeonDriverVersion,
@@ -122,6 +147,7 @@ func ApplyGPUStackVars(cfg Config) error {
 	// GPU_DRIVER_BUILD (handled in the ansible task, not here).
 	cfg["gpu_driver_default_version"] = profile.DriverPackageVersion
 	cfg["gpu_driver_default_build"] = profile.DriverPackageBuild
+	cfg["gpu_driver_supported"] = supportedGPUDrivers
 	// Forge-bound selections consumed by the deploy_clusterforge tasks.
 	cfg["gpu_operator_path"] = profile.OperatorPath
 	cfg["gpu_operator_config_path"] = profile.OperatorConfigPath
