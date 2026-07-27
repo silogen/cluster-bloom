@@ -56,11 +56,14 @@ under test.
 
 Installing the `amdgpu` DKMS kernel module can leave a node needing a reboot before the
 driver is actually usable. Bloom detects the OS's own `/var/run/reboot-required` signal
-right after the driver install and offers to reboot:
+and directly compares the active module with the mapped DKMS module right after the
+driver install. When a reboot is required, Bloom ends the play successfully at that
+point—before later node preparation or cluster deployment—and offers to reboot:
 
 ```bash
-sudo ./bloom cli bloom.yaml --tags prep_node,gpu      # prompts to reboot if needed
-sudo ./bloom cli bloom.yaml --tags prep_node,gpu -y    # auto-confirms and reboots
+sudo ./bloom cli bloom.yaml             # normal full installation
+sudo ./bloom cli bloom.yaml -y          # auto-confirms and reboots
+sudo ./bloom cli bloom.yaml --tags gpu  # targeted test on an existing cluster
 ```
 
 Re-running bloom after a reboot is idempotent: the driver-only step verifies that the

@@ -136,3 +136,14 @@
   when:
     - bloom_reboot_required | bool
     - not (bloom_reboot_marker.attempted | default(false) | bool)
+
+# Stop successfully as soon as the marker is written. The top-level bloom
+# process sees exit code 0 plus the current run_id marker and offers to reboot.
+# Continuing into the rest of node preparation / cluster deployment would run
+# GPU-dependent work against the old inbox module and unnecessarily lengthen
+# the install/reboot cycle.
+- name: End play until the mapped amdgpu driver is active
+  meta: end_play
+  when:
+    - bloom_reboot_required | bool
+    - not (bloom_reboot_marker.attempted | default(false) | bool)
