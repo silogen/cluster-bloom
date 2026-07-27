@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/silogen/cluster-bloom/pkg/ansible/runtime"
 	"github.com/silogen/cluster-bloom/pkg/config"
@@ -48,6 +49,7 @@ type rebootRequiredMarker struct {
 	Packages   []string `json:"packages"`
 	Attempted  bool     `json:"attempted"`
 	DetectedAt string   `json:"detected_at"`
+	RunID      string   `json:"run_id"`
 }
 
 func init() {
@@ -377,6 +379,12 @@ func runAnsible(configFile string) {
 		return
 	}
 
+	// Tie any reboot-required marker written by ansible to this invocation.
+	// This prevents a stale marker from an earlier run from triggering a reboot
+	// when the current playbook fails before reaching GPU preparation.
+	runID := newBloomRunID()
+	cfg["bloom_run_id"] = runID
+
 	// Handle destructive data cleanup if requested
 	if destroyData {
 		if !confirmDestructiveOperation(cfg) {
@@ -396,7 +404,7 @@ func runAnsible(configFile string) {
 		os.Exit(1)
 	}
 
-	os.Exit(maybeHandleRebootRequired(exitCode))
+	os.Exit(maybeHandleRebootRequired(exitCode, runID))
 }
 
 func runPlaybookDirect(playbookPath string) {
@@ -406,6 +414,7 @@ func runPlaybookDirect(playbookPath string) {
 	}
 
 	var allVars []string
+	runID := newBloomRunID()
 
 	if configFile != "" {
 		data, err := os.ReadFile(configFile)
@@ -422,6 +431,7 @@ func runPlaybookDirect(playbookPath string) {
 	}
 
 	allVars = append(allVars, extraVars...)
+	allVars = append(allVars, fmt.Sprintf(`{"bloom_run_id": %q}`, runID))
 
 	exitCode, err := runtime.RunPlaybookDirect(playbookPath, dryRun, tags, allVars, mode, Version)
 	if err != nil {
@@ -429,7 +439,7 @@ func runPlaybookDirect(playbookPath string) {
 		os.Exit(1)
 	}
 
-	os.Exit(maybeHandleRebootRequired(exitCode))
+	os.Exit(maybeHandleRebootRequired(exitCode, runID))
 }
 
 // exportPlaybook writes a self-contained playbook directory (./bloom-playbook/)
@@ -637,14 +647,27 @@ func confirmYesNo(prompt string) bool {
 // Deliberately does not run inside the namespaced/pivot-rooted ansible child
 // process: this runs in the original top-level bloom process, which executes
 // directly on the host, so `systemctl reboot` here reboots the real machine.
-func maybeHandleRebootRequired(exitCode int) int {
+func newBloomRunID() string {
+	return fmt.Sprintf("%d-%d", os.Getpid(), time.Now().UnixNano())
+}
+
+func maybeHandleRebootRequired(exitCode int, runID string) int {
+	// Never offer an automatic reboot after a failed playbook. In particular,
+	// an early data-safety failure means no GPU task ran in this invocation.
+	if exitCode != 0 {
+		return exitCode
+	}
+
 	data, err := os.ReadFile(rebootMarkerPath)
 	if err != nil {
 		return exitCode
 	}
 
 	var marker rebootRequiredMarker
-	if err := json.Unmarshal(data, &marker); err != nil || marker.Attempted {
+	if err := json.Unmarshal(data, &marker); err != nil ||
+		marker.Attempted ||
+		marker.RunID == "" ||
+		marker.RunID != runID {
 		return exitCode
 	}
 

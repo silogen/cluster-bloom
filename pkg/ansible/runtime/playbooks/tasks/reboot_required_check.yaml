@@ -113,6 +113,7 @@
         }}
       attempted: false
       detected_at: "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
+      run_id: "{{ bloom_run_id | default('') }}"
   when:
     - bloom_reboot_required | bool
     - not (bloom_reboot_marker.attempted | default(false) | bool)
