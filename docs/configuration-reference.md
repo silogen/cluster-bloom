@@ -662,6 +662,21 @@ sudo ./bloom cli bloom.yaml --tags deploy_clusterforge
 sudo ./bloom cli bloom.yaml --skip-data-safety
 ```
 
+#### Local SSH requirement (and offline alternative)
+
+Bloom's bundled Ansible runtime connects back to the local node over SSH, so an SSH server must be listening on `127.0.0.1:22`. If none is reachable, bloom fails up front (before any changes) with guidance offering two options:
+
+1. **Install and start sshd**, then re-run bloom:
+   ```bash
+   sudo apt-get install -y openssh-server && sudo systemctl enable --now ssh
+   # verify: ss -tlnp | grep ':22 '
+   ```
+2. **Run without sshd** by exporting a self-contained playbook and running it with your own Ansible (executes directly on the host, so no SSH is needed; requires `ansible-playbook` installed):
+   ```bash
+   sudo ./bloom cli <your-config.yaml> --export
+   ansible-playbook bloom-playbook/cluster-bloom.yaml
+   ```
+
 #### Node validation (`--tags validate_node`)
 
 `validate_node` is a **read-only diagnostic**: it never mutates node state and is designed to be run standalone against a minimal or even empty `bloom.yaml`.
@@ -677,6 +692,21 @@ The `/var/lib/rancher` partition check is two-tier with fixed thresholds:
 If the partition is undersized, either point `RANCHER_DISK` at a dedicated device (Bloom formats and mounts it at `/var/lib/rancher`), or set `SKIP_RANCHER_PARTITION_CHECK: true` to skip the check entirely.
 
 Note: when the same ROCm compatibility guard runs as part of `prepare_node` (or a full deploy), it still fails fast before any package/kernel work, since that is a mutating path.
+
+#### Deployment output and post-run guidance
+
+**Overall status line.** After the per-task summary (`Playbook complete: …`), bloom prints a single verdict so a run that ends on a failed task isn't mistaken for one that stopped early:
+
+- `✅ Overall status: SUCCESS — all steps completed.`
+- `⚠️ Overall status: COMPLETED WITH WARNINGS — N issue(s) were tolerated and did not stop the run.`
+- `❌ Overall status: FAILED — N task(s) did not pass. All steps ran; review the failures above (full log: bloom.log).`
+
+**Next-step guidance.** On the first node, bloom then tailors what to do next to the actual state of the cluster:
+
+- **Run failed** — no deploy banner is shown. For a known, fixable failure it prints targeted remediation instead. In particular, an undersized `/var/lib/rancher` partition prints how to fix it: candidate devices from `lsblk` (excluding the disk backing the root filesystem) to set as `RANCHER_DISK`, or `SKIP_RANCHER_PARTITION_CHECK: true` when there is no spare device.
+- **Node validated, no cluster running yet** (e.g. a standalone `--tags validate_node` on a pristine node) — bloom guides you to provision it with a full run: `sudo ./bloom cli <config>`.
+- **Cluster running, ClusterForge not detected** — bloom guides you to deploy it: `sudo ./bloom cli <config> --tags deploy_clusterforge`.
+- **ClusterForge deployed (or deploying this run)** — bloom prints the endpoint/credential reference block.
 
 ### Run Command
 
