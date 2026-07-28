@@ -118,12 +118,21 @@ func RunPlaybookDirect(playbookPath string, dryRun bool, tags string, extraVars 
 	rootfs := filepath.Join(workDir, "rootfs")
 
 	if !ImageCached(rootfs) {
-		fmt.Println("Downloading Ansible runtime image (this may take a few minutes)...")
 		if err := os.MkdirAll(rootfs, 0755); err != nil {
 			return 1, fmt.Errorf("create rootfs dir: %w", err)
 		}
-		if err := PullAndExtractImage(ImageRef, rootfs, true); err != nil {
-			return 1, fmt.Errorf("pull image: %w", err)
+		// Prefer the bundled runtime (offline build) so no network pull is
+		// needed; otherwise pull the pinned image once and cache it.
+		if embedded := EmbeddedRootfsTarGz(); len(embedded) > 0 {
+			fmt.Println("Extracting bundled Ansible runtime image...")
+			if err := ExtractEmbeddedRootfs(rootfs, embedded); err != nil {
+				return 1, fmt.Errorf("extract bundled image: %w", err)
+			}
+		} else {
+			fmt.Printf("Downloading Ansible runtime image %s (this may take a few minutes)...\n", ImageVersion)
+			if err := PullAndExtractImage(ImageRef, rootfs, true); err != nil {
+				return 1, fmt.Errorf("pull image: %w", err)
+			}
 		}
 		fmt.Println("Image ready.")
 	} else {

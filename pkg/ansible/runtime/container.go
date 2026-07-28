@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -10,7 +11,18 @@ import (
 )
 
 const (
-	ImageRef = "willhallonline/ansible:latest"
+	// ImageRef is the Ansible runtime image, pinned by digest for reproducible,
+	// supply-chain-safe pulls (no floating :latest). The digest is the multi-arch
+	// index, so crane still auto-selects the host platform.
+	//
+	// Corresponds to willhallonline/ansible:2.21.0-alpine-3.22 (Ansible 2.21.0,
+	// Alpine 3.22) — the image :latest resolved to when this was pinned.
+	// To bump: pick a new tag, resolve its index digest
+	//   (docker manifest inspect willhallonline/ansible:<tag>), update both the
+	//   digest below and ImageVersion, and re-run `just fetch-image` so the
+	//   embedded (offline) build matches.
+	ImageRef     = "willhallonline/ansible@sha256:9b819715663f18cfd0eb6a6fb1aedbc9d839781ffdd5f4faeff61b8c8a09ae26"
+	ImageVersion = "2.21.0-alpine-3.22"
 )
 
 func PullAndExtractImage(imageRef, destPath string, verbose bool) error {
@@ -51,4 +63,15 @@ func extractLayer(layer v1.Layer, destPath string) error {
 func ImageCached(rootfs string) bool {
 	_, err := os.Stat(rootfs + "/usr")
 	return err == nil
+}
+
+// ExtractEmbeddedRootfs unpacks a gzip-compressed, flattened rootfs tarball
+// (produced by `just fetch-image` from the pinned ImageRef) into destPath. Used
+// by the offline build (built with -tags embed_ansible_image) so bloom runs
+// without any network pull of the Ansible runtime image.
+func ExtractEmbeddedRootfs(destPath string, tarGz []byte) error {
+	cmd := exec.Command("tar", "-xzf", "-", "-C", destPath)
+	cmd.Stdin = bytes.NewReader(tarGz)
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }
