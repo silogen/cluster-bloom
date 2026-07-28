@@ -627,9 +627,16 @@ func runClusterCleanup(cfg config.Config) {
 		}
 	}
 
-	fmt.Printf("   ⚙️  Config: CLUSTER_DISKS=%q, CLUSTER_PREMOUNTED_DISKS=%q, RANCHER_DISK=%q\n", clusterDisks, premountedDisks, rancherDisk)
+	clusterSize := "medium"
+	if size, exists := cfg["CLUSTER_SIZE"]; exists && size != nil {
+		if sizeStr, ok := size.(string); ok {
+			clusterSize = sizeStr
+		}
+	}
+
+	fmt.Printf("   ⚙️  Config: CLUSTER_SIZE=%q, CLUSTER_DISKS=%q, CLUSTER_PREMOUNTED_DISKS=%q, RANCHER_DISK=%q\n", clusterSize, clusterDisks, premountedDisks, rancherDisk)
 	// Step 1: Clean Longhorn Mounts (equivalent to CleanLonghornMountsStep)
-	if err := runtime.CleanupLonghornMounts(); err != nil {
+	if err := runtime.CleanupLonghornMounts(clusterSize); err != nil {
 		errors = append(errors, fmt.Errorf("Longhorn cleanup: %w", err))
 	}
 

@@ -19,7 +19,7 @@ import (
 // This ordering is required because Longhorn uses iSCSI sessions that remain
 // in the kernel even after the Longhorn process is killed; skipping the iSCSI
 // logout leaves the device busy and causes rm/umount to block or silently fail.
-func CleanupLonghornMounts() error {
+func CleanupLonghornMounts(clusterSize string) error {
 	fmt.Println("💾 Cleaning Longhorn mounts and PVCs...")
 
 	// Step 1: Graceful kubectl drain (best-effort, cluster may already be down)
@@ -84,12 +84,20 @@ func CleanupLonghornMounts() error {
 		fmt.Printf("      ℹ️  Node %s is not a member of this cluster — skipping drain\n", nodeName)
 	}
 
+	// Small and medium clusters use local-path storage, not Longhorn. Keep the
+	// generic node drain above, but do not run any Longhorn-specific teardown.
+	if clusterSize != "large" {
+		fmt.Printf("   ℹ️  Longhorn is not used for CLUSTER_SIZE=%q — skipping Longhorn teardown\n", clusterSize)
+		return nil
+	}
+
 	// Step 2: iSCSI logout — releases kernel block device mappings for Longhorn volumes.
 	// Must happen before umount; without this the device remains busy regardless of
-	// whether the Longhorn process is alive.
-	fmt.Println("   🔌 Logging out iSCSI sessions...")
-	exec.Command("iscsiadm", "-m", "session", "--logout").Run()
-	exec.Command("iscsiadm", "-m", "node", "--op=delete").Run()
+	// whether the Longhorn process is alive. Never use an unscoped logout here:
+	// cloud boot volumes can also use iSCSI, and logging out every session detaches
+	// the live root disk.
+	fmt.Println("   🔌 Logging out Longhorn iSCSI sessions...")
+	logoutLonghornISCSISessions()
 
 	// Step 3: Graceful TERM then KILL of Longhorn processes in dependency order
 	// Use exact binary name matching to avoid killing unrelated processes.
@@ -149,6 +157,33 @@ func CleanupLonghornMounts() error {
 
 	fmt.Println("   ✅ Longhorn cleanup completed")
 	return nil
+}
+
+// logoutLonghornISCSISessions logs out and removes only Longhorn iSCSI targets.
+// Other sessions, including cloud boot volumes, must remain untouched.
+func logoutLonghornISCSISessions() {
+	out, err := exec.Command("iscsiadm", "-m", "session").Output()
+	if err != nil {
+		fmt.Println("      ℹ️  No active iSCSI sessions detected")
+		return
+	}
+
+	seen := map[string]bool{}
+	for _, field := range strings.Fields(string(out)) {
+		if !strings.HasPrefix(field, "iqn.2019-10.io.longhorn:") || seen[field] {
+			continue
+		}
+		seen[field] = true
+		if err := exec.Command("iscsiadm", "-m", "session", "-T", field, "--logout").Run(); err != nil {
+			fmt.Printf("      ⚠️  Warning: Failed to log out Longhorn target %s: %v\n", field, err)
+			continue
+		}
+		exec.Command("iscsiadm", "-m", "node", "-T", field, "--op=delete").Run()
+		fmt.Printf("      ✓ Logged out Longhorn target %s\n", field)
+	}
+	if len(seen) == 0 {
+		fmt.Println("      ℹ️  No Longhorn iSCSI sessions detected")
+	}
 }
 
 // isKubeAPIReachable checks that the RKE2 API server is both reachable and
@@ -456,8 +491,8 @@ func GenerateCleanupTasks(clusterDisks string, premountedDisks string, rancherDi
 			},
 			// Step 2: iSCSI logout — must happen before umount or the block device stays busy
 			{
-				"name":        "Logout iSCSI sessions (releases Longhorn kernel block devices)",
-				"shell":       "iscsiadm -m session --logout 2>/dev/null || true; iscsiadm -m node --op=delete 2>/dev/null || true",
+				"name":        "Logout Longhorn iSCSI sessions (preserve non-Longhorn devices)",
+				"shell":       "iscsiadm -m session 2>/dev/null | awk '{for (i=1; i<=NF; i++) if ($i ~ /^iqn\\.2019-10\\.io\\.longhorn:/) print $i}' | sort -u | while read -r target; do iscsiadm -m session -T \"$target\" --logout 2>/dev/null || true; iscsiadm -m node -T \"$target\" --op=delete 2>/dev/null || true; done",
 				"failed_when": false,
 			},
 			// Step 3: Stop Longhorn processes gracefully in dependency order
