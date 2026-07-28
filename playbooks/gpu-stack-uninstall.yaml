@@ -1,0 +1,522 @@
+---
+- name: Inventory and remove host ROCm and out-of-tree AMD GPU drivers
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    GPU_PURGE_CONFIRM: ""
+    GPU_PURGE_LOG: /var/log/cluster-bloom-gpu-stack-uninstall.log
+    gpu_purge_config_paths:
+      - /etc/apt/sources.list.d/amdgpu.list
+      - /etc/apt/sources.list.d/rocm.list
+      - /etc/apt/sources.list.d/bloom-amd-smi.list
+      - /etc/apt/preferences.d/repo-radeon-pin-600
+      - /etc/apt/preferences.d/00-rocm-repo-radeon-pin
+      - /etc/apt/preferences.d/rocm-pin-600
+      - /etc/apt/keyrings/rocm.gpg
+      - /etc/apt/keyrings/amdrocm.gpg
+      - /etc/apt/keyrings/bloom-rocm.gpg
+      - /etc/apt/keyrings/bloom-amdrocm.gpg
+      - /etc/ld.so.conf.d/rocm.conf
+      - /etc/profile.d/rocm.sh
+      - /etc/profile.d/rocm.csh
+
+  tasks:
+    - name: Detect ROCm and AMD GPU packages
+      shell: |
+        set -o pipefail
+        tmp="$(mktemp)"
+        dpkg-query -W -f='${binary:Package}\n' 2>/dev/null | while IFS= read -r package; do
+          base="${package%%:*}"
+          case "$base" in
+            amd-smi*|amdrocm*|amdgpu-core*|amdgpu-dkms*|amdgpu-install*|amdgpu-lib*|amdgpu-pro*|\
+            comgr*|half|hip-base*|hip-dev*|hip-doc*|hip-runtime-amd*|hip-samples*|\
+            hipblas*|hipcc*|hipcub*|hipfft*|hipfort*|hipify*|hiprand*|hipsolver*|\
+            hipsparse*|hiptensor*|hsa-*|hsakmt*|miopen*|migraphx*|mivisionx*|\
+            rccl*|rocalution*|rocblas*|rocfft*|rocminfo*|rocm*|rocprofiler*|\
+            rocprim*|rocrand*|rocsolver*|rocsparse*|rocthrust*|roctracer*|rocwmma*|\
+            rpp*|openmp-extras*)
+              echo "$package" >> "$tmp"
+              continue
+              ;;
+          esac
+          if dpkg-query -L "$package" 2>/dev/null | grep -qE '^/opt/rocm(/|-)'; then
+            echo "$package" >> "$tmp"
+          fi
+        done
+        sort -u "$tmp"
+        rm -f "$tmp"
+      args:
+        executable: /bin/bash
+      register: gpu_purge_package_names
+      changed_when: false
+
+    - name: Read detected package versions
+      shell: |
+        set -e
+        while IFS= read -r package; do
+          [ -z "$package" ] && continue
+          dpkg-query -W -f='${binary:Package}\t${Version}\n' "$package"
+        done <<'EOF'
+        {{ gpu_purge_package_names.stdout }}
+        EOF
+      args:
+        executable: /bin/bash
+      register: gpu_purge_package_versions
+      changed_when: false
+
+    - name: Simulate complete apt purge transaction (timeout - 1 minute)
+      shell: |
+        packages=()
+        while IFS= read -r package; do
+          [ -n "$package" ] && packages+=("$package")
+        done <<'EOF'
+        {{ gpu_purge_package_names.stdout }}
+        EOF
+        if [ -z "${packages[*]}" ]; then
+          echo "No apt packages selected."
+          exit 0
+        fi
+        simulation_output="$(mktemp)"
+        trap 'rm -f "$simulation_output"' EXIT
+        LC_ALL=C timeout --signal=TERM --kill-after=5s 60s \
+          apt-get -o DPkg::Lock::Timeout=0 --simulate purge "${packages[@]}" \
+          >"$simulation_output" 2>&1
+        simulation_rc=$?
+        awk '/^(Remv|Purg) / { print }' "$simulation_output"
+        if [ "$simulation_rc" -ne 0 ]; then
+          cat "$simulation_output" >&2
+        fi
+        exit "$simulation_rc"
+      args:
+        executable: /bin/bash
+      register: gpu_purge_apt_simulation
+      changed_when: false
+      failed_when: false
+
+    - name: Detect ROCm installation roots and version markers
+      shell: |
+        shopt -s nullglob
+        found=0
+        for root in /opt/rocm /opt/rocm-*; do
+          [ -e "$root" ] || [ -L "$root" ] || continue
+          found=1
+          resolved="$(readlink -f "$root" 2>/dev/null || true)"
+          version=""
+          for marker in \
+            "$root/.info/version" \
+            "$root/core/.info/version" \
+            "$root"/core-*/.info/version; do
+            if [ -f "$marker" ]; then
+              version="$(tr -d '\n' < "$marker")"
+              break
+            fi
+          done
+          printf '%s\tresolved=%s\tversion=%s\n' \
+            "$root" "${resolved:-unknown}" "${version:-unknown}"
+        done
+        [ "$found" -eq 1 ] || echo "none"
+      args:
+        executable: /bin/bash
+      register: gpu_purge_rocm_roots
+      changed_when: false
+
+    - name: Detect ROCm version from installed tools (timeout - 40 seconds)
+      shell: |
+        set +e
+        amd_smi=""
+        for candidate in \
+          "$(command -v amd-smi 2>/dev/null)" \
+          /usr/local/bin/amd-smi \
+          /opt/rocm/bin/amd-smi \
+          /opt/rocm-*/bin/amd-smi \
+          /opt/rocm/core-*/bin/amd-smi; do
+          for path in $candidate; do
+            if [ -n "$path" ] && [ -x "$path" ]; then
+              amd_smi="$path"
+              break 2
+            fi
+          done
+        done
+        if [ -n "$amd_smi" ]; then
+          echo "amd-smi: $amd_smi"
+          timeout --signal=TERM --kill-after=5s 15s "$amd_smi" version 2>&1 || true
+        else
+          echo "amd-smi: not found"
+        fi
+        if command -v rocminfo >/dev/null 2>&1; then
+          echo "rocminfo: $(command -v rocminfo)"
+          timeout --signal=TERM --kill-after=5s 15s rocminfo --version 2>&1 || true
+        else
+          echo "rocminfo: not found"
+        fi
+      args:
+        executable: /bin/bash
+      register: gpu_purge_rocm_tools
+      changed_when: false
+      async: 45
+      poll: 5
+
+    - name: Detect active and selected AMD GPU driver
+      shell: |
+        set +e
+        package_version="$(dpkg-query -W -f='${Version}' amdgpu-dkms 2>/dev/null)"
+        active_version="$(cat /sys/module/amdgpu/version 2>/dev/null)"
+        active_src="$(cat /sys/module/amdgpu/srcversion 2>/dev/null)"
+        selected_path="$(modinfo -n amdgpu 2>/dev/null)"
+        selected_version="$(modinfo -F version amdgpu 2>/dev/null)"
+        selected_src="$(modinfo -F srcversion amdgpu 2>/dev/null)"
+        release=unknown
+        case "$package_version" in
+          *30100200*) release=30.10.2 ;;
+          *30200100*) release=30.20.1 ;;
+          *30300300*) release=30.30.3 ;;
+          *30300400*) release=30.30.4 ;;
+          *31300000*) release=31.30.0 ;;
+          *31400000*) release=31.40.0 ;;
+        esac
+        if [ -n "$active_src" ] && [ -n "$selected_src" ] && [ "$active_src" = "$selected_src" ]; then
+          active_match=yes
+        else
+          active_match=no
+        fi
+        echo "loaded: $(lsmod | grep -q '^amdgpu ' && echo yes || echo no)"
+        echo "inferred AMD driver release: $release"
+        echo "amdgpu-dkms package: ${package_version:-none}"
+        echo "active module version: ${active_version:-not exported}"
+        echo "active module srcversion: ${active_src:-not exported}"
+        echo "selected module path: ${selected_path:-not found}"
+        echo "selected module version: ${selected_version:-not exported}"
+        echo "selected module srcversion: ${selected_src:-not exported}"
+        echo "active matches selected module: $active_match"
+        echo "DKMS registrations:"
+        dkms status -m amdgpu 2>/dev/null || echo "none"
+      args:
+        executable: /bin/bash
+      register: gpu_purge_driver_summary
+      changed_when: false
+
+    - name: Read amdgpu DKMS registrations for plan binding
+      shell: |
+        set -e
+        if command -v dkms >/dev/null 2>&1; then
+          dkms status -m amdgpu
+        elif [ -d /var/lib/dkms/amdgpu ]; then
+          echo "dkms command is unavailable but /var/lib/dkms/amdgpu exists" >&2
+          exit 1
+        fi
+      register: gpu_purge_dkms_status
+      changed_when: false
+
+    - name: Inventory repository and environment files selected for removal
+      shell: |
+        set -e
+        {% for path in gpu_purge_config_paths %}
+        path="{{ path }}"
+        if [ -L "$path" ]; then
+          printf '%s\tsymlink=%s\n' "$path" "$(readlink "$path")"
+        elif [ -f "$path" ]; then
+          printf '%s\tsha256=%s\n' "$path" "$(sha256sum "$path" | awk '{print $1}')"
+        elif [ -e "$path" ]; then
+          printf '%s\texists-non-regular\n' "$path"
+        else
+          printf '%s\tabsent\n' "$path"
+        fi
+        {% endfor %}
+      args:
+        executable: /bin/bash
+      register: gpu_purge_config_inventory
+      changed_when: false
+
+    - name: Determine whether the active module is out-of-tree
+      shell: |
+        set -e
+        lsmod | grep -q '^amdgpu '
+        taint="$(cat /sys/module/amdgpu/taint 2>/dev/null || true)"
+        if echo "$taint" | grep -q 'O'; then
+          exit 0
+        fi
+        active_src="$(cat /sys/module/amdgpu/srcversion 2>/dev/null || true)"
+        selected_src="$(modinfo -F srcversion amdgpu 2>/dev/null || true)"
+        selected_path="$(modinfo -n amdgpu 2>/dev/null || true)"
+        [ -n "$active_src" ]
+        [ "$active_src" = "$selected_src" ]
+        echo "$selected_path" | grep -q '/updates/dkms/'
+      args:
+        executable: /bin/bash
+      register: gpu_purge_active_out_of_tree
+      changed_when: false
+      failed_when: false
+
+    - name: Detect AMD GPU hardware and bound kernel drivers
+      shell: "lspci -nnk -d 1002: 2>/dev/null || true"
+      register: gpu_purge_hardware
+      changed_when: false
+
+    - name: Build immutable removal plan content
+      set_fact:
+        gpu_purge_plan_content: |
+          Packages and installed versions:
+          {{ gpu_purge_package_versions.stdout | default('none', true) }}
+
+          ROCm roots:
+          {{ gpu_purge_rocm_roots.stdout }}
+
+          DKMS registrations:
+          {{ gpu_purge_dkms_status.stdout | default('none', true) }}
+
+          Repository and environment files:
+          {{ gpu_purge_config_inventory.stdout }}
+
+          Driver state:
+          {{ gpu_purge_driver_summary.stdout }}
+
+          Simulated apt transaction (includes collateral removals):
+          {{ gpu_purge_apt_simulation.stdout }}
+          {{ gpu_purge_apt_simulation.stderr }}
+
+    - name: Calculate removal plan hash
+      set_fact:
+        gpu_purge_plan_hash: "{{ gpu_purge_plan_content | hash('sha256') }}"
+
+    - name: Build pre-change inventory report
+      set_fact:
+        gpu_purge_report: |
+          ClusterBloom GPU stack uninstall inventory
+          ==========================================
+          Timestamp: {{ ansible_date_time.iso8601 }}
+          Host: {{ ansible_hostname }}
+          OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
+          Running kernel: {{ ansible_kernel }}
+          Removal plan hash: {{ gpu_purge_plan_hash }}
+          Confirmation supplied: {{ GPU_PURGE_CONFIRM | string | trim | default('none', true) }}
+
+          ROCm roots and version markers
+          ------------------------------
+          {{ gpu_purge_rocm_roots.stdout }}
+
+          ROCm/AMD package versions selected for removal
+          ------------------------------------------------
+          {{ gpu_purge_package_versions.stdout | default('none', true) }}
+
+          Simulated apt purge transaction
+          --------------------------------
+          Exit code: {{ gpu_purge_apt_simulation.rc }}
+          {{ gpu_purge_apt_simulation.stdout }}
+          {{ gpu_purge_apt_simulation.stderr }}
+
+          ROCm tool output
+          ----------------
+          {{ gpu_purge_rocm_tools.stdout }}
+
+          Active and selected AMD GPU driver
+          ----------------------------------
+          {{ gpu_purge_driver_summary.stdout }}
+
+          Repository and environment files selected for removal
+          -----------------------------------------------------
+          {{ gpu_purge_config_inventory.stdout }}
+
+          AMD PCI devices
+          ---------------
+          {{ gpu_purge_hardware.stdout | default('none', true) }}
+
+    - name: Write pre-change inventory to host log
+      copy:
+        dest: "{{ GPU_PURGE_LOG }}"
+        mode: "0644"
+        content: "{{ gpu_purge_report }}"
+
+    - name: Display pre-change inventory and approval instructions
+      debug:
+        msg: |
+          {{ gpu_purge_report }}
+
+          No GPU stack changes have been made. The apt transaction above lists
+          both explicitly selected and collateral package removals.
+          Review the report above or on the node at:
+            {{ GPU_PURGE_LOG }}
+
+          To approve removal, rerun:
+            sudo ./bloom run playbooks/gpu-stack-uninstall.yaml --verbose \
+              -e GPU_PURGE_CONFIRM={{ gpu_purge_plan_hash }}
+      when: (GPU_PURGE_CONFIRM | string | trim) == ''
+
+    - name: End preview run without changing the host
+      meta: end_play
+      when: (GPU_PURGE_CONFIRM | string | trim) == ''
+
+    - name: Verify approved removal plan is unchanged
+      assert:
+        that:
+          - gpu_purge_apt_simulation.rc == 0
+          - >-
+            (gpu_purge_package_names.stdout | trim) == '' or
+            (gpu_purge_apt_simulation.stdout | trim) != ''
+          - (GPU_PURGE_CONFIRM | string | trim) == gpu_purge_plan_hash
+        fail_msg: |
+          GPU stack removal was NOT started.
+
+          Supplied plan hash: {{ GPU_PURGE_CONFIRM | string | trim }}
+          Current plan hash:  {{ gpu_purge_plan_hash }}
+          Apt simulation exit code: {{ gpu_purge_apt_simulation.rc }}
+
+          The inventory or apt transaction changed after preview, the supplied
+          hash is wrong, or apt cannot calculate a safe purge transaction.
+          Review {{ GPU_PURGE_LOG }} and approve the newly printed hash.
+
+    - name: Confirm destructive GPU stack removal
+      debug:
+        msg: >-
+          Removal plan {{ gpu_purge_plan_hash }} accepted. Removing exactly the
+          reviewed package transaction, DKMS registrations, ROCm roots, and AMD
+          repository files listed in {{ GPU_PURGE_LOG }}.
+
+    - name: Purge detected ROCm and AMD GPU packages
+      apt:
+        name: "{{ gpu_purge_package_names.stdout_lines }}"
+        state: absent
+        purge: true
+        autoremove: false
+      when: gpu_purge_package_names.stdout_lines | length > 0
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+        NEEDRESTART_MODE: l
+        NEEDRESTART_SUSPEND: "1"
+
+    - name: Remove remaining manual amdgpu DKMS registrations
+      shell: |
+        set -euo pipefail
+        if ! command -v dkms >/dev/null 2>&1; then
+          if [ -d /var/lib/dkms/amdgpu ]; then
+            echo "dkms command is unavailable but /var/lib/dkms/amdgpu remains" >&2
+            exit 1
+          fi
+          exit 0
+        fi
+        while IFS=/ read -r module version; do
+          [ "$module" = "amdgpu" ] || continue
+          [ -n "$version" ] || continue
+          dkms remove -m amdgpu -v "$version" --all
+        done < <(dkms status -m amdgpu 2>/dev/null | cut -d, -f1)
+      args:
+        executable: /bin/bash
+      register: gpu_purge_dkms_removal
+      changed_when: gpu_purge_dkms_status.stdout | trim != ''
+
+    - name: Verify all amdgpu DKMS registrations were removed
+      shell: |
+        set -e
+        if command -v dkms >/dev/null 2>&1; then
+          remaining="$(dkms status -m amdgpu 2>/dev/null)"
+          if [ -n "$remaining" ]; then
+            echo "$remaining"
+            exit 1
+          fi
+        elif [ -d /var/lib/dkms/amdgpu ]; then
+          echo "/var/lib/dkms/amdgpu remains but dkms is unavailable"
+          exit 1
+        fi
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Find ROCm roots to remove
+      shell: |
+        shopt -s nullglob
+        for root in /opt/rocm /opt/rocm-*; do
+          [ -e "$root" ] || [ -L "$root" ] || continue
+          echo "$root"
+        done
+      args:
+        executable: /bin/bash
+      register: gpu_purge_roots_to_remove
+      changed_when: false
+
+    - name: Remove ROCm installation roots
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop: "{{ gpu_purge_roots_to_remove.stdout_lines }}"
+
+    - name: Remove AMD GPU and ROCm repository configuration
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop: "{{ gpu_purge_config_paths }}"
+
+    - name: Refresh linker and kernel module metadata
+      shell: |
+        set -e
+        ldconfig
+        depmod -a
+        update-initramfs -u
+      args:
+        executable: /bin/bash
+
+    - name: Mark reboot required after GPU driver removal
+      copy:
+        dest: /var/run/reboot-required
+        mode: "0644"
+        content: "*** System restart required ***\n"
+      when: gpu_purge_active_out_of_tree.rc == 0
+
+    - name: Record GPU driver as reboot trigger
+      lineinfile:
+        path: /var/run/reboot-required.pkgs
+        line: amdgpu-dkms
+        create: true
+        mode: "0644"
+      when: gpu_purge_active_out_of_tree.rc == 0
+
+    - name: Collect post-removal state
+      shell: |
+        echo "Remaining selected ROCm/AMD packages:"
+        dpkg-query -W -f='${binary:Package}\t${Version}\n' 2>/dev/null \
+          | grep -E '^(amd-smi|amdrocm|amdgpu-(core|dkms|install|lib|pro)|rocm($|-)|hip-runtime-amd)' \
+          || echo "none"
+        echo
+        echo "Remaining ROCm roots:"
+        ls -ld /opt/rocm /opt/rocm-* 2>/dev/null || echo "none"
+        echo
+        echo "Remaining amdgpu DKMS registrations:"
+        dkms status -m amdgpu 2>/dev/null || echo "none"
+        echo
+        echo "Currently loaded amdgpu module (remains until reboot):"
+        lsmod | grep '^amdgpu ' || echo "not loaded"
+        echo
+        echo "Module selected for next boot:"
+        modinfo -n amdgpu 2>/dev/null || echo "not found"
+      args:
+        executable: /bin/bash
+      register: gpu_purge_post_summary
+      changed_when: false
+
+    - name: Append removal result to host log
+      blockinfile:
+        path: "{{ GPU_PURGE_LOG }}"
+        marker: "# {mark} CLUSTERBLOOM GPU REMOVAL RESULT"
+        insertafter: EOF
+        block: |
+
+          Removal completed
+          =================
+          Timestamp: {{ ansible_date_time.iso8601 }}
+          {{ gpu_purge_post_summary.stdout }}
+
+          Reboot required for removed active GPU driver: {{ 'yes' if gpu_purge_active_out_of_tree.rc == 0 else 'no' }}.
+          {% if gpu_purge_active_out_of_tree.rc == 0 %}The out-of-tree module currently loaded in memory cannot be unloaded safely while GPU consumers may be active. Reboot before installing another driver.{% else %}No active out-of-tree amdgpu module was detected. An Ubuntu inbox module, if loaded, remains part of the running kernel and was not removed.{% endif %}
+
+    - name: Display removal result
+      debug:
+        msg: |
+          GPU stack removal completed.
+
+          {{ gpu_purge_post_summary.stdout }}
+
+          Full pre-change and post-change report:
+            {{ GPU_PURGE_LOG }}
+
+          {% if gpu_purge_active_out_of_tree.rc == 0 %}Reboot the node before installing another GPU driver:
+            sudo reboot{% else %}No GPU-driver reboot is required by this playbook because no active out-of-tree module was detected.{% endif %}

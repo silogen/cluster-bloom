@@ -97,6 +97,12 @@
     NEEDRESTART_MODE: l
     NEEDRESTART_SUSPEND: "1"
 
+- name: Remove ROCm repositories from driver-only installation
+  file:
+    path: /etc/apt/sources.list.d/rocm.list
+    state: absent
+  when: gpu_driver_needs_install | bool
+
 - name: Refresh production driver repository metadata
   apt:
     update_cache: true
