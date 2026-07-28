@@ -1,4 +1,7 @@
 # ClusterBloom
+> [!IMPORTANT]
+> #### *Instructions for installing the AMD Enterprise AI reference stack (for most users) are [here](https://enterprise-ai.docs.amd.com/en/latest/platform-infrastructure/on-premises-installation.html)*
+
 **ClusterBloom** is a tool for deploying and configuring Kubernetes clusters using RKE2, with specialized support for AMD GPU environments. It automates the process of setting up multi-node clusters, configuring storage with Longhorn, and integrating with various tools and services.
 
 
@@ -9,14 +12,6 @@
 - Disk management and Longhorn storage integration
 - Multi-node cluster support with easy node joining
 - ClusterForge integration
-
-## Prerequisites
-
-- Ubuntu (supported versions checked at runtime)
-- Sufficient disk space (500GB+ recommended for root partition, 2TB+ for workloads)
-- NVMe drives for optimal storage configuration
-- ROCm-compatible AMD GPUs (for GPU nodes) - **ROCm 7.1.1 required**
-- Root/sudo access
 
 ## Getting Started
 
@@ -176,7 +171,7 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | DOCKERHUB_TOKEN | DockerHub access token for authenticated pulls. Must be set together with `DOCKERHUB_USER`. | "" |
 | DISABLED_STEPS | Comma-separated list of step names to skip during deployment. Mutually exclusive with `ENABLED_STEPS`. | "" |
 | ENABLED_STEPS | Comma-separated list of steps to run (everything else is skipped). Mutually exclusive with `DISABLED_STEPS`. | "" |
-| DOMAIN | The domain name for the cluster (e.g., "cluster.example.com") (required). | "" |
+| DOMAIN | The domain name for the cluster (e.g., "cluster.example.com"). Required for first node. Also needed when joining as a control-plane node. | "" |
 | DNS_SERVERS | Custom DNS servers for RKE2 cluster. If set, these nameservers will be written to /etc/rancher/rke2/resolv.conf instead of copying host DNS. Format as YAML list (e.g., ["8.8.8.8", "1.1.1.1"]) | [] |
 | FIX_DNS | **Opt-in** to allow automatic DNS fixes. Only modifies DNS if broken and external DNS works. Creates backups and auto-rolls back on failure. | false |
 | FIRST_NODE | Set to true if this is the first node in the cluster | true |
@@ -190,15 +185,14 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | TLS_CERT | Path to TLS certificate file for ingress (required if CERT_OPTION is 'existing') | "" |
 | TLS_KEY | Path to TLS private key file for ingress (required if CERT_OPTION is 'existing') | "" |
 | USE_CERT_MANAGER | Use cert-manager with Let's Encrypt for automatic TLS certificates | false |
-| ARGOCD_VERSION | ArgoCD version to install | v2.14.11 |
 | CLUSTERFORGE_REPO | ClusterForge git repository URL for ArgoCD-based deployment | https://github.com/silogen/cluster-forge.git |
-| INSTALL_ARGOCD | Install ArgoCD core for GitOps (small clusters only) | true |
 | PRELOAD_IMAGES | Comma-separated list of container images to preload | docker.io/rocm/pytorch:rocm6.4_ubuntu24.04_py3.12_pytorch_release_2.6.0,docker.io/rocm/vllm:rocm6.4.1_vllm_0.9.0.1_20250605 |
 | RANCHER_DISK | Device path for dedicated `/var/lib/rancher` storage (e.g. `/dev/nvme2n1`). Primarily for GPU worker nodes with heavy workloads. Bloom formats and mounts this device automatically. Mutually exclusive with `NO_DISKS_FOR_CLUSTER`. | "" |
 | RKE2_EXTRA_CONFIG | Additional RKE2 configuration in YAML format | "" |
 | RKE2_INSTALLATION_URL | RKE2 installation script URL | https://get.rke2.io |
-| ROCM_BASE_URL | ROCm base repository URL | https://repo.radeon.com/amdgpu-install/7.1.1/ubuntu/ |
-| ROCM_DEB_PACKAGE | ROCm DEB package name | amdgpu-install_7.1.1.70101-1_all.deb |
+| ROCM_BASE_URL | ROCm base repository URL | https://repo.radeon.com/amdgpu-install/7.2.3/ubuntu/ |
+| ROCM_DEB_PACKAGE | ROCm DEB package name | amdgpu-install_7.2.3.70203-1_all.deb |
+| ROCM_ALLOW_VERSION_MISMATCH | Force continuation past the early ROCm version guard when the installed ROCm does not match the GPU_STACK_FAMILY train (accepts true\|TRUE\|1) | false |
 
 ### OIDC Configuration Examples
 
@@ -361,6 +355,14 @@ sudo ./bloom run myPlaybook.yaml --config additional-config.yaml
 # Run with verbose output
 sudo ./bloom run myPlaybook.yaml --verbose
 ```
+
+> **GPU nodes — ROCm version guard**: On a GPU node whose already-installed ROCm does not match the train required by `GPU_STACK_FAMILY` (e.g. `radeon` on a host with ROCm 7.2.3), bloom fails fast during node validation. To proceed anyway with the installed ROCm, set this in `bloom.yaml`:
+>
+> ```yaml
+> ROCM_ALLOW_VERSION_MISMATCH: true   # accepts true|TRUE|1
+> ```
+>
+> With `bloom run` you can also pass it as an extra-var (`-e ROCM_ALLOW_VERSION_MISMATCH=true`). See [docs/rocm-support.md](docs/rocm-support.md#version-compatibility-guard-fail-fast) for details.
 
 ## Installation Process
 

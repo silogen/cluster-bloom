@@ -7,6 +7,9 @@
     - min
     - network
   vars:
+    # * * * * * * * * * * * * * 
+    ### CLUSTERFORGE_RELEASE - SET THIS VALUE IN pkg/config/bloom.yaml.schema.yaml
+    # * * * * * * * * * * * * *
     FIRST_NODE: true
     GPU_NODE: true
     CONTROL_PLANE: false
@@ -38,15 +41,15 @@
     #              instead of copying host DNS. Format as YAML list (e.g., ["8.8.8.8", "1.1.1.1"])
     DNS_SERVERS: []
     
-    INSTALL_ARGOCD: true
-    ARGOCD_VERSION: "v2.14.11"
     CLUSTERFORGE_REPO: "https://github.com/silogen/cluster-forge.git"
-    CLUSTERFORGE_RELEASE: "v2-1-2-rc1"
     BLOOM_DIR: "/tmp/bloom"
-    rocm_required_version: "7.1.1"  # single source of truth — update this to change ROCm version
-    rocm_deb_build: "70101-1"  # build identifier paired with rocm_required_version
+    rocm_required_version: "7.2.3"  # single source of truth — update this to change ROCm version
+    rocm_deb_build: "70203-1"  # build identifier paired with rocm_required_version
     rocm_base_url: "https://repo.radeon.com/amdgpu-install/{{ rocm_required_version }}/ubuntu/"
     rocm_deb_package: "amdgpu-install_{{ rocm_required_version }}.{{ rocm_deb_build }}_all.deb"
+    rocm_instinct_min_patch: 3
+    rocm_version_exact_required: false
+    gpu_stack_family_resolved: instinct
     rke2_installation_url: "https://get.rke2.io"
 
     supported_ubuntu_versions:
@@ -132,6 +135,10 @@
     - name: Deploy ClusterForge Platform
       tags: [deploy_clusterforge]
       import_tasks: tasks/deploy_clusterforge/main.yaml
+
+    - name: Update Cluster Certificates
+      tags: [update_cert]
+      import_tasks: tasks/update_certificate/main.yaml
 
   handlers:
     - name: Restart multipathd

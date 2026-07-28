@@ -10,6 +10,8 @@ Cluster-Bloom provides flexible certificate management options to secure HTTPS t
 
 Configure additional domain names for your Kubernetes API server certificate using `ADDITIONAL_TLS_SAN_URLS`. This allows secure access via multiple domains beyond the default `k8s.<DOMAIN>`.
 
+TLS SAN configuration applies to all control-plane nodes since each runs its own kube-apiserver.
+
 **Quick Example:**
 ```yaml
 DOMAIN: cluster.example.com
@@ -56,13 +58,14 @@ export TLS_KEY=/path/to/your/private.key
 
 #### b) Generate Self-Signed Certificates
 
-Set `CERT_OPTION=generate` to automatically create a self-signed certificate.
+Set `CERT_OPTION=generate` to automatically create a self-signed certificate on the first node.
 
 **Characteristics:**
 - Valid for 365 days
 - Includes domain and wildcard subdomain (*.domain.com)
 - Uses RSA 2048-bit encryption
 - Generated using OpenSSL
+- First node only (used for ingress/gateway TLS)
 
 **Example:**
 ```bash
@@ -135,6 +138,93 @@ The system performs validation at multiple stages:
 3. **Runtime Validation:**
    - Creates Kubernetes secret successfully
    - Applies configuration to the cluster
+
+## Updating Certificates in Running Clusters
+
+You can update TLS certificates in an existing cluster without redeploying using the integrated certificate update feature.
+
+### Prerequisites
+
+- Running RKE2 cluster deployed with cluster-bloom
+- New TLS certificate and private key files
+- SSH access to the cluster node
+- bloom binary (v2.2.1+)
+
+### Update Procedure
+
+1. **Upload certificate files to the node:**
+   ```bash
+   scp new-cert.pem ubuntu@node:/home/ubuntu/tls-cert.pem
+   scp new-key.pem ubuntu@node:/home/ubuntu/tls-key.pem
+   ```
+
+2. **Create certificate update configuration:**
+   ```yaml
+   # cert-update.yaml
+   FIRST_NODE: true
+   NEW_TLS_CERT: /home/ubuntu/tls-cert.pem
+   NEW_TLS_KEY: /home/ubuntu/tls-key.pem
+   RESTART_ENVOY_PODS: true
+   ```
+
+3. **Run the certificate update:**
+   ```bash
+   sudo ./bloom cli cert-update.yaml --tags update_cert
+   ```
+
+### What Happens During Update
+
+The certificate update playbook:
+1. Validates certificate and key files exist and are readable
+2. Checks that the `envoy-gateway-system` namespace exists
+3. Updates the `cluster-tls` secret with new certificate and key
+4. Restarts Envoy Gateway pods to pick up the new certificate (if `RESTART_ENVOY_PODS: true`)
+5. Displays completion summary
+
+### Parameters
+
+**Required:**
+- `FIRST_NODE`: Must be `true` (certificate updates only run on the first node)
+- `NEW_TLS_CERT`: Path to new certificate file on the target node
+- `NEW_TLS_KEY`: Path to new private key file on the target node
+
+**Optional:**
+- `RESTART_ENVOY_PODS`: Whether to restart Envoy pods after update (default: `true`)
+
+**Note:** Certificate updates must run on the first node only. The Kubernetes secret is automatically replicated to all nodes via etcd.
+
+### Verification
+
+After updating certificates:
+
+1. **Check the secret:**
+   ```bash
+   kubectl get secret cluster-tls -n envoy-gateway-system
+   ```
+
+2. **Verify Envoy pods restarted:**
+   ```bash
+   kubectl get pods -n envoy-gateway-system
+   # Check the AGE column - pods should show recent restart
+   ```
+
+3. **Test HTTPS endpoints in browser:**
+   - Open `https://gitea.<your-domain>`
+   - Open `https://argocd.<your-domain>`
+   - Verify no certificate warnings
+   - Check certificate expiration date
+   
+   (Note: Manual browser testing required - automated endpoint checks not included in playbook)
+
+### Important Notes
+
+- The update process does not validate certificate format or cert/key matching - kubectl handles this during secret creation
+- No automatic backup is created - manually backup the existing secret if needed:
+  ```bash
+  kubectl get secret cluster-tls -n envoy-gateway-system -o yaml > cluster-tls-backup.yaml
+  ```
+- The update only affects the `cluster-tls` secret used by ingress - it does not update RKE2 API server certificates
+- For multi-node clusters, the secret is automatically replicated via etcd
 
 ## Integration with Ingress
 

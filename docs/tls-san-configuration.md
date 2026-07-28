@@ -4,6 +4,8 @@
 
 The `ADDITIONAL_TLS_SAN_URLS` field allows you to specify additional domain names for the Kubernetes API server certificate. This enables secure access to your cluster using multiple domain names beyond the automatically generated `k8s.<DOMAIN>`.
 
+TLS SAN configuration applies to all control-plane nodes since each runs its own kube-apiserver.
+
 ## Quick Start
 
 ```yaml

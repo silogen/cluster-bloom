@@ -29,6 +29,11 @@
   include_tasks: node_labels.yaml
   tags: [rke2, deploy_cluster]
 
+- name: Configure Cilium operator replicas for small/medium clusters
+  include_tasks: cilium_config.yaml
+  when: FIRST_NODE and CLUSTER_SIZE in ["small", "medium"]
+  tags: [deploy_cluster, cilium]
+
 - name: Setup RKE2 (First Node)
   include_tasks: rke2_first_node.yaml
   when: FIRST_NODE

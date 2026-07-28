@@ -44,6 +44,7 @@ Configuration sources in priority order (highest to lowest):
 - **Description**: Size category for cluster deployment planning
 - **Values**: `small` | `medium` | `large`
 - **Example**: `CLUSTER_SIZE: medium`
+- **Cilium**: `small` and `medium` set `operator.replicas: 1` via RKE2 `HelmChartConfig` on the first node at bootstrap; `large` uses the RKE2 default (2). To scale the operator after adding nodes, see [RKE2 deployment — Scaling cilium-operator](rke2-deployment.md#scaling-cilium-operator-after-install-multi-node--ha)
 
 #### AIM_HARDWARE_FAMILY
 - **Type**: String (comma-separated list)
@@ -56,13 +57,14 @@ Configuration sources in priority order (highest to lowest):
 #### GPU_STACK_FAMILY
 - **Type**: String (single value)
 - **Default**: `""` (empty, resolves to `instinct`)
-- **Description**: Selects the ROCm + GPU Operator install defaults by GPU family. This is independent of `AIM_HARDWARE_FAMILY` (which selects the AIM model catalog). Empty or `instinct` keeps the current qualified defaults (host ROCm `7.1.1`, GPU Operator `v1.4.1`, DeviceConfig ROCm driver `7.0`), so existing installs are unchanged. `radeon` selects the ROCm 7.13 tech-preview stack.
+- **Description**: Selects the ROCm + GPU Operator install defaults by GPU family. This is independent of `AIM_HARDWARE_FAMILY` (which selects the AIM model catalog). Empty or `instinct` keeps the current qualified defaults (host ROCm `7.2.3`, GPU Operator `v1.4.1`, DeviceConfig ROCm driver `7.0`), so existing installs are unchanged. `radeon` selects the ROCm 7.13 tech-preview stack.
 - **Values**: `radeon` | `instinct` (lowercase, single value)
 - **Example**: `GPU_STACK_FAMILY: "radeon"`
 - **Notes**:
   - Single-select by design: host ROCm is one version per node, so a heterogeneous Radeon + Instinct GPU stack cannot be expressed here. The AIM catalog (`AIM_HARDWARE_FAMILY`) can still be heterogeneous.
   - Selecting `radeon` defaults host ROCm and the GPU Operator to the ROCm 7.13 tech-preview train. These components are tech preview, not production qualified, and bloom prints a notice at install time.
   - Unsupported combinations (for example a Radeon stack resolving to ROCm 7.2) fail validation before install with an error naming the incompatible component.
+  - **Overriding the version guard**: when a GPU node already has ROCm installed that does not match the selected family's train (e.g. `radeon` on a host with ROCm 7.2.3), bloom aborts early during node validation with an "Unsupported ROCm version" message. This guard is a hard fail (no interactive prompt, because bloom pipes ansible output over SSH with no TTY). To proceed anyway with the currently installed ROCm, set [`ROCM_ALLOW_VERSION_MISMATCH`](#rocm_allow_version_mismatch) in `bloom.yaml`.
   - The exact ROCm 7.13 tech-preview version strings and the vendored GPU Operator chart are tracked in EAI-5906; until that lands the `radeon` row carries placeholder pins.
 
 ### Cluster Joining Configuration
@@ -147,7 +149,7 @@ Configuration sources in priority order (highest to lowest):
 #### DOMAIN
 - **Type**: String (domain name)
 - **Default**: None
-- **Description**: Domain name for cluster ingress configuration
+- **Description**: Domain name for cluster ingress configuration. Required for first node. Also needed when joining as a control-plane node (for TLS SAN and OIDC configuration).
 - **Example**: `DOMAIN: "cluster.example.com"`
 
 ### Network and DNS Configuration
@@ -204,10 +206,10 @@ Configuration sources in priority order (highest to lowest):
 #### CERT_OPTION
 - **Type**: String
 - **Default**: None
-- **Description**: Certificate handling when cert-manager is disabled
+- **Description**: Certificate option when cert-manager is disabled (first node only)
 - **Values**: `existing` | `generate`
 - **Example**: `CERT_OPTION: "existing"`
-- **Applies When**: `USE_CERT_MANAGER: false`
+- **Applies When**: `USE_CERT_MANAGER: false` and `FIRST_NODE: true`
 
 #### TLS_CERT
 - **Type**: String (file path)
@@ -223,20 +225,7 @@ Configuration sources in priority order (highest to lowest):
 - **Example**: `TLS_KEY: "/path/to/tls.key"`
 - **Required When**: `CERT_OPTION: "existing"`
 
-### ArgoCD Configuration (Small Clusters)
-
-#### INSTALL_ARGOCD
-- **Type**: Boolean
-- **Default**: `true`
-- **Description**: Install ArgoCD core (headless/CLI-only mode) for GitOps-based app deployment. Only applies to `CLUSTER_SIZE: small`.
-- **Values**: `true` | `false`
-- **Example**: `INSTALL_ARGOCD: false`
-
-#### ARGOCD_VERSION
-- **Type**: String (version tag)
-- **Default**: `v2.14.11`
-- **Description**: ArgoCD version to install
-- **Example**: `ARGOCD_VERSION: "v2.14.11"`
+### ClusterForge Configuration
 
 #### CLUSTERFORGE_REPO
 - **Type**: String (git URL)
@@ -254,7 +243,7 @@ Configuration sources in priority order (highest to lowest):
   - **Full release URL**: e.g., `https://github.com/silogen/cluster-forge/releases/download/v2.0.0-rc6/release-enterprise-ai-v2.0.0-rc6.tar.gz` - Downloads tarball and auto-extracts version for ArgoCD target
   - **Special values**: 
     - `latest` (or unset) - Fetches the latest published GitHub release tag via the GitHub API
-    - `none` or `""` (empty string) - Skips ClusterForge installation entirely
+    - `none` or `""` (empty string) - Deploys nothing from ClusterForge, not even ArgoCD (no ArgoCD, Gitea or OpenBao). Brings up the bare cluster only.
 - **Version Parsing**: When a full URL is provided, the version is automatically extracted (e.g., `v2.0.0-rc6` from the URL) and used as the `--target-revision` for ArgoCD/Gitea
 - **Examples**: 
   - `CLUSTERFORGE_RELEASE: "latest"`
@@ -352,6 +341,15 @@ Configuration sources in priority order (highest to lowest):
 - **Description**: Skip validation of `/var/lib/rancher` partition size (useful for CPU-only nodes)
 - **Values**: `true` | `false`
 - **Example**: `SKIP_RANCHER_PARTITION_CHECK: true`
+
+#### ROCM_ALLOW_VERSION_MISMATCH
+- **Type**: Boolean
+- **Default**: `false`
+- **Description**: Force continuation past the early ROCm version guard. On a GPU node, if the already-installed ROCm does not match the train required by `GPU_STACK_FAMILY` (e.g. `radeon` needs ROCm 7.13 but the host has 7.2.3), bloom warns and exits early during node validation. Set this to skip that guard and proceed with the installed ROCm. The guard is a hard fail with no interactive prompt (bloom pipes ansible output over SSH, so there is no TTY).
+- **Values**: `true` | `false` (also accepts `TRUE` / `1`)
+- **Applicable**: `GPU_NODE: true`
+- **Example**: `ROCM_ALLOW_VERSION_MISMATCH: true`
+- **Notes**: Works with `bloom cli bloom.yaml`. With `bloom run` it can also be passed as an extra-var: `-e ROCM_ALLOW_VERSION_MISMATCH=true`.
 
 #### RANCHER_DISK
 - **Type**: String (device path)
@@ -533,7 +531,7 @@ USE_CERT_MANAGER: true
 CERT_MANAGER_EMAIL: "admin@example.com"
 ```
 
-### Small Cluster with ArgoCD (GitOps)
+### Small Cluster with ClusterForge (GitOps, includes ArgoCD)
 ```yaml
 FIRST_NODE: true
 GPU_NODE: true
@@ -541,10 +539,10 @@ DOMAIN: "165.245.128.225.nip.io"
 CERT_OPTION: generate
 CLUSTER_SIZE: small
 CLUSTER_DISKS: /dev/vdc1
-CLUSTERFORGE_RELEASE: none
+CLUSTERFORGE_RELEASE: latest
 ```
 
-### Small Cluster without ArgoCD
+### Bare Cluster (no ClusterForge, no ArgoCD)
 ```yaml
 FIRST_NODE: true
 GPU_NODE: true
@@ -552,7 +550,6 @@ DOMAIN: "165.245.128.225.nip.io"
 CERT_OPTION: generate
 CLUSTER_SIZE: small
 CLUSTER_DISKS: /dev/vdc1
-INSTALL_ARGOCD: false
 CLUSTERFORGE_RELEASE: none
 ```
 

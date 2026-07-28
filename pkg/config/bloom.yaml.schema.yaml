@@ -16,8 +16,8 @@ schema:
 
     CLUSTERFORGE_RELEASE:
       type: str
-      default: "v2.0.2"
-      desc: ClusterForge version (URL, version tag, 'latest', 'none', or '' to skip). Examples - 'latest', 'v2.0.2', 'https://github.com/silogen/cluster-forge/releases/download/v2.0.2/release.tar.gz', 'none', ''
+      default: "v2.2.1"
+      desc: ClusterForge version (URL, version tag, 'latest', 'none', or '' to skip). Examples - 'latest', 'v2.2.1', 'https://github.com/silogen/cluster-forge/releases/download/v2.2.1/release.tar.gz', 'none', ''
       section: "⚙️ Advanced Configuration"
 
     # 📋 Basic Configuration
@@ -35,7 +35,7 @@ schema:
 
     DOMAIN:
       type: domain
-      desc: The domain name for the cluster (required for first node)
+      desc: "The domain name for the cluster (required for first node; also needed when joining as a control-plane node, since kube-apiserver on every control-plane node needs DOMAIN to build its TLS SAN (k8s.<DOMAIN>) and OIDC auth config (kc.<DOMAIN>))"
       required: when(FIRST_NODE == true)
       section: "📋 Basic Configuration"
       examples:
@@ -166,8 +166,9 @@ schema:
     CERT_OPTION:
       type: enum
       values: [existing, generate]
-      desc: Certificate option when USE_CERT_MANAGER is false
+      desc: Certificate option when USE_CERT_MANAGER is false (first node only)
       required: when(USE_CERT_MANAGER == false && FIRST_NODE == true)
+      applicable: when(FIRST_NODE == true)
       section: "🔒 SSL/TLS Configuration"
 
     TLS_CERT:
@@ -187,28 +188,23 @@ schema:
     # ⚙️ Advanced Configuration
     ROCM_BASE_URL:
       type: url
-      default: https://repo.radeon.com/amdgpu-install/7.1.1/ubuntu/
+      default: https://repo.radeon.com/amdgpu-install/7.2.3/ubuntu/
       desc: ROCm base repository URL
       applicable: when(GPU_NODE == true)
       section: "⚙️ Advanced Configuration"
 
     ROCM_DEB_PACKAGE:
       type: str
-      default: amdgpu-install_7.1.1.70101-1_all.deb
+      default: amdgpu-install_7.2.3.70203-1_all.deb
       desc: ROCm DEB package name
       applicable: when(GPU_NODE == true)
       section: "⚙️ Advanced Configuration"
 
-    INSTALL_ARGOCD:
+    ROCM_ALLOW_VERSION_MISMATCH:
       type: bool
-      default: true
-      desc: Install ArgoCD core for GitOps (small clusters only)
-      section: "⚙️ Advanced Configuration"
-
-    ARGOCD_VERSION:
-      type: str
-      default: v2.14.11
-      desc: ArgoCD version to install
+      default: false
+      desc: "Force continuation past the early ROCm version guard when a GPU node's already-installed ROCm does not match the train required by GPU_STACK_FAMILY (e.g. radeon needs 7.13 but host has 7.2.3). Normally this warns and exits early; set true (accepts true|TRUE|1) to proceed anyway with the installed ROCm."
+      applicable: when(GPU_NODE == true)
       section: "⚙️ Advanced Configuration"
 
     CLUSTERFORGE_REPO:
@@ -459,7 +455,7 @@ types:
       valid:
         - "https://example.com"
         - "http://example.com"
-        - "https://repo.radeon.com/amdgpu-install/7.1.1/ubuntu/"
+        - "https://repo.radeon.com/amdgpu-install/7.2.3/ubuntu/"
         - "https://get.rke2.io"
         - "https://github.com/silogen/cluster-forge/releases/download/v1.5.2/release.tar.gz"
         - "http://localhost:8080"

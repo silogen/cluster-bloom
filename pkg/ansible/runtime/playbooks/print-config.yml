@@ -23,25 +23,25 @@
         msg: |
           📏 Cluster Size Impact ({{ CLUSTER_SIZE | default('NOT SET') }}):
           {% if CLUSTER_SIZE == 'small' %}
-            🔧 Cilium Operator Replicas: 1 (optimized for minimal resource usage)
+            🔧 Cilium Operator Replicas: 1 (HelmChartConfig at bootstrap)
             💾 Storage Provisioner: local-path-provisioner (high-performance local storage)
             🎯 Target Scale: Up to 3 nodes, development/testing workloads
             📝 Resource Profile: Minimal overhead, reduced HA for cost efficiency
             📊 Hubble Observability: Disabled (saves resources)
           {% elif CLUSTER_SIZE == 'medium' %}
-            🔧 Cilium Operator Replicas: 2 (balanced reliability and resources)
-            💾 Storage Provisioner: Longhorn (distributed storage with replication)
-            🎯 Target Scale: 4-10 nodes, production workloads
-            📝 Resource Profile: Balanced performance and high availability
-            📊 Hubble Observability: Disabled (performance focused)
+            🔧 Cilium Operator Replicas: 1 (HelmChartConfig at bootstrap)
+            💾 Storage Provisioner: local-path-provisioner (high-performance local storage)
+            🎯 Target Scale: 1-3 nodes, development/testing workloads
+            📝 Resource Profile: Minimal overhead, reduced HA for cost efficiency
+            📊 Hubble Observability: Disabled (saves resources)
           {% elif CLUSTER_SIZE == 'large' %}
-            🔧 Cilium Operator Replicas: 2 (high availability optimized)
+            🔧 Cilium Operator Replicas: 2 (RKE2 chart default)
             💾 Storage Provisioner: Longhorn (distributed storage with replication)
             🎯 Target Scale: 10+ nodes, enterprise workloads
             📝 Resource Profile: High availability and performance
             📊 Hubble Observability: Disabled (security and performance)
           {% else %}
-            🔧 Cilium Operator Replicas: 2 (default configuration)
+            🔧 Cilium Operator Replicas: 2 (default; use small/medium for 1 at bootstrap)
             💾 Storage Provisioner: Longhorn (default distributed storage)
             📝 Note: Set CLUSTER_SIZE (small/medium/large) to optimize deployment
           {% endif %}

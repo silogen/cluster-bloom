@@ -107,8 +107,6 @@ func (p *OutputProcessor) processCleanMode(line string) string {
 	if taskInfo, ok := ParseTaskResult(line); ok {
 		if !p.taskSeen && p.currentTask != "" {
 			p.taskSeen = true
-			
-
 
 			// Check if error should be ignored
 			if taskInfo.Status == TaskStatusFailed && IsIgnoredError(line) {
@@ -122,9 +120,17 @@ func (p *OutputProcessor) processCleanMode(line string) string {
 			emoji := p.getEmoji(taskInfo.Status)
 			output := fmt.Sprintf("%s %s", emoji, p.currentTask)
 
-			// Add message if available and not too verbose
-			if taskInfo.Message != "" && !strings.Contains(taskInfo.Message, "{") {
-				output += fmt.Sprintf(" (%s)", taskInfo.Message)
+			// Add message if available and not too verbose. Flatten to a single
+			// line (collapsing newlines/whitespace) so multi-line fail messages
+			// don't dump blank lines and box-art on screen; the full text is
+			// still written verbatim to bloom.log. Skip entirely when the task
+			// name already directs the user to the log (e.g. "... see 'tail
+			// bloom.log' for full details"), so the summary isn't duplicated.
+			selfDescribing := strings.Contains(strings.ToLower(p.currentTask), "for full details")
+			if !selfDescribing && taskInfo.Message != "" && !strings.Contains(taskInfo.Message, "{") {
+				if msg := flattenMessage(taskInfo.Message); msg != "" {
+					output += fmt.Sprintf(" (%s)", msg)
+				}
 			}
 
 			return output
@@ -151,6 +157,23 @@ func (p *OutputProcessor) processCleanMode(line string) string {
 	}
 
 	return ""
+}
+
+var whitespaceRunRegex = regexp.MustCompile(`\s+`)
+
+// flattenMessage collapses a (possibly multi-line) task message into a single
+// tidy line for clean-mode display: newlines and repeated whitespace become a
+// single space and the result is rune-safe truncated. The full, unmodified
+// message is still written to bloom.log by ProcessStream.
+func flattenMessage(msg string) string {
+	msg = whitespaceRunRegex.ReplaceAllString(msg, " ")
+	msg = strings.TrimSpace(msg)
+
+	const maxLen = 240
+	if runes := []rune(msg); len(runes) > maxLen {
+		msg = string(runes[:maxLen-3]) + "..."
+	}
+	return msg
 }
 
 // getEmoji returns the emoji for a given task status
@@ -201,11 +224,11 @@ func (p *OutputProcessor) PrintSummary() {
 			fmt.Println()
 			fmt.Println("🚀 ClusterForge Deployment:")
 			fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-			fmt.Println("⏳ Services are starting up. Endpoints will be available once kgateway is ready.")
+			fmt.Println("⏳ Services are starting up. Endpoints will be available once envoy-gateway is ready.")
 			fmt.Println()
 			fmt.Println("Run this command to wait for services to be ready (Ctrl+C to exit early):")
 			fmt.Println()
-			fmt.Println("  # Wait for kgateway pods to be ready")
+			fmt.Println("  # Wait for envoy-gateway pods to be ready")
 			fmt.Println("  kubectl wait --for=condition=ready pod --all -n envoy-gateway-system --timeout=600s && \\")
 			fmt.Println("  # Wait for cluster-auth job to complete (creates initial auth configuration)")
 			fmt.Println("  kubectl wait --for=condition=complete job --all -n cluster-auth --timeout=600s && \\")
@@ -234,12 +257,12 @@ func (p *OutputProcessor) PrintSummary() {
 			fmt.Println()
 			fmt.Printf("🔧 Gitea - Admin:\n")
 			fmt.Printf("   URL:      https://gitea.%s\n", domain)
-			fmt.Printf("   Username: gitea_admin\n")
-			fmt.Printf("   Password: kubectl -n gitea get secret gitea-admin-credentials -o jsonpath='{.data.password}' | base64 --decode && echo\n")
+			fmt.Printf("   Username: silogen-admin\n")
+			fmt.Printf("   Password: kubectl -n cf-gitea get secret gitea-admin-credentials -o jsonpath='{.data.password}' | base64 --decode && echo\n")
 			fmt.Println()
 			fmt.Printf("🔐 OpenBao - Root Token:\n")
 			fmt.Printf("   URL:      https://openbao.%s\n", domain)
-			fmt.Printf("   Token:    kubectl -n openbao get secret openbao-root-token -o jsonpath='{.data.token}' | base64 --decode && echo\n")
+			fmt.Printf("   Token:    kubectl -n cf-openbao get secret openbao-keys -o jsonpath='{.data.root_token}' | base64 --decode && echo\n")
 			fmt.Println()
 			fmt.Printf("🔑 Keycloak - Admin:\n")
 			fmt.Printf("   URL:      https://kc.%s\n", domain)
@@ -257,14 +280,14 @@ func (p *OutputProcessor) extractJoinInfoMessage(line string) string {
 	msgPattern := `"msg":\s*"(.*)"`
 	re := regexp.MustCompile(msgPattern)
 	matches := re.FindStringSubmatch(line)
-	
+
 	if len(matches) < 2 {
 		return ""
 	}
 
 	// Extract the message content
 	msg := matches[1]
-	
+
 	// Replace escaped newlines with actual newlines
 	msg = strings.ReplaceAll(msg, "\\n", "\n")
 	// Replace escaped quotes

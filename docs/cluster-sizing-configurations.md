@@ -36,11 +36,11 @@ Storage: Optional small MinIO; otherwise skip internal S3
 
 #### App Deployment:
 
-ArgoCD core (headless/CLI-only) installed by default
+ArgoCD bootstrapped as part of ClusterForge
 
 ClusterForge apps deployed via Helm template + ArgoCD sync
 
-Disable with `INSTALL_ARGOCD: false`
+Skip the entire stack (no ClusterForge, no ArgoCD) with `CLUSTERFORGE_RELEASE: none`
 
 #### RKE2 Notes:
 
