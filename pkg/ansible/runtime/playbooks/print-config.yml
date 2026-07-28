@@ -85,6 +85,7 @@
                 ROCm 7.0.2 -> driver 30.10.2 -> DKMS 6.14.14.30100200-2226257
                 ROCm 7.1.1 -> driver 30.20.1 -> DKMS 6.16.6.30200100-2255209
                 ROCm 7.2.3 -> driver 30.30.3 -> DKMS 6.16.13.30300300-2327507
+                ROCm 7.2.4 -> driver 30.30.4 -> DKMS 6.16.13.30300400-2341068
                 ROCm 7.13.0 -> driver 31.30.0 -> DKMS 6.19.4.31300000-2337710
                 ROCm 7.14.0 -> driver 31.40.0 -> DKMS 6.19.14.31400000-2364437
               - Any exact tuple above: retain and continue.

@@ -362,14 +362,14 @@ Configuration sources in priority order (highest to lowest):
 #### GPU_DRIVER_VERSION
 - **Type**: String
 - **Default**: `""` (empty resolves to production installer `31.40`)
-- **Description**: Force an exact validated `amdgpu-install` version. Supported values are `7.0.2`, `7.1.1`, `7.2.3`, `31.30`, and `31.40`. Must be paired with the corresponding `GPU_DRIVER_BUILD`.
+- **Description**: Force an exact validated `amdgpu-install` version. Supported values are `7.0.2`, `7.1.1`, `7.2.3`, `7.2.4`, `31.30`, and `31.40`. Must be paired with the corresponding `GPU_DRIVER_BUILD`.
 - **Applicable**: `GPU_NODE: true`
 - **Example**: `GPU_DRIVER_VERSION: "7.1.1"`
 
 #### GPU_DRIVER_BUILD
 - **Type**: String
 - **Default**: `""` (empty resolves to `314000-1`)
-- **Description**: Build suffix paired with `GPU_DRIVER_VERSION`: `70002-1`, `70101-1`, `70203-1`, `313000-1`, or `314000-1`. Unsupported combinations fail before download.
+- **Description**: Build suffix paired with `GPU_DRIVER_VERSION`: `70002-1`, `70101-1`, `70203-1`, `70204-1`, `313000-1`, or `314000-1`. Unsupported combinations fail before download.
 - **Applicable**: `GPU_NODE: true`
 - **Example**: `GPU_DRIVER_BUILD: "70101-1"`
 

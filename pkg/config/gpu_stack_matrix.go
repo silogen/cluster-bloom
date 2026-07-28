@@ -59,6 +59,11 @@ var supportedGPUDrivers = []DriverCompatibility{
 		HostToolsChannel: "legacy", HostToolsPackage: "amd-smi-lib",
 	},
 	{
+		DriverRelease: "30.30.4", InstallerVersion: "7.2.4", InstallerBuild: "70204-1",
+		DKMSModuleVersion: "6.16.13", DKMSBuild: "2341068", DKMSPackageCode: "30300400", PairedROCm: "7.2.4",
+		HostToolsChannel: "legacy", HostToolsPackage: "amd-smi-lib",
+	},
+	{
 		DriverRelease: "31.30.0", InstallerVersion: "31.30", InstallerBuild: "313000-1",
 		DKMSModuleVersion: "6.19.4", DKMSBuild: "2337710", DKMSPackageCode: "31300000", PairedROCm: "7.13.0",
 		HostToolsChannel: "core", HostToolsPackage: "amdrocm-amdsmi7.13",

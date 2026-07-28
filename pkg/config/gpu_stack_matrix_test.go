@@ -144,6 +144,7 @@ func TestSupportedGPUDriversIncludesValidatedTuples(t *testing.T) {
 		"30.10.2": "7.0.2",
 		"30.20.1": "7.1.1",
 		"30.30.3": "7.2.3",
+		"30.30.4": "7.2.4",
 		"31.30.0": "7.13.0",
 		"31.40.0": "7.14.0",
 	}

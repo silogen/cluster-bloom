@@ -323,7 +323,7 @@ sudo ./bloom run bloom-playbook/cluster-bloom.yaml --config additional-config.ya
 sudo ./bloom run bloom-playbook/cluster-bloom.yaml --verbose
 ```
 
-> **EAI-5657 branch — supported GPU driver without host ROCm**: Bloom retains exact supported AMD GPU drivers `30.10.2`, `30.20.1`, `30.30.3`, `31.30.0`, or `31.40.0`. A fresh node gets driver `31.40.0` through `amdgpu-install_31.40.314000-1_all.deb` and DKMS `6.19.14`; an incompatible out-of-tree driver halts with remediation instructions. Host ROCm is not required or installed. Standalone AMD-SMI is installed by default. See [docs/gpu-driver-only-spike.md](docs/gpu-driver-only-spike.md).
+> **EAI-5657 branch — supported GPU driver without host ROCm**: Bloom retains exact supported AMD GPU drivers `30.10.2`, `30.20.1`, `30.30.3`, `30.30.4`, `31.30.0`, or `31.40.0`. A fresh node gets driver `31.40.0` through `amdgpu-install_31.40.314000-1_all.deb` and DKMS `6.19.14`; an incompatible out-of-tree driver halts with remediation instructions. Host ROCm is not required or installed. Standalone AMD-SMI is installed by default. See [docs/gpu-driver-only-spike.md](docs/gpu-driver-only-spike.md).
 
 ## Documentation
 
