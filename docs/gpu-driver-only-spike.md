@@ -15,14 +15,16 @@ changing an AMD repository or driver.
 
 The exact supported tuples are:
 
+- AMD GPU Driver `30.10.2`, DKMS `6.14.14` build `2226257`, package code
+  `30100200`, paired with ROCm `7.0.2`.
 - AMD GPU Driver `30.20.1`, DKMS `6.16.6` build `2255209`, paired with ROCm
   `7.1.1`.
 - AMD GPU Driver `30.30.3`, DKMS `6.16.13` build `2327507`, paired with ROCm
   `7.2.3`.
 - AMD GPU Driver `31.30.0`, DKMS `6.19.4` build `2337710`, paired with ROCm
-  `7.13`.
+  `7.13.0`.
 - AMD GPU Driver `31.40.0`, DKMS `6.19.14` build `2364437`, paired with ROCm
-  `7.14`.
+  `7.14.0`.
 
 The paired ROCm release documents AMD's coordinated release train and selects a
 matching AMD-SMI package. Bloom does not require or install that ROCm release.
@@ -61,8 +63,8 @@ Bloom first searches PATH and the legacy and Core SDK `/opt/rocm*` layouts. If
 `amd-smi` already exists, Bloom retains it. If it is absent, Bloom installs the
 package matched to the effective driver:
 
-- Drivers `30.20.1` and `30.30.3`: install the exact `amd-smi-lib` build from
-  `repo.radeon.com/rocm/apt/7.1.1` or `7.2.3`.
+- Drivers `30.10.2`, `30.20.1`, and `30.30.3`: install the exact `amd-smi-lib`
+  build from `repo.radeon.com/rocm/apt/7.0.2`, `7.1.1`, or `7.2.3`.
 - Driver `31.30.0`: install `amdrocm-amdsmi7.13` from the versioned Core SDK
   package repository.
 - Driver `31.40.0`: install `amdrocm-amdsmi7.14` from the Core SDK multi-arch

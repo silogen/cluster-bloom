@@ -141,10 +141,11 @@ func TestApplyGPUStackVarsRadeon(t *testing.T) {
 
 func TestSupportedGPUDriversIncludesValidatedTuples(t *testing.T) {
 	want := map[string]string{
+		"30.10.2": "7.0.2",
 		"30.20.1": "7.1.1",
 		"30.30.3": "7.2.3",
-		"31.30.0": "7.13",
-		"31.40.0": "7.14",
+		"31.30.0": "7.13.0",
+		"31.40.0": "7.14.0",
 	}
 	for _, driver := range supportedGPUDrivers {
 		if paired, ok := want[driver.DriverRelease]; !ok {

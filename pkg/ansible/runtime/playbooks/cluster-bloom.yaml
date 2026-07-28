@@ -49,6 +49,15 @@
     gpu_driver_default_version: "31.40"
     gpu_driver_default_build: "314000-1"
     gpu_driver_supported:
+      - DriverRelease: "30.10.2"
+        InstallerVersion: "7.0.2"
+        InstallerBuild: "70002-1"
+        DKMSModuleVersion: "6.14.14"
+        DKMSBuild: "2226257"
+        DKMSPackageCode: "30100200"
+        PairedROCm: "7.0.2"
+        HostToolsChannel: legacy
+        HostToolsPackage: amd-smi-lib
       - DriverRelease: "30.20.1"
         InstallerVersion: "7.1.1"
         InstallerBuild: "70101-1"
@@ -73,7 +82,7 @@
         DKMSModuleVersion: "6.19.4"
         DKMSBuild: "2337710"
         DKMSPackageCode: "31300000"
-        PairedROCm: "7.13"
+        PairedROCm: "7.13.0"
         HostToolsChannel: core
         HostToolsPackage: amdrocm-amdsmi7.13
       - DriverRelease: "31.40.0"
@@ -82,7 +91,7 @@
         DKMSModuleVersion: "6.19.14"
         DKMSBuild: "2364437"
         DKMSPackageCode: "31400000"
-        PairedROCm: "7.14"
+        PairedROCm: "7.14.0"
         HostToolsChannel: core-multiarch
         HostToolsPackage: amdrocm-amdsmi7.14
     gpu_stack_family_resolved: instinct

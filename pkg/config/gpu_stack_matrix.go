@@ -44,6 +44,11 @@ type DriverCompatibility struct {
 
 var supportedGPUDrivers = []DriverCompatibility{
 	{
+		DriverRelease: "30.10.2", InstallerVersion: "7.0.2", InstallerBuild: "70002-1",
+		DKMSModuleVersion: "6.14.14", DKMSBuild: "2226257", DKMSPackageCode: "30100200", PairedROCm: "7.0.2",
+		HostToolsChannel: "legacy", HostToolsPackage: "amd-smi-lib",
+	},
+	{
 		DriverRelease: "30.20.1", InstallerVersion: "7.1.1", InstallerBuild: "70101-1",
 		DKMSModuleVersion: "6.16.6", DKMSBuild: "2255209", DKMSPackageCode: "30200100", PairedROCm: "7.1.1",
 		HostToolsChannel: "legacy", HostToolsPackage: "amd-smi-lib",
@@ -55,12 +60,12 @@ var supportedGPUDrivers = []DriverCompatibility{
 	},
 	{
 		DriverRelease: "31.30.0", InstallerVersion: "31.30", InstallerBuild: "313000-1",
-		DKMSModuleVersion: "6.19.4", DKMSBuild: "2337710", DKMSPackageCode: "31300000", PairedROCm: "7.13",
+		DKMSModuleVersion: "6.19.4", DKMSBuild: "2337710", DKMSPackageCode: "31300000", PairedROCm: "7.13.0",
 		HostToolsChannel: "core", HostToolsPackage: "amdrocm-amdsmi7.13",
 	},
 	{
 		DriverRelease: "31.40.0", InstallerVersion: "31.40", InstallerBuild: "314000-1",
-		DKMSModuleVersion: "6.19.14", DKMSBuild: "2364437", DKMSPackageCode: "31400000", PairedROCm: "7.14",
+		DKMSModuleVersion: "6.19.14", DKMSBuild: "2364437", DKMSPackageCode: "31400000", PairedROCm: "7.14.0",
 		HostToolsChannel: "core-multiarch", HostToolsPackage: "amdrocm-amdsmi7.14",
 	},
 }
