@@ -39,6 +39,32 @@ wget https://github.com/silogen/cluster-bloom/releases/download/<version>/bloom
 chmod +x bloom
 ```
 
+### Building from Source
+
+Builds use [`just`](https://github.com/casey/just):
+
+```sh
+# Standard build -> dist/bloom (optional version label)
+just build my-version
+```
+
+Bloom runs its playbooks inside a bundled Ansible runtime image. That image is
+**pinned by digest** (`willhallonline/ansible@sha256:…`, see
+`pkg/ansible/runtime/container.go`) for reproducible, supply-chain-safe builds.
+By default the pinned image is pulled and cached on first run.
+
+For air-gapped / offline hosts, build a self-contained binary that **embeds** the
+runtime so no image pull is needed at run time:
+
+```sh
+# Fetch the pinned image and embed it into the binary (requires Docker).
+# Produces a much larger but fully offline dist/bloom (embeds the ~120MB runtime).
+just build-offline my-version
+
+# Or just materialize the embeddable rootfs tarball without building:
+just fetch-image
+```
+
 ## Usage
 
 ### Configuration Generation
@@ -357,6 +383,8 @@ Cluster-Bloom performs the following steps during installation:
 ## Dependencies
 
 - go (1.24.0)
+- just (build recipes)
+- Docker (only for `just build-offline` / `just fetch-image`, to fetch the pinned Ansible runtime image)
 - cobra-cli
 - jq, nfs-common, open-iscsi (installed during setup)
 - kubectl and k9s (installed during setup)

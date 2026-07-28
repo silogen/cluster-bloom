@@ -157,6 +157,8 @@ Automatic display of access credentials for deployed ClusterForge components inc
 
 ClusterBloom uses a modular architecture with command-based interfaces, sequential installation pipelines, and multiple interaction modes (CLI, TUI, Web UI). The system executes in three phases: pre-Kubernetes system preparation, Kubernetes cluster setup, and post-Kubernetes add-on deployment.
 
+Playbooks run inside a bundled Ansible runtime image that is pinned by digest for reproducible, supply-chain-safe builds. It is pulled and cached on first run by default, or embedded directly into the binary via an offline build (`just build-offline`) for air-gapped hosts.
+
 **[📄 Technical Architecture Documentation](./technical-architecture.md)**
 
 **[📄 Configuration Reference](./configuration-reference.md)**
