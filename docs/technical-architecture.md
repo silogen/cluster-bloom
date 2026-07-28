@@ -2,286 +2,96 @@
 
 ## Overview
 
-This document provides detailed technical architecture information for ClusterBloom, including component organization, package structure, and system integration patterns.
+ClusterBloom is a single Go binary that deploys RKE2-based Kubernetes clusters by driving Ansible playbooks. The Go layer handles the CLI, configuration loading/validation, and a self-contained Ansible runtime; the playbooks perform the actual node provisioning, cluster bootstrap, and add-on deployment. All playbooks and Kubernetes manifests are embedded into the binary, and the Ansible engine itself ships as a pinned container image (pulled and cached on first run, or embedded for offline builds).
 
-## Core Components
+## Command Structure
 
-### Command Structure
+Commands are defined in `cmd/main.go` (Cobra).
 
-#### Root Command (`cmd/root.go`)
-- Main application entry point
-- Configuration management and loading
-- Coordinates installation pipeline execution
-- Web server initialization and routing
+- **`bloom`** (root, no subcommand) / **`bloom webui`** — start the web UI configuration generator (default action). Flag: `--port` (default 62078).
+- **`bloom cli <config-file>`** — deploy a cluster from a `bloom.yaml`. Flags: `--tags`, `--dry-run`, `--export`, `--destroy-data`, `--cluster-listen-ip`, `--playbook` (default `cluster-bloom.yaml`). Requires root unless `--export`.
+- **`bloom run <playbook>`** — run an external Ansible playbook through bloom's bundled runtime. Flags: `--tags`, `--dry-run`, `--extra-vars`, `--config`, `--verbose`. Requires root.
+- **`bloom cleanup [config-file]`** — tear down a previous install (RKE2 uninstall, Longhorn/mount cleanup, managed-disk wipe). Flag: `--force`. Requires root.
+- **`bloom version`** / **`bloom --version`** — print the build version (injected via ldflags).
+- **`bloom __child__ …`** — internal re-exec entry point for the namespaced Ansible runtime (see below); not user-invoked.
 
-#### Demo Command (`cmd/demo.go`)
-- UI demonstration functionality
-- Testing mode for components
-- Non-destructive operation testing
+## Package Organization
 
-#### Version Command
-- Version information display via `./bloom version` subcommand
-- Also available as a root flag: `./bloom --version` / `./bloom -v`
-- Build metadata reporting
-- Git commit and tag information
+- **`cmd/`** — CLI entry point (`main.go`), the host-side post-run ClusterForge/next-step summary (`clusterforge_summary.go`), and embedded web assets (`embed.go`, `web/`).
+- **`pkg/config/`** — schema-driven configuration. The schema (`bloom.yaml.schema.yaml`) is the source of truth, loaded by `schema_loader.go`; `loader.go` loads a `bloom.yaml` and applies defaults; `validator.go` / `constraints.go` validate it; `deprecations.go` strips removed keys with a migration warning; `gpu_stack_matrix.go` resolves the GPU driver/ROCm/GPU-operator stack; `supported_os.go` is the single source of truth for supported host OSes; `generator.go` backs the web wizard.
+- **`pkg/ansible/runtime/`** — the containerized Ansible runtime (see below): image handling (`container.go`), playbook orchestration (`playbook.go`), the Linux namespace/pivot-root executor (`executor_linux.go`, with a non-Linux stub in `executor_other.go`), embedded-image build hooks (`embedded_image*.go`), output processing (`output.go`, `parser.go`, `stats.go`), signal handling (`signals.go`), and cleanup (`cleanup.go`). Playbooks and manifests are embedded from `playbooks/` and `manifests/`.
+- **`pkg/ssh/`** — ephemeral SSH key lifecycle used by the runtime to reach the local node.
+- **`pkg/webui/`** — HTTP server, handlers, and embedded filesystem for the configuration wizard/monitoring UI.
 
-#### Wizard Command (`cmd/wizard.go`)
-- Interactive configuration generation
-- Step-by-step wizard interface
-- bloom.yaml file creation
-- Input validation and defaults
+## Containerized Ansible Runtime
 
-#### Proof Command (`cmd/proof.go`)
-- Pre-deployment validation
-- Node readiness verification
-- Prerequisite checking
-- Connectivity testing
+Bloom does not require Ansible (or Python) to be installed on the host. Instead it runs Ansible from a bundled runtime image inside a lightweight, self-managed container.
 
-#### Test Command (`cmd/test.go`)
-- Integration testing framework
-- Mock-based validation
-- Multi-configuration testing
-- YAML result output
+### Runtime image
 
-### Package Organization
+- **Pinned by digest.** `ImageRef` in `pkg/ansible/runtime/container.go` pins `willhallonline/ansible` by digest (corresponding to a specific `…-alpine` tag) for reproducible, supply-chain-safe builds — no floating `:latest`.
+- **Default builds** pull and extract the pinned image into a cached rootfs (`.bloom/rootfs`) on first run.
+- **Offline builds** (`just build-offline`, build tag `embed_ansible_image`) embed a flattened rootfs tarball into the binary; at run time the rootfs is extracted from the embed with no network pull. See `README.md` → *Building from Source*.
 
-#### Installation Steps (`pkg/steps.go`)
-- Modular step definitions
-- Dependency ordering
-- Pre/post Kubernetes separation
-- Step state management
-- DISABLED_STEPS/ENABLED_STEPS filtering *(pending implementation)*
+### Execution model
 
-#### Disk Management (`pkg/disks.go`)
-- Storage device detection
-- Disk formatting and mounting
-- UUID-based fstab management
-- Interactive disk selection UI
-- Auto-detection with virtual disk filtering
+`RunPlaybook` extracts the embedded playbooks and manifests to a working directory, then `RunPlaybookDirect` ensures the rootfs is present and calls `RunContainer` (`executor_linux.go`):
 
-#### RKE2 Integration (`pkg/rke2.go`)
-- Kubernetes cluster initialization
-- Node joining procedures
-- Token generation and management
-- Cilium CNI configuration
-- Audit logging setup
+1. **SSH pre-flight** — verify an SSH server is reachable on `127.0.0.1:22`; fail early with guidance otherwise.
+2. **Ephemeral SSH key** — `pkg/ssh` generates a throwaway keypair in a temp dir and authorizes it, with cleanup (restoring the original `authorized_keys`) deferred and signal-handled.
+3. **Namespaced child** — bloom re-execs itself as `__child__` in new mount/PID/UTS namespaces (`CLONE_NEWNS | CLONE_NEWPID | CLONE_NEWUTS`).
+4. **`pivot_root`** — the child pivots into the runtime rootfs, mounts a fresh `/proc`, `/sys`, `/dev`, `/tmp`, bind-mounts the host root at `/host` (for reading resolv.conf and writing `bloom.log`) and the ephemeral SSH dir, then detaches the old root.
+5. **Run Ansible** — inside the rootfs it runs `ansible-playbook --connection=ssh --inventory=127.0.0.1, --user=<user> --become …`. Because tasks execute over SSH back to the host, they run in the host's real context (systemd as PID 1, real devices, package manager) even though the Ansible engine is isolated in the container. `BLOOM_DIR` and `BLOOM_VERSION` are injected as extra vars.
 
-#### ROCm Support (`pkg/rocm.go`)
-- AMD GPU driver installation
-- Device detection and validation
-- udev rule configuration
-- Kernel module management
-- ROCm version management
+This runtime is Linux-only; `executor_other.go` returns an error on other platforms.
 
-#### UI Framework (`pkg/view.go`)
-- Terminal user interface
-- Bubble Tea integration
-- Progress tracking components
-- Log streaming views
-- Interactive dialogs
+### Playbooks and manifests
 
-#### Web Handlers (`pkg/webhandlers.go`)
-- HTTP request handling
-- Configuration wizard API
-- Monitoring dashboard API
-- Real-time progress endpoints
-- Form validation and submission
+- **`playbooks/cluster-bloom.yaml`** — the root playbook; it wires shared vars (including the GPU driver support matrix) and includes task groups from `playbooks/tasks/`: `validate_node`, `prepare_node`, `deploy_cluster`, `deploy_clusterforge`, `deploy_k8s_apps`, and `update_certificate`, plus shared checks (`data_safety_check.yaml`, `gpu_rocm_detect.yaml`). Task groups are selectable with `--tags`.
+- **`manifests/`** — Kubernetes manifests and scripts extracted alongside the playbooks: `longhorn/`, `local-path/`, and `scripts/`.
 
-#### Configuration Maps (`pkg/configmaps.go`)
-- Kubernetes ConfigMap creation
-- bloom.yaml to ConfigMap conversion
-- Cluster configuration persistence
+### Export mode
 
-#### Package Management (`pkg/packages.go`)
-- System package installation
-- Dependency resolution
-- APT package management
-- Version verification
+`bloom cli … --export` writes a self-contained `./bloom-playbook/` directory (root playbook rewritten to target `localhost`, a `bloom-vars.yaml` derived from the config, and the `tasks/`+`manifests/` trees) instead of executing. It can then be run with a host-native `ansible-playbook bloom-playbook/cluster-bloom.yaml` — the SSH-free path when no `sshd` is available.
 
-#### OS Setup (`pkg/os-setup.go`)
-- Operating system validation
-- System configuration
-- Kernel module loading
-- Firewall configuration
-- Time synchronization
+## Configuration System
 
-#### Demo Steps (`pkg/demosteps.go`)
-- Demonstration step definitions
-- UI showcase functionality
-- Safe testing operations
+### Loading and precedence
 
-#### Validation (`cmd/validation.go`)
-- Configuration input validation
-- URL format verification
-- IP address validation
-- Domain name checking
-- File path validation
-- Conflict detection
+`config.LoadConfig` reads `bloom.yaml` and applies schema defaults. CLI flags (e.g. `--cluster-listen-ip`) override file values. Deprecated keys are stripped with a warning (`ApplyDeprecations`) before validation so a stale config keeps working.
 
-## Installation Pipeline
+### Validation
 
-### Pipeline Execution Model
+- **`Validate`** — full validation (required cluster fields, formats, mutually-exclusive/one-of constraints, GPU-stack compatibility) for normal runs.
+- **`ValidateOptional`** — relaxed mode for node-local diagnostic tags (e.g. `--tags validate_node`): still flags unknown keys and malformed values but does not require full cluster fields, so a node can be checked against a minimal or empty `bloom.yaml`.
+- **`update_cert`** runs skip schema validation entirely (they use a separate cert-update config).
 
-The installation system uses a sequential pipeline approach with three distinct phases:
+After validation, bloom injects derived vars: `ApplyGPUStackVars` resolves the GPU driver/ROCm/GPU-operator defaults, and `supported_ubuntu_versions` is populated from `config.SupportedOSes` so the Go side and the playbook's Ubuntu check never drift.
 
-1. **Pre-Kubernetes Phase**: System preparation and configuration
-2. **Kubernetes Setup Phase**: RKE2 cluster deployment
-3. **Post-Kubernetes Phase**: Add-on installation and configuration
+### Host OS pre-flight
 
-### Step Categories
+Before running, bloom checks the host OS against `SupportedOSes` and fails by name on an unsupported OS (overridable with `BLOOM_ALLOW_UNSUPPORTED_OS=true`).
 
-#### Pre-Kubernetes Steps
-Execute before Kubernetes cluster deployment:
+## Run Output and Post-Run Guidance
 
-- **System Validation**: Ubuntu version, disk space, resources
-- **Dependency Installation**: Required system packages
-- **Storage Preparation**: Longhorn cleanup, disk detection, formatting, mounting
-- **Network Configuration**: Firewall rules, multipath, kernel modules
-- **GPU Setup**: ROCm installation and validation (GPU nodes only)
-- **Time Synchronization**: Chrony NTP configuration
+Output is processed by `pkg/ansible/runtime/output.go`:
 
-#### Kubernetes Setup
-Core cluster deployment:
+- **Clean mode** (default) — one emoji-tagged line per task, a `Playbook complete: …` counts summary, and a single **overall status verdict** (`SUCCESS` / `COMPLETED WITH WARNINGS` / `FAILED`). Full output always goes to `bloom.log`.
+- **Verbose mode** (`bloom run --verbose`) — raw Ansible output.
 
-- **RKE2 Installation**: Download and install RKE2 binaries
-- **Cluster Initialization**: First node cluster bootstrap
-- **Node Joining**: Additional node agent/server setup
-- **CNI Deployment**: Cilium network plugin
+After the playbook, the host process prints next-step guidance based on the exit code and real cluster state (see `configuration-reference.md` → *Deployment output and post-run guidance*): remediation on failure (including `RANCHER_DISK`/`SKIP_RANCHER_PARTITION_CHECK` for an undersized `/var/lib/rancher`), a full-run hint for a validated but unprovisioned node, a `deploy_clusterforge` hint when the cluster is up without ClusterForge, or the endpoint/credential reference block once ClusterForge is deployed. This runs in the host process (`cmd/clusterforge_summary.go`) because the namespaced child cannot query the cluster via `kubectl`.
 
-#### Post-Kubernetes Steps
-Add-ons and integrations after cluster is running:
+## Web UI
 
-- **Longhorn Deployment**: Distributed storage system
-- **MetalLB Installation**: Load balancer configuration
-- **Kubeconfig Setup**: kubectl access configuration
-- **ConfigMap Creation**: bloom configuration persistence
-- **Domain Configuration**: Ingress domain setup
-- **Certificate Management**: TLS certificate provisioning
-- **ClusterForge Integration**: Application platform deployment
-- **1Password Integration**: Secrets management
-
-### Step Control Mechanisms
-
-#### Step Filtering *(pending implementation)*
-
-> **⚠️ Pending Implementation**: `DISABLED_STEPS` and `ENABLED_STEPS` are reserved for a future
-> release. They have no effect in the current version and are excluded from the `bloom help` output.
-
-Two mutually exclusive mechanisms are planned for controlling step execution:
-
-**DISABLED_STEPS** *(not yet active)*:
-```yaml
-DISABLED_STEPS: "install-longhorn,install-metallb"
-```
-- Will skip specified steps
-- All other steps execute normally
-- Comma-separated step IDs
-
-**ENABLED_STEPS** *(not yet active)*:
-```yaml
-ENABLED_STEPS: "install-rke2,configure-kubeconfig"
-```
-- Will execute ONLY specified steps
-- All other steps are skipped
-- Useful for targeted operations
-- Mutually exclusive with DISABLED_STEPS
-
-#### Conditional Execution
-
-Steps may execute conditionally based on:
-
-- **Node Type**: FIRST_NODE vs additional nodes
-- **GPU Configuration**: GPU_NODE flag
-- **Disk Configuration**: NO_DISKS_FOR_CLUSTER flag
-- **Feature Flags**: USE_CERT_MANAGER, CLUSTERFORGE_RELEASE, etc.
-
-## Web UI Architecture
-
-### Application Modes
-
-#### Configuration Mode
-Active when no installation is running:
-
-- Displays configuration wizard form
-- Validates user input
-- Generates bloom.yaml
-- Triggers installation
-
-#### Monitoring Mode
-Active during installation execution:
-
-- Real-time progress display
-- Step status tracking
-- Log streaming
-- Error reporting
-- Reconfiguration option
-
-### WebHandlerService Structure
-
-```go
-type WebHandlerService struct {
-    configFile        string                     // bloom.yaml path
-    prefilledConfig   map[string]interface{}    // Loaded from bloom.log
-    steps             []Step                     // Installation step definitions
-    startInstallation func() error               // Installation trigger callback
-}
-```
-
-### HTTP Endpoints
-
-#### Dashboard Routes
-- `/`: Main entry point (mode-based redirect)
-- `/config`: Configuration wizard interface
-- `/monitor`: Installation monitoring dashboard
-- `/reconfigure`: Switch to configuration mode
-
-#### API Routes
-- `/api/config`: Configuration submission endpoint
-- `/api/prefilled-config`: Pre-filled configuration data
-- `/api/steps`: Real-time step status
-- `/api/variables`: Current configuration variables
-
-### Form Validation System
-
-#### Client-Side Validation
-- HTML5 pattern attributes
-- JavaScript validation
-- Required field enforcement
-- Type checking (URL, IP, domain)
-
-#### Server-Side Validation
-- Configuration structure validation
-- Value format verification
-- Conflict detection
-- Resource requirement checks
-
-### Configuration Flow
-
-1. **Startup Detection**: Check for existing bloom.log
-2. **Mode Selection**: Configuration vs Monitoring
-3. **Form Rendering**: Pre-fill from bloom.log if available
-4. **Submission**: Validate and save configuration
-5. **Installation Trigger**: Execute installation pipeline
-6. **Monitoring**: Real-time progress tracking
-7. **Error Recovery**: Reconfigure option on failure
+`pkg/webui` serves the configuration wizard and monitoring UI (`server.go`, `handlers.go`, `fs.go`) with embedded static assets. It generates a `bloom.yaml` from schema-driven form fields (`config.Schema`) and can trigger a deployment.
 
 ## Integration Architecture
 
-### External System Integration
+### ClusterForge
 
-#### 1Password Connect
-- Token-based authentication
-- Secret synchronization
-- Kubernetes Secret creation
-- Namespace isolation
+ClusterForge is deployed as the post-Kubernetes application platform, selected by `CLUSTERFORGE_RELEASE` (version tag, release URL, `latest`, or `none`) via the `deploy_clusterforge` tasks. After deployment, bloom surfaces endpoint URLs and credential-retrieval commands.
 
-#### ClusterForge
-- Release-based deployment
-- Custom values file support
-- Helm chart installation
-- Application platform integration
-
-#### OIDC Authentication Architecture
+### OIDC Authentication Architecture
 
 **Multi-Provider Support**:
 ClusterBloom supports both default and additional OIDC providers for flexible authentication:
@@ -337,283 +147,24 @@ jwt:
     groups:
       claim: groups
       prefix: "oidc:"
-- issuer:
-    url: https://auth.company.com/realms/main
-    certificateAuthority: |
-      -----BEGIN CERTIFICATE-----
-      ...
-      -----END CERTIFICATE-----
-    audiences:
-    - kubernetes
-    - api
-  claimMappings:
-    username:
-      claim: preferred_username
-      prefix: "oidc:"
-    groups:
-      claim: groups
-      prefix: "oidc:"
 ```
 
 **Authentication Flow**:
-1. User authenticates with configured OIDC provider (Keycloak, Auth0, etc.)
-2. Provider issues JWT token with user claims and group memberships
-3. kubectl sends token via `Authorization: Bearer <jwt-token>` header
-4. kube-apiserver validates token against configured OIDC providers using authentication configuration
-5. Kubernetes RBAC rules determine user permissions based on token claims
-
-### Kubernetes Ecosystem Integration
-
-#### Helm Charts
-- Automated chart deployment
-- Values file customization
-- Release management
-
-#### kubectl Access
-- Kubeconfig generation
-- RBAC configuration
-- User access setup
-
-#### k9s Integration
-- Terminal-based management
-- Automatic installation
-- Cluster navigation
-
-## CI/CD Pipeline Architecture
-
-### GitHub Actions Workflow
-
-#### Build and Release
-- Devbox-based build environment
-- Multi-architecture support
-- Automated binary creation
-- Release asset upload
-
-#### Version Management
-- Git tag-based versioning
-- Build-time version injection
-- Semantic versioning support
-
-#### Testing Infrastructure
-- Chromedp-based UI testing
-- Mock system integration
-- Automated test execution
-- YAML-based test definitions
-
-## Configuration System Architecture
-
-### Configuration Sources (Priority Order)
-
-1. **Command-line flags**: Highest priority
-2. **Configuration file**: bloom.yaml
-3. **Environment variables**: System environment
-4. **Default values**: Built-in defaults
-
-### Configuration Loading
-
-```go
-// Pseudo-code representation
-func LoadConfiguration() Config {
-    config := LoadDefaults()
-    config.MergeFrom(EnvironmentVariables())
-    config.MergeFrom(ConfigFile())
-    config.MergeFrom(CommandLineFlags())
-    return config
-}
-```
-
-### Configuration Validation
-
-Pre-flight validation checks:
-
-- **URL Validation**: OIDC, ClusterForge, ROCm, RKE2 URLs
-- **Network Validation**: IP addresses, token formats
-- **Step Validation**: Step names in DISABLED_STEPS/ENABLED_STEPS *(pending implementation)*
-- **Conflict Detection**: Mutually exclusive options
-- **Resource Validation**: Disk space, memory, CPU
-- **OS Compatibility**: Ubuntu version, kernel modules
-
-## State Management
-
-### Installation State
-
-State persistence mechanisms:
-
-- **bloom.log**: Installation progress and errors
-- **bloom.yaml**: Configuration state
-- **Kubernetes Resources**: ConfigMaps for cluster state
-- **File System**: Mount points, installed components
-
-### State Recovery
-
-Recovery mechanisms:
-
-- **Bloom.log Parsing**: Extract configuration from logs
-- **Pre-filled Forms**: Auto-populate from previous attempts
-- **Idempotent Operations**: Safe to re-run steps
-- **Cleanup Operations**: Automated partial installation cleanup
-
-## Error Handling Architecture
-
-### Error Categories
-
-1. **Validation Errors**: Pre-flight configuration issues
-2. **System Errors**: OS-level failures
-3. **Network Errors**: Connectivity and download issues
-4. **Kubernetes Errors**: Cluster and workload failures
-5. **Integration Errors**: External system integration failures
-
-### Error Recovery Strategies
-
-- **Automatic Retry**: Transient failures
-- **Manual Intervention**: Configuration errors
-- **Graceful Degradation**: Optional component failures
-- **Rollback Support**: Partial installation cleanup
-
-### Error Reporting
-
-- **UI Display**: Clear error messages with context
-- **Log Files**: Detailed error information
-- **Suggestions**: Actionable recovery steps
-- **Documentation Links**: Context-specific help
-
-## Performance Considerations
-
-### Optimization Strategies
-
-- **Parallel Operations**: Independent step parallelization
-- **Caching**: Package and image caching
-- **Incremental Updates**: Partial configuration changes
-- **Resource Limits**: Configurable resource constraints
-
-### Monitoring Points
-
-- **Step Duration**: Installation timing metrics
-- **Resource Usage**: CPU, memory, disk I/O
-- **Network Bandwidth**: Download speeds
-- **Error Rates**: Failure frequency tracking
+1. User authenticates with the configured OIDC provider (Keycloak, etc.)
+2. Provider issues a JWT with user claims and group memberships
+3. kubectl sends the token via the `Authorization: Bearer <jwt>` header
+4. kube-apiserver validates the token against the configured providers
+5. Kubernetes RBAC determines permissions based on token claims
 
 ## Security Architecture
 
-### Security Layers
+- **Privilege**: `cli`, `run`, and `cleanup` require root; the runtime uses `--become` for host tasks.
+- **Ephemeral SSH**: the loopback SSH access uses a throwaway keypair created per run and removed afterward, restoring the original `authorized_keys`.
+- **Runtime isolation**: the Ansible engine runs in its own namespaces/rootfs; host mutation flows only through the explicit SSH channel and the `/host` bind mount.
+- **OS pre-flight**: unsupported host OSes are rejected early by name.
 
-1. **System Access**: sudo requirement for privileged operations
-2. **Network Security**: Firewall configuration
-3. **Kubernetes RBAC**: Role-based access control
-4. **Secrets Management**: 1Password integration
-5. **TLS Certificates**: Encrypted communication
+## Platform Support
 
-### Security Best Practices
+The deployment runtime is **Linux-only** (namespaces + `pivot_root`). The web UI and configuration tooling run anywhere Go builds, but `bloom cli`/`bloom run` return an error on non-Linux hosts.
 
-- **Principle of Least Privilege**: Minimal required permissions
-- **Audit Logging**: Kubernetes API audit trail
-- **Encryption**: TLS for in-transit data
-- **Secret Rotation**: External secrets management
-- **Network Policies**: Pod-to-pod communication control
-
-## Testing Architecture
-
-### Test Types
-
-#### UI Tests
-- Browser-based automation (chromedp)
-- Form validation testing
-- Configuration workflow testing
-- Mock system integration
-
-#### Integration Tests
-- Mock-based command execution
-- Multi-configuration scenarios
-- Step execution validation
-- YAML result verification
-
-#### Unit Tests
-- Individual component testing
-- Function-level validation
-- Edge case coverage
-
-### Test Infrastructure
-
-- **Docker Containers**: Isolated test environments
-- **Mock System**: Command execution mocking
-- **YAML Test Definitions**: Declarative test cases
-- **CI/CD Integration**: Automated test execution
-
-## Extensibility Points
-
-### Custom Step Development
-
-Add new installation steps:
-
-1. Define step structure in `pkg/steps.go`
-2. Implement step logic
-3. Add to appropriate pipeline phase
-4. Update configuration schema
-5. Add validation rules
-
-### Plugin Architecture
-
-Future extensibility mechanisms:
-
-- **Custom Storage Providers**: Beyond Longhorn
-- **Alternative CNI Plugins**: Beyond Cilium
-- **Additional GPU Vendors**: Beyond AMD/ROCm
-- **Custom Integration Hooks**: External system integration
-
-## Deployment Patterns
-
-### Single Node Deployment
-- All components on one node
-- Development/testing environments
-- Minimal resource requirements
-
-### Multi-Node Cluster
-- Dedicated control plane nodes
-- Worker node pool
-- GPU node specialization
-- Storage node optimization
-
-### High Availability
-- Multiple control plane nodes
-- etcd cluster distribution
-- Load balancer redundancy
-- Storage replication
-
-## Maintenance Operations
-
-### Upgrade Procedures
-- RKE2 version upgrades
-- Component updates
-- Configuration changes
-- Node additions/removals
-
-### Backup Operations
-- Configuration backups
-- State persistence
-- Disaster recovery preparation
-
-### Monitoring Integration
-- Metrics collection points
-- Log aggregation hooks
-- Alert integration
-- Dashboard connectivity
-
-## Technical Debt Areas
-
-### Current Limitations
-
-1. **Limited Test Coverage**: Backend unit tests needed
-2. **Minimal Documentation**: Operational procedures missing
-3. **Basic Validation**: Comprehensive checks needed
-4. **Simple Logging**: Centralized log aggregation missing
-5. **No Performance Tuning**: Optimization configurations needed
-
-### Improvement Roadmap
-
-- Enhanced testing framework
-- Comprehensive validation system
-- Advanced logging infrastructure
-- Performance optimization
-- Extended documentation
-
-See [PRD.md](../../PRD.md) for product overview and feature descriptions.
+See [PRD.md](./PRD.md) for the product overview and feature descriptions, and [configuration-reference.md](./configuration-reference.md) for configuration keys and run behavior.
