@@ -47,6 +47,13 @@ func (s *PlaybookStats) Total() int {
 	return s.OK + s.Changed + s.Failed + s.Skipped + s.Unreachable + s.Ignored
 }
 
+// HasFailures reports whether the playbook run had any failed or unreachable
+// tasks. Ignored tasks are intentionally excluded because they are expected/
+// tolerated failures.
+func (s *PlaybookStats) HasFailures() bool {
+	return s.Failed > 0 || s.Unreachable > 0
+}
+
 // Summary returns a formatted summary string
 func (s *PlaybookStats) Summary() string {
 	return fmt.Sprintf("%d ok, %d changed, %d failed, %d skipped, %d unreachable, %d ignored",

@@ -215,8 +215,12 @@ func (p *OutputProcessor) PrintSummary() {
 		fmt.Println()
 	}
 
-	// Print credential information if CLUSTERFORGE_RELEASE is configured
-	if p.config != nil {
+	// Print credential information only when ClusterForge is configured AND the
+	// playbook run completed without failures. Printing the "ClusterForge
+	// Deployment" title/credentials after a mid-run failure (e.g. failing at
+	// "Clone ClusterForge repository") is misleading because nothing was
+	// actually deployed.
+	if p.config != nil && !p.stats.HasFailures() {
 		clusterforgeRelease := p.config["CLUSTERFORGE_RELEASE"]
 		domain := p.config["DOMAIN"]
 
