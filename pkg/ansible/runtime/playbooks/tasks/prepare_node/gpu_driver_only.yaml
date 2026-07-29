@@ -136,38 +136,58 @@
       gpu_driver_target.DKMSPackageCode not in
       (gpu_driver_candidate_version_fresh.stdout | default('') | trim)
 
-- name: Launch production amdgpu DKMS install in the background
-  shell:
-    executable: /bin/bash
-    cmd: |
-      set -e
-      rm -f /tmp/bloom_driver_install.rc /tmp/bloom_driver_install.done
-      nohup setsid bash -c '
-        amdgpu-install --usecase=dkms --yes --allow-downgrades > /tmp/bloom_driver_install.log 2>&1
-        echo $? > /tmp/bloom_driver_install.rc
-        touch /tmp/bloom_driver_install.done
-      ' </dev/null >/tmp/bloom_driver_install.launch.log 2>&1 &
-  when: gpu_driver_needs_install | bool
-  changed_when: true
-  environment:
-    DEBIAN_FRONTEND: noninteractive
-    NEEDRESTART_MODE: l
-    NEEDRESTART_SUSPEND: "1"
+- name: Install production amdgpu DKMS driver
+  block:
+    # OCI images pin linux-* to priority -1 in 00_pin_kernel. amdgpu-install
+    # invokes apt internally even when matching headers are already installed,
+    # so give only this running kernel's prerequisites an earlier, higher pin.
+    # The filename must sort before 00_pin_kernel because apt uses the first
+    # matching specific-form preference record.
+    - name: Temporarily expose running-kernel prerequisites to amdgpu-install
+      copy:
+        dest: /etc/apt/preferences.d/00_bloom_amdgpu_kernel
+        mode: "0644"
+        content: |
+          Package: linux-headers-{{ kernel_version.stdout }} linux-modules-extra-{{ kernel_version.stdout }}
+          Pin: version *
+          Pin-Priority: 1001
 
-- name: Wait for production amdgpu DKMS install to finish
-  shell:
-    executable: /bin/bash
-    cmd: |
-      if [ -f /tmp/bloom_driver_install.done ]; then
-        cat /tmp/bloom_driver_install.rc
-      else
-        echo RUNNING
-      fi
-  register: gpu_driver_install_poll
-  until: gpu_driver_install_poll.stdout is match('^[0-9]+$')
-  retries: 240
-  delay: 15
-  changed_when: false
+    - name: Launch production amdgpu DKMS install in the background
+      shell:
+        executable: /bin/bash
+        cmd: |
+          set -e
+          rm -f /tmp/bloom_driver_install.rc /tmp/bloom_driver_install.done
+          nohup setsid bash -c '
+            amdgpu-install --usecase=dkms --yes --allow-downgrades > /tmp/bloom_driver_install.log 2>&1
+            echo $? > /tmp/bloom_driver_install.rc
+            touch /tmp/bloom_driver_install.done
+          ' </dev/null >/tmp/bloom_driver_install.launch.log 2>&1 &
+      changed_when: true
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+        NEEDRESTART_MODE: l
+        NEEDRESTART_SUSPEND: "1"
+
+    - name: Wait for production amdgpu DKMS install to finish
+      shell:
+        executable: /bin/bash
+        cmd: |
+          if [ -f /tmp/bloom_driver_install.done ]; then
+            cat /tmp/bloom_driver_install.rc
+          else
+            echo RUNNING
+          fi
+      register: gpu_driver_install_poll
+      until: gpu_driver_install_poll.stdout is match('^[0-9]+$')
+      retries: 240
+      delay: 15
+      changed_when: false
+  always:
+    - name: Remove temporary running-kernel apt preference
+      file:
+        path: /etc/apt/preferences.d/00_bloom_amdgpu_kernel
+        state: absent
   when: gpu_driver_needs_install | bool
 
 - name: Fail if production amdgpu DKMS install did not succeed
