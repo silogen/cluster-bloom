@@ -190,6 +190,14 @@ This is designed as a **two-part deployment**:
 sudo ./bloom cli bloom.yaml --tags deploy_clusterforge
 ```
 
+When running only the ClusterForge bootstrap, you no longer need to supply cluster-deployment parameters such as `CERT_OPTION`, `TLS_CERT`, or `TLS_KEY`. Only the following are required:
+
+```yaml
+FIRST_NODE: true
+DOMAIN: "cluster.example.com"
+CLUSTERFORGE_RELEASE: "v2.2.1"   # a real release, not "none"
+```
+
 This step configures cluster-wide services, networking, and other essential components that require all nodes to be present. The same `bloom.yaml` used for the initial deployment is reused — `CLUSTERFORGE_RELEASE` must be set to the desired release (not `none`) when running this step.
 
 ---

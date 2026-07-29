@@ -4,6 +4,20 @@
 # Usage: Imported by main cluster-bloom.yaml playbook
 # Tags: [deploy_clusterforge]
 
+- name: Validate ClusterForge bootstrap parameters
+  assert:
+    that:
+      - FIRST_NODE is defined
+      - FIRST_NODE | bool
+      - DOMAIN is defined and DOMAIN != ""
+    fail_msg: "deploy_clusterforge requires FIRST_NODE: true and DOMAIN"
+    success_msg: "✓ ClusterForge bootstrap parameters provided"
+  when:
+    - CLUSTERFORGE_RELEASE is defined
+    - CLUSTERFORGE_RELEASE != "none"
+    - CLUSTERFORGE_RELEASE != ""
+  tags: [clusterforge, deploy_clusterforge]
+
 - name: Build DISABLED_APPS from AIWB_ONLY flag
   set_fact:
     DISABLED_APPS: >-

@@ -210,6 +210,7 @@ Configuration sources in priority order (highest to lowest):
 - **Values**: `existing` | `generate`
 - **Example**: `CERT_OPTION: "existing"`
 - **Applies When**: `USE_CERT_MANAGER: false` and `FIRST_NODE: true`
+- **Note**: Only used during cluster deployment. Not required when running `--tags deploy_clusterforge` on an existing cluster.
 
 #### TLS_CERT
 - **Type**: String (file path)
@@ -649,6 +650,7 @@ sudo ./bloom cli bloom.yaml --tags "validate_node,prep_node"
 # Part 1: set CLUSTERFORGE_RELEASE: none in bloom.yaml and run the full deployment
 sudo ./bloom cli bloom.yaml
 # Part 2: once all nodes have joined, run the ClusterForge bootstrap separately
+# (certificate params such as CERT_OPTION/TLS_CERT/TLS_KEY are not required here)
 sudo ./bloom cli bloom.yaml --tags deploy_clusterforge
 ```
 
