@@ -53,3 +53,9 @@
 - name: Configure NTP (Chrony)
   include_tasks: ntp.yaml
   tags: [ntp, prep_node]
+
+# Must stay last: it re-arms the apt timers packages.yaml stopped, so anything
+# added after this point would race the timer for the dpkg lock.
+- name: Restore apt timers
+  include_tasks: restore_apt_timers.yaml
+  tags: [packages, prep_node]
