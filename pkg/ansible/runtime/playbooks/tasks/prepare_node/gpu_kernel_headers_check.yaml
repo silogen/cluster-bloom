@@ -47,23 +47,35 @@
 
 # Some cloud mirrors (observed on OCI) don't carry the "-<flavor>" convenience
 # meta-package (linux-headers-oracle, linux-image-oracle, ...) at all, so
-# checking that name's candidate is not reliable. Instead, scan the apt cache
-# directly for whatever specific versioned headers packages of this flavor
-# actually exist and pick the newest one — this works whether or not the
-# meta-package is published.
-- name: List specific versioned headers packages available for this flavor
-  shell: >-
-    apt-cache pkgnames
-    | grep -E '^linux-headers-[0-9]+\.[0-9]+\.[0-9]+-[0-9]+-{{ gpu_kernel_flavor.stdout }}$'
-    | sort -V
-  register: gpu_kernel_flavor_headers_pkgs
+# checking that name's candidate is not reliable. apt-cache pkgnames can also
+# contain orphaned package names whose actual candidate is "(none)". Scan
+# versions newest-first and select the first exact headers/image pair for which
+# both packages still have live installation candidates.
+- name: Find the newest installable kernel headers and image pair for this flavor
+  shell: |
+    for headers_pkg in $(
+      apt-cache pkgnames \
+        | grep -E '^linux-headers-[0-9]+\.[0-9]+\.[0-9]+-[0-9]+-{{ gpu_kernel_flavor.stdout }}$' \
+        | sort -Vr
+    ); do
+      image_pkg="${headers_pkg#linux-headers-}"
+      image_pkg="linux-image-${image_pkg}"
+      headers_candidate="$(apt-cache policy "${headers_pkg}" | awk '/Candidate:/ {print $2; exit}')"
+      image_candidate="$(apt-cache policy "${image_pkg}" | awk '/Candidate:/ {print $2; exit}')"
+      if [ -n "${headers_candidate}" ] && [ "${headers_candidate}" != "(none)" ] \
+        && [ -n "${image_candidate}" ] && [ "${image_candidate}" != "(none)" ]; then
+        printf '%s\n' "${headers_pkg}"
+        break
+      fi
+    done
+  register: gpu_kernel_installable_headers_pkg
   changed_when: false
   failed_when: false
   when: not (gpu_kernel_headers_available | bool)
 
-- name: Resolve the newest available headers package name for this flavor
+- name: Resolve the newest installable headers package name for this flavor
   set_fact:
-    gpu_kernel_latest_headers_pkg: "{{ gpu_kernel_flavor_headers_pkgs.stdout_lines | default([]) | last | default('') }}"
+    gpu_kernel_latest_headers_pkg: "{{ gpu_kernel_installable_headers_pkg.stdout | default('') | trim }}"
   when: not (gpu_kernel_headers_available | bool)
 
 - name: Derive the matching image package name from the headers package name
@@ -137,8 +149,7 @@
     msg: |
       ❌ Headers for the running kernel ({{ kernel_version.stdout }}) are not
       available from the apt mirror, and no other/newer "-{{ gpu_kernel_flavor.stdout | default('<flavor>') }}"
-      flavor kernel headers package is available either (checked every specific
-      versioned linux-headers-*-{{ gpu_kernel_flavor.stdout | default('<flavor>') }} package known to apt),
+      flavor kernel has both an installable image and matching headers package,
       so bloom cannot resolve this by upgrading + rebooting.
 
       This looks like a broken or incomplete apt mirror/configuration rather
