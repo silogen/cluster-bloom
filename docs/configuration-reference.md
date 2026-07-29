@@ -210,7 +210,7 @@ Configuration sources in priority order (highest to lowest):
 - **Values**: `existing` | `generate`
 - **Example**: `CERT_OPTION: "existing"`
 - **Applies When**: `USE_CERT_MANAGER: false` and `FIRST_NODE: true`
-- **Note**: Only used during cluster deployment. Not required when running `--tags deploy_clusterforge` on an existing cluster.
+- **Note**: Only used during cluster deployment. Not required when running `--tags deploy_clusterforge` to bootstrap ClusterForge on an already-deployed bloom cluster.
 
 #### TLS_CERT
 - **Type**: String (file path)
