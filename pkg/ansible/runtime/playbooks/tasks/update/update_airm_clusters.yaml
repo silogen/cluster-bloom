@@ -213,6 +213,16 @@
             msg: "AIRM cluster update job failed. Check logs above."
           when: job_wait.rc != 0
 
+        - name: Cleanup AIRM cluster update job
+          command: /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml delete job airm-cluster-domain-update -n default --ignore-not-found=true
+          changed_when: false
+          failed_when: false
+
+        - name: Cleanup AIRM cluster update ConfigMap
+          command: /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml delete configmap airm-cluster-domain-update -n default --ignore-not-found=true
+          changed_when: false
+          failed_when: false
+
         - name: Display AIRM cluster update result
           debug:
             msg: "  ✅ AIRM cluster records updated"

@@ -321,6 +321,16 @@
             msg: "Keycloak update job failed. Check logs above."
           when: job_wait.rc != 0
 
+        - name: Cleanup Keycloak update job
+          command: /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml delete job keycloak-domain-update -n default --ignore-not-found=true
+          changed_when: false
+          failed_when: false
+
+        - name: Cleanup Keycloak update ConfigMap
+          command: /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml delete configmap keycloak-domain-update -n default --ignore-not-found=true
+          changed_when: false
+          failed_when: false
+
         - name: Display Keycloak update result
           debug:
             msg: "  ✅ Keycloak client redirect URIs updated"
