@@ -50,7 +50,9 @@
 # checking that name's candidate is not reliable. apt-cache pkgnames can also
 # contain orphaned package names whose actual candidate is "(none)". Scan
 # versions newest-first and select the first exact headers/image pair for which
-# both packages still have live installation candidates.
+# both packages still have live installation candidates. Ubuntu publishes both
+# signed (linux-image-*) and unsigned (linux-image-unsigned-*) cloud kernels;
+# some cloud apt configurations expose only the unsigned image candidate.
 - name: Find the newest installable kernel headers and image pair for this flavor
   shell: |
     for headers_pkg in $(
@@ -58,29 +60,37 @@
         | grep -E '^linux-headers-[0-9]+\.[0-9]+\.[0-9]+-[0-9]+-{{ gpu_kernel_flavor.stdout }}$' \
         | sort -Vr
     ); do
-      image_pkg="${headers_pkg#linux-headers-}"
-      image_pkg="linux-image-${image_pkg}"
+      kernel_version="${headers_pkg#linux-headers-}"
       headers_candidate="$(apt-cache policy "${headers_pkg}" | awk '/Candidate:/ {print $2; exit}')"
-      image_candidate="$(apt-cache policy "${image_pkg}" | awk '/Candidate:/ {print $2; exit}')"
-      if [ -n "${headers_candidate}" ] && [ "${headers_candidate}" != "(none)" ] \
-        && [ -n "${image_candidate}" ] && [ "${image_candidate}" != "(none)" ]; then
-        printf '%s\n' "${headers_pkg}"
-        break
+      if [ -z "${headers_candidate}" ] || [ "${headers_candidate}" = "(none)" ]; then
+        continue
       fi
+      for image_pkg in \
+        "linux-image-${kernel_version}" \
+        "linux-image-unsigned-${kernel_version}"
+      do
+        image_candidate="$(apt-cache policy "${image_pkg}" | awk '/Candidate:/ {print $2; exit}')"
+        if [ -n "${image_candidate}" ] && [ "${image_candidate}" != "(none)" ]; then
+          printf '%s %s\n' "${headers_pkg}" "${image_pkg}"
+          exit 0
+        fi
+      done
     done
-  register: gpu_kernel_installable_headers_pkg
+  register: gpu_kernel_installable_pair
   changed_when: false
   failed_when: false
   when: not (gpu_kernel_headers_available | bool)
 
-- name: Resolve the newest installable headers package name for this flavor
+- name: Resolve the newest installable kernel package pair for this flavor
   set_fact:
-    gpu_kernel_latest_headers_pkg: "{{ gpu_kernel_installable_headers_pkg.stdout | default('') | trim }}"
+    gpu_kernel_latest_headers_pkg: >-
+      {{ gpu_kernel_installable_pair.stdout.split() | first | default('') }}
+    gpu_kernel_latest_image_pkg: >-
+      {{ gpu_kernel_installable_pair.stdout.split() | last | default('') }}
   when: not (gpu_kernel_headers_available | bool)
 
-- name: Derive the matching image package name from the headers package name
+- name: Derive the matching kernel version from the headers package name
   set_fact:
-    gpu_kernel_latest_image_pkg: "{{ gpu_kernel_latest_headers_pkg | regex_replace('^linux-headers-', 'linux-image-') }}"
     gpu_kernel_latest_version: "{{ gpu_kernel_latest_headers_pkg | regex_replace('^linux-headers-', '') }}"
   when:
     - not (gpu_kernel_headers_available | bool)
@@ -157,6 +167,8 @@
       on the node:
         apt-get update
         apt-cache pkgnames | grep -E 'linux-headers-.*-{{ gpu_kernel_flavor.stdout | default("<flavor>") }}$'
+        apt-cache policy linux-image-<version>-{{ gpu_kernel_flavor.stdout | default("<flavor>") }}
+        apt-cache policy linux-image-unsigned-<version>-{{ gpu_kernel_flavor.stdout | default("<flavor>") }}
         cat /etc/apt/sources.list.d/*.list
   when:
     - not (gpu_kernel_headers_available | bool)
