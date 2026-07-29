@@ -165,13 +165,13 @@ func printReadinessScript(aiwbOnly bool) {
 	fmt.Println("  # Wait for Keycloak pods to be ready (auth/identity provider)")
 	fmt.Println("  kubectl wait --for=condition=ready pod --all -n keycloak --timeout=600s && \\")
 	fmt.Println("  # Wait for AI Workbench pods to be ready")
-	fmt.Println("  kubectl wait --for=condition=ready pod --all -n aiwb --timeout=600s && \\")
-	if !aiwbOnly {
+	if aiwbOnly {
+		fmt.Println("  kubectl wait --for=condition=ready pod --all -n aiwb --timeout=600s")
+	} else {
+		fmt.Println("  kubectl wait --for=condition=ready pod --all -n aiwb --timeout=600s && \\")
 		fmt.Println("  # Wait for AI Resource Manager pods to be ready")
-		fmt.Println("  kubectl wait --for=condition=ready pod --all -n airm --timeout=600s && \\")
+		fmt.Println("  kubectl wait --for=condition=ready pod --all -n airm --timeout=600s")
 	}
-	fmt.Println("  echo ''")
-	fmt.Println("  echo '✅ Services are ready! Endpoints are now accessible.'")
 }
 
 // printClusterForgeCredentials prints the endpoint + credential retrieval block.
@@ -190,7 +190,7 @@ func printClusterForgeCredentials(domain string, aiwbOnly bool) {
 	fmt.Println()
 	printReadinessScript(aiwbOnly)
 	fmt.Println()
-	fmt.Println("Once ready, access these endpoints:")
+	fmt.Println("Endpoint reference (use after the readiness command completes successfully):")
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	fmt.Println()
 	fmt.Println("📋 Credential Information:")
