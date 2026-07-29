@@ -142,6 +142,17 @@
     fi
   ignore_errors: yes
 
+# amdgpu-install's .deb ships /etc/apt/sources.list.d/rocm.list as a conffile,
+# so it survives on disk from any prior run (partial or complete) regardless
+# of whether this run installs a driver. Bloom's driver-only flow never needs
+# it (see gpu_driver_only.yaml), and a stale/unreachable rocm entry here fails
+# apt-get update below for every subsequent task, not just GPU ones.
+- name: Remove stale ROCm apt repository left by a previous amdgpu-install run
+  file:
+    path: /etc/apt/sources.list.d/rocm.list
+    state: absent
+  ignore_errors: yes
+
 - name: Ensure universe repository is enabled
   shell: |
     add-apt-repository -y universe || true
