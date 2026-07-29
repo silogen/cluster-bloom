@@ -40,6 +40,10 @@
     - gpu_driver_needs_install | bool
     - ubuntu_codename.stdout | trim not in ['jammy', 'noble']
 
+- name: Check for stale/unavailable kernel headers and upgrade+reboot if needed
+  include_tasks: gpu_kernel_headers_check.yaml
+  when: gpu_driver_needs_install | bool
+
 - name: Install DKMS build prerequisites
   apt:
     name:

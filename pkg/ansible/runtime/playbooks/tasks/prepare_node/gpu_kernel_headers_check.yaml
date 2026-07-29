@@ -1,0 +1,222 @@
+---
+# Purpose: some cloud apt mirrors (observed on OCI's Oracle-flavoured kernel
+# mirror) rotate out older kernel point-releases. If the node's *running*
+# kernel version is no longer served by the mirror, "linux-headers-<uname -r>"
+# has no installation candidate and the DKMS build below fails outright
+# (amdgpu-install exits 100) even though apt itself is otherwise healthy.
+#
+# This is not fixable by retrying the same kernel: the fix is to upgrade to
+# whatever kernel *is* currently available for this host's kernel flavor
+# (oracle/aws/azure/gcp/generic, ...) — found by scanning the apt cache for
+# the newest specific versioned linux-headers-*-<flavor> package, since some
+# mirrors (observed on OCI) don't carry the "-<flavor>" convenience
+# meta-package at all — then reboot into it so `uname -r` lines up with a
+# version the mirror still serves headers for.
+#
+# Reuses bloom's existing reboot-required marker mechanism (see
+# reboot_required_check.yaml / maybeHandleRebootRequired in cmd/main.go) so no
+# CLI changes are needed: writing /var/lib/bloom/reboot-required.json and
+# ending the play cleanly (exit 0) makes bloom offer to reboot and the user
+# just re-runs the same command afterwards.
+#
+# Usage: include_tasks'd from gpu_driver_only.yaml immediately before
+#        "Install DKMS build prerequisites".
+# Tags: [gpu]
+
+- name: Ensure /var/lib/bloom exists for reboot-required state tracking
+  file:
+    path: /var/lib/bloom
+    state: directory
+    mode: "0755"
+
+- name: Check apt candidate for the running kernel's headers package
+  shell: apt-cache policy "linux-headers-{{ kernel_version.stdout }}" | awk '/Candidate:/ {print $2; exit}'
+  register: gpu_kernel_headers_candidate
+  changed_when: false
+
+- name: Resolve whether the running kernel's headers are installable
+  set_fact:
+    gpu_kernel_headers_available: >-
+      {{ (gpu_kernel_headers_candidate.stdout | default('') | trim) not in ['', '(none)'] }}
+
+- name: Derive the running kernel's flavor (e.g. oracle, generic, aws, azure, gcp)
+  shell: echo "{{ kernel_version.stdout }}" | sed -E 's/^[0-9]+\.[0-9]+\.[0-9]+-[0-9]+-//'
+  register: gpu_kernel_flavor
+  changed_when: false
+  when: not (gpu_kernel_headers_available | bool)
+
+# Some cloud mirrors (observed on OCI) don't carry the "-<flavor>" convenience
+# meta-package (linux-headers-oracle, linux-image-oracle, ...) at all, so
+# checking that name's candidate is not reliable. Instead, scan the apt cache
+# directly for whatever specific versioned headers packages of this flavor
+# actually exist and pick the newest one — this works whether or not the
+# meta-package is published.
+- name: List specific versioned headers packages available for this flavor
+  shell: >-
+    apt-cache pkgnames
+    | grep -E '^linux-headers-[0-9]+\.[0-9]+\.[0-9]+-[0-9]+-{{ gpu_kernel_flavor.stdout }}$'
+    | sort -V
+  register: gpu_kernel_flavor_headers_pkgs
+  changed_when: false
+  failed_when: false
+  when: not (gpu_kernel_headers_available | bool)
+
+- name: Resolve the newest available headers package name for this flavor
+  set_fact:
+    gpu_kernel_latest_headers_pkg: "{{ gpu_kernel_flavor_headers_pkgs.stdout_lines | default([]) | last | default('') }}"
+  when: not (gpu_kernel_headers_available | bool)
+
+- name: Derive the matching image package name from the headers package name
+  set_fact:
+    gpu_kernel_latest_image_pkg: "{{ gpu_kernel_latest_headers_pkg | regex_replace('^linux-headers-', 'linux-image-') }}"
+    gpu_kernel_latest_version: "{{ gpu_kernel_latest_headers_pkg | regex_replace('^linux-headers-', '') }}"
+  when:
+    - not (gpu_kernel_headers_available | bool)
+    - gpu_kernel_latest_headers_pkg | default('') != ''
+
+- name: Compare the newest available kernel version against the running kernel
+  command: dpkg --compare-versions "{{ gpu_kernel_latest_version | default('') }}" gt "{{ kernel_version.stdout }}"
+  register: gpu_kernel_version_is_newer
+  changed_when: false
+  failed_when: false
+  when:
+    - not (gpu_kernel_headers_available | bool)
+    - gpu_kernel_latest_headers_pkg | default('') != ''
+
+- name: Resolve whether a newer kernel is available to upgrade to
+  set_fact:
+    gpu_kernel_upgrade_available: >-
+      {{
+        (gpu_kernel_latest_headers_pkg | default('')) != '' and
+        (gpu_kernel_version_is_newer.rc | default(1)) == 0
+      }}
+  when: not (gpu_kernel_headers_available | bool)
+
+- name: Check for a prior bloom reboot-required marker (loop guard)
+  stat:
+    path: /var/lib/bloom/reboot-required.json
+  register: gpu_kernel_marker_stat
+  changed_when: false
+  when: not (gpu_kernel_headers_available | bool)
+
+- name: Load prior reboot-required marker, if present
+  slurp:
+    src: /var/lib/bloom/reboot-required.json
+  register: gpu_kernel_marker_raw
+  when:
+    - not (gpu_kernel_headers_available | bool)
+    - gpu_kernel_marker_stat.stat.exists
+
+- name: Parse prior reboot-required marker
+  set_fact:
+    gpu_kernel_marker: "{{ (gpu_kernel_marker_raw.content | b64decode | from_json) if (gpu_kernel_marker_stat.stat.exists | default(false)) else {} }}"
+  when: not (gpu_kernel_headers_available | bool)
+
+- name: Fail if bloom already upgraded/rebooted for this and headers are still missing
+  fail:
+    msg: |
+      ❌ Headers for the running kernel ({{ kernel_version.stdout }}) are not
+      available from the apt mirror, and bloom already upgraded the kernel
+      and rebooted once to try to resolve this — but the newly-booted kernel
+      still has no matching headers package in the mirror.
+
+      Automatic recovery has been disabled here to avoid an infinite
+      upgrade/reboot loop. Please investigate manually on the node:
+        uname -r
+        apt-cache policy linux-headers-$(uname -r)
+        apt-cache policy linux-headers-{{ gpu_kernel_flavor.stdout | default('<flavor>') }}
+
+      Once resolved, remove the marker and re-run bloom:
+        sudo rm -f /var/lib/bloom/reboot-required.json
+  when:
+    - not (gpu_kernel_headers_available | bool)
+    - gpu_kernel_marker.attempted | default(false) | bool
+
+- name: Fail if no newer kernel is available either (mirror has no headers for this flavor at all)
+  fail:
+    msg: |
+      ❌ Headers for the running kernel ({{ kernel_version.stdout }}) are not
+      available from the apt mirror, and no other/newer "-{{ gpu_kernel_flavor.stdout | default('<flavor>') }}"
+      flavor kernel headers package is available either (checked every specific
+      versioned linux-headers-*-{{ gpu_kernel_flavor.stdout | default('<flavor>') }} package known to apt),
+      so bloom cannot resolve this by upgrading + rebooting.
+
+      This looks like a broken or incomplete apt mirror/configuration rather
+      than something bloom can fix automatically. Please investigate manually
+      on the node:
+        apt-get update
+        apt-cache pkgnames | grep -E 'linux-headers-.*-{{ gpu_kernel_flavor.stdout | default("<flavor>") }}$'
+        cat /etc/apt/sources.list.d/*.list
+  when:
+    - not (gpu_kernel_headers_available | bool)
+    - not (gpu_kernel_marker.attempted | default(false) | bool)
+    - not (gpu_kernel_upgrade_available | default(false) | bool)
+
+- name: Upgrade to the newest available specific kernel + headers for this flavor
+  apt:
+    name:
+      - "{{ gpu_kernel_latest_image_pkg }}"
+      - "{{ gpu_kernel_latest_headers_pkg }}"
+    state: present
+    update_cache: true
+  when:
+    - not (gpu_kernel_headers_available | bool)
+    - not (gpu_kernel_marker.attempted | default(false) | bool)
+    - gpu_kernel_upgrade_available | default(false) | bool
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+    NEEDRESTART_MODE: l
+    NEEDRESTART_SUSPEND: "1"
+
+- name: Build reboot-required marker content (stale kernel headers)
+  set_fact:
+    gpu_kernel_marker_new:
+      reason: >-
+        The running kernel ({{ kernel_version.stdout }}) no longer has a
+        matching linux-headers package in the apt mirror, so the AMD GPU DKMS
+        driver cannot be built. Bloom installed the newest available kernel
+        for this host's flavor ({{ gpu_kernel_latest_version }}); a reboot is
+        required to boot into it before headers will match again.
+      packages:
+        - "{{ gpu_kernel_latest_image_pkg }}"
+        - "{{ gpu_kernel_latest_headers_pkg }}"
+      attempted: false
+      detected_at: "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
+      run_id: "{{ bloom_run_id | default('') }}"
+  when:
+    - not (gpu_kernel_headers_available | bool)
+    - not (gpu_kernel_marker.attempted | default(false) | bool)
+    - gpu_kernel_upgrade_available | default(false) | bool
+
+- name: Write reboot-required marker for bloom's CLI to act on
+  copy:
+    dest: /var/lib/bloom/reboot-required.json
+    mode: "0644"
+    content: "{{ gpu_kernel_marker_new | to_nice_json }}"
+  when:
+    - not (gpu_kernel_headers_available | bool)
+    - not (gpu_kernel_marker.attempted | default(false) | bool)
+    - gpu_kernel_upgrade_available | default(false) | bool
+
+- name: Prompt for reboot (stale kernel headers)
+  debug:
+    msg: >-
+      Installed a newer kernel because {{ kernel_version.stdout }}'s headers
+      are no longer available from the apt mirror. Bloom will offer to
+      reboot on exit; pass --yes to auto-confirm, or just re-run bloom after
+      rebooting (steps are idempotent).
+  when:
+    - not (gpu_kernel_headers_available | bool)
+    - not (gpu_kernel_marker.attempted | default(false) | bool)
+    - gpu_kernel_upgrade_available | default(false) | bool
+
+# Stop successfully as soon as the marker is written. The top-level bloom
+# process sees exit code 0 plus the current run_id marker and offers to
+# reboot. Continuing into "Install DKMS build prerequisites" would just fail
+# again against the still-running old kernel.
+- name: End play until the new kernel is booted
+  meta: end_play
+  when:
+    - not (gpu_kernel_headers_available | bool)
+    - not (gpu_kernel_marker.attempted | default(false) | bool)
+    - gpu_kernel_upgrade_available | default(false) | bool
