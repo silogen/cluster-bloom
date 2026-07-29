@@ -29,8 +29,23 @@
     state: directory
     mode: "0755"
 
+- name: Ensure an empty apt preferences directory exists for controlled kernel recovery
+  file:
+    path: /var/lib/bloom/empty-apt-preferences
+    state: directory
+    mode: "0755"
+
+- name: Set apt options that bypass image-level kernel pins
+  set_fact:
+    gpu_kernel_apt_policy_options: >-
+      -o Dir::Etc::preferences=/dev/null
+      -o Dir::Etc::preferencesparts=/var/lib/bloom/empty-apt-preferences
+
 - name: Check apt candidate for the running kernel's headers package
-  shell: apt-cache policy "linux-headers-{{ kernel_version.stdout }}" | awk '/Candidate:/ {print $2; exit}'
+  shell: >-
+    apt-cache {{ gpu_kernel_apt_policy_options }}
+    policy "linux-headers-{{ kernel_version.stdout }}"
+    | awk '/Candidate:/ {print $2; exit}'
   register: gpu_kernel_headers_candidate
   changed_when: false
 
@@ -49,10 +64,15 @@
 # meta-package (linux-headers-oracle, linux-image-oracle, ...) at all, so
 # checking that name's candidate is not reliable. apt-cache pkgnames can also
 # contain orphaned package names whose actual candidate is "(none)". Scan
-# versions newest-first and select the first exact headers/image pair for which
-# both packages still have live installation candidates. Ubuntu publishes both
+# versions newest-first and select the first exact headers/image/modules-extra
+# set for which all packages still have live installation candidates. Ubuntu publishes both
 # signed (linux-image-*) and unsigned (linux-image-unsigned-*) cloud kernels;
 # some cloud apt configurations expose only the unsigned image candidate.
+#
+# Cloud images may deliberately pin all linux-* packages to priority -1 (OCI
+# does this in /etc/apt/preferences.d/00_pin_kernel). Candidate detection and
+# the exact package install bypass preferences for this recovery only; the
+# image's pin file remains untouched.
 - name: Find the newest installable kernel headers and image pair for this flavor
   shell: |
     for headers_pkg in $(
@@ -61,17 +81,22 @@
         | sort -Vr
     ); do
       kernel_version="${headers_pkg#linux-headers-}"
-      headers_candidate="$(apt-cache policy "${headers_pkg}" | awk '/Candidate:/ {print $2; exit}')"
+      modules_pkg="linux-modules-extra-${kernel_version}"
+      headers_candidate="$(apt-cache {{ gpu_kernel_apt_policy_options }} policy "${headers_pkg}" | awk '/Candidate:/ {print $2; exit}')"
+      modules_candidate="$(apt-cache {{ gpu_kernel_apt_policy_options }} policy "${modules_pkg}" | awk '/Candidate:/ {print $2; exit}')"
       if [ -z "${headers_candidate}" ] || [ "${headers_candidate}" = "(none)" ]; then
+        continue
+      fi
+      if [ -z "${modules_candidate}" ] || [ "${modules_candidate}" = "(none)" ]; then
         continue
       fi
       for image_pkg in \
         "linux-image-${kernel_version}" \
         "linux-image-unsigned-${kernel_version}"
       do
-        image_candidate="$(apt-cache policy "${image_pkg}" | awk '/Candidate:/ {print $2; exit}')"
+        image_candidate="$(apt-cache {{ gpu_kernel_apt_policy_options }} policy "${image_pkg}" | awk '/Candidate:/ {print $2; exit}')"
         if [ -n "${image_candidate}" ] && [ "${image_candidate}" != "(none)" ]; then
-          printf '%s %s\n' "${headers_pkg}" "${image_pkg}"
+          printf '%s|%s|%s\n' "${headers_pkg}" "${image_pkg}" "${modules_pkg}"
           exit 0
         fi
       done
@@ -81,13 +106,24 @@
   failed_when: false
   when: not (gpu_kernel_headers_available | bool)
 
-- name: Resolve the newest installable kernel package pair for this flavor
+- name: Parse the newest installable kernel package set for this flavor
   set_fact:
-    gpu_kernel_latest_headers_pkg: >-
-      {{ gpu_kernel_installable_pair.stdout.split() | first | default('') }}
-    gpu_kernel_latest_image_pkg: >-
-      {{ gpu_kernel_installable_pair.stdout.split() | last | default('') }}
+    gpu_kernel_installable_packages: >-
+      {{
+        (gpu_kernel_installable_pair.stdout | trim).split('|')
+        if (gpu_kernel_installable_pair.stdout | default('') | trim) != ''
+        else []
+      }}
   when: not (gpu_kernel_headers_available | bool)
+
+- name: Resolve the newest installable kernel package names
+  set_fact:
+    gpu_kernel_latest_headers_pkg: "{{ gpu_kernel_installable_packages[0] }}"
+    gpu_kernel_latest_image_pkg: "{{ gpu_kernel_installable_packages[1] }}"
+    gpu_kernel_latest_modules_extra_pkg: "{{ gpu_kernel_installable_packages[2] }}"
+  when:
+    - not (gpu_kernel_headers_available | bool)
+    - gpu_kernel_installable_packages | length == 3
 
 - name: Derive the matching kernel version from the headers package name
   set_fact:
@@ -159,7 +195,7 @@
     msg: |
       ❌ Headers for the running kernel ({{ kernel_version.stdout }}) are not
       available from the apt mirror, and no other/newer "-{{ gpu_kernel_flavor.stdout | default('<flavor>') }}"
-      flavor kernel has both an installable image and matching headers package,
+      flavor kernel has an installable image, headers, and modules-extra package,
       so bloom cannot resolve this by upgrading + rebooting.
 
       This looks like a broken or incomplete apt mirror/configuration rather
@@ -175,13 +211,19 @@
     - not (gpu_kernel_marker.attempted | default(false) | bool)
     - not (gpu_kernel_upgrade_available | default(false) | bool)
 
-- name: Upgrade to the newest available specific kernel + headers for this flavor
-  apt:
-    name:
+- name: Install the newest available kernel package set while bypassing the image pin
+  command:
+    argv:
+      - apt-get
+      - -y
+      - -o
+      - Dir::Etc::preferences=/dev/null
+      - -o
+      - Dir::Etc::preferencesparts=/var/lib/bloom/empty-apt-preferences
+      - install
       - "{{ gpu_kernel_latest_image_pkg }}"
       - "{{ gpu_kernel_latest_headers_pkg }}"
-    state: present
-    update_cache: true
+      - "{{ gpu_kernel_latest_modules_extra_pkg }}"
   when:
     - not (gpu_kernel_headers_available | bool)
     - not (gpu_kernel_marker.attempted | default(false) | bool)
@@ -203,6 +245,7 @@
       packages:
         - "{{ gpu_kernel_latest_image_pkg }}"
         - "{{ gpu_kernel_latest_headers_pkg }}"
+        - "{{ gpu_kernel_latest_modules_extra_pkg }}"
       attempted: false
       detected_at: "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
       run_id: "{{ bloom_run_id | default('') }}"
