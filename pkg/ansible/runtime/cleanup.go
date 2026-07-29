@@ -5,6 +5,7 @@ package runtime
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -14,12 +15,20 @@ import (
 	"time"
 )
 
+const longhornIQNPrefix = "iqn.2019-10.io.longhorn:"
+
+type iscsiSession struct {
+	sid    string
+	portal string
+	target string
+}
+
 // CleanupLonghornMounts performs cleanup of Longhorn PVCs and mounts.
 // Sequences: graceful kubectl drain → iSCSI logout → TERM/KILL processes → force umount.
 // This ordering is required because Longhorn uses iSCSI sessions that remain
 // in the kernel even after the Longhorn process is killed; skipping the iSCSI
 // logout leaves the device busy and causes rm/umount to block or silently fail.
-func CleanupLonghornMounts(clusterSize string) error {
+func CleanupLonghornMounts() error {
 	fmt.Println("💾 Cleaning Longhorn mounts and PVCs...")
 
 	// Step 1: Graceful kubectl drain (best-effort, cluster may already be down)
@@ -82,13 +91,6 @@ func CleanupLonghornMounts(clusterSize string) error {
 		fmt.Println("      ℹ️  Kubernetes API server unreachable — skipping drain")
 	} else {
 		fmt.Printf("      ℹ️  Node %s is not a member of this cluster — skipping drain\n", nodeName)
-	}
-
-	// Small and medium clusters use local-path storage, not Longhorn. Keep the
-	// generic node drain above, but do not run any Longhorn-specific teardown.
-	if clusterSize != "large" {
-		fmt.Printf("   ℹ️  Longhorn is not used for CLUSTER_SIZE=%q — skipping Longhorn teardown\n", clusterSize)
-		return nil
 	}
 
 	// Step 2: iSCSI logout — releases kernel block device mappings for Longhorn volumes.
@@ -159,30 +161,69 @@ func CleanupLonghornMounts(clusterSize string) error {
 	return nil
 }
 
-// logoutLonghornISCSISessions logs out and removes only Longhorn iSCSI targets.
-// Other sessions, including cloud boot volumes, must remain untouched.
+// parseLonghornISCSISessions extracts the session ID, portal, and target from
+// `iscsiadm -m session` output. Longhorn v2/SPDK uses NVMe-oF and is outside
+// this iSCSI cleanup path.
+func parseLonghornISCSISessions(out string) []iscsiSession {
+	var sessions []iscsiSession
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 4 || !strings.HasPrefix(fields[3], longhornIQNPrefix) {
+			continue
+		}
+		sessions = append(sessions, iscsiSession{
+			sid:    strings.Trim(fields[1], "[]"),
+			portal: strings.SplitN(fields[2], ",", 2)[0],
+			target: fields[3],
+		})
+	}
+	return sessions
+}
+
+// logoutLonghornISCSISessions logs out each Longhorn session by session ID,
+// then removes only its matching target/portal node record. Other sessions,
+// including cloud boot volumes, remain untouched.
 func logoutLonghornISCSISessions() {
 	out, err := exec.Command("iscsiadm", "-m", "session").Output()
 	if err != nil {
-		fmt.Println("      ℹ️  No active iSCSI sessions detected")
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 21 {
+			fmt.Println("      ℹ️  No active iSCSI sessions detected")
+		} else {
+			fmt.Printf("      ⚠️  Warning: Could not list iSCSI sessions: %v\n", err)
+		}
 		return
 	}
 
-	seen := map[string]bool{}
-	for _, field := range strings.Fields(string(out)) {
-		if !strings.HasPrefix(field, "iqn.2019-10.io.longhorn:") || seen[field] {
-			continue
-		}
-		seen[field] = true
-		if err := exec.Command("iscsiadm", "-m", "session", "-T", field, "--logout").Run(); err != nil {
-			fmt.Printf("      ⚠️  Warning: Failed to log out Longhorn target %s: %v\n", field, err)
-			continue
-		}
-		exec.Command("iscsiadm", "-m", "node", "-T", field, "--op=delete").Run()
-		fmt.Printf("      ✓ Logged out Longhorn target %s\n", field)
-	}
-	if len(seen) == 0 {
+	sessions := parseLonghornISCSISessions(string(out))
+	if len(sessions) == 0 {
 		fmt.Println("      ℹ️  No Longhorn iSCSI sessions detected")
+		return
+	}
+
+	loggedOut := make([]iscsiSession, 0, len(sessions))
+	for _, session := range sessions {
+		if err := exec.Command("iscsiadm", "-m", "session", "-r", session.sid, "--logout").Run(); err != nil {
+			fmt.Printf("      ⚠️  Warning: Failed to log out Longhorn session %s (%s): %v\n",
+				session.sid, session.target, err)
+			continue
+		}
+		loggedOut = append(loggedOut, session)
+		fmt.Printf("      ✓ Logged out Longhorn session %s (%s)\n", session.sid, session.target)
+	}
+
+	seenNodes := map[string]struct{}{}
+	for _, session := range loggedOut {
+		key := session.target + "\x00" + session.portal
+		if _, seen := seenNodes[key]; seen {
+			continue
+		}
+		seenNodes[key] = struct{}{}
+		if err := exec.Command("iscsiadm", "-m", "node",
+			"-T", session.target, "-p", session.portal, "--op=delete").Run(); err != nil {
+			fmt.Printf("      ⚠️  Warning: Failed to remove Longhorn node record %s at %s: %v\n",
+				session.target, session.portal, err)
+		}
 	}
 }
 
@@ -492,7 +533,7 @@ func GenerateCleanupTasks(clusterDisks string, premountedDisks string, rancherDi
 			// Step 2: iSCSI logout — must happen before umount or the block device stays busy
 			{
 				"name":        "Logout Longhorn iSCSI sessions (preserve non-Longhorn devices)",
-				"shell":       "iscsiadm -m session 2>/dev/null | awk '{for (i=1; i<=NF; i++) if ($i ~ /^iqn\\.2019-10\\.io\\.longhorn:/) print $i}' | sort -u | while read -r target; do iscsiadm -m session -T \"$target\" --logout 2>/dev/null || true; iscsiadm -m node -T \"$target\" --op=delete 2>/dev/null || true; done",
+				"shell":       "iscsiadm -m session 2>/dev/null | awk '$4 ~ /^" + strings.ReplaceAll(longhornIQNPrefix, ".", "\\.") + "/ { gsub(/[][]/, \"\", $2); split($3, portal, \",\"); print $2, portal[1], $4 }' | while read -r sid portal target; do iscsiadm -m session -r \"$sid\" --logout 2>/dev/null || continue; iscsiadm -m node -T \"$target\" -p \"$portal\" --op=delete 2>/dev/null || true; done",
 				"failed_when": false,
 			},
 			// Step 3: Stop Longhorn processes gracefully in dependency order
