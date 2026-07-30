@@ -97,10 +97,7 @@ Update the domain for an existing cluster-forge installation:
   --new-domain new.example.com \
   --cert-option cert-manager
 
-# Check DNS configuration before updating
-./bloom update --check-dns new.example.com
-
-# Preview changes without applying
+# Preview changes without applying (includes DNS check)
 ./bloom update \
   --new-domain new.example.com \
   --cert-option generate \

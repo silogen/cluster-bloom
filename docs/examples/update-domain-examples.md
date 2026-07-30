@@ -163,23 +163,28 @@ kubectl get certificate cluster-tls -n envoy-gateway-system -o yaml
 
 ---
 
-## Example 5: Pre-Flight DNS Check
+## Example 5: DNS Verification
 
 **Scenario:** Verify DNS is configured correctly before updating the domain.
 
 ```bash
-# First, update your DNS records manually
-# Then verify they're propagating correctly
+# DNS check runs automatically as part of the update process
+# Use --dry-run to see what would change without applying updates
 
-./bloom update --check-dns new.example.com
+./bloom update \
+  --new-domain new.example.com \
+  --cert-option generate \
+  --dry-run
 
 # Output will show:
+# 🔍 Running DNS verification...
 # ✅ Checking argocd.new.example.com... ✅ (203.0.113.50)
 # ✅ Checking gitea.new.example.com... ✅ (203.0.113.50)
 # ⚠️  Checking k8s.new.example.com... ❌ (not found)
 # ...
 
-# Wait for DNS to propagate, then proceed with domain update
+# If DNS isn't ready, wait for propagation, then run without --dry-run
+# To skip DNS check: add --skip-dns-check flag
 ```
 
 ---
@@ -353,8 +358,8 @@ kubectl describe gateway https -n envoy-gateway-system
 dig argocd.new-domain.com
 nslookup k8s.new-domain.com
 
-# Check DNS propagation
-./bloom update --check-dns new-domain.com
+# Check DNS propagation with dry-run (includes DNS check)
+./bloom update --new-domain new-domain.com --cert-option generate --dry-run
 
 # Update local DNS for testing
 sudo echo "192.168.1.100 argocd.new-domain.com" >> /etc/hosts
