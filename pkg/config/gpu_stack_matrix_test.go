@@ -1,8 +1,11 @@
 package config
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestResolveStackProfile(t *testing.T) {
@@ -161,6 +164,67 @@ func TestSupportedGPUDriversIncludesValidatedTuples(t *testing.T) {
 	}
 	if len(want) != 0 {
 		t.Errorf("support table is missing tuples: %v", want)
+	}
+}
+
+func TestDriverCompatibilityPreservesAnsibleFieldNames(t *testing.T) {
+	driver := supportedGPUDrivers[0]
+
+	jsonBytes, err := json.Marshal(driver)
+	if err != nil {
+		t.Fatalf("marshal driver as JSON: %v", err)
+	}
+	var jsonFields map[string]any
+	if err := json.Unmarshal(jsonBytes, &jsonFields); err != nil {
+		t.Fatalf("unmarshal driver JSON: %v", err)
+	}
+
+	yamlBytes, err := yaml.Marshal(driver)
+	if err != nil {
+		t.Fatalf("marshal driver as YAML: %v", err)
+	}
+	var yamlFields map[string]any
+	if err := yaml.Unmarshal(yamlBytes, &yamlFields); err != nil {
+		t.Fatalf("unmarshal driver YAML: %v", err)
+	}
+
+	for _, fields := range []map[string]any{jsonFields, yamlFields} {
+		if fields["DriverRelease"] != driver.DriverRelease {
+			t.Errorf("DriverRelease missing after serialization: %#v", fields)
+		}
+		if fields["DKMSModuleVersion"] != driver.DKMSModuleVersion {
+			t.Errorf("DKMSModuleVersion missing after serialization: %#v", fields)
+		}
+		if _, exists := fields["driverrelease"]; exists {
+			t.Errorf("unexpected lowercase driverrelease key after serialization: %#v", fields)
+		}
+	}
+
+	cfg := Config{}
+	if err := ApplyGPUStackVars(cfg); err != nil {
+		t.Fatalf("apply GPU stack vars: %v", err)
+	}
+	exportedVars, err := yaml.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("marshal exported vars: %v", err)
+	}
+	var exportedConfig map[string]any
+	if err := yaml.Unmarshal(exportedVars, &exportedConfig); err != nil {
+		t.Fatalf("unmarshal exported vars: %v", err)
+	}
+	exportedDrivers, ok := exportedConfig["gpu_driver_supported"].([]any)
+	if !ok || len(exportedDrivers) == 0 {
+		t.Fatalf("exported driver tuples missing: %#v", exportedConfig["gpu_driver_supported"])
+	}
+	exportedDriver, ok := exportedDrivers[0].(map[string]any)
+	if !ok {
+		t.Fatalf("exported driver tuple has unexpected type: %#v", exportedDrivers[0])
+	}
+	if exportedDriver["DriverRelease"] != driver.DriverRelease {
+		t.Errorf("exported DriverRelease missing: %#v", exportedDriver)
+	}
+	if _, exists := exportedDriver["driverrelease"]; exists {
+		t.Errorf("exported tuple contains lowercase driverrelease: %#v", exportedDriver)
 	}
 }
 

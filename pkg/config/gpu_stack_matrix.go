@@ -31,15 +31,15 @@ const (
 // ROCm train need to be reviewed together. PairedROCm is informational and is
 // also used to select a matching standalone AMD-SMI package.
 type DriverCompatibility struct {
-	DriverRelease     string
-	InstallerVersion  string
-	InstallerBuild    string
-	DKMSModuleVersion string
-	DKMSBuild         string
-	DKMSPackageCode   string
-	PairedROCm        string
-	HostToolsChannel  string
-	HostToolsPackage  string
+	DriverRelease     string `json:"DriverRelease" yaml:"DriverRelease"`
+	InstallerVersion  string `json:"InstallerVersion" yaml:"InstallerVersion"`
+	InstallerBuild    string `json:"InstallerBuild" yaml:"InstallerBuild"`
+	DKMSModuleVersion string `json:"DKMSModuleVersion" yaml:"DKMSModuleVersion"`
+	DKMSBuild         string `json:"DKMSBuild" yaml:"DKMSBuild"`
+	DKMSPackageCode   string `json:"DKMSPackageCode" yaml:"DKMSPackageCode"`
+	PairedROCm        string `json:"PairedROCm" yaml:"PairedROCm"`
+	HostToolsChannel  string `json:"HostToolsChannel" yaml:"HostToolsChannel"`
+	HostToolsPackage  string `json:"HostToolsPackage" yaml:"HostToolsPackage"`
 }
 
 var supportedGPUDrivers = []DriverCompatibility{
