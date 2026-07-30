@@ -137,13 +137,17 @@
       )
 
 - name: Install exact legacy standalone AMD-SMI package
-  apt:
-    name: "amd-smi-lib={{ gpu_amd_smi_legacy_candidate.stdout | trim }}"
-    state: present
-    allow_downgrade: true
+  command:
+    argv:
+      - apt-get
+      - install
+      - --yes
+      - --allow-downgrades
+      - "amd-smi-lib={{ gpu_amd_smi_legacy_candidate.stdout | trim }}"
   when:
     - gpu_amd_smi_before.rc != 0
     - gpu_driver_effective.HostToolsChannel == 'legacy'
+  changed_when: true
   environment:
     DEBIAN_FRONTEND: noninteractive
 

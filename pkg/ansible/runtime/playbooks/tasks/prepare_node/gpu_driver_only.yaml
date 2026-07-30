@@ -89,13 +89,17 @@
   when: gpu_driver_needs_install | bool
 
 - name: Install production amdgpu-install repository package
-  apt:
-    deb: "/tmp/{{ gpu_driver_deb_package }}"
-    state: present
-    allow_downgrade: true
+  command:
+    argv:
+      - apt-get
+      - install
+      - --yes
+      - --allow-downgrades
+      - "/tmp/{{ gpu_driver_deb_package }}"
   when:
     - gpu_driver_needs_install | bool
     - (gpu_driver_installer_installed_version.stdout | trim) != (gpu_driver_installer_expected_version.stdout | trim)
+  changed_when: true
   environment:
     DEBIAN_FRONTEND: noninteractive
     NEEDRESTART_MODE: l
