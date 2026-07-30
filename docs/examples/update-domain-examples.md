@@ -189,7 +189,7 @@ kubectl get certificate cluster-tls -n envoy-gateway-system -o yaml
 **Scenario:** Something went wrong, need to revert to the old domain.
 
 ```bash
-# Run the update-domain command again with the original domain
+# Run the update command again with the original domain
 ./bloom update \
   --new-domain original.example.com \
   --cert-option generate
