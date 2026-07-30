@@ -60,10 +60,37 @@ UUID=<disk-uuid> /mnt/disk0 ext4 defaults,nofail 0 2
 
 ### Longhorn Integration
 Configures Longhorn distributed storage system:
-- **Version**: v1.8.0
+- **Version**: v1.8.0 (v1 data engine, tgt + open-iscsi)
 - **Storage Class**: `mlstorage` (default)
 - **Replica Count**: 3 (configurable)
 - **Data Locality**: Configurable (disabled, best-effort, strict)
+
+**Where the version lives in Cluster-Bloom**
+
+Longhorn is not selected via `bloom.yaml`. Bloom ships a pinned static manifest:
+
+| Location | Role |
+|----------|------|
+| `pkg/ansible/runtime/manifests/longhorn/longhorn.yaml` | Full Longhorn install (CRDs, Deployments, image tags such as `longhornio/longhorn-manager:v1.8.0`) |
+| `pkg/ansible/runtime/playbooks/tasks/deploy_k8s_apps/longhorn.yaml` | Copies that manifest into RKE2 when `FIRST_NODE` is true, `CLUSTER_SIZE` is `large`, and `NO_DISKS_FOR_CLUSTER` is false |
+
+To bump Longhorn, update the manifest blob and image tags, adjust this document, and re-test storage cleanup on a node with active Longhorn-backed PVCs.
+
+**iSCSI target naming (v1 data engine)**
+
+Volumes attached through the CSI driver use Longhorn's `go-iscsi-helper` library. Each volume target is named:
+
+```
+iqn.2019-10.io.longhorn:<volume-name>
+```
+
+Upstream source: [`iscsidev.GetTargetName()`](https://github.com/longhorn/go-iscsi-helper/blob/master/iscsidev/iscsi.go) in `longhorn/go-iscsi-helper`. The `2019-10` segment is the IQN registration date in standard IQN format, not a Longhorn release number. This prefix has been stable across v1.x releases; routine Longhorn upgrades within the v1 engine should keep using it unless upstream changes `GetTargetName()`.
+
+Bloom's destructive cleanup (`pkg/ansible/runtime/cleanup.go`, constant `longhornIQNPrefix`) parses `iscsiadm -m session`, matches only that prefix, and logs out those sessions by session ID (`iscsiadm -m session -r <sid> --logout`). Other iSCSI sessions — notably OCI bare-metal boot volumes (`iqn.2015-02.oracle.boot:uefi`) — are left untouched.
+
+**Longhorn v2 data engine (SPDK)**
+
+Longhorn v2 volumes use SPDK/NVMe-oF rather than kernel iSCSI. They do not appear in `iscsiadm -m session` and are outside Bloom's scoped iSCSI logout. Cleanup for those volumes relies on mount and CSI/kubelet teardown only. Cluster-Bloom does not enable the v2 data engine by default.
 
 **Longhorn Features**:
 - **Distributed Storage**: Replicated block storage across nodes
@@ -125,7 +152,7 @@ sudo ./bloom cleanup bloom.yaml
    - Internally passes `--force` and `--disable-eviction` to kubectl drain to bypass stuck pods with finalizers or PodDisruptionBudgets
    - Automatically skips Longhorn volume detach wait when no volumes detected
    - Clear progress messages during potentially long operations
-2. Logout iSCSI → stop Longhorn processes
+2. Logout **Longhorn-only** iSCSI sessions (filter `iqn.2019-10.io.longhorn:*`, logout by session ID; boot-volume sessions are preserved) → stop Longhorn processes
 3. Force-unmount all Longhorn/CSI/kubelet volumes (including `volume-subpaths` and `globalmount`)
 4. Uninstall RKE2 and remove its directories
 5. **Pre-clean future mount range** — removes bloom artifacts (`pvc-*`, `replicas`, `longhorn-disk.cfg`) from the directories that will be used in the next deployment, preserving user files
