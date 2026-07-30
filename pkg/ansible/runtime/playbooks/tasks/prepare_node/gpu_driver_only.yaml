@@ -88,17 +88,30 @@
   changed_when: false
   when: gpu_driver_needs_install | bool
 
+- name: Read installed amdgpu-install package state
+  shell: "dpkg-query -W -f='${Status}' amdgpu-install 2>/dev/null | awk '{ print $3 }' || true"
+  register: gpu_driver_installer_installed_state
+  changed_when: false
+  when: gpu_driver_needs_install | bool
+
 - name: Install production amdgpu-install repository package
   command:
     argv:
       - apt-get
+      - -o
+      - "Dpkg::Options::=--force-confnew"
+      - -o
+      - "Dpkg::Options::=--force-confmiss"
       - install
       - --yes
       - --allow-downgrades
       - "/tmp/{{ gpu_driver_deb_package }}"
   when:
     - gpu_driver_needs_install | bool
-    - (gpu_driver_installer_installed_version.stdout | trim) != (gpu_driver_installer_expected_version.stdout | trim)
+    - >-
+      (gpu_driver_installer_installed_version.stdout | trim) !=
+      (gpu_driver_installer_expected_version.stdout | trim) or
+      (gpu_driver_installer_installed_state.stdout | trim) != 'installed'
   changed_when: true
   environment:
     DEBIAN_FRONTEND: noninteractive
