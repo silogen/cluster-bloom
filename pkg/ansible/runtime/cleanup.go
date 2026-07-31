@@ -5,6 +5,7 @@ package runtime
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -13,6 +14,21 @@ import (
 	"strings"
 	"time"
 )
+
+// longhornIQNPrefix is the iSCSI target prefix for Longhorn v1 volumes attached via
+// the tgt + open-iscsi stack (CSI driver.longhorn.io). Upstream defines this in
+// go-iscsi-helper iscsidev.GetTargetName():
+//   return "iqn.2019-10.io.longhorn:" + Volume2ISCSIName(volumeName)
+// See https://github.com/longhorn/go-iscsi-helper/blob/master/iscsidev/iscsi.go
+// The "2019-10" segment is the IQN registration date, not a Longhorn release tag.
+// Longhorn v2/SPDK volumes do not use iSCSI; see docs/storage-management.md.
+const longhornIQNPrefix = "iqn.2019-10.io.longhorn:"
+
+type iscsiSession struct {
+	sid    string
+	portal string
+	target string
+}
 
 // CleanupLonghornMounts performs cleanup of Longhorn PVCs and mounts.
 // Sequences: graceful kubectl drain → iSCSI logout → TERM/KILL processes → force umount.
@@ -86,10 +102,11 @@ func CleanupLonghornMounts() error {
 
 	// Step 2: iSCSI logout — releases kernel block device mappings for Longhorn volumes.
 	// Must happen before umount; without this the device remains busy regardless of
-	// whether the Longhorn process is alive.
-	fmt.Println("   🔌 Logging out iSCSI sessions...")
-	exec.Command("iscsiadm", "-m", "session", "--logout").Run()
-	exec.Command("iscsiadm", "-m", "node", "--op=delete").Run()
+	// whether the Longhorn process is alive. Never use an unscoped logout here:
+	// cloud boot volumes can also use iSCSI, and logging out every session detaches
+	// the live root disk.
+	fmt.Println("   🔌 Logging out Longhorn iSCSI sessions...")
+	logoutLonghornISCSISessions()
 
 	// Step 3: Graceful TERM then KILL of Longhorn processes in dependency order
 	// Use exact binary name matching to avoid killing unrelated processes.
@@ -149,6 +166,74 @@ func CleanupLonghornMounts() error {
 
 	fmt.Println("   ✅ Longhorn cleanup completed")
 	return nil
+}
+
+// parseLonghornISCSISessions extracts the session ID, portal, and target from
+// `iscsiadm -m session` output for targets matching longhornIQNPrefix only.
+// If Longhorn upstream ever changes GetTargetName(), update longhornIQNPrefix
+// and the matching awk in GenerateCleanupTasks to stay in sync.
+// Longhorn v2/SPDK uses block devices directly and is outside this iSCSI path.
+func parseLonghornISCSISessions(out string) []iscsiSession {
+	var sessions []iscsiSession
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 4 || !strings.HasPrefix(fields[3], longhornIQNPrefix) {
+			continue
+		}
+		sessions = append(sessions, iscsiSession{
+			sid:    strings.Trim(fields[1], "[]"),
+			portal: strings.SplitN(fields[2], ",", 2)[0],
+			target: fields[3],
+		})
+	}
+	return sessions
+}
+
+// logoutLonghornISCSISessions logs out each Longhorn session by session ID,
+// then removes only its matching target/portal node record. Other sessions,
+// including cloud boot volumes, remain untouched.
+func logoutLonghornISCSISessions() {
+	out, err := exec.Command("iscsiadm", "-m", "session").Output()
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 21 {
+			fmt.Println("      ℹ️  No active iSCSI sessions detected")
+		} else {
+			fmt.Printf("      ⚠️  Warning: Could not list iSCSI sessions: %v\n", err)
+		}
+		return
+	}
+
+	sessions := parseLonghornISCSISessions(string(out))
+	if len(sessions) == 0 {
+		fmt.Println("      ℹ️  No Longhorn iSCSI sessions detected")
+		return
+	}
+
+	loggedOut := make([]iscsiSession, 0, len(sessions))
+	for _, session := range sessions {
+		if err := exec.Command("iscsiadm", "-m", "session", "-r", session.sid, "--logout").Run(); err != nil {
+			fmt.Printf("      ⚠️  Warning: Failed to log out Longhorn session %s (%s): %v\n",
+				session.sid, session.target, err)
+			continue
+		}
+		loggedOut = append(loggedOut, session)
+		fmt.Printf("      ✓ Logged out Longhorn session %s (%s)\n", session.sid, session.target)
+	}
+
+	seenNodes := map[string]struct{}{}
+	for _, session := range loggedOut {
+		key := session.target + "\x00" + session.portal
+		if _, seen := seenNodes[key]; seen {
+			continue
+		}
+		seenNodes[key] = struct{}{}
+		if err := exec.Command("iscsiadm", "-m", "node",
+			"-T", session.target, "-p", session.portal, "--op=delete").Run(); err != nil {
+			fmt.Printf("      ⚠️  Warning: Failed to remove Longhorn node record %s at %s: %v\n",
+				session.target, session.portal, err)
+		}
+	}
 }
 
 // isKubeAPIReachable checks that the RKE2 API server is both reachable and
@@ -333,24 +418,80 @@ func CleanupBloomDisks(clusterDisks string) error {
 	}
 
 	// Delete unmounted disk devices (matching Bloom v1 logic)
+	//
+	// NOTE: "-d/--nodeps" makes lsblk report ONLY the whole-disk row and omit its
+	// partitions entirely. A partitioned boot disk (e.g. "sda" with root on "sda1")
+	// therefore shows an EMPTY MOUNTPOINT on the disk-level row even though the disk
+	// is very much in use — previously causing this loop to treat the live OS disk
+	// as an orphaned/unmounted device and hot-remove it via
+	// /sys/block/<dev>/device/delete, which yanks the root filesystem out from under
+	// the running system and bricks the node. We now list partitions too and only
+	// consider a "sd*" disk eligible for deletion when neither it nor any of its
+	// partitions/children are mounted, and we additionally always refuse to touch
+	// whatever disk backs "/", regardless of what lsblk reports.
 	fmt.Println("   🗑️  Checking for unmounted disks to delete...")
-	cmd = exec.Command("lsblk", "-nd", "-o", "NAME,TYPE,MOUNTPOINT")
+	rootDisk := rootFilesystemDisk()
+	cmd = exec.Command("lsblk", "-nl", "-o", "NAME,TYPE,MOUNTPOINT,PKNAME")
 	output, err = cmd.Output()
 	if err != nil {
 		return fmt.Errorf("lsblk command failed: %w", err)
 	}
 
+	type diskInfo struct {
+		mountpoint string
+		inUse      bool // true if the disk itself or any partition/child is mounted or present
+	}
+	disks := map[string]*diskInfo{}
+
 	scanner = bufio.NewScanner(strings.NewReader(string(output)))
 	for scanner.Scan() {
 		fields := strings.Fields(scanner.Text())
-		if len(fields) == 3 && strings.HasPrefix(fields[0], "sd") && fields[1] == "disk" && fields[2] == "" {
-			deleteCmd := exec.Command("sudo", "tee", "/sys/block/"+fields[0]+"/device/delete")
-			deleteCmd.Stdin = strings.NewReader("1\n")
-			if err := deleteCmd.Run(); err != nil {
-				fmt.Printf("      ⚠️  Warning: Failed to delete /dev/%s\n", fields[0])
-			} else {
-				fmt.Printf("      ✓ Deleted /dev/%s\n", fields[0])
+		if len(fields) < 2 {
+			continue
+		}
+		name, typ := fields[0], fields[1]
+		mountpoint := ""
+		if len(fields) >= 3 {
+			mountpoint = fields[2]
+		}
+		pkname := ""
+		if len(fields) >= 4 {
+			pkname = fields[3]
+		}
+
+		if typ == "disk" {
+			if disks[name] == nil {
+				disks[name] = &diskInfo{}
 			}
+			disks[name].mountpoint = mountpoint
+			continue
+		}
+
+		// Any partition/child device (part, lvm, crypt, etc.) means the parent
+		// disk is in use and must never be treated as an orphaned bare device,
+		// whether or not that specific child happens to be mounted right now.
+		if pkname != "" {
+			if disks[pkname] == nil {
+				disks[pkname] = &diskInfo{}
+			}
+			disks[pkname].inUse = true
+		}
+	}
+
+	for name, info := range disks {
+		if !strings.HasPrefix(name, "sd") || info.mountpoint != "" || info.inUse {
+			continue
+		}
+		if rootDisk != "" && name == rootDisk {
+			fmt.Printf("      🛑 SKIPPING /dev/%s: backs the root filesystem — refusing to delete\n", name)
+			continue
+		}
+		deleteCmd := exec.Command("sudo", "tee", "/sys/block/"+name+"/device/delete")
+		deleteCmd.Stdin = strings.NewReader("1\n")
+		if err := deleteCmd.Run(); err != nil {
+			fmt.Printf("      ⚠️  Warning: Failed to delete /dev/%s\n", name)
+		} else {
+			fmt.Printf("      ✓ Deleted /dev/%s\n", name)
 		}
 	}
 
@@ -363,6 +504,31 @@ func CleanupBloomDisks(clusterDisks string) error {
 
 	fmt.Println("   ✅ Disk cleanup completed")
 	return nil
+}
+
+// rootFilesystemDisk returns the base block device name (e.g. "sda") backing the
+// root filesystem "/", so destructive whole-disk operations can categorically
+// refuse to target the OS disk regardless of what other detection logic decides.
+// Returns "" if it cannot be determined, in which case callers should NOT treat
+// that as "safe" — the caller's other checks still apply.
+func rootFilesystemDisk() string {
+	out, err := exec.Command("findmnt", "-n", "-o", "SOURCE", "/").Output()
+	if err != nil {
+		return ""
+	}
+	source := strings.TrimSpace(string(out))
+	source = strings.TrimPrefix(source, "/dev/")
+	if source == "" {
+		return ""
+	}
+	// If "/" is on a partition (e.g. sda1), resolve to its parent whole disk (sda).
+	if pk, err := exec.Command("lsblk", "-no", "PKNAME", "/dev/"+source).Output(); err == nil {
+		if parent := strings.TrimSpace(string(pk)); parent != "" {
+			return parent
+		}
+	}
+	// "/" is directly on a whole disk (no partition).
+	return source
 }
 
 // unmountClusterDisks directly unmounts all devices found in CLUSTER_DISKS
@@ -456,8 +622,8 @@ func GenerateCleanupTasks(clusterDisks string, premountedDisks string, rancherDi
 			},
 			// Step 2: iSCSI logout — must happen before umount or the block device stays busy
 			{
-				"name":        "Logout iSCSI sessions (releases Longhorn kernel block devices)",
-				"shell":       "iscsiadm -m session --logout 2>/dev/null || true; iscsiadm -m node --op=delete 2>/dev/null || true",
+				"name":        "Logout Longhorn iSCSI sessions (preserve non-Longhorn devices)",
+				"shell":       "iscsiadm -m session 2>/dev/null | awk '$4 ~ /^" + strings.ReplaceAll(longhornIQNPrefix, ".", "\\.") + "/ { gsub(/[][]/, \"\", $2); split($3, portal, \",\"); print $2, portal[1], $4 }' | while read -r sid portal target; do iscsiadm -m session -r \"$sid\" --logout 2>/dev/null || continue; iscsiadm -m node -T \"$target\" -p \"$portal\" --op=delete 2>/dev/null || true; done",
 				"failed_when": false,
 			},
 			// Step 3: Stop Longhorn processes gracefully in dependency order
