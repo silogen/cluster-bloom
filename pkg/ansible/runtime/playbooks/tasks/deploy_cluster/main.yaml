@@ -31,22 +31,22 @@
 
 - name: Configure Cilium operator replicas for small/medium clusters
   include_tasks: cilium_config.yaml
-  when: FIRST_NODE and CLUSTER_SIZE in ["small", "medium"]
+  when: (FIRST_NODE | default(true) | bool) and CLUSTER_SIZE in ["small", "medium"]
   tags: [deploy_cluster, cilium]
 
 - name: Setup RKE2 (First Node)
   include_tasks: rke2_first_node.yaml
-  when: FIRST_NODE
+  when: FIRST_NODE | default(true) | bool
   tags: [rke2, deploy_cluster]
 
 - name: Setup RKE2 (Additional Node - Worker)
   include_tasks: rke2_worker.yaml
-  when: not FIRST_NODE and not CONTROL_PLANE
+  when: not (FIRST_NODE | default(true) | bool) and not (CONTROL_PLANE | default(false) | bool)
   tags: [rke2, deploy_cluster]
 
 - name: Setup RKE2 (Additional Node - Control Plane)
   include_tasks: rke2_control_plane.yaml
-  when: not FIRST_NODE and CONTROL_PLANE
+  when: not (FIRST_NODE | default(true) | bool) and (CONTROL_PLANE | default(false) | bool)
   tags: [rke2, deploy_cluster]
 
 - name: Install Kubernetes Tools
@@ -59,10 +59,10 @@
 
 - name: Setup KubeConfig (Control Plane Nodes)
   include_tasks: kubeconfig.yaml
-  when: FIRST_NODE or CONTROL_PLANE
+  when: (FIRST_NODE | default(true) | bool) or (CONTROL_PLANE | default(false) | bool)
   tags: [kubeconfig, deploy_cluster]
 
 - name: Generate Join Command (First Node)
   include_tasks: join_command.yaml
-  when: FIRST_NODE
+  when: FIRST_NODE | default(true) | bool
   tags: [output, deploy_cluster]

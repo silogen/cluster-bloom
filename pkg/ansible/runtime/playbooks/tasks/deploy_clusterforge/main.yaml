@@ -32,7 +32,7 @@
 
 - name: Parse ClusterForge Version
   include_tasks: parse_version.yaml
-  when: FIRST_NODE and CLUSTERFORGE_RELEASE != "none" and CLUSTERFORGE_RELEASE != ""
+  when: (FIRST_NODE | default(true) | bool) and CLUSTERFORGE_RELEASE != "none" and CLUSTERFORGE_RELEASE != ""
   tags: [clusterforge, argocd, deploy_clusterforge, deploy_k8s_apps]
 
 # CLUSTERFORGE_RELEASE "none"/"" deploys nothing, not even ArgoCD. ClusterForge
@@ -40,5 +40,5 @@
 # clusterforge_setup.yaml below, and only when a real release is set.
 - name: Setup ClusterForge
   include_tasks: clusterforge_setup.yaml
-  when: FIRST_NODE and CLUSTERFORGE_RELEASE != "none" and CLUSTERFORGE_RELEASE != ""
+  when: (FIRST_NODE | default(true) | bool) and CLUSTERFORGE_RELEASE != "none" and CLUSTERFORGE_RELEASE != ""
   tags: [clusterforge, deploy_clusterforge]

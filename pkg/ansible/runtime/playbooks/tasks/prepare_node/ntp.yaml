@@ -6,7 +6,7 @@
 # Handlers: Restart chronyd
 
 - name: Create Chrony Config (First Node)
-  when: FIRST_NODE
+  when: FIRST_NODE | default(true) | bool
   block:
     - name: Backup original chrony.conf
       copy:
@@ -30,7 +30,7 @@
       notify: Restart chronyd
 
 - name: Create Chrony Config (Additional Node)
-  when: not FIRST_NODE and SERVER_IP != ""
+  when: not (FIRST_NODE | default(true) | bool) and SERVER_IP != ""
   block:
     - name: Backup original chrony.conf
       copy:

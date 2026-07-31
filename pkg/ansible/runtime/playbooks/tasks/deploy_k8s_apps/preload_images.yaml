@@ -37,7 +37,12 @@
 
 - name: Parse image list
   set_fact:
-    image_list: "{{ PRELOAD_IMAGES.split(',') }}"
+    image_list: >-
+      {{
+        (PRELOAD_IMAGES.split(',') | map('trim') | reject('equalto', '') | list)
+        if PRELOAD_IMAGES is string
+        else (PRELOAD_IMAGES | default([]) | list)
+      }}
 
 - name: Report detected container runtime
   debug:

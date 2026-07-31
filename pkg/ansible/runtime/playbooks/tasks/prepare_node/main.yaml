@@ -16,18 +16,18 @@
 # driver on a fresh node. Host ROCm is neither required nor installed.
 - name: Reconcile supported GPU driver (no ROCm install)
   include_tasks: gpu_driver_only.yaml
-  when: GPU_NODE and not (GPU_DRIVER_SKIP_INSTALL | default(false) | bool)
+  when: (GPU_NODE | default(false) | bool) and not (GPU_DRIVER_SKIP_INSTALL | default(false) | bool)
   tags: [gpu, prep_node]
 
 - name: Check for pending reboot after GPU driver install
   include_tasks: ../reboot_required_check.yaml
-  when: GPU_NODE and not (GPU_DRIVER_SKIP_INSTALL | default(false) | bool)
+  when: (GPU_NODE | default(false) | bool) and not (GPU_DRIVER_SKIP_INSTALL | default(false) | bool)
   tags: [gpu, prep_node]
 
 - name: Ensure standalone AMD-SMI host diagnostics
   include_tasks: gpu_host_tools.yaml
   when:
-    - GPU_NODE
+    - GPU_NODE | default(false) | bool
     - not (GPU_DRIVER_SKIP_INSTALL | default(false) | bool)
     - GPU_INSTALL_HOST_TOOLS | default(true) | bool
   tags: [gpu, prep_node]
@@ -35,13 +35,19 @@
 - name: Update Modprobe (GPU nodes)
   include_tasks: gpu_modprobe.yaml
   when:
-    - GPU_NODE
+    - GPU_NODE | default(false) | bool
     - not (GPU_DRIVER_SKIP_INSTALL | default(false) | bool)
   tags: [gpu, prep_node]
 
 - name: Prepare bloom fstab section markers
   include_tasks: fstab_markers.yaml
-  when: not NO_DISKS_FOR_CLUSTER and (CLUSTER_DISKS != "" or CLUSTER_PREMOUNTED_DISKS != "" or (RANCHER_DISK is defined and RANCHER_DISK != ""))
+  when: >
+    not (NO_DISKS_FOR_CLUSTER | default(false) | bool) and
+    (
+      (CLUSTER_DISKS | default([]) | length) > 0 or
+      (CLUSTER_PREMOUNTED_DISKS | default('') | length) > 0 or
+      (RANCHER_DISK | default('') | length) > 0
+    )
   tags: [storage, prep_node]
 
 - name: Setup custom rancher storage path
@@ -51,12 +57,12 @@
 
 - name: Prepare Longhorn Disks
   include_tasks: storage.yaml
-  when: not NO_DISKS_FOR_CLUSTER
+  when: not (NO_DISKS_FOR_CLUSTER | default(false) | bool)
   tags: [storage, prep_node]
 
 - name: Prepare Premounted Disks Fstab
   include_tasks: premounted_storage.yaml
-  when: not NO_DISKS_FOR_CLUSTER and CLUSTER_PREMOUNTED_DISKS != ""
+  when: not (NO_DISKS_FOR_CLUSTER | default(false) | bool) and (CLUSTER_PREMOUNTED_DISKS | default('') | length) > 0
   tags: [storage, prep_node]
 
 - name: System Configuration

@@ -6,8 +6,8 @@
 
 - name: Generate API server certificates for Kubernetes
   when:
-    - FIRST_NODE | bool
-    - not USE_CERT_MANAGER
+    - FIRST_NODE | default(true) | bool
+    - not (USE_CERT_MANAGER | default(false) | bool)
     - CERT_OPTION == "generate"
     - DOMAIN != ""
   block:

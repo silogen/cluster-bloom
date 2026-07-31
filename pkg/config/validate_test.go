@@ -72,3 +72,32 @@ func TestValidate_ValidConfigs(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateRejectsStringForBooleanField(t *testing.T) {
+	errors := Validate(Config{
+		"FIRST_NODE":           true,
+		"GPU_NODE":             "false",
+		"DOMAIN":               "cluster.example.com",
+		"CLUSTER_SIZE":         "small",
+		"NO_DISKS_FOR_CLUSTER": true,
+		"CERT_OPTION":          "generate",
+	})
+	if len(errors) == 0 {
+		t.Fatal("expected quoted boolean value to be rejected")
+	}
+}
+
+func TestValidateRejectsStringForSequenceField(t *testing.T) {
+	errors := Validate(Config{
+		"FIRST_NODE":           true,
+		"GPU_NODE":             false,
+		"DOMAIN":               "cluster.example.com",
+		"CLUSTER_SIZE":         "small",
+		"NO_DISKS_FOR_CLUSTER": true,
+		"CERT_OPTION":          "generate",
+		"DNS_SERVERS":          "8.8.8.8,1.1.1.1",
+	})
+	if len(errors) == 0 {
+		t.Fatal("expected string sequence value to be rejected")
+	}
+}

@@ -53,7 +53,7 @@
 
 - name: Create mount points for cluster disks
   file:
-    path: "/mnt/disk{{ disk_index_offset | int + disk_index }}"
+    path: "/mnt/disk{{ (disk_index_offset | int) + (disk_index | int) }}"
     state: directory
     mode: "0755"
   loop: "{{ cluster_disks_list | default([]) }}"
@@ -63,7 +63,7 @@
 
 - name: Pre-clean bloom artifacts from future mount point directories (preserve user files)
   shell: |
-    mp="/mnt/disk{{ disk_index_offset | int + disk_index }}"
+    mp="/mnt/disk{{ (disk_index_offset | int) + (disk_index | int) }}"
     [ -d "$mp" ] || exit 0
     rm -rf "$mp"/pvc-* "$mp"/replicas "$mp"/longhorn-disk.cfg "$mp"/longhorn-disk.cfg.tmp 2>/dev/null || true
   loop: "{{ cluster_disks_list | default([]) }}"
@@ -91,14 +91,14 @@
 - name: Add mount entries to fstab with bloom tag
   lineinfile:
     path: /etc/fstab
-    line: "UUID={{ item.stdout }} /mnt/disk{{ disk_index_offset | int + item.item.0 }} ext4 defaults,nofail 0 2 {{ bloom_fstab_tag }}"
+    line: "UUID={{ item.stdout }} /mnt/disk{{ (disk_index_offset | int) + (item.item.0 | int) }} ext4 defaults,nofail 0 2 {{ bloom_fstab_tag }}"
     insertbefore: "^# # # end of AMD Enterprise AI cluster-bloom"
     state: present
   loop: "{{ disk_uuids.results }}"
   when: cluster_disks_list | length > 0 and not item.skipped | default(false)
 
 - name: Mount cluster disks using fstab entries (verifies fstab)
-  shell: mount /mnt/disk{{ disk_index_offset | int + item.item.0 }}
+  shell: mount /mnt/disk{{ (disk_index_offset | int) + (item.item.0 | int) }}
   loop: "{{ disk_uuids.results }}"
   when: cluster_disks_list | length > 0 and not item.skipped | default(false)
   register: mount_results

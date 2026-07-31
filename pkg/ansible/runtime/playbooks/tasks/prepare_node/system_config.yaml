@@ -45,7 +45,7 @@
   tags: [firewall, prep_node]
 
 - name: Update Udev Rules (GPU nodes)
-  when: GPU_NODE
+  when: GPU_NODE | default(false) | bool
   block:
     - name: Create AMD GPU udev rules
       copy:
