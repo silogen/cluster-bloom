@@ -10,12 +10,13 @@ This documentation provides complete guidance for deploying, configuring, and ma
 
 ### Getting Started
 - [**Cluster Sizing and Configurations**](cluster-sizing-configurations.md) - Hardware requirements, sizing guidelines, and deployment planning
-- [**Manual Steps Quick Reference**](manual-steps-quick-reference.md) - Essential commands and procedures for cluster management
+- [**Product Requirements**](PRD.md) - Product scope, capabilities, and validated GPU driver policy
 
 ### Core Deployment
 - [**RKE2 Deployment**](rke2-deployment.md) - Kubernetes cluster foundation setup and configuration
-- [**ROCm Support**](rocm-support.md) - AMD GPU support and ROCm integration for AI workloads
-- [**GPU Driver-Only Spike (EAI-5657)**](gpu-driver-only-spike.md) - Branch-specific: installs only the amdgpu driver (no host ROCm) to test the reference stack
+- [**AMD GPU Driver and Container ROCm Support**](rocm-support.md) - Supported host-driver matrix and Kubernetes integration for containerized ROCm workloads
+- [**GPU Driver-Only Host Policy**](gpu-driver-only-spike.md) - Driver detection, installation, validation, standalone AMD-SMI, and recovery behavior
+- [**GPU Driver Installation Quick Reference**](../GPU_AND_ROCM_INSTALLATION.txt) - Plain-text matrix, configuration, and host verification commands
 - [**Storage Management**](storage-management.md) - Longhorn distributed storage configuration and management
 - [**Longhorn Drive Setup and Recovery**](longhorn-drive-setup-and-recovery.md) - Detailed drive recovery, RAID handling, and storage troubleshooting
 
@@ -36,7 +37,7 @@ This documentation provides complete guidance for deploying, configuring, and ma
 ### For New Users
 1. Start with [Cluster Sizing and Configurations](cluster-sizing-configurations.md) to plan your deployment
 2. Follow the [Installation Guide](installation-guide.md) for step-by-step setup
-3. Reference [Manual Steps Quick Reference](manual-steps-quick-reference.md) for common operations
+3. Reference the [Configuration Reference](configuration-reference.md) for supported options
 
 ### For System Administrators
 - [Technical Architecture](technical-architecture.md) - Understand system design
@@ -50,7 +51,7 @@ This documentation provides complete guidance for deploying, configuring, and ma
 
 ### Troubleshooting and Recovery
 - [Longhorn Drive Setup and Recovery](longhorn-drive-setup-and-recovery.md) - Storage troubleshooting and RAID handling
-- [Manual Steps Quick Reference](manual-steps-quick-reference.md) - Emergency procedures and common fixes
+- [Installation Guide](installation-guide.md) - Deployment verification and operational checks
 
 ## Documentation Standards
 
@@ -73,7 +74,7 @@ This documentation is maintained as part of the Cluster-Bloom project. For updat
 For questions about the documentation or Cluster-Bloom platform:
 - Reference the [Configuration Reference](configuration-reference.md) for parameter details
 - Check [Technical Architecture](technical-architecture.md) for design questions
-- Use [Manual Steps Quick Reference](manual-steps-quick-reference.md) for operational procedures
+- Use the [Installation Guide](installation-guide.md) for operational procedures
 
 ---
 

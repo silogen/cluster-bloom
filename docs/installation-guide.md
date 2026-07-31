@@ -162,91 +162,32 @@ EOF
 
 ### Phase 3: GPU Setup (GPU Nodes Only)
 
-> **EAI-5657 branch note**: on this branch, Bloom's automated GPU node prep
-> retains an exact supported amdgpu DKMS driver or installs production driver
-> 31.40.0 with `amdgpu-install --usecase=dkms`. It does **not** install ROCm;
-> standalone AMD-SMI is enabled by default. `ROCM_ALLOW_VERSION_MISMATCH` / `ROCM_BASE_URL` /
-> `ROCM_DEB_PACKAGE` do not exist on this branch. See
-> [docs/gpu-driver-only-spike.md](gpu-driver-only-spike.md). The manual steps below
-> describe a full ROCm install (`main`'s behavior) and remain useful as general/manual
-> reference, but do not match what this branch's automated run does.
+Bloom retains an exact supported AMD DKMS driver or installs production driver
+`31.40.0` with `amdgpu-install --usecase=dkms`. It does not install host ROCm,
+HIP, SDK, or workload libraries. Standalone AMD-SMI is enabled by default.
 
-**Install ROCm Drivers**:
-```bash
-# Get Ubuntu codename
-CODENAME=$(grep VERSION_CODENAME /etc/os-release | cut -d= -f2)
-KERNEL_VERSION=$(uname -r)
+The supported driver/DKMS/associated-ROCm tuples are:
 
-# Install kernel headers
-sudo apt install -y linux-headers-$KERNEL_VERSION linux-modules-extra-$KERNEL_VERSION
+| AMD driver | DKMS package/module | Associated ROCm |
+|---|---|---|
+| `30.10.2` | `6.14.14.30100200-2226257` | `7.0.2` |
+| `30.20.1` | `6.16.6.30200100-2255209` | `7.1.1` |
+| `30.30.3` | `6.16.13.30300300-2327507` | `7.2.3` |
+| `30.30.4` | `6.16.13.30300400-2341068` | `7.2.4` |
+| `31.30.0` | `6.19.4.31300000-2337710` | `7.13.0` |
+| `31.40.0` | `6.19.14.31400000-2364437` | `7.14.0` |
 
-# Install Python dependencies
-sudo apt install -y python3-setuptools python3-wheel
+The associated ROCm value identifies AMD's coordinated release train and the
+matching standalone AMD-SMI package. ROCm workload libraries run in containers.
 
-# Download and install amdgpu-install
-wget https://repo.radeon.com/amdgpu-install/7.2.3/ubuntu/$CODENAME/amdgpu-install_7.2.3.70203-1_all.deb
-sudo apt install -y ./amdgpu-install_7.2.3.70203-1_all.deb
+Bloom stops before modifying packages when it finds an unknown, ambiguous, or
+mixed out-of-tree driver. After installation, it verifies the DKMS module for
+the running kernel. If the old module is still active, Bloom requests a reboot
+and performs the remaining validation on the next run.
 
-# Install ROCm
-sudo amdgpu-install --usecase=rocm,dkms --yes
-
-# Load amdgpu module
-sudo modprobe amdgpu
-
-# Verify installation (ROCm 7.x uses amd-smi)
-amd-smi list
-
-# Check ROCm version (shown in header)
-amd-smi
-# Look for "ROCm version: X.X.X" in the output header
-# Expected: ROCm version: 7.2.3
-# Any version other than 7.2.3 will produce a WARNING
-```
-
-**⚠️ ROCm Version Validation**:
-
-ClusterBloom officially supports ROCm **7.2.3**. Check your installed version:
-
-```bash
-# Check installed ROCm version (ROCm 7.x)
-amd-smi
-# Look for "ROCm version: X.X.X" in the header output
-# Example output header:
-# | AMD-SMI 26.0.2+39589fda  amdgpu version: 6.14.14  ROCm version: 7.2.3 |
-```
-
-**Expected Output**: `7.2.3.70002-1` (or similar 7.2.3.x)
-
-**If you have an out-of-date or incorrect version:**
-- **Other**: Version mismatch — WARNING issued; install the version required by your `GPU_STACK_FAMILY`
-
-**Fail-fast version guard**: if a GPU node already has a ROCm install whose train does not match the selected `GPU_STACK_FAMILY` (e.g. `radeon`, which needs ROCm 7.13, on a host with ROCm 7.2.3), bloom aborts early during node validation with an "Unsupported ROCm version" message — before any package/kernel/repo work. This is a hard fail with no interactive prompt (bloom pipes ansible output over SSH, so there is no TTY). To proceed anyway with the currently installed ROCm, set this in `bloom.yaml`:
-
-```yaml
-ROCM_ALLOW_VERSION_MISMATCH: true   # accepts true|TRUE|1
-```
-
-`ROCM_ALLOW_VERSION_MISMATCH` is a `bloom.yaml` config key (default `false`), so it works with `bloom cli bloom.yaml`. With `bloom run` it can also be passed as `-e ROCM_ALLOW_VERSION_MISMATCH=true`. See [rocm-support.md](rocm-support.md#version-compatibility-guard-fail-fast) for full details.
-
-**To install ROCm 7.2.3:**
-```bash
-# Remove old ROCm installation
-sudo amdgpu-uninstall
-sudo apt remove --purge amdgpu-install
-
-# Then follow the installation steps above with 7.2.3
-```
-
-**Configure GPU Permissions**:
-```bash
-cat <<EOF | sudo tee /etc/udev/rules.d/70-amdgpu.rules
-KERNEL=="kfd", MODE="0666"
-SUBSYSTEM=="drm", KERNEL=="renderD*", MODE="0666"
-EOF
-
-sudo udevadm control --reload-rules
-sudo udevadm trigger
-```
+See [GPU Driver-Only Host Policy](gpu-driver-only-spike.md) for detailed
+installation and recovery behavior, and [AMD GPU Driver and Container ROCm
+Support](rocm-support.md) for Kubernetes integration.
 
 ### Phase 4: RKE2 Kubernetes Installation
 
@@ -550,7 +491,7 @@ spec:
   containers:
   - name: rocm-test
     image: rocm/pytorch:latest
-    command: ["rocm-smi"]
+    command: ["amd-smi", "list"]
   restartPolicy: Never
 EOF
 
@@ -647,4 +588,5 @@ ClusterBloom automates all of the above steps and provides:
 9. **Multi-node Coordination**: Automatic generation of join commands
 10. **Best Practices**: Built-in configurations following Kubernetes best practices
 
-See [PRD.md](../../PRD.md) for product overview and [06-technical-architecture.md](07-technical-architecture.md) for technical details.
+See the [PRD](PRD.md) for product requirements and
+[Technical Architecture](technical-architecture.md) for implementation details.

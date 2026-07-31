@@ -66,12 +66,13 @@ This document provides detailed technical architecture information for ClusterBl
 - Cilium CNI configuration
 - Audit logging setup
 
-#### ROCm Support (`pkg/rocm.go`)
-- AMD GPU driver installation
-- Device detection and validation
-- udev rule configuration
-- Kernel module management
-- ROCm version management
+#### AMD GPU Host Policy (`pkg/config/gpu_stack_matrix.go` and Ansible GPU tasks)
+- Exact six-tuple AMD driver compatibility allowlist
+- Driver detection and DKMS-only installation
+- Active kernel-module and device validation
+- Standalone AMD-SMI package selection
+- Reboot-required handoff before GPU-dependent deployment
+- GPU Operator and DeviceConfig profile selection
 
 #### UI Framework (`pkg/view.go`)
 - Terminal user interface
@@ -137,7 +138,7 @@ Execute before Kubernetes cluster deployment:
 - **Dependency Installation**: Required system packages
 - **Storage Preparation**: Longhorn cleanup, disk detection, formatting, mounting
 - **Network Configuration**: Firewall rules, multipath, kernel modules
-- **GPU Setup**: ROCm installation and validation (GPU nodes only)
+- **GPU Setup**: Allowlisted AMD DKMS driver validation or installation and standalone AMD-SMI setup (GPU nodes only; workload ROCm remains containerized)
 - **Time Synchronization**: Chrony NTP configuration
 
 #### Kubernetes Setup
@@ -426,9 +427,8 @@ func LoadConfiguration() Config {
 
 Pre-flight validation checks:
 
-- **URL Validation**: OIDC, ClusterForge, ROCm, RKE2 URLs
+- **URL Validation**: OIDC, ClusterForge, and RKE2 URLs
 - **Network Validation**: IP addresses, token formats
-- **Step Validation**: Step names in DISABLED_STEPS/ENABLED_STEPS *(pending implementation)*
 - **Conflict Detection**: Mutually exclusive options
 - **Resource Validation**: Disk space, memory, CPU
 - **OS Compatibility**: Ubuntu version, kernel modules

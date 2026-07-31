@@ -1,6 +1,6 @@
 # GPU Driver-Only Host Policy (EAI-5657)
 
-This branch manages the host AMD GPU kernel driver without installing the ROCm
+ClusterBloom manages the host AMD GPU kernel driver without installing the ROCm
 runtime, HIP, SDK, or workload libraries. Host ROCm is not required for
 containerized AIM, AIWB, AIRM, NFD, or the AMD GPU Operator.
 
@@ -8,28 +8,26 @@ By default Bloom also installs AMD-SMI as a standalone host diagnostic. That
 small optional userspace component does not turn the host into a full ROCm
 runtime installation.
 
-## Installation synopsis
+## Supported version matrix
 
 Bloom detects `amdgpu-dkms` package metadata and DKMS registrations before
 changing an AMD repository or driver.
 
 The exact supported tuples are:
 
-- AMD GPU Driver `30.10.2`, DKMS `6.14.14` build `2226257`, package code
-  `30100200`, paired with ROCm `7.0.2`.
-- AMD GPU Driver `30.20.1`, DKMS `6.16.6` build `2255209`, paired with ROCm
-  `7.1.1`.
-- AMD GPU Driver `30.30.3`, DKMS `6.16.13` build `2327507`, paired with ROCm
-  `7.2.3`.
-- AMD GPU Driver `30.30.4`, DKMS `6.16.13` build `2341068`, paired with ROCm
-  `7.2.4`.
-- AMD GPU Driver `31.30.0`, DKMS `6.19.4` build `2337710`, paired with ROCm
-  `7.13.0`.
-- AMD GPU Driver `31.40.0`, DKMS `6.19.14` build `2364437`, paired with ROCm
-  `7.14.0`.
+| AMD driver | DKMS package/module | Associated ROCm |
+|---|---|---|
+| `30.10.2` | `6.14.14.30100200-2226257` | `7.0.2` |
+| `30.20.1` | `6.16.6.30200100-2255209` | `7.1.1` |
+| `30.30.3` | `6.16.13.30300300-2327507` | `7.2.3` |
+| `30.30.4` | `6.16.13.30300400-2341068` | `7.2.4` |
+| `31.30.0` | `6.19.4.31300000-2337710` | `7.13.0` |
+| `31.40.0` | `6.19.14.31400000-2364437` | `7.14.0` |
 
 The paired ROCm release documents AMD's coordinated release train and selects a
 matching AMD-SMI package. Bloom does not require or install that ROCm release.
+
+## Installation synopsis
 
 Bloom applies this policy:
 
@@ -49,10 +47,13 @@ Bloom applies this policy:
 5. Bloom verifies that DKMS built the effective release for the running kernel,
    `modprobe` selects `updates/dkms/amdgpu.ko*`, and the selected module version
    matches the supported tuple.
-6. If the old inbox or DKMS module remains active, Bloom requests a reboot and
-   ends the play before GPU-dependent deployment.
+6. If the old inbox or DKMS module remains active, Bloom writes
+   `/var/lib/bloom/reboot-required.json` and ends the play before GPU-dependent
+   deployment. The CLI offers to reboot on exit; `--yes` auto-confirms it.
 7. On the post-reboot rerun, Bloom verifies the active module and then handles
-   standalone AMD-SMI.
+   standalone AMD-SMI. The steps are idempotent.
+8. If Bloom already rebooted for the marker and the reboot requirement remains,
+   it stops with manual diagnostics instead of entering a reboot loop.
 
 Existing host ROCm userspace is left untouched. Driver compatibility, not the
 presence or absence of `/opt/rocm`, controls whether installation continues.
@@ -99,16 +100,26 @@ GPU_INSTALL_HOST_TOOLS: true
 ```
 
 The empty driver values resolve to `31.40` and `314000-1`. Advanced overrides
-are accepted only when they form one of the four exact supported installer
+are accepted only when they form one of the six exact supported installer
 tuples:
 
-```yaml
-# Grandfathered ROCm 7.1.1 release pair
-GPU_DRIVER_VERSION: "7.1.1"
-GPU_DRIVER_BUILD: "70101-1"
-```
+| `GPU_DRIVER_VERSION` | `GPU_DRIVER_BUILD` | Resulting AMD driver |
+|---|---|---|
+| `7.0.2` | `70002-1` | `30.10.2` |
+| `7.1.1` | `70101-1` | `30.20.1` |
+| `7.2.3` | `70203-1` | `30.30.3` |
+| `7.2.4` | `70204-1` | `30.30.4` |
+| `31.30` | `313000-1` | `31.30.0` |
+| `31.40` | `314000-1` | `31.40.0` |
 
 Unsupported override combinations fail before download.
+
+`GPU_STACK_FAMILY` selects the ClusterForge GPU Operator and DeviceConfig
+profile only. Both families share this host-driver policy and default to driver
+`31.40.0` on fresh nodes.
+
+See the [Configuration Reference](configuration-reference.md) for all GPU
+configuration fields.
 
 ## Blacklisting
 

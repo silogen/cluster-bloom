@@ -1,191 +1,110 @@
-# AMD GPU Support with ROCm
-
-> **EAI-5657 branch note**: this document describes `main`'s ROCm(+driver)
-> install behavior. On the `EAI-5657_gpudriver_over_rocm_spike` branch, Bloom
-> retains an exact supported amdgpu DKMS driver or installs production driver
-> 31.40.0. It does not install host ROCm; standalone AMD-SMI is enabled by
-> default. The
-> `ROCM_ALLOW_VERSION_MISMATCH` / `ROCM_BASE_URL` / `ROCM_DEB_PACKAGE` flags and the ROCm
-> version-compatibility guard described below do not exist on that branch. See
-> [docs/gpu-driver-only-spike.md](gpu-driver-only-spike.md) for what that branch actually
-> does.
+# AMD GPU Driver and Container ROCm Support
 
 ## Overview
 
-ClusterBloom provides automated AMD GPU support through ROCm driver installation and configuration, enabling GPU-accelerated workloads on Kubernetes clusters.
+ClusterBloom prepares AMD GPU nodes for containerized ROCm workloads without
+installing a host ROCm runtime, HIP SDK, or workload libraries. It manages an
+allowlisted out-of-tree `amdgpu` DKMS driver, configures device access, and
+integrates the node with the AMD GPU Operator.
 
-## Components
+Bloom installs standalone AMD-SMI diagnostics by default. This does not turn
+the host into a full ROCm environment. Existing host ROCm userspace is left
+untouched; the detected driver tuple determines compatibility.
 
-### GPU-family install defaults (`GPU_STACK_FAMILY`)
+## Supported driver matrix
 
-The host ROCm version and the cluster-forge GPU Operator are selected together per GPU family via the `GPU_STACK_FAMILY` flag (`radeon` | `instinct`; empty resolves to `instinct`). The selection is a single qualified matrix row, host ROCm, GPU Operator chart path, and the operator DeviceConfig ROCm driver version move together.
+Bloom accepts only these exact validated tuples:
 
-| Family | Host ROCm | GPU Operator path | DeviceConfig ROCm driver | Tech preview |
-|--------|-----------|-------------------|--------------------------|--------------|
-| `instinct` (default) | 7.2.3 / 70203-1 | amd-gpu-operator/v1.4.1 | 7.0 | no |
-| `radeon` | 7.13.0 | amd-gpu-operator/v1.5.1-beta.0 | 7.13 | yes |
+| AMD driver | DKMS package/module | Associated ROCm |
+|---|---|---|
+| `30.10.2` | `6.14.14.30100200-2226257` | `7.0.2` |
+| `30.20.1` | `6.16.6.30200100-2255209` | `7.1.1` |
+| `30.30.3` | `6.16.13.30300300-2327507` | `7.2.3` |
+| `30.30.4` | `6.16.13.30300400-2341068` | `7.2.4` |
+| `31.30.0` | `6.19.4.31300000-2337710` | `7.13.0` |
+| `31.40.0` | `6.19.14.31400000-2364437` | `7.14.0` |
 
-Notes:
-- `instinct` reproduces the existing defaults exactly, so existing installs are unchanged.
-- `radeon` selects the ROCm 7.13 tech-preview stack. bloom prints a tech-preview notice at install time, these components are not production qualified for this release.
-- Single-select by design: host ROCm is one version per node. The AIM model catalog (`AIM_HARDWARE_FAMILY`) can still be heterogeneous.
-- Unsupported combinations (e.g. a Radeon stack resolving to ROCm 7.2.0, which is too old) fail validation before install with an error naming the incompatible component. See [Version Compatibility Guard](#version-compatibility-guard-fail-fast) for the fail-fast behavior and how to override it.
-- The real ROCm 7.13 tech-preview version strings and the vendored GPU Operator chart are tracked in EAI-5906; the `radeon` row carries placeholder pins until then.
+The associated ROCm release records AMD's coordinated release train and selects
+the matching standalone AMD-SMI package. Bloom neither requires nor installs
+that ROCm release on the host.
 
-### ROCm Installation
-Automated installation of ROCm drivers and runtime components:
-- **Driver Version**: Selected by `GPU_STACK_FAMILY` (default family `instinct` → ROCm 7.2.3); base URL still overridable via `ROCM_BASE_URL`
-- **Components**: amdgpu kernel driver, ROCm runtime, ROCm libraries
-- **Dependencies**: Linux kernel headers, Python setuptools
-- **Installation Method**: amdgpu-install utility from AMD repositories
-- **Management Tool**: amd-smi (ROCm 7.x) replaces deprecated rocm-smi
+The default fresh-node installation is driver `31.40.0`, using
+`amdgpu-install_31.40.314000-1_all.deb` and
+`amdgpu-install --usecase=dkms`.
 
-**Installation Process**:
-1. Detect Ubuntu version and kernel version
-2. Install required kernel headers and modules
-3. Download amdgpu-install package from AMD repository
-4. Execute installation with ROCm and DKMS use cases
-5. Load amdgpu kernel module
-6. Verify installation with amd-smi
+See [GPU Driver-Only Host Policy](gpu-driver-only-spike.md) for package
+selection, detection, fail-safe behavior, and verification details.
 
-### GPU Detection
-Validates GPU availability and configuration:
-- **Hardware Detection**: Identifies AMD GPU devices via PCI bus
-- **Driver Verification**: Checks amdgpu kernel module loading
-- **Device Validation**: Verifies /dev/kfd and /dev/dri/renderD* devices
-- **amd-smi Check**: Validates ROCm software stack functionality (ROCm 7.x)
+## Installation behavior
 
-**Detection Methods**:
+For each GPU node, Bloom:
+
+1. Detects `amdgpu-dkms` package metadata and DKMS registrations.
+2. Retains the driver when it exactly matches a supported tuple.
+3. Installs the production-default `31.40.0` driver on a fresh node that has no
+   out-of-tree AMD DKMS package or registration.
+4. Stops before repository or package changes when it detects an unsupported,
+   ambiguous, or mixed out-of-tree driver.
+5. Verifies that DKMS built the expected module for the running kernel and that
+   `modprobe` resolves to `/lib/modules/<kernel>/updates/dkms/amdgpu.ko*`.
+6. Requests a reboot when the selected DKMS module is not yet active, then
+   verifies the active module on the next run.
+7. Installs and verifies the standalone AMD-SMI package matched to the driver,
+   unless `GPU_INSTALL_HOST_TOOLS` is `false`.
+
+Set `GPU_DRIVER_SKIP_INSTALL: true` to leave the host GPU stack untouched,
+including compatibility validation and standalone AMD-SMI installation.
+
+## GPU family and operator selection
+
+`GPU_STACK_FAMILY` selects ClusterForge's vendored AMD GPU Operator and
+DeviceConfig profile. It does not select or install host ROCm.
+
+| Family | GPU Operator path | DeviceConfig driver train | Status |
+|---|---|---|---|
+| `instinct` (default) | `amd-gpu-operator/v1.4.1` | `7.0` | qualified |
+| `radeon` | `amd-gpu-operator/v1.5.1-beta.0` | `7.13` | tech preview |
+
+The host driver default remains `31.40.0` for both families. The family setting
+is independent of `AIM_HARDWARE_FAMILY`, which selects the AIM model catalog.
+
+## Standalone AMD-SMI
+
+When `GPU_INSTALL_HOST_TOOLS` is `true`, Bloom retains an existing `amd-smi`
+binary or installs the package associated with the effective driver:
+
+- Drivers `30.10.2` through `30.30.4`: exact `amd-smi-lib` build from the
+  corresponding ROCm repository.
+- Driver `31.30.0`: `amdrocm-amdsmi7.13`.
+- Driver `31.40.0`: `amdrocm-amdsmi7.14`.
+
+Bloom verifies both `amd-smi version` and `amd-smi list`.
+
+## Device validation
+
+Bloom verifies:
+
+- the active `amdgpu` kernel module and its source version;
+- `/dev/kfd` and at least one `/dev/dri/renderD*` device;
+- the NFD AMD GPU label; and
+- the `amd.com/gpu` allocatable Kubernetes resource.
+
+Useful host checks:
+
 ```bash
-# PCI device detection
-lspci | grep -i 'vga\|display\|3d'
-
-# Kernel module verification
-lsmod | grep amdgpu
-
-# Device node verification
-ls -l /dev/kfd /dev/dri/renderD*
-
-# ROCm validation (ROCm 7.x)
+dpkg-query -W amdgpu-install amdgpu-dkms
+dkms status -m amdgpu
+modinfo -n amdgpu
+modinfo -F version amdgpu
+amd-smi version
 amd-smi list
-
-# Detailed GPU information
-amd-smi list --json
 ```
 
-### Version Verification
-Ensures correct ROCm version is installed:
-- **Supported Version**: ROCm 7.2.3 exactly
-- **Version Check**: Validates installed version matches requirements
-- **Out-of-Date Detection**: Identifies 6.x versions requiring upgrade
-- **Unsupported Warning**: Flags 7.2+ versions not yet supported
+## Containerized ROCm workloads
 
-**Version Check Commands**:
-```bash
-# Check ROCm version (displayed in amd-smi header)
-amd-smi
-# Look for "ROCm version: X.X.X" in the first line
+ROCm workload libraries belong in the container image. A GPU pod requests the
+resource exposed by the AMD device plugin:
 
-# Example output:
-# +------------------------------------------------------------------------------+
-# | AMD-SMI 26.0.2+39589fda  amdgpu version: 6.14.14  ROCm version: 7.2.3    |
-# +------------------------------------------------------------------------------+
-
-# Expected: ROCm version: 7.2.3 (instinct) or 7.13.0 (radeon)
-
-# Fallback: read version file (layout depends on ROCm stream)
-cat /opt/rocm/.info/version                    # legacy (e.g. 7.2.3)
-cat /opt/rocm/core-7.13/.info/version          # ROCm 7.13 Core SDK (radeon)
-```
-
-**Version Status Guide**:
-- ✅ **7.2.3** - Correct, required and fully supported
-- ⚠️ **Other** - Version mismatch: WARNING issued; install 7.2.3
-
-### Version Compatibility Guard (fail-fast)
-
-Before doing any package, kernel, or repository work, bloom detects the ROCm already installed on each GPU node and checks it against the version train required by the selected `GPU_STACK_FAMILY`:
-
-- `instinct` (default) requires host ROCm on the **7.2** train (>= 7.2.3).
-- `radeon` requires host ROCm on the **7.13** train.
-
-If a functional ROCm install (amd-smi / rocm-smi present) is found whose version does not match the required train — for example `radeon` selected on a host that already has ROCm 7.2.3 — bloom **aborts early during the node validation phase** with an "Unsupported ROCm version" message. This runs as early as the installed version can be known, so the deploy stops before any GPU work rather than finishing with a mismatched, unsupported stack.
-
-This guard is a **hard fail with no interactive prompt**: bloom pipes the ansible-playbook output through its own processor over an SSH connection, so there is no TTY for a `[y/N]` prompt (it would hang the run). The escape hatch is the `ROCM_ALLOW_VERSION_MISMATCH` config option instead.
-
-**Override (proceed anyway)** — keep the currently installed ROCm and skip the guard by setting this in `bloom.yaml`:
-
-```yaml
-ROCM_ALLOW_VERSION_MISMATCH: true   # accepts true|TRUE|1
-```
-
-`ROCM_ALLOW_VERSION_MISMATCH` is a `bloom.yaml` config key (default `false`), so it works with `bloom cli bloom.yaml`. With `bloom run` you can also pass it as an extra-var:
-
-```bash
-sudo bloom run -e ROCM_ALLOW_VERSION_MISMATCH=true ...
-```
-
-**Install ROCm 7.2.3**:
-```bash
-# 1. Remove old installation
-sudo amdgpu-uninstall
-sudo apt remove --purge amdgpu-install
-
-# 2. Reinstall with 7.2.3
-CODENAME=$(grep VERSION_CODENAME /etc/os-release | cut -d= -f2)
-wget https://repo.radeon.com/amdgpu-install/7.2.3/ubuntu/$CODENAME/amdgpu-install_7.2.3.70002-1_all.deb
-sudo apt install -y ./amdgpu-install_7.2.3.70002-1_all.deb
-sudo amdgpu-install --usecase=rocm,dkms --yes
-
-# 3. Reboot and verify
-sudo reboot
-# After reboot, check version in header:
-amd-smi
-# Should show: ROCm version: 7.2.3
-```
-
-### Device Rules
-Configures udev rules for GPU access permissions:
-- **Permission Mode**: 0666 for /dev/kfd and /dev/dri/renderD* devices
-- **Udev Rules Location**: `/etc/udev/rules.d/70-amdgpu.rules`
-- **Access Control**: Allows non-root container access to GPU devices
-
-**Udev Rule Configuration**:
-```
-KERNEL=="kfd", MODE="0666"
-SUBSYSTEM=="drm", KERNEL=="renderD*", MODE="0666"
-```
-
-**Rule Application**:
-```bash
-sudo udevadm control --reload-rules
-sudo udevadm trigger
-```
-
-### Kernel Module Management
-Handles amdgpu module loading and configuration:
-- **Module Loading**: Automatic amdgpu module loading at boot
-- **Module Parameters**: Configurable via /etc/modprobe.d/
-- **Persistence**: Configuration persists across reboots
-- **Dependency Management**: Ensures required modules are loaded
-
-**Module Configuration**:
-```bash
-# Load module
-sudo modprobe amdgpu
-
-# Make persistent
-echo "amdgpu" | sudo tee -a /etc/modules
-```
-
-### Kubernetes Integration
-GPU resource exposure and scheduling:
-- **Node Labels**: `gpu=true`, `amd.com/gpu=true`
-- **Device Plugin**: AMD GPU device plugin for Kubernetes
-- **Resource Limits**: GPU resource scheduling (`amd.com/gpu: 1`)
-- **Pod Scheduling**: GPU-aware pod placement
-
-**GPU Pod Example**:
 ```yaml
 apiVersion: v1
 kind: Pod
@@ -193,47 +112,9 @@ metadata:
   name: gpu-workload
 spec:
   containers:
-  - name: rocm-container
-    image: rocm/pytorch:latest
-    resources:
-      limits:
-        amd.com/gpu: 1
-  nodeSelector:
-    gpu: "true"
-```
-
-## Architecture
-
-```mermaid
-graph TB
-    subgraph "ROCm Installation Flow"
-        A[Check GPU Node Flag] --> B{GPU_NODE=true?}
-        B -->|Yes| C[Detect Ubuntu Version]
-        B -->|No| Z[Skip GPU Setup]
-        C --> D[Install Kernel Headers]
-        D --> E[Download amdgpu-install]
-        E --> F[Install ROCm + DKMS]
-        F --> G[Load amdgpu Module]
-        G --> H[Configure udev Rules]
-        H --> I[Verify with rocm-smi]
-    end
-    
-    subgraph "GPU Device Access"
-        I --> J[/dev/kfd Device]
-        I --> K[/dev/dri/renderD* Devices]
-        J --> L[Container GPU Access]
-        K --> L
-    end
-    
-    subgraph "Kubernetes GPU Scheduling"
-        L --> M[AMD Device Plugin]
-        M --> N[GPU Resource Advertisement]
-        N --> O[Node Labels]
-        O --> P[GPU Pod Scheduling]
-    end
-    
-    style A fill:#4CAF50
-    style I fill:#2196F3
-    style M fill:#FF9800
-    style P fill:#9C27B0
+    - name: rocm-container
+      image: rocm/pytorch:latest
+      resources:
+        limits:
+          amd.com/gpu: 1
 ```
