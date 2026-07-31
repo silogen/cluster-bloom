@@ -155,7 +155,7 @@
 
 - name: Ensure universe repository is enabled
   shell: |
-    add-apt-repository -y universe || true
+    add-apt-repository -y --no-update universe || true
   environment:
     DEBIAN_FRONTEND: noninteractive
   ignore_errors: yes
