@@ -116,12 +116,12 @@ Pre-flight validation system checks all configuration, resources, and system req
 Advanced debugging and transparency features allow users to export generated Ansible playbooks for inspection before execution. This feature enables debugging playbook generation, understanding deployment actions, and provides flexibility for restricted environments.
 
 **Key Capabilities:**
-- **Export Mode**: Generate complete Ansible playbook without execution using `--export` flag
-- **Configuration Integration**: Exported playbooks include all user configuration values properly applied
-- **Manual Execution**: Exported playbooks can be run separately using the `run` command
+- **Export Mode**: Generate a self-contained playbook directory at `./bloom-playbook/` without execution using `--export`
+- **Configuration Integration**: Exported playbooks include `bloom-vars.yaml` with all user configuration values
+- **Manual Execution**: Exported playbooks can be run separately using the `run` command or `ansible-playbook`
 - **Debugging Support**: Full visibility into deployment actions before execution
 - **Environment Flexibility**: Export in one environment, execute in another
-- **Cleanup Integration**: Use `--export --destroy-data` to include cluster cleanup tasks in exported playbooks, or use the standalone `bloom cleanup <config-file>` command — both produce equivalent end state
+- **Existing Installations**: Run `bloom cleanup <config-file>` (or `bloom cli --destroy-data`) before export or redeployment; `--destroy-data` cannot be combined with `--export`
 - **Disk Wipe Preview**: Before any destructive operation, a preview table shows which bloom-managed mounts will be wiped and highlights any non-bloom user files at risk
   - User files listed individually (up to 5), or count shown if more than 5
   - `lost+found` folders automatically excluded (ext4 system folder, not user data)
@@ -137,17 +137,11 @@ Advanced debugging and transparency features allow users to export generated Ans
 
 **Example Usage:**
 ```bash
-# Export playbook to stdout
+# Export playbook directory for inspection
 ./bloom cli bloom.yaml --export
 
-# Save exported playbook to file
-./bloom cli bloom.yaml --export > deployment.yaml
-
-# Export with cleanup tasks for existing installations
-./bloom cli bloom.yaml --export --destroy-data > cleanupDeployment.yaml
-
 # Execute exported playbook manually
-sudo ./bloom run deployment.yaml
+sudo ./bloom run bloom-playbook/cluster-bloom.yaml
 ```
 
 ### Post-Deployment Credential Display
@@ -193,7 +187,7 @@ sudo ./bloom --config bloom.yaml
 ```bash
 ./bloom cli bloom.yaml --export
 ```
-Exports the generated Ansible playbook to stdout instead of executing it. This enables debugging playbook generation, understanding what actions will be taken before execution, and provides a workaround for restricted environments where the wrapper lacks execution permissions.
+Exports the generated Ansible playbook to `./bloom-playbook/` instead of executing it. The directory contains the root playbook, `bloom-vars.yaml`, and the embedded `tasks/` and `manifests/` trees. This enables debugging playbook generation, understanding what actions will be taken before execution, and provides a workaround for restricted environments where the wrapper lacks execution permissions.
 
 **Use Cases:**
 - **Debugging**: Inspect the complete playbook before execution
@@ -203,17 +197,14 @@ Exports the generated Ansible playbook to stdout instead of executing it. This e
 
 **Example Workflow:**
 ```bash
-# Export playbook to file
-./bloom cli bloom.yaml --export > myPlaybook.yaml
+# Export playbook directory
+./bloom cli bloom.yaml --export
 
-# Export playbook with cleanup tasks for existing installations
-./bloom cli bloom.yaml --export --destroy-data > cleanupPlaybook.yaml
-
-# Review the generated playbook
-less myPlaybook.yaml
+# Review the generated files
+less bloom-playbook/cluster-bloom.yaml
 
 # Execute the exported playbook manually
-sudo ./bloom run myPlaybook.yaml
+sudo ./bloom run bloom-playbook/cluster-bloom.yaml
 ```
 
 #### Demo Mode
