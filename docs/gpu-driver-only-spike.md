@@ -112,14 +112,17 @@ Unsupported override combinations fail before download.
 
 ## Blacklisting
 
-Bloom does not blacklist `amdgpu`, and it no longer comments arbitrary
-third-party files under `/etc/modprobe.d`. Both the inbox and DKMS drivers use
-the same module name, so blacklisting `amdgpu` blocks both rather than selecting
-the DKMS module.
+Bloom does not blacklist `amdgpu`. Both the inbox and DKMS drivers use the same
+module name, so blacklisting `amdgpu` blocks both rather than selecting the DKMS
+module.
 
-If Bloom finds an active `blacklist amdgpu` directive, it halts with guidance
-to review the owning configuration, remove or comment the directive when
-appropriate, update initramfs, reboot, and rerun.
+If Bloom finds an active `blacklist amdgpu` directive, it displays the owning
+file and asks for confirmation before changing it. Approval comments out only
+the matching directive, creates an Ansible backup of the file, and rebuilds the
+current kernel's initramfs. Declining leaves the configuration untouched and
+stops the run. `--yes` and `--auto-confirm-prompts` approve this remediation
+automatically; when used with `--export`, the choice is persisted in the
+generated `bloom-vars.yaml`.
 
 ## Verification
 

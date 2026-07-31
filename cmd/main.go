@@ -290,7 +290,7 @@ imports (roles, tasks, vars) within that directory tree work as expected.`,
 	// Add flags
 	rootCmd.PersistentFlags().IntVarP(&port, "port", "p", 62078, "Port for web UI (fails if in use)")
 	rootCmd.Flags().BoolVarP(&showVersion, "version", "v", false, "Show version information")
-	rootCmd.PersistentFlags().BoolVarP(&autoConfirm, "yes", "y", false, "Automatically confirm all interactive prompts (--destroy-data, cleanup, reboot-required). Same as --auto-confirm-prompts. USE WITH CAUTION")
+	rootCmd.PersistentFlags().BoolVarP(&autoConfirm, "yes", "y", false, "Automatically confirm all interactive prompts (--destroy-data, cleanup, reboot-required, supported playbook remediations). Same as --auto-confirm-prompts. USE WITH CAUTION")
 	rootCmd.PersistentFlags().BoolVar(&autoConfirm, "auto-confirm-prompts", false, "Alias for --yes/-y")
 
 	// Add CLI command flags
@@ -365,6 +365,10 @@ func runAnsible(configFile string) {
 		fmt.Fprintf(os.Stderr, "Error resolving GPU stack defaults: %v\n", err)
 		os.Exit(1)
 	}
+	// Pass prompt policy into Ansible and persist it in exported bloom-vars.yaml.
+	// This lets --auto-confirm-prompts approve recoverable playbook actions such
+	// as disabling a conflicting amdgpu blacklist.
+	cfg["BLOOM_AUTO_CONFIRM_PROMPTS"] = autoConfirm
 
 	// Handle export mode
 	if export {
@@ -437,6 +441,7 @@ func runPlaybookDirect(playbookPath string) {
 		allVars = append(allVars, runtime.ConfigToAnsibleVars(cfg)...)
 	}
 
+	allVars = append(allVars, fmt.Sprintf(`{"BLOOM_AUTO_CONFIRM_PROMPTS": %t}`, autoConfirm))
 	allVars = append(allVars, extraVars...)
 	allVars = append(allVars, fmt.Sprintf(`{"bloom_run_id": %q}`, runID))
 

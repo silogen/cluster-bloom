@@ -266,17 +266,72 @@
   register: gpu_driver_blacklists
   changed_when: false
 
-- name: Fail if amdgpu is blacklisted
+- name: Find files containing active amdgpu blacklist directives
+  shell: "grep -RlE '^[[:space:]]*blacklist[[:space:]]+amdgpu([[:space:]]|$)' /etc/modprobe.d 2>/dev/null || true"
+  register: gpu_driver_blacklist_files
+  changed_when: false
+  when: gpu_driver_blacklists.stdout | trim != ''
+
+- name: Confirm removal of conflicting amdgpu blacklist
+  pause:
+    prompt: |
+      Bloom found configuration that blocks automatic loading of both inbox and
+      DKMS amdgpu drivers:
+      {{ gpu_driver_blacklists.stdout }}
+
+      Bloom can comment out only the active `blacklist amdgpu` directives,
+      create timestamped Ansible backups, and rebuild the current kernel's
+      initramfs. Continue? Type "yes" to approve
+  register: gpu_driver_blacklist_prompt
+  when:
+    - gpu_driver_blacklists.stdout | trim != ''
+    - not (BLOOM_AUTO_CONFIRM_PROMPTS | default(false) | bool)
+
+- name: Resolve amdgpu blacklist removal approval
+  set_fact:
+    gpu_driver_blacklist_approved: >-
+      {{
+        (BLOOM_AUTO_CONFIRM_PROMPTS | default(false) | bool) or
+        ((gpu_driver_blacklist_prompt.user_input | default('') | trim | lower) == 'yes')
+      }}
+  when: gpu_driver_blacklists.stdout | trim != ''
+
+- name: Stop when conflicting amdgpu blacklist removal is declined
   fail:
     msg: |
       amdgpu is blacklisted by configuration Bloom does not own:
       {{ gpu_driver_blacklists.stdout }}
 
-      Bloom does not rewrite third-party modprobe files. Review why the
-      blacklist exists, remove or comment it if the host should use its
-      preinstalled DKMS driver, run `sudo update-initramfs -u`, reboot, and
-      rerun Bloom.
-  when: gpu_driver_blacklists.stdout | trim != ''
+      Bloom did not change the files because removal was not approved. Review
+      why the blacklist exists, remove or comment it if this host should use
+      its DKMS driver, run `sudo update-initramfs -u`, reboot, and rerun Bloom.
+  when:
+    - gpu_driver_blacklists.stdout | trim != ''
+    - not (gpu_driver_blacklist_approved | default(false) | bool)
+
+- name: Disable approved conflicting amdgpu blacklist directives
+  replace:
+    path: "{{ item }}"
+    regexp: '^([ \t]*blacklist[ \t]+amdgpu(?:[ \t]+[^\n]*)?)$'
+    replace: '# Bloom disabled conflicting directive: \1'
+    backup: true
+  loop: "{{ gpu_driver_blacklist_files.stdout_lines | default([]) }}"
+  register: gpu_driver_blacklist_updates
+  when: gpu_driver_blacklist_approved | default(false) | bool
+
+- name: Rebuild current kernel initramfs after disabling amdgpu blacklist
+  command: "update-initramfs -u -k {{ kernel_version.stdout }}"
+  changed_when: true
+  when:
+    - gpu_driver_blacklist_updates is defined
+    - gpu_driver_blacklist_updates is changed
+
+- name: Verify active amdgpu blacklist directives were removed
+  shell: "grep -RHnE '^[[:space:]]*blacklist[[:space:]]+amdgpu([[:space:]]|$)' /etc/modprobe.d 2>/dev/null || true"
+  register: gpu_driver_blacklists_after
+  changed_when: false
+  failed_when: gpu_driver_blacklists_after.stdout | trim != ''
+  when: gpu_driver_blacklist_approved | default(false) | bool
 
 - name: Rebuild module dependency metadata
   command: depmod -a
