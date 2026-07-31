@@ -133,7 +133,7 @@
       - "8472"
       - "30000:32767"
 
-    inotify_target_value: "512"
+    inotify_target_value: 512
     rancher_min_partition_gb: 500
     bloom_fstab_tag: "# managed by cluster-bloom"
     bloom_premounted_fstab_tag: "# premounted by cluster-bloom"
