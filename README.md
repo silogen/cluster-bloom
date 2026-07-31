@@ -98,6 +98,7 @@ sudo ./bloom run bloom-playbook/cluster-bloom.yaml
 - Exported playbooks work with `sudo ./bloom run` or `ansible-playbook bloom-playbook/cluster-bloom.yaml`
 - `--destroy-data` cannot be combined with `--export`
 - **Existing Installations**: For existing cluster installations, run `bloom cleanup bloom.yaml` (or `bloom cli bloom.yaml --destroy-data`) before export or redeployment
+- **Partial-run Resume**: Use `--preserve-existing-rke2` (also compatible with `--export`) to reconcile an existing RKE2 installation while retaining RKE2 state; disk safety checks still apply
 - **Loaned Nodes with k3s**: Bloom automatically pauses conflicting k3s installs (non-destructive). Resume k3s after RKE2 testing with `systemctl start k3s-server` once RKE2 is removed via `--destroy-data`
 - **Optimized Cleanup**: Best-effort node drain (~30s timeout) that internally uses kubectl's `--force` and `--disable-eviction` to bypass stuck pods; skips volume detach wait when no Longhorn volumes detected
 - **Disk Wipe Preview**: Both `bloom cleanup` and `--destroy-data` show a preview with:

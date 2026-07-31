@@ -25,6 +25,7 @@ var (
 	tags            string
 	destroyData     bool
 	pauseK3s        bool
+	preserveRKE2    bool
 	autoConfirm     bool // --yes/-y, --auto-confirm-prompts, cleanup's --force/-f all bind here
 	extraVars       []string
 	verbose         bool
@@ -126,7 +127,7 @@ func newRootCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:   "bloom",
 		Short: "Kubernetes Cluster Deployment Tool",
-		Long:  `Bloom - A tool for generating bloom.yaml configurations and deploying Kubernetes clusters.
+		Long: `Bloom - A tool for generating bloom.yaml configurations and deploying Kubernetes clusters.
 
 Certificate Updates:
   To update TLS certificates in an existing cluster, use a separate config with --tags:
@@ -301,6 +302,7 @@ imports (roles, tasks, vars) within that directory tree work as expected.`,
 	cliCmd.Flags().StringVar(&tags, "tags", "", "Run only tasks with specific tags (e.g., cleanup, validate, storage)")
 	cliCmd.Flags().BoolVar(&destroyData, "destroy-data", false, "⚠️  DANGER: Wipes cluster (RKE2 uninstall, Longhorn cleanup, disk wipe). Shows disk preview before confirmation. Equivalent to running bloom cleanup then redeploying.")
 	cliCmd.Flags().BoolVar(&pauseK3s, "pause-k3s", false, "Legacy alias: k3s conflicts are paused automatically; this flag still forces the pause step")
+	cliCmd.Flags().BoolVar(&preserveRKE2, "preserve-existing-rke2", false, "Resume/reconcile an existing RKE2 installation without treating its service and state directories as data-safety conflicts")
 	cliCmd.Flags().StringVar(&clusterListenIP, "cluster-listen-ip", "", "IP address or CIDR for cluster binding (e.g., 192.168.1.100 or 192.168.1.0/24)")
 	cliCmd.Flags().BoolVar(&export, "export", false, "Export the playbook to ./bloom-playbook/ (overwrites if exists) instead of executing it")
 
@@ -368,6 +370,9 @@ func runAnsible(configFile string) {
 	// Internal Ansible variable: inject only after schema validation so it is not
 	// rejected as an unknown user-facing bloom.yaml key.
 	cfg["bloom_config_file"] = configFile
+	if preserveRKE2 {
+		cfg["RKE2_PRESERVE_EXISTING"] = true
+	}
 
 	// Resolve host-driver policy plus GPU Operator/DeviceConfig defaults and
 	// inject them as ansible vars before export/run.

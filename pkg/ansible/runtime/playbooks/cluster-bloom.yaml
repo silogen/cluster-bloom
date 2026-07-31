@@ -40,6 +40,7 @@
     # Set SKIP_K3S_PAUSE: true to fail instead of auto-pausing on loaned nodes.
     PAUSE_K3S: false
     SKIP_K3S_PAUSE: false
+    RKE2_PRESERVE_EXISTING: false
     
     # DNS_SERVERS: Custom DNS servers for RKE2 cluster
     #              If set, these nameservers will be written to /etc/rancher/rke2/resolv.conf

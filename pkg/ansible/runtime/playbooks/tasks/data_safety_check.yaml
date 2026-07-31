@@ -53,6 +53,7 @@
   set_fact:
     validation_issues: "{{ validation_issues + ['RKE2 server service is running (' + rke2_server_service.status.ActiveState + ')'] }}"
   when: 
+    - not (RKE2_PRESERVE_EXISTING | default(false) | bool)
     - rke2_server_service.status is defined
     - rke2_server_service.status.ActiveState == "active"
 
@@ -60,6 +61,7 @@
   set_fact:
     validation_issues: "{{ validation_issues + ['RKE2 agent service is running (' + rke2_agent_service.status.ActiveState + ')'] }}"
   when:
+    - not (RKE2_PRESERVE_EXISTING | default(false) | bool)
     - rke2_agent_service.status is defined
     - rke2_agent_service.status.ActiveState == "active"
 
@@ -67,6 +69,7 @@
   set_fact:
     validation_issues: "{{ validation_issues + ['/var/lib/rancher/rke2 directory exists and contains ' + (rke2_data_contents.matched | string) + ' items'] }}"
   when:
+    - not (RKE2_PRESERVE_EXISTING | default(false) | bool)
     - rke2_data_dir.stat.exists
     - (rke2_data_contents.matched | int) > 0
 
@@ -74,8 +77,23 @@
   set_fact:
     validation_issues: "{{ validation_issues + ['/etc/rancher/rke2 directory exists and contains ' + (rke2_config_contents.matched | string) + ' items'] }}"
   when:
+    - not (RKE2_PRESERVE_EXISTING | default(false) | bool)
     - rke2_config_dir.stat.exists
     - (rke2_config_contents.matched | int) > 0
+
+- name: Report existing RKE2 state is being preserved
+  debug:
+    msg:
+      - "↻ Existing RKE2 installation detected — preserving and reconciling it"
+      - "  RKE2 services and /var/lib/rancher/rke2 state will not be removed"
+      - "  Other data-safety checks (including disk checks) remain enforced"
+  when:
+    - RKE2_PRESERVE_EXISTING | default(false) | bool
+    - >-
+      (rke2_server_service.status.ActiveState | default('inactive')) == 'active' or
+      (rke2_agent_service.status.ActiveState | default('inactive')) == 'active' or
+      rke2_data_dir.stat.exists or
+      rke2_config_dir.stat.exists
 
 # k3s conflict checks — auto-remediated on loaned nodes (non-destructive pause)
 - name: Check if k3s all-in-one service exists and is running
@@ -238,11 +256,26 @@
       
       These issues prevent safe deployment and could lead to data loss.
       
-      Resolution:
-      Use the --destroy-data flag to clean up all existing data:
-      sudo ./bloom cli {{ validate_config_file | default('bloom.yaml') }} --destroy-data
-      
-      WARNING: This will destroy ALL existing cluster and disk data!
+      Resolution options:
+
+      1. Resume the same RKE2 installation (recommended after a partial Bloom run):
+         Direct execution:
+           sudo ./bloom cli {{ validate_config_file | default('bloom.yaml') }} --preserve-existing-rke2
+         Exported playbook:
+           ./bloom cli {{ validate_config_file | default('bloom.yaml') }} --export --preserve-existing-rke2
+
+         This preserves RKE2 state only. Disk and other data-safety checks remain active.
+
+      2. Remove only the existing RKE2 installation, then rerun Bloom:
+           sudo systemctl stop rke2-server rke2-agent
+           sudo /usr/local/bin/rke2-uninstall.sh
+
+         Do not manually rm -rf a running RKE2 data directory.
+
+      3. Fully destroy the cluster and Bloom-managed disk data:
+           sudo ./bloom cli {{ validate_config_file | default('bloom.yaml') }} --destroy-data
+
+         WARNING: --destroy-data destroys RKE2, Longhorn, and configured cluster disk data.
   when: validation_issues | length > 0
 
 # Report premounted-disk issues separately — resolution is remount, not destroy

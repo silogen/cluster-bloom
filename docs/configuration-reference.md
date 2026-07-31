@@ -623,6 +623,7 @@ bloom cli <config-file> [flags]
 - `--export`: Export the playbook to `./bloom-playbook/` (overwrites if exists) instead of executing it
 - `--dry-run`: Run in check mode without making changes
 - `--destroy-data`: ⚠️ DANGER: Wipes the cluster before redeploying (RKE2 uninstall, Longhorn cleanup, bloom-managed disk wipe). Shows a disk wipe preview before confirmation. Premounted disks (CLUSTER_PREMOUNTED_DISKS) have their bloom artifacts cleaned but their filesystem and fstab entries preserved
+- `--preserve-existing-rke2`: Resume or reconcile an existing RKE2 installation without treating its running services and state directories as safety conflicts. Other safety checks, including disk checks, remain enforced
 - `--pause-k3s`: Legacy alias — k3s conflicts are paused automatically; this flag still forces the pause step
 - `--playbook string`: Playbook to run (default: "cluster-bloom.yaml")
 - `--tags string`: Run only tasks with specific tags (e.g., cleanup, validate, storage)
@@ -634,6 +635,9 @@ sudo ./bloom cli bloom.yaml
 
 # Export playbook for inspection (writes ./bloom-playbook/)
 ./bloom cli bloom.yaml --export
+
+# Resume an exported deployment after a partial run while preserving RKE2 state
+./bloom cli bloom.yaml --export --preserve-existing-rke2
 
 # Dry run deployment
 sudo ./bloom cli bloom.yaml --dry-run
