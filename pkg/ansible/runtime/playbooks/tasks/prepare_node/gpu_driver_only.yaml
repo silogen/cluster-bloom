@@ -262,12 +262,12 @@
   when: gpu_driver_dkms_for_kernel.rc != 0
 
 - name: Find active amdgpu blacklist directives
-  shell: "grep -RHnE '^[[:space:]]*blacklist[[:space:]]+amdgpu([[:space:]]|$)' /etc/modprobe.d 2>/dev/null || true"
+  shell: "grep -RHnE --include='*.conf' '^[[:space:]]*blacklist[[:space:]]+amdgpu([[:space:]]|$)' /etc/modprobe.d 2>/dev/null || true"
   register: gpu_driver_blacklists
   changed_when: false
 
 - name: Find files containing active amdgpu blacklist directives
-  shell: "grep -RlE '^[[:space:]]*blacklist[[:space:]]+amdgpu([[:space:]]|$)' /etc/modprobe.d 2>/dev/null || true"
+  shell: "grep -RlE --include='*.conf' '^[[:space:]]*blacklist[[:space:]]+amdgpu([[:space:]]|$)' /etc/modprobe.d 2>/dev/null || true"
   register: gpu_driver_blacklist_files
   changed_when: false
   when: gpu_driver_blacklists.stdout | trim != ''
@@ -290,7 +290,7 @@
     - gpu_driver_blacklist_updates is changed
 
 - name: Verify active amdgpu blacklist directives were removed
-  shell: "grep -RHnE '^[[:space:]]*blacklist[[:space:]]+amdgpu([[:space:]]|$)' /etc/modprobe.d 2>/dev/null || true"
+  shell: "grep -RHnE --include='*.conf' '^[[:space:]]*blacklist[[:space:]]+amdgpu([[:space:]]|$)' /etc/modprobe.d 2>/dev/null || true"
   register: gpu_driver_blacklists_after
   changed_when: false
   failed_when: gpu_driver_blacklists_after.stdout | trim != ''
