@@ -351,7 +351,6 @@ func runAnsible(configFile string) {
 	if pauseK3s {
 		cfg["PAUSE_K3S"] = true
 	}
-	cfg["bloom_config_file"] = configFile
 
 	// Validate config (after injecting CLI flags)
 	// Skip validation for cert update tags to allow separate cert-update-config.yaml
@@ -365,6 +364,10 @@ func runAnsible(configFile string) {
 			os.Exit(1)
 		}
 	}
+
+	// Internal Ansible variable: inject only after schema validation so it is not
+	// rejected as an unknown user-facing bloom.yaml key.
+	cfg["bloom_config_file"] = configFile
 
 	// Resolve host-driver policy plus GPU Operator/DeviceConfig defaults and
 	// inject them as ansible vars before export/run.
