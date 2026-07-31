@@ -9,16 +9,14 @@
     path: "{{ BLOOM_DIR }}"
     state: directory
     mode: "0755"
-    owner: "{{ ansible_user | default('ubuntu') }}"
-    group: "{{ ansible_user | default('ubuntu') }}"
+    owner: "{{ bloom_effective_user }}"
 
 - name: Create ClusterForge directory in BLOOM_DIR
   file:
     path: "{{ BLOOM_DIR }}/clusterforge"
     state: directory
     mode: "0755"
-    owner: "{{ ansible_user | default('ubuntu') }}"
-    group: "{{ ansible_user | default('ubuntu') }}"
+    owner: "{{ bloom_effective_user }}"
 
 - name: Check if CLUSTERFORGE_RELEASE is a URL
   set_fact:

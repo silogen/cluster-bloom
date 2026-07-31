@@ -153,7 +153,7 @@ schema:
       section: "🔒 SSL/TLS Configuration"
       sequence:
         - type: str
-          pattern: "^(?!.*\\*)([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\\.)+[a-zA-Z]{2,}$"
+          pattern: "^([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\\.)+[a-zA-Z]{2,}$"
           pattern-title: "Enter a valid domain name (e.g., api.example.com) - wildcards (*.domain.com) are not supported by RKE2"
 
     USE_CERT_MANAGER:

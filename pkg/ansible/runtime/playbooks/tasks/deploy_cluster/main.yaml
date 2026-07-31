@@ -9,8 +9,7 @@
     path: "{{ BLOOM_DIR }}"
     state: directory
     mode: "0755"
-    owner: "{{ ansible_user | default('ubuntu') }}"
-    group: "{{ ansible_user | default('ubuntu') }}"
+    owner: "{{ bloom_effective_user }}"
   become: yes
 
 - name: Prepare RKE2

@@ -48,6 +48,15 @@
     
     CLUSTERFORGE_REPO: "https://github.com/silogen/cluster-forge.git"
     BLOOM_DIR: "/tmp/bloom"
+    # Controller/login user that should own user-facing Bloom output. This
+    # resolves to the pre-sudo user when ansible-playbook itself runs via sudo,
+    # and to USER for normal local/exported execution.
+    bloom_effective_user: >-
+      {{
+        lookup('env', 'SUDO_USER')
+        | default(lookup('env', 'USER'), true)
+        | default(ansible_user | default(ansible_user_id | default('root'), true), true)
+      }}
     # EAI-5657: exact driver compatibility policy. These play-level defaults
     # also support direct ansible-playbook use when Bloom's Go layer is bypassed.
     GPU_INSTALL_HOST_TOOLS: true
