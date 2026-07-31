@@ -79,17 +79,11 @@ Get help for specific commands:
 Export generated Ansible playbooks for inspection without execution:
 
 ```sh
-# Export playbook to stdout
+# Export playbook directory (./bloom-playbook/) for inspection
 ./bloom cli bloom.yaml --export
 
-# Export playbook with cleanup tasks included (for existing installations)
-./bloom cli bloom.yaml --export --destroy-data > myPlaybook.yaml
-
-# Save exported playbook to file
-./bloom cli bloom.yaml --export > myPlaybook.yaml
-
 # Execute exported playbook manually
-sudo ./bloom run myPlaybook.yaml
+sudo ./bloom run bloom-playbook/cluster-bloom.yaml
 ```
 
 **Use Cases:**
@@ -99,12 +93,11 @@ sudo ./bloom run myPlaybook.yaml
 - **Manual Control**: Review and modify playbooks before execution
 
 **Important Notes:**
-- Exported playbooks are fully self-contained (all task files are automatically inlined)
-- Configuration values from your bloom.yaml are properly applied
-- Exported playbooks work perfectly with `sudo ./bloom run` for manual execution
-- No external dependencies or task files are required for exported playbooks
-- **Cleanup Integration**: Use `--export --destroy-data` to include cleanup tasks in exported playbooks
-- **Existing Installations**: For existing cluster installations, use `--destroy-data` (or the standalone `bloom cleanup bloom.yaml`) before redeployment
+- `--export` writes a self-contained playbook directory to `./bloom-playbook/` (overwrites if exists), containing the root playbook, `bloom-vars.yaml`, and the `tasks/` and `manifests/` trees
+- Configuration values from your bloom.yaml are written to `bloom-vars.yaml`
+- Exported playbooks work with `sudo ./bloom run` or `ansible-playbook bloom-playbook/cluster-bloom.yaml`
+- `--destroy-data` cannot be combined with `--export`
+- **Existing Installations**: For existing cluster installations, run `bloom cleanup bloom.yaml` (or `bloom cli bloom.yaml --destroy-data`) before export or redeployment
 - **Optimized Cleanup**: Best-effort node drain (~30s timeout) that internally uses kubectl's `--force` and `--disable-eviction` to bypass stuck pods; skips volume detach wait when no Longhorn volumes detected
 - **Disk Wipe Preview**: Both `bloom cleanup` and `--destroy-data` show a preview with:
   - User files listed (up to 5), or count shown if more than 5
@@ -297,9 +290,6 @@ sudo ./bloom cli bloom.yaml
 # (cert params like CERT_OPTION/TLS_CERT/TLS_KEY are NOT required for this tag)
 sudo ./bloom cli bloom.yaml --tags deploy_clusterforge
 
-# Export with cleanup tasks for existing installations
-./bloom cli bloom.yaml --export --destroy-data > cleanupPlaybook.yaml
-
 # Dangerous: Destroy existing data and start fresh
 sudo ./bloom cli bloom.yaml --destroy-data
 ```
@@ -310,16 +300,16 @@ Run exported or custom Ansible playbooks using the containerized runtime:
 
 ```sh
 # Run exported playbook
-sudo ./bloom run myPlaybook.yaml
+sudo ./bloom run bloom-playbook/cluster-bloom.yaml
 
 # Run with additional variables
-sudo ./bloom run myPlaybook.yaml -e "CUSTOM_VAR=value"
+sudo ./bloom run bloom-playbook/cluster-bloom.yaml -e "CUSTOM_VAR=value"
 
 # Run with configuration file for additional variables
-sudo ./bloom run myPlaybook.yaml --config additional-config.yaml
+sudo ./bloom run bloom-playbook/cluster-bloom.yaml --config additional-config.yaml
 
 # Run with verbose output
-sudo ./bloom run myPlaybook.yaml --verbose
+sudo ./bloom run bloom-playbook/cluster-bloom.yaml --verbose
 ```
 
 > **GPU nodes — ROCm version guard**: On a GPU node whose already-installed ROCm does not match the train required by `GPU_STACK_FAMILY` (e.g. `radeon` on a host with ROCm 7.2.3), bloom fails fast during node validation. To proceed anyway with the installed ROCm, set this in `bloom.yaml`:

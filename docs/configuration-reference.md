@@ -620,7 +620,7 @@ bloom cli <config-file> [flags]
 ```
 
 **Available Flags:**
-- `--export`: Export generated playbook to stdout instead of executing it
+- `--export`: Export the playbook to `./bloom-playbook/` (overwrites if exists) instead of executing it
 - `--dry-run`: Run in check mode without making changes
 - `--destroy-data`: ⚠️ DANGER: Wipes the cluster before redeploying (RKE2 uninstall, Longhorn cleanup, bloom-managed disk wipe). Shows a disk wipe preview before confirmation. Premounted disks (CLUSTER_PREMOUNTED_DISKS) have their bloom artifacts cleaned but their filesystem and fstab entries preserved
 - `--playbook string`: Playbook to run (default: "cluster-bloom.yaml")
@@ -631,14 +631,8 @@ bloom cli <config-file> [flags]
 # Standard deployment
 sudo ./bloom cli bloom.yaml
 
-# Export playbook for inspection
+# Export playbook for inspection (writes ./bloom-playbook/)
 ./bloom cli bloom.yaml --export
-
-# Export and save to file
-./bloom cli bloom.yaml --export > deployment.yaml
-
-# Export with cleanup tasks for existing installations
-./bloom cli bloom.yaml --export --destroy-data > cleanupDeployment.yaml
 
 # Dry run deployment
 sudo ./bloom cli bloom.yaml --dry-run
@@ -672,38 +666,36 @@ bloom run <playbook> [flags]
 **Examples:**
 ```bash
 # Run exported playbook
-sudo ./bloom run myPlaybook.yaml
+sudo ./bloom run bloom-playbook/cluster-bloom.yaml
 
 # Run with additional configuration
-sudo ./bloom run myPlaybook.yaml --config extra-vars.yaml
+sudo ./bloom run bloom-playbook/cluster-bloom.yaml --config extra-vars.yaml
 
 # Run with inline variables
-sudo ./bloom run myPlaybook.yaml -e "CUSTOM_VAR=value" -e "ANOTHER_VAR=test"
+sudo ./bloom run bloom-playbook/cluster-bloom.yaml -e "CUSTOM_VAR=value" -e "ANOTHER_VAR=test"
 
 # Run with verbose output
-sudo ./bloom run myPlaybook.yaml --verbose
+sudo ./bloom run bloom-playbook/cluster-bloom.yaml --verbose
 ```
 
 ### Export Workflow
 
-The `--export` flag enables a powerful workflow for playbook inspection and manual execution:
+The `--export` flag enables a workflow for playbook inspection and manual execution:
 
-1. **Generate and Inspect**: Export the playbook to review what actions will be performed
-2. **Modify if Needed**: Optionally customize the exported playbook
-3. **Execute Manually**: Run the playbook using the `run` command
+1. **Generate and Inspect**: Export the playbook directory to review what actions will be performed
+2. **Modify if Needed**: Optionally customize files under `./bloom-playbook/`
+3. **Execute Manually**: Run the playbook using the `run` command or `ansible-playbook`
 
 ```bash
-# Step 1: Export playbook
-./bloom cli bloom.yaml --export > deployment.yaml
+# Step 1: Export playbook directory
+./bloom cli bloom.yaml --export
 
-# Step 1b: Export with cleanup for existing installations
-./bloom cli bloom.yaml --export --destroy-data > cleanupDeployment.yaml
-
-# Step 2: Review the playbook
-less deployment.yaml
+# Step 2: Review the exported files
+less bloom-playbook/cluster-bloom.yaml
+less bloom-playbook/bloom-vars.yaml
 
 # Step 3: Execute the playbook
-sudo ./bloom run deployment.yaml
+sudo ./bloom run bloom-playbook/cluster-bloom.yaml
 ```
 
 **Use Cases for Export:**
@@ -712,14 +704,13 @@ sudo ./bloom run deployment.yaml
 - **Customization**: Modify generated playbooks for specific requirements
 - **Restricted Environments**: Generate playbooks on one system, execute on another
 - **Learning**: Study the generated Ansible code to understand cluster setup
-- **Existing Installations**: Use `--export --destroy-data` to handle existing cluster installations safely
+- **Existing Installations**: Run `bloom cleanup <config-file>` before export or deployment on existing clusters (`--destroy-data` cannot be combined with `--export`)
 
 **Technical Details:**
-- **Self-Contained Playbooks**: Exported playbooks automatically inline all `include_tasks` directives, creating completely self-contained files
-- **Configuration Integration**: All user configuration values are properly applied to playbook variables
-- **Task Preservation**: Tags, when conditions, and other metadata from include directives are preserved on inlined tasks
-- **Full Compatibility**: Exported playbooks are fully compatible with the `bloom run` command and standard Ansible tools
-- **Cleanup Task Injection**: When `--destroy-data` is used with `--export`, cleanup tasks are automatically prepended. These tasks are equivalent to running `bloom cleanup <config-file>` before the deployment
+- **Directory Layout**: Export writes `./bloom-playbook/` with the root playbook, `bloom-vars.yaml` (config values), and the embedded `tasks/` and `manifests/` trees
+- **Configuration Integration**: All user configuration values are written to `bloom-vars.yaml` and loaded by the exported root playbook
+- **Standalone Execution**: The exported root playbook targets `localhost` and sets `BLOOM_DIR` so it can run outside Bloom's containerized runtime
+- **Full Compatibility**: Exported playbooks work with the `bloom run` command and standard Ansible tools when run from the `./bloom-playbook/` directory
 - **Disk Wipe Preview**: Both `bloom cleanup` and `bloom cli --destroy-data` show a preview of bloom-managed mounts and the future mount range before requiring confirmation
 - **Premounted Disk Safety**: `CLUSTER_PREMOUNTED_DISKS` entries have bloom artifacts (pvc-*, replicas, longhorn-disk.cfg) removed but their filesystem, fstab entry, and user files are preserved
 - **Smart Index Allocation**: Mount indexes are chosen as the lowest contiguous range not conflicting with premounted disk indexes (from fstab and config), so `CLUSTER_DISKS` and `CLUSTER_PREMOUNTED_DISKS` can coexist
