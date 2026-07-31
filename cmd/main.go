@@ -482,18 +482,11 @@ func exportPlaybook(cfg config.Config, playbookName string) error {
 	if err != nil {
 		return fmt.Errorf("read playbook: %w", err)
 	}
-	var playbook any
-	if err := yaml.Unmarshal(playbookContent, &playbook); err != nil {
-		return fmt.Errorf("parse playbook: %w", err)
-	}
-	if err := tweakRootPlaybookForExport(playbook); err != nil {
+	tweaked, err := tweakRootPlaybookForExportContent(playbookContent)
+	if err != nil {
 		return fmt.Errorf("tweak playbook: %w", err)
 	}
-	out, err := yaml.Marshal(playbook)
-	if err != nil {
-		return fmt.Errorf("marshal playbook: %w", err)
-	}
-	if err := os.WriteFile(playbookPath, out, 0644); err != nil {
+	if err := os.WriteFile(playbookPath, tweaked, 0644); err != nil {
 		return fmt.Errorf("write playbook: %w", err)
 	}
 
@@ -519,31 +512,36 @@ func exportPlaybook(cfg config.Config, playbookName string) error {
 	return nil
 }
 
-// tweakRootPlaybookForExport adjusts the first play of the exported playbook so
-// it runs standalone: targets localhost, loads bloom-vars.yaml, and exposes
-// BLOOM_DIR (normally injected at runtime as the working directory).
-func tweakRootPlaybookForExport(playbook any) error {
-	plays, ok := playbook.([]any)
-	if !ok || len(plays) == 0 {
-		return fmt.Errorf("unexpected playbook structure: expected non-empty list of plays")
+// tweakRootPlaybookForExportContent adjusts the exported root playbook in place
+// without YAML round-tripping. Go's yaml.Marshal alphabetizes map keys, which
+// breaks Ansible task parsing (e.g. "become" before "command" is treated as a module).
+func tweakRootPlaybookForExportContent(content []byte) ([]byte, error) {
+	s := string(content)
+
+	const hostsAll = "  hosts: all\n"
+	const hostsLocalhost = "  hosts: localhost\n"
+	if !strings.Contains(s, hostsAll) {
+		return nil, fmt.Errorf("expected %q in playbook", strings.TrimSpace(hostsAll))
 	}
-	first, ok := plays[0].(map[string]any)
-	if !ok {
-		return fmt.Errorf("unexpected playbook structure: first play is not a map")
+	s = strings.Replace(s, hostsAll, hostsLocalhost, 1)
+
+	const varsFilesBlock = "  vars_files:\n    - bloom-vars.yaml\n"
+	if !strings.Contains(s, "vars_files:") {
+		s = strings.Replace(s, hostsLocalhost, hostsLocalhost+varsFilesBlock, 1)
 	}
 
-	first["hosts"] = "localhost"
-
-	existing, _ := first["vars_files"].([]any)
-	first["vars_files"] = append([]any{"bloom-vars.yaml"}, existing...)
-
-	vars, ok := first["vars"].(map[string]any)
-	if !ok {
-		vars = map[string]any{}
-		first["vars"] = vars
+	const bloomDirDefault = `    BLOOM_DIR: "/tmp/bloom"`
+	const bloomDirExport = `    BLOOM_DIR: "{{ ansible_env.PWD | default(playbook_dir) }}"`
+	switch {
+	case strings.Contains(s, bloomDirDefault):
+		s = strings.Replace(s, bloomDirDefault, bloomDirExport, 1)
+	case strings.Contains(s, bloomDirExport):
+		// already export-ready
+	default:
+		return nil, fmt.Errorf("expected BLOOM_DIR default %q in playbook vars", bloomDirDefault)
 	}
-	vars["BLOOM_DIR"] = "{{ ansible_env.PWD | default(playbook_dir) }}"
-	return nil
+
+	return []byte(s), nil
 }
 
 // confirmDestructiveOperation prompts the user to confirm the dangerous --destroy-data operation

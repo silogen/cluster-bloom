@@ -142,7 +142,8 @@
 
   pre_tasks:
     - name: Check passwordless sudo is configured
-      command: true
+      ansible.builtin.command:
+        cmd: /bin/true
       become: true
       changed_when: false
       register: sudo_check
