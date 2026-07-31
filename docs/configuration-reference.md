@@ -623,7 +623,7 @@ bloom cli <config-file> [flags]
 - `--export`: Export the playbook to `./bloom-playbook/` (overwrites if exists) instead of executing it
 - `--dry-run`: Run in check mode without making changes
 - `--destroy-data`: ⚠️ DANGER: Wipes the cluster before redeploying (RKE2 uninstall, Longhorn cleanup, bloom-managed disk wipe). Shows a disk wipe preview before confirmation. Premounted disks (CLUSTER_PREMOUNTED_DISKS) have their bloom artifacts cleaned but their filesystem and fstab entries preserved
-- `--pause-k3s`: Non-destructively stop a conflicting k3s install before RKE2 deploy. Preserves k3s data under `/var/lib/rancher/k3s` and systemd enabled state so the node can return to k3s after RKE2 testing (loaned nodes)
+- `--pause-k3s`: Legacy alias — k3s conflicts are paused automatically; this flag still forces the pause step
 - `--playbook string`: Playbook to run (default: "cluster-bloom.yaml")
 - `--tags string`: Run only tasks with specific tags (e.g., cleanup, validate, storage)
 
@@ -631,9 +631,6 @@ bloom cli <config-file> [flags]
 ```bash
 # Standard deployment
 sudo ./bloom cli bloom.yaml
-
-# Loaned node with existing k3s — pause k3s (reversible), then deploy RKE2
-sudo ./bloom cli bloom.yaml --pause-k3s
 
 # Export playbook for inspection (writes ./bloom-playbook/)
 ./bloom cli bloom.yaml --export
@@ -709,7 +706,7 @@ sudo ./bloom run bloom-playbook/cluster-bloom.yaml
 - **Restricted Environments**: Generate playbooks on one system, execute on another
 - **Learning**: Study the generated Ansible code to understand cluster setup
 - **Existing Installations**: Run `bloom cleanup <config-file>` before export or deployment on existing clusters (`--destroy-data` cannot be combined with `--export`)
-- **Loaned Nodes with k3s**: Use `--pause-k3s` to stop (not uninstall) a conflicting k3s install before RKE2 deploy. After testing, remove RKE2 with `--destroy-data`, then `systemctl start k3s-server` (or `k3s`) to resume
+- **Loaned Nodes with k3s**: Bloom automatically pauses conflicting k3s before RKE2 deploy (non-destructive). After testing, remove RKE2 with `--destroy-data`, then `systemctl start k3s-server` (or `k3s`) to resume
 
 **Technical Details:**
 - **Directory Layout**: Export writes `./bloom-playbook/` with the root playbook, `bloom-vars.yaml` (config values), and the embedded `tasks/` and `manifests/` trees

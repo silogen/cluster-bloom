@@ -2,8 +2,8 @@
 # Purpose: Non-destructively pause a k3s installation so RKE2 can start on loaned nodes.
 # Stops services and releases port 6443 / containerd socket paths without uninstalling
 # k3s or touching /var/lib/rancher/k3s. Enabled systemd units stay enabled for later resume.
-# Dependencies: PAUSE_K3S variable (set via bloom cli --pause-k3s)
-# Usage: Included by cluster-bloom.yaml after data_safety_check when PAUSE_K3S is true
+# Dependencies: k3s_pause_required (set by data_safety_check) or PAUSE_K3S
+# Usage: Included by cluster-bloom.yaml after data_safety_check when conflicts are detected
 # Tags: [pre_deployment, k3s_pause]
 
 - name: Display k3s pause notice
@@ -85,7 +85,7 @@
       Inspect listeners:
         ss -ltnp 'sport = :6443'
 
-      If a non-k3s process holds the port, stop it manually and re-run bloom with --pause-k3s.
+      Stop the remaining process manually and re-run bloom.
   when: k3s_port_check.rc != 0
 
 - name: k3s pause completed
@@ -93,7 +93,7 @@
     msg:
       - "✓ k3s paused successfully — proceeding with RKE2 deployment"
       - "To return this node to k3s after RKE2 testing:"
-      - "  1. sudo ./bloom cli {{ ansible_config_file | default('bloom.yaml') }} --destroy-data"
+      - "  1. sudo ./bloom cli {{ bloom_config_file | default('bloom.yaml') }} --destroy-data"
       - "  2. sudo systemctl start k3s-server   # or: systemctl start k3s"
       - "  3. If networking fails, remove stale interfaces and retry:"
       - "       sudo ip link delete cni0 2>/dev/null; sudo ip link delete flannel.1 2>/dev/null"

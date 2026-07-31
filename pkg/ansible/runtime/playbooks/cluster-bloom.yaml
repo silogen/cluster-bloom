@@ -36,9 +36,10 @@
     #          WARNING: Will overwrite /etc/resolv.conf if DNS is detected as broken
     FIX_DNS: false
 
-    # PAUSE_K3S: Non-destructively stop a conflicting k3s install before RKE2 deploy.
-    # Set via `bloom cli --pause-k3s` for loaned nodes that must return to k3s later.
+    # PAUSE_K3S: Legacy force flag; k3s conflicts are paused automatically by default.
+    # Set SKIP_K3S_PAUSE: true to fail instead of auto-pausing on loaned nodes.
     PAUSE_K3S: false
+    SKIP_K3S_PAUSE: false
     
     # DNS_SERVERS: Custom DNS servers for RKE2 cluster
     #              If set, these nameservers will be written to /etc/rancher/rke2/resolv.conf
@@ -172,12 +173,12 @@
       vars:
         validate_no_disks_for_cluster: "{{ NO_DISKS_FOR_CLUSTER | default(false) }}"
         validate_cluster_disks: "{{ CLUSTER_DISKS | default('') }}"
-        validate_config_file: "{{ ansible_config_file | default('bloom.yaml') }}"
+        validate_config_file: "{{ bloom_config_file | default('bloom.yaml') }}"
 
     - name: Pause conflicting k3s installation (loaned nodes)
       tags: [pre_deployment, k3s_pause]
       include_tasks: tasks/k3s_pause.yaml
-      when: PAUSE_K3S | default(false) | bool
+      when: (k3s_pause_required | default(false) | bool) or (PAUSE_K3S | default(false) | bool)
 
     - name: Node Validation
       tags: [validate_node]

@@ -797,7 +797,7 @@ func GenerateCleanupTasks(clusterDisks string, premountedDisks string, rancherDi
 				"• Disk devices wiped and unmounted",
 				"• System ready for fresh installation",
 				"",
-				"If this node had k3s paused via --pause-k3s, resume it with:",
+				"If this node had k3s paused automatically, resume it with:",
 				"  sudo systemctl start k3s-server   # or: systemctl start k3s",
 				"If networking fails after resume:",
 				"  sudo ip link delete cni0 2>/dev/null; sudo ip link delete flannel.1 2>/dev/null",

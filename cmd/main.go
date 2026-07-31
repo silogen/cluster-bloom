@@ -300,7 +300,7 @@ imports (roles, tasks, vars) within that directory tree work as expected.`,
 	cliCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Run in check mode without making changes")
 	cliCmd.Flags().StringVar(&tags, "tags", "", "Run only tasks with specific tags (e.g., cleanup, validate, storage)")
 	cliCmd.Flags().BoolVar(&destroyData, "destroy-data", false, "⚠️  DANGER: Wipes cluster (RKE2 uninstall, Longhorn cleanup, disk wipe). Shows disk preview before confirmation. Equivalent to running bloom cleanup then redeploying.")
-	cliCmd.Flags().BoolVar(&pauseK3s, "pause-k3s", false, "Non-destructively stop a conflicting k3s install before RKE2 deploy (preserves k3s data and enabled state for later resume on loaned nodes)")
+	cliCmd.Flags().BoolVar(&pauseK3s, "pause-k3s", false, "Legacy alias: k3s conflicts are paused automatically; this flag still forces the pause step")
 	cliCmd.Flags().StringVar(&clusterListenIP, "cluster-listen-ip", "", "IP address or CIDR for cluster binding (e.g., 192.168.1.100 or 192.168.1.0/24)")
 	cliCmd.Flags().BoolVar(&export, "export", false, "Export the playbook to ./bloom-playbook/ (overwrites if exists) instead of executing it")
 
@@ -351,6 +351,7 @@ func runAnsible(configFile string) {
 	if pauseK3s {
 		cfg["PAUSE_K3S"] = true
 	}
+	cfg["bloom_config_file"] = configFile
 
 	// Validate config (after injecting CLI flags)
 	// Skip validation for cert update tags to allow separate cert-update-config.yaml

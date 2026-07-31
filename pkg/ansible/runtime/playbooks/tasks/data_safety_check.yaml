@@ -77,7 +77,7 @@
     - rke2_config_dir.stat.exists
     - rke2_config_contents.matched > 0
 
-# k3s conflict checks — separate from RKE2/destroy-data issues; resolved via --pause-k3s
+# k3s conflict checks — auto-remediated on loaned nodes (non-destructive pause)
 - name: Check if k3s all-in-one service exists and is running
   systemd:
     name: k3s
@@ -150,7 +150,21 @@
   loop: "{{ k3s_orphan_processes.stdout_lines | default([]) | select('match', '.+') | list }}"
   when: k3s_orphan_processes.stdout_lines | default([]) | length > 0
 
-- name: Fail deployment if k3s conflicts found without --pause-k3s
+- name: Mark k3s pause required when conflicts detected
+  set_fact:
+    k3s_pause_required: true
+  when: k3s_validation_issues | length > 0
+
+- name: Announce automatic k3s pause for loaned nodes
+  debug:
+    msg:
+      - "⏸️  Conflicting k3s installation detected — pausing automatically (non-destructive)"
+      - "   k3s data under /var/lib/rancher/k3s is preserved; systemd enabled state unchanged"
+      - "   Detected conflicts:"
+      - "{% for issue in k3s_validation_issues %}   • {{ issue }}{% endfor %}"
+  when: k3s_pause_required | default(false) | bool
+
+- name: Fail if k3s conflicts found and automatic pause is disabled
   fail:
     msg: |
       ❌ Pre-deployment Validation Failed: Conflicting k3s Installation
@@ -160,25 +174,11 @@
       • {{ issue }}
       {% endfor %}
 
-      k3s cluster data under /var/lib/rancher/k3s is preserved — only running services
-      and listeners block RKE2. RKE2 shares the /run/k3s/containerd socket path with k3s.
-
-      Resolution (loaned nodes — reversible, does not uninstall k3s):
-        sudo ./bloom cli {{ ansible_config_file | default('bloom.yaml') }} --pause-k3s
-
-      This stops (does not disable or uninstall) k3s so RKE2 can start.
-
-      To return the node to k3s after RKE2 testing:
-        1. sudo ./bloom cli {{ ansible_config_file | default('bloom.yaml') }} --destroy-data
-        2. sudo systemctl start k3s-server    # or: systemctl start k3s
-        3. If networking fails, remove stale interfaces and retry:
-             sudo ip link delete cni0 2>/dev/null; sudo ip link delete flannel.1 2>/dev/null
-
-      Do NOT use --destroy-data to resolve k3s conflicts — it removes RKE2/Longhorn
-      data, not k3s, and is unnecessary for this case.
+      Automatic k3s pause was skipped because SKIP_K3S_PAUSE is set.
+      Remove SKIP_K3S_PAUSE or unset it to allow bloom to stop k3s non-destructively.
   when:
     - k3s_validation_issues | length > 0
-    - not (PAUSE_K3S | default(false) | bool)
+    - SKIP_K3S_PAUSE | default(false) | bool
 
 # CLUSTER_DISKS Mount Checks (conditional)
 - name: Convert CLUSTER_DISKS from comma-separated string to list for validation
@@ -240,7 +240,7 @@
       
       Resolution:
       Use the --destroy-data flag to clean up all existing data:
-      sudo ./bloom cli {{ ansible_config_file | default('bloom.yaml') }} --destroy-data
+      sudo ./bloom cli {{ validate_config_file | default('bloom.yaml') }} --destroy-data
       
       WARNING: This will destroy ALL existing cluster and disk data!
   when: validation_issues | length > 0
