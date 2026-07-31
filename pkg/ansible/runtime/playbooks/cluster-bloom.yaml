@@ -35,6 +35,10 @@
     #          Creates backups before modification with automatic rollback on failure
     #          WARNING: Will overwrite /etc/resolv.conf if DNS is detected as broken
     FIX_DNS: false
+
+    # PAUSE_K3S: Non-destructively stop a conflicting k3s install before RKE2 deploy.
+    # Set via `bloom cli --pause-k3s` for loaned nodes that must return to k3s later.
+    PAUSE_K3S: false
     
     # DNS_SERVERS: Custom DNS servers for RKE2 cluster
     #              If set, these nameservers will be written to /etc/rancher/rke2/resolv.conf
@@ -128,7 +132,7 @@
       - "8472"
       - "30000:32767"
 
-    inotify_target_value: 512
+    inotify_target_value: "512"
     rancher_min_partition_gb: 500
     bloom_fstab_tag: "# managed by cluster-bloom"
     bloom_premounted_fstab_tag: "# premounted by cluster-bloom"
@@ -138,11 +142,11 @@
 
   pre_tasks:
     - name: Check passwordless sudo is configured
-      command: sudo -n true
-      become: false
+      command: true
+      become: true
       changed_when: false
       register: sudo_check
-      failed_when: false
+      ignore_errors: true
 
     - name: Fail if passwordless sudo is not configured
       fail:
@@ -152,8 +156,7 @@
           Fix: run the following command on the target host and then retry:
 
             echo "$USER ALL=(ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/cluster-bloom-nopasswd
-      become: false
-      when: sudo_check.rc != 0
+      when: sudo_check.failed | default(false)
 
     - name: Gather facts
       ansible.builtin.setup:
@@ -169,6 +172,11 @@
         validate_no_disks_for_cluster: "{{ NO_DISKS_FOR_CLUSTER | default(false) }}"
         validate_cluster_disks: "{{ CLUSTER_DISKS | default('') }}"
         validate_config_file: "{{ ansible_config_file | default('bloom.yaml') }}"
+
+    - name: Pause conflicting k3s installation (loaned nodes)
+      tags: [pre_deployment, k3s_pause]
+      include_tasks: tasks/k3s_pause.yaml
+      when: PAUSE_K3S | default(false) | bool
 
     - name: Node Validation
       tags: [validate_node]

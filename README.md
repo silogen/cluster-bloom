@@ -4,16 +4,6 @@
 
 **ClusterBloom** is a tool for deploying and configuring Kubernetes clusters using RKE2, with specialized support for AMD GPU environments. It automates the process of setting up multi-node clusters, configuring storage with Longhorn, and integrating with various tools and services.
 
-## Table of Contents
-
-- [Features](#features)
-- [Getting Started](#getting-started)
-- [Usage](#usage)
-- [Configuration](#configuration)
-- [Documentation](#documentation)
-- [Installation Process](#installation-process)
-- [Dependencies](#dependencies)
-- [License](#license)
 
 ## Features
 
@@ -108,6 +98,7 @@ sudo ./bloom run bloom-playbook/cluster-bloom.yaml
 - Exported playbooks work with `sudo ./bloom run` or `ansible-playbook bloom-playbook/cluster-bloom.yaml`
 - `--destroy-data` cannot be combined with `--export`
 - **Existing Installations**: For existing cluster installations, run `bloom cleanup bloom.yaml` (or `bloom cli bloom.yaml --destroy-data`) before export or redeployment
+- **Loaned Nodes with k3s**: Use `--pause-k3s` to non-destructively stop k3s before RKE2 deploy; resume k3s afterward with `systemctl start k3s-server` after removing RKE2 via `--destroy-data`
 - **Optimized Cleanup**: Best-effort node drain (~30s timeout) that internally uses kubectl's `--force` and `--disable-eviction` to bypass stuck pods; skips volume detach wait when no Longhorn volumes detected
 - **Disk Wipe Preview**: Both `bloom cleanup` and `--destroy-data` show a preview with:
   - User files listed (up to 5), or count shown if more than 5
@@ -158,10 +149,9 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | RANCHER_DISK | Device path for dedicated `/var/lib/rancher` storage (e.g. `/dev/nvme2n1`). Primarily for GPU worker nodes with heavy workloads. Bloom formats and mounts this device automatically. Mutually exclusive with `NO_DISKS_FOR_CLUSTER`. | "" |
 | RKE2_EXTRA_CONFIG | Additional RKE2 configuration in YAML format | "" |
 | RKE2_INSTALLATION_URL | RKE2 installation script URL | https://get.rke2.io |
-| GPU_DRIVER_SKIP_INSTALL | Leave the node's GPU driver and host tools untouched | false |
-| GPU_INSTALL_HOST_TOOLS | Install standalone AMD-SMI after the supported DKMS driver is active | true |
-| GPU_DRIVER_VERSION | Override the default `31.40` installer with an exact validated version | "" |
-| GPU_DRIVER_BUILD | Build suffix paired with GPU_DRIVER_VERSION; default resolves to `314000-1` | "" |
+| ROCM_BASE_URL | ROCm base repository URL | https://repo.radeon.com/amdgpu-install/7.2.3/ubuntu/ |
+| ROCM_DEB_PACKAGE | ROCm DEB package name | amdgpu-install_7.2.3.70203-1_all.deb |
+| ROCM_ALLOW_VERSION_MISMATCH | Force continuation past the early ROCm version guard when the installed ROCm does not match the GPU_STACK_FAMILY train (accepts true\|TRUE\|1) | false |
 
 ### OIDC Configuration Examples
 
@@ -323,31 +313,13 @@ sudo ./bloom run bloom-playbook/cluster-bloom.yaml --config additional-config.ya
 sudo ./bloom run bloom-playbook/cluster-bloom.yaml --verbose
 ```
 
-> **EAI-5657 branch — supported GPU driver without host ROCm**: Bloom retains exact supported AMD GPU drivers `30.10.2`, `30.20.1`, `30.30.3`, `30.30.4`, `31.30.0`, or `31.40.0`. A fresh node gets driver `31.40.0` through `amdgpu-install_31.40.314000-1_all.deb` and DKMS `6.19.14`; an incompatible out-of-tree driver halts with remediation instructions. Host ROCm is not required or installed. Standalone AMD-SMI is installed by default. See [docs/gpu-driver-only-spike.md](docs/gpu-driver-only-spike.md).
-
-## Documentation
-
-- [Documentation index](docs/README.md) — Entry point for project documentation.
-- [Configuration reference](docs/configuration-reference.md) — Supported Bloom configuration fields.
-- [GPU driver-only host policy](docs/gpu-driver-only-spike.md) — Driver compatibility, fresh installation, reboot, and standalone AMD-SMI behavior.
-- [ROCm support](docs/rocm-support.md) — Full ROCm installation reference and compatibility details.
-- [Installation guide](docs/installation-guide.md) — End-to-end installation procedures.
-- [Certificate management](docs/certificate-management.md) — Certificate lifecycle operations.
-- [Control-plane TLS SAN and authentication](docs/add-tls-san-plus-auth-config-for-control-nodes.md) — Additional control-plane node certificate and auth configuration.
-- [Product requirements](docs/PRD.md) — Product scope and requirements.
-- [Technical architecture](docs/technical-architecture.md) — System design and component interactions.
-- [TLS SAN configuration](docs/tls-san-configuration.md) — API server TLS SAN configuration.
-- [RKE2 deployment](docs/rke2-deployment.md) — RKE2 deployment behavior.
-- [OIDC authentication](docs/oidc-authentication.md) — OIDC configuration and integration.
-- [Additional node setup](docs/additional-node-setup.md) — Joining worker and control-plane nodes.
-- [Cluster sizing](docs/cluster-sizing-configurations.md) — Cluster size profiles and resource implications.
-- [Storage management](docs/storage-management.md) — Cluster disk configuration and management.
-- [Cluster listen IP](docs/cluste-listen-ip.md) — Network binding selection.
-- [Terminal UI](docs/terminal-ui.md) — Interactive terminal interface.
-- [Reboot checklist](docs/reboot-checklist.md) — Post-reboot validation steps.
-- [Network configuration](docs/network-configuration.md) — Cluster networking settings.
-- [Longhorn drive recovery](docs/longhorn-drive-setup-and-recovery.md) — Longhorn disk setup and recovery.
-- [TLS SAN changelog](docs/CHANGELOG-TLS-SAN.md) — TLS SAN implementation history.
+> **GPU nodes — ROCm version guard**: On a GPU node whose already-installed ROCm does not match the train required by `GPU_STACK_FAMILY` (e.g. `radeon` on a host with ROCm 7.2.3), bloom fails fast during node validation. To proceed anyway with the installed ROCm, set this in `bloom.yaml`:
+>
+> ```yaml
+> ROCM_ALLOW_VERSION_MISMATCH: true   # accepts true|TRUE|1
+> ```
+>
+> With `bloom run` you can also pass it as an extra-var (`-e ROCM_ALLOW_VERSION_MISMATCH=true`). See [docs/rocm-support.md](docs/rocm-support.md#version-compatibility-guard-fail-fast) for details.
 
 ## Installation Process
 

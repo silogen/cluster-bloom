@@ -24,6 +24,7 @@ var (
 	dryRun          bool
 	tags            string
 	destroyData     bool
+	pauseK3s        bool
 	autoConfirm     bool // --yes/-y, --auto-confirm-prompts, cleanup's --force/-f all bind here
 	extraVars       []string
 	verbose         bool
@@ -125,7 +126,7 @@ func newRootCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:   "bloom",
 		Short: "Kubernetes Cluster Deployment Tool",
-		Long: `Bloom - A tool for generating bloom.yaml configurations and deploying Kubernetes clusters.
+		Long:  `Bloom - A tool for generating bloom.yaml configurations and deploying Kubernetes clusters.
 
 Certificate Updates:
   To update TLS certificates in an existing cluster, use a separate config with --tags:
@@ -260,8 +261,9 @@ Certificate Updates:
 Export Mode:
   Use --export flag to write a self-contained playbook directory (./bloom-playbook/)
   instead of executing it. The directory contains the root playbook, a bloom-vars.yaml
-  file derived from your config, and the tasks/ and manifests/ trees. Run it with:
-    ansible-playbook bloom-playbook/cluster-bloom.yaml
+  file derived from your config, inventory.ini, ansible.cfg, and the tasks/ and
+  manifests/ trees. Run it with:
+    cd bloom-playbook && ansible-playbook cluster-bloom.yaml
   Example: ./bloom cli bloom.yaml --export`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
@@ -298,6 +300,7 @@ imports (roles, tasks, vars) within that directory tree work as expected.`,
 	cliCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Run in check mode without making changes")
 	cliCmd.Flags().StringVar(&tags, "tags", "", "Run only tasks with specific tags (e.g., cleanup, validate, storage)")
 	cliCmd.Flags().BoolVar(&destroyData, "destroy-data", false, "⚠️  DANGER: Wipes cluster (RKE2 uninstall, Longhorn cleanup, disk wipe). Shows disk preview before confirmation. Equivalent to running bloom cleanup then redeploying.")
+	cliCmd.Flags().BoolVar(&pauseK3s, "pause-k3s", false, "Non-destructively stop a conflicting k3s install before RKE2 deploy (preserves k3s data and enabled state for later resume on loaned nodes)")
 	cliCmd.Flags().StringVar(&clusterListenIP, "cluster-listen-ip", "", "IP address or CIDR for cluster binding (e.g., 192.168.1.100 or 192.168.1.0/24)")
 	cliCmd.Flags().BoolVar(&export, "export", false, "Export the playbook to ./bloom-playbook/ (overwrites if exists) instead of executing it")
 
@@ -345,10 +348,13 @@ func runAnsible(configFile string) {
 	if clusterListenIP != "" {
 		cfg["CLUSTER_LISTEN_IP"] = clusterListenIP
 	}
+	if pauseK3s {
+		cfg["PAUSE_K3S"] = true
+	}
 
 	// Validate config (after injecting CLI flags)
-	// Skip validation for cert update and clusterforge-only tags to allow minimal configs
-	if tags == "" || (!strings.Contains(tags, "update_cert") && !strings.Contains(tags, "deploy_clusterforge")) {
+	// Skip validation for cert update tags to allow separate cert-update-config.yaml
+	if tags == "" || !strings.Contains(tags, "update_cert") {
 		errors := config.Validate(cfg)
 		if len(errors) > 0 {
 			fmt.Fprintln(os.Stderr, "Configuration validation errors:")
@@ -499,8 +505,17 @@ func exportPlaybook(cfg config.Config, playbookName string) error {
 		return fmt.Errorf("write vars: %w", err)
 	}
 
+	const inventoryINI = "localhost ansible_connection=local\n"
+	if err := os.WriteFile(filepath.Join(outDir, "inventory.ini"), []byte(inventoryINI), 0644); err != nil {
+		return fmt.Errorf("write inventory: %w", err)
+	}
+	const ansibleCfg = "[defaults]\ninventory = inventory.ini\n"
+	if err := os.WriteFile(filepath.Join(outDir, "ansible.cfg"), []byte(ansibleCfg), 0644); err != nil {
+		return fmt.Errorf("write ansible.cfg: %w", err)
+	}
+
 	fmt.Fprintf(os.Stderr, "✓ Exported playbook to ./%s/\n", outDir)
-	fmt.Fprintf(os.Stderr, "  Run with: ansible-playbook %s/%s\n", outDir, playbookName)
+	fmt.Fprintf(os.Stderr, "  Run with: cd %s && ansible-playbook %s\n", outDir, playbookName)
 	return nil
 }
 

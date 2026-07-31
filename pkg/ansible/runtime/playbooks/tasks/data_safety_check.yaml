@@ -77,6 +77,109 @@
     - rke2_config_dir.stat.exists
     - rke2_config_contents.matched > 0
 
+# k3s conflict checks — separate from RKE2/destroy-data issues; resolved via --pause-k3s
+- name: Check if k3s all-in-one service exists and is running
+  systemd:
+    name: k3s
+  register: k3s_service
+  failed_when: false
+  changed_when: false
+
+- name: Check if k3s-server service exists and is running
+  systemd:
+    name: k3s-server
+  register: k3s_server_service
+  failed_when: false
+  changed_when: false
+
+- name: Check if k3s-agent service exists and is running
+  systemd:
+    name: k3s-agent
+  register: k3s_agent_service
+  failed_when: false
+  changed_when: false
+
+- name: Detect k3s listeners on Kubernetes API port 6443
+  shell: ss -H -ltnp 'sport = :6443' 2>/dev/null | grep -E 'k3s-server|"k3s"' || true
+  register: k3s_port_listeners
+  changed_when: false
+  failed_when: false
+
+- name: Detect orphaned k3s-server processes
+  shell: pgrep -a -x k3s-server 2>/dev/null || true
+  register: k3s_orphan_processes
+  changed_when: false
+  failed_when: false
+
+- name: Initialize k3s validation issues list
+  set_fact:
+    k3s_validation_issues: []
+
+- name: Collect k3s all-in-one service issue
+  set_fact:
+    k3s_validation_issues: "{{ k3s_validation_issues + ['k3s service is running (' + k3s_service.status.ActiveState + ')'] }}"
+  when:
+    - k3s_service.status is defined
+    - k3s_service.status.ActiveState == "active"
+
+- name: Collect k3s-server service issue
+  set_fact:
+    k3s_validation_issues: "{{ k3s_validation_issues + ['k3s-server service is running (' + k3s_server_service.status.ActiveState + ')'] }}"
+  when:
+    - k3s_server_service.status is defined
+    - k3s_server_service.status.ActiveState == "active"
+
+- name: Collect k3s-agent service issue
+  set_fact:
+    k3s_validation_issues: "{{ k3s_validation_issues + ['k3s-agent service is running (' + k3s_agent_service.status.ActiveState + ')'] }}"
+  when:
+    - k3s_agent_service.status is defined
+    - k3s_agent_service.status.ActiveState == "active"
+
+- name: Collect k3s port 6443 listener issue
+  set_fact:
+    k3s_validation_issues: "{{ k3s_validation_issues + ['Port 6443 held by k3s: ' + item] }}"
+  loop: "{{ k3s_port_listeners.stdout_lines | default([]) | select('match', '.+') | list }}"
+  when:
+    - k3s_port_listeners.stdout_lines | default([]) | length > 0
+    - rke2_server_service.status.ActiveState | default('inactive') != 'active'
+
+- name: Collect orphaned k3s-server process issue
+  set_fact:
+    k3s_validation_issues: "{{ k3s_validation_issues + ['Orphaned k3s-server process: ' + item] }}"
+  loop: "{{ k3s_orphan_processes.stdout_lines | default([]) | select('match', '.+') | list }}"
+  when: k3s_orphan_processes.stdout_lines | default([]) | length > 0
+
+- name: Fail deployment if k3s conflicts found without --pause-k3s
+  fail:
+    msg: |
+      ❌ Pre-deployment Validation Failed: Conflicting k3s Installation
+
+      The following k3s conflicts were detected:
+      {% for issue in k3s_validation_issues %}
+      • {{ issue }}
+      {% endfor %}
+
+      k3s cluster data under /var/lib/rancher/k3s is preserved — only running services
+      and listeners block RKE2. RKE2 shares the /run/k3s/containerd socket path with k3s.
+
+      Resolution (loaned nodes — reversible, does not uninstall k3s):
+        sudo ./bloom cli {{ ansible_config_file | default('bloom.yaml') }} --pause-k3s
+
+      This stops (does not disable or uninstall) k3s so RKE2 can start.
+
+      To return the node to k3s after RKE2 testing:
+        1. sudo ./bloom cli {{ ansible_config_file | default('bloom.yaml') }} --destroy-data
+        2. sudo systemctl start k3s-server    # or: systemctl start k3s
+        3. If networking fails, remove stale interfaces and retry:
+             sudo ip link delete cni0 2>/dev/null; sudo ip link delete flannel.1 2>/dev/null
+
+      Do NOT use --destroy-data to resolve k3s conflicts — it removes RKE2/Longhorn
+      data, not k3s, and is unnecessary for this case.
+  when:
+    - k3s_validation_issues | length > 0
+    - not (PAUSE_K3S | default(false) | bool)
+
 # CLUSTER_DISKS Mount Checks (conditional)
 - name: Convert CLUSTER_DISKS from comma-separated string to list for validation
   set_fact:

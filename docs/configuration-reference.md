@@ -57,15 +57,15 @@ Configuration sources in priority order (highest to lowest):
 #### GPU_STACK_FAMILY
 - **Type**: String (single value)
 - **Default**: `""` (empty, resolves to `instinct`)
-- **Description**: Selects GPU Operator defaults by GPU family. Host driver policy is shared across both families: retain an exact supported DKMS driver or install production driver `31.40.0` on a fresh node. This is independent of `AIM_HARDWARE_FAMILY`, which selects the AIM model catalog.
+- **Description**: Selects the ROCm + GPU Operator install defaults by GPU family. This is independent of `AIM_HARDWARE_FAMILY` (which selects the AIM model catalog). Empty or `instinct` keeps the current qualified defaults (host ROCm `7.2.3`, GPU Operator `v1.4.1`, DeviceConfig ROCm driver `7.0`), so existing installs are unchanged. `radeon` selects the ROCm 7.13 tech-preview stack.
 - **Values**: `radeon` | `instinct` (lowercase, single value)
 - **Example**: `GPU_STACK_FAMILY: "radeon"`
 - **Notes**:
-  - Single-select by design for GPU Operator configuration. The AIM catalog (`AIM_HARDWARE_FAMILY`) can still be heterogeneous.
-  - Selecting `radeon` defaults the GPU Operator to the ROCm 7.13 tech-preview train. This component is tech preview, not production qualified, and bloom prints a notice at install time.
+  - Single-select by design: host ROCm is one version per node, so a heterogeneous Radeon + Instinct GPU stack cannot be expressed here. The AIM catalog (`AIM_HARDWARE_FAMILY`) can still be heterogeneous.
+  - Selecting `radeon` defaults host ROCm and the GPU Operator to the ROCm 7.13 tech-preview train. These components are tech preview, not production qualified, and bloom prints a notice at install time.
   - Unsupported combinations (for example a Radeon stack resolving to ROCm 7.2) fail validation before install with an error naming the incompatible component.
+  - **Overriding the version guard**: when a GPU node already has ROCm installed that does not match the selected family's train (e.g. `radeon` on a host with ROCm 7.2.3), bloom aborts early during node validation with an "Unsupported ROCm version" message. This guard is a hard fail (no interactive prompt, because bloom pipes ansible output over SSH with no TTY). To proceed anyway with the currently installed ROCm, set [`ROCM_ALLOW_VERSION_MISMATCH`](#rocm_allow_version_mismatch) in `bloom.yaml`.
   - The exact ROCm 7.13 tech-preview version strings and the vendored GPU Operator chart are tracked in EAI-5906; until that lands the `radeon` row carries placeholder pins.
-  - **EAI-5657 branch note**: host ROCm is not required or installed. See [GPU Driver-Only Host Policy](gpu-driver-only-spike.md) for the exact supported driver tuples and standalone AMD-SMI flow.
 
 ### Cluster Joining Configuration
 
@@ -343,35 +343,14 @@ Configuration sources in priority order (highest to lowest):
 - **Values**: `true` | `false`
 - **Example**: `SKIP_RANCHER_PARTITION_CHECK: true`
 
-#### GPU_DRIVER_SKIP_INSTALL
+#### ROCM_ALLOW_VERSION_MISMATCH
 - **Type**: Boolean
 - **Default**: `false`
-- **Description**: Skip driver compatibility validation, driver installation, and standalone AMD-SMI installation. Bloom leaves the node's GPU stack untouched.
+- **Description**: Force continuation past the early ROCm version guard. On a GPU node, if the already-installed ROCm does not match the train required by `GPU_STACK_FAMILY` (e.g. `radeon` needs ROCm 7.13 but the host has 7.2.3), bloom warns and exits early during node validation. Set this to skip that guard and proceed with the installed ROCm. The guard is a hard fail with no interactive prompt (bloom pipes ansible output over SSH, so there is no TTY).
 - **Values**: `true` | `false` (also accepts `TRUE` / `1`)
 - **Applicable**: `GPU_NODE: true`
-- **Example**: `GPU_DRIVER_SKIP_INSTALL: true`
-
-#### GPU_INSTALL_HOST_TOOLS
-- **Type**: Boolean
-- **Default**: `true`
-- **Description**: After a supported DKMS driver is active, retain an existing `amd-smi` or install the standalone package matched to the driver. Only AMD-SMI and its minimal dependencies are requested; Bloom does not install full ROCm, HIP, or the SDK.
-- **Values**: `true` | `false`
-- **Applicable**: `GPU_NODE: true`
-- **Example**: `GPU_INSTALL_HOST_TOOLS: false`
-
-#### GPU_DRIVER_VERSION
-- **Type**: String
-- **Default**: `""` (empty resolves to production installer `31.40`)
-- **Description**: Force an exact validated `amdgpu-install` version. Supported values are `7.0.2`, `7.1.1`, `7.2.3`, `7.2.4`, `31.30`, and `31.40`. Must be paired with the corresponding `GPU_DRIVER_BUILD`.
-- **Applicable**: `GPU_NODE: true`
-- **Example**: `GPU_DRIVER_VERSION: "7.1.1"`
-
-#### GPU_DRIVER_BUILD
-- **Type**: String
-- **Default**: `""` (empty resolves to `314000-1`)
-- **Description**: Build suffix paired with `GPU_DRIVER_VERSION`: `70002-1`, `70101-1`, `70203-1`, `70204-1`, `313000-1`, or `314000-1`. Unsupported combinations fail before download.
-- **Applicable**: `GPU_NODE: true`
-- **Example**: `GPU_DRIVER_BUILD: "70101-1"`
+- **Example**: `ROCM_ALLOW_VERSION_MISMATCH: true`
+- **Notes**: Works with `bloom cli bloom.yaml`. With `bloom run` it can also be passed as an extra-var: `-e ROCM_ALLOW_VERSION_MISMATCH=true`.
 
 #### RANCHER_DISK
 - **Type**: String (device path)
@@ -644,6 +623,7 @@ bloom cli <config-file> [flags]
 - `--export`: Export the playbook to `./bloom-playbook/` (overwrites if exists) instead of executing it
 - `--dry-run`: Run in check mode without making changes
 - `--destroy-data`: ⚠️ DANGER: Wipes the cluster before redeploying (RKE2 uninstall, Longhorn cleanup, bloom-managed disk wipe). Shows a disk wipe preview before confirmation. Premounted disks (CLUSTER_PREMOUNTED_DISKS) have their bloom artifacts cleaned but their filesystem and fstab entries preserved
+- `--pause-k3s`: Non-destructively stop a conflicting k3s install before RKE2 deploy. Preserves k3s data under `/var/lib/rancher/k3s` and systemd enabled state so the node can return to k3s after RKE2 testing (loaned nodes)
 - `--playbook string`: Playbook to run (default: "cluster-bloom.yaml")
 - `--tags string`: Run only tasks with specific tags (e.g., cleanup, validate, storage)
 
@@ -651,6 +631,9 @@ bloom cli <config-file> [flags]
 ```bash
 # Standard deployment
 sudo ./bloom cli bloom.yaml
+
+# Loaned node with existing k3s — pause k3s (reversible), then deploy RKE2
+sudo ./bloom cli bloom.yaml --pause-k3s
 
 # Export playbook for inspection (writes ./bloom-playbook/)
 ./bloom cli bloom.yaml --export
@@ -726,6 +709,7 @@ sudo ./bloom run bloom-playbook/cluster-bloom.yaml
 - **Restricted Environments**: Generate playbooks on one system, execute on another
 - **Learning**: Study the generated Ansible code to understand cluster setup
 - **Existing Installations**: Run `bloom cleanup <config-file>` before export or deployment on existing clusters (`--destroy-data` cannot be combined with `--export`)
+- **Loaned Nodes with k3s**: Use `--pause-k3s` to stop (not uninstall) a conflicting k3s install before RKE2 deploy. After testing, remove RKE2 with `--destroy-data`, then `systemctl start k3s-server` (or `k3s`) to resume
 
 **Technical Details:**
 - **Directory Layout**: Export writes `./bloom-playbook/` with the root playbook, `bloom-vars.yaml` (config values), and the embedded `tasks/` and `manifests/` trees
