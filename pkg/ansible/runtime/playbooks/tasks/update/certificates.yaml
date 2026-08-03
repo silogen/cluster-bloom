@@ -117,7 +117,7 @@
                 msg: "  No Subject Alternative Names found in certificate"
               when: cert_sans.rc != 0 or cert_sans.stdout == ""
 
-            - name: Prompt to continue
+            - name: "⚠️  Continue anyway? [y/N]"
               pause:
                 prompt: "Continue anyway? [y/N]"
               register: continue_cert_prompt

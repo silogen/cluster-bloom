@@ -50,9 +50,15 @@
 - name: Confirm domain update
   when: FIRST_NODE and not DRY_RUN
   block:
-    - name: Prompt for confirmation
+    - name: "⚠️  Proceed with domain update? [y/N]"
       pause:
-        prompt: "Proceed with domain update? [y/N]"
+        prompt: |+
+
+          ================================
+          ⚠️  Ready to update domain
+          ================================
+
+          Proceed with domain update? [y/N]
       register: update_confirm
 
     - name: Abort if user declines

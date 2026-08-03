@@ -125,7 +125,7 @@
           - ""
           - "Continuing with domain update may interfere with ongoing operations."
 
-    - name: Prompt to continue
+    - name: "⚠️  Do you want to continue? [y/N]"
       pause:
         prompt: "Do you want to continue? [y/N]"
       register: continue_prompt
