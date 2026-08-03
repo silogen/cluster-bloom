@@ -118,6 +118,25 @@
     systemctl kill --kill-who=all apt-daily-upgrade.service || true
   ignore_errors: yes
 
+# Written before any package is installed so the policy is on disk even if a
+# later task in this file fails. A separate file rather than an edit to the
+# distro-owned 50unattended-upgrades, which apt can replace on package upgrade.
+- name: Pin unattended-upgrades to never reboot the node
+  copy:
+    dest: /etc/apt/apt.conf.d/51bloom-no-auto-reboot
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      // Managed by cluster-bloom (prepare_node/packages.yaml).
+      //
+      // Rebooting a cluster node belongs to a maintenance window with
+      // alerting suppressed, never to an unattended timer. An unannounced
+      // kernel-upgrade reboot took a node out on 2026-06-16 and produced an
+      // alert cascade indistinguishable from a real outage.
+      Unattended-Upgrade::Automatic-Reboot "false";
+      Unattended-Upgrade::Automatic-Reboot-WithUsers "false";
+
 - name: Wait for apt locks to be released
   shell: |
     timeout 90 bash -c 'while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do sleep 1; done' || true

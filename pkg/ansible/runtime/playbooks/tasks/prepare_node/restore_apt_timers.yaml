@@ -1,0 +1,47 @@
+---
+# Purpose: Re-arm the apt timers that packages.yaml stopped, so the node
+#          resumes nightly unattended security upgrades
+# Dependencies: none
+# Usage: Imported last by prepare_node/main.yaml, after all apt work
+# Tags: [packages, prep_node]
+#
+# packages.yaml stops these units so bloom's own apt work is not blocked by a
+# concurrent unattended run. Without this file they are never started again:
+# the units stay 'enabled' so the node looks correct, but nothing is armed in
+# the current boot and no security update ever fires.
+#
+# This runs at the end of node preparation rather than at the end of
+# packages.yaml because gpu_rocm.yaml also installs through apt, for several
+# minutes on a GPU node. Re-arming earlier would put the timer back into the
+# lock contention the stop block exists to avoid.
+
+- name: Re-arm apt timers stopped during package installation
+  systemd:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  loop:
+    - apt-daily.timer
+    - apt-daily-upgrade.timer
+
+- name: Start unattended-upgrades service
+  systemd:
+    name: unattended-upgrades.service
+    enabled: true
+    state: started
+
+# Logged rather than asserted: the tasks above already fail the play if a unit
+# cannot be re-armed, so this only puts the resulting state in the bloom output
+# so it does not take an SSH session to find out.
+- name: Verify the upgrade timer is armed
+  command: >-
+    systemctl show apt-daily-upgrade.timer
+    -p ActiveState -p NextElapseUSecRealtime
+  register: apt_timer_state
+  changed_when: false
+  failed_when: false
+
+- name: Report apt timer state
+  debug:
+    msg: "apt-daily-upgrade.timer: {{ apt_timer_state.stdout_lines | default([]) }}"
