@@ -154,7 +154,8 @@ func ApplyGPUStackVars(cfg Config) error {
 		return err
 	}
 	// Driver-only install defaults, overridable via GPU_DRIVER_VERSION /
-	// GPU_DRIVER_BUILD (handled in the ansible task, not here).
+	// GPU_DRIVER_BUILD. Validate checks user overrides before this point;
+	// Ansible repeats the check before using the resolved tuple.
 	cfg["gpu_driver_default_version"] = profile.DriverPackageVersion
 	cfg["gpu_driver_default_build"] = profile.DriverPackageBuild
 	cfg["gpu_driver_supported"] = supportedGPUDrivers

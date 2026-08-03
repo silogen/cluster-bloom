@@ -230,6 +230,11 @@ func Validate(cfg Config) []string {
 		errors = append(errors, gpuStackErr)
 	}
 
+	// Validate installer overrides before Ansible connects to the node. Ansible
+	// repeats this check as defense in depth and separately validates the driver
+	// actually installed on the host.
+	errors = append(errors, validateGPUDriverInstallerTuple(cfg)...)
+
 	return errors
 }
 
@@ -248,6 +253,59 @@ func validateGPUStack(cfg Config) string {
 		return err.Error()
 	}
 	return ""
+}
+
+// validateGPUDriverInstallerTuple ensures that optional installer overrides are
+// either both empty (use the production default) or identify one exact
+// allowlisted tuple.
+func validateGPUDriverInstallerTuple(cfg Config) []string {
+	versionValue, versionExists := cfg["GPU_DRIVER_VERSION"]
+	buildValue, buildExists := cfg["GPU_DRIVER_BUILD"]
+
+	version, versionIsString := versionValue.(string)
+	build, buildIsString := buildValue.(string)
+
+	var errors []string
+	if versionExists && versionValue != nil && !versionIsString {
+		errors = append(errors, fmt.Sprintf("GPU_DRIVER_VERSION must be a string, got %T", versionValue))
+	}
+	if buildExists && buildValue != nil && !buildIsString {
+		errors = append(errors, fmt.Sprintf("GPU_DRIVER_BUILD must be a string, got %T", buildValue))
+	}
+	if len(errors) > 0 {
+		return errors
+	}
+
+	version = strings.TrimSpace(version)
+	build = strings.TrimSpace(build)
+	if version == "" && build == "" {
+		return nil
+	}
+	if version == "" || build == "" {
+		return []string{"GPU_DRIVER_VERSION and GPU_DRIVER_BUILD must be set together"}
+	}
+
+	for _, driver := range supportedGPUDrivers {
+		if driver.InstallerVersion == version && driver.InstallerBuild == build {
+			return nil
+		}
+	}
+
+	supported := make([]string, 0, len(supportedGPUDrivers))
+	for _, driver := range supportedGPUDrivers {
+		supported = append(supported, fmt.Sprintf(
+			"%s / %s (AMD driver %s)",
+			driver.InstallerVersion,
+			driver.InstallerBuild,
+			driver.DriverRelease,
+		))
+	}
+	return []string{fmt.Sprintf(
+		"unsupported GPU driver installer tuple %q / %q; supported tuples: %s",
+		version,
+		build,
+		strings.Join(supported, ", "),
+	)}
 }
 
 func isArgVisible(arg Argument, cfg Config) bool {

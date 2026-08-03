@@ -167,6 +167,57 @@ func TestSupportedGPUDriversIncludesValidatedTuples(t *testing.T) {
 	}
 }
 
+func TestValidateGPUDriverInstallerTuple(t *testing.T) {
+	for _, driver := range supportedGPUDrivers {
+		t.Run(driver.DriverRelease, func(t *testing.T) {
+			errors := Validate(Config{
+				"GPU_NODE":           true,
+				"GPU_DRIVER_VERSION": driver.InstallerVersion,
+				"GPU_DRIVER_BUILD":   driver.InstallerBuild,
+			})
+			if len(errors) != 0 {
+				t.Fatalf("validated tuple returned errors: %v", errors)
+			}
+		})
+	}
+}
+
+func TestValidateGPUDriverInstallerTupleRejectsPartialOverride(t *testing.T) {
+	errors := Validate(Config{
+		"GPU_NODE":           true,
+		"GPU_DRIVER_VERSION": "31.40",
+	})
+	if len(errors) == 0 || !strings.Contains(strings.Join(errors, "\n"), "must be set together") {
+		t.Fatalf("expected companion-field error, got: %v", errors)
+	}
+}
+
+func TestValidateGPUDriverInstallerTupleRejectsUnsupportedPair(t *testing.T) {
+	errors := Validate(Config{
+		"GPU_NODE":           true,
+		"GPU_DRIVER_VERSION": "7.2.4",
+		"GPU_DRIVER_BUILD":   "314000-1",
+	})
+	combined := strings.Join(errors, "\n")
+	if !strings.Contains(combined, "unsupported GPU driver installer tuple") {
+		t.Fatalf("expected unsupported-tuple error, got: %v", errors)
+	}
+	if !strings.Contains(combined, "31.40 / 314000-1 (AMD driver 31.40.0)") {
+		t.Errorf("error should list supported tuples, got: %v", errors)
+	}
+}
+
+func TestValidateGPUDriverInstallerTupleAcceptsEmptyDefaults(t *testing.T) {
+	errors := Validate(Config{
+		"GPU_NODE":           true,
+		"GPU_DRIVER_VERSION": "",
+		"GPU_DRIVER_BUILD":   "",
+	})
+	if len(errors) != 0 {
+		t.Fatalf("empty overrides should select defaults, got: %v", errors)
+	}
+}
+
 func TestDriverCompatibilityPreservesAnsibleFieldNames(t *testing.T) {
 	driver := supportedGPUDrivers[0]
 
