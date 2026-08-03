@@ -1,0 +1,109 @@
+---
+# Purpose: DNS configuration verification
+# Dependencies: NEW_DOMAIN variable
+# Usage: Imported by update.yaml (runs by default unless SKIP_DNS_CHECK=true)
+
+- name: Display DNS check header
+  debug:
+    msg:
+      - "🔍 Checking DNS configuration for {{ NEW_DOMAIN }}"
+      - ""
+
+# Get LoadBalancer IP
+- name: Get expected LoadBalancer IP
+  shell: >
+    /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get service
+    -n envoy-gateway-system
+    -l gateway.envoyproxy.io/owning-gateway-name=https
+    -o jsonpath='{.items[0].status.loadBalancer.ingress[0].ip}'
+  register: lb_ip_result
+  changed_when: false
+  failed_when: false
+
+- name: Check if LoadBalancer IP was found
+  when: lb_ip_result.stdout == ""
+  block:
+    - name: Display error message
+      debug:
+        msg:
+          - "⚠️  Could not determine LoadBalancer IP from cluster"
+          - "   Run this command from a machine with /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml access to the cluster"
+
+    - name: End playbook
+      meta: end_play
+
+- name: Set LoadBalancer IP fact
+  set_fact:
+    LB_IP: "{{ lb_ip_result.stdout }}"
+
+- name: Display expected LoadBalancer IP
+  debug:
+    msg: "Expected LoadBalancer IP: {{ LB_IP }}"
+
+- name: Display check separator
+  debug:
+    msg: ""
+
+# Define hostnames to check
+- name: Set hostnames to check
+  set_fact:
+    DNS_HOSTNAMES:
+      - "argocd.{{ NEW_DOMAIN }}"
+      - "gitea.{{ NEW_DOMAIN }}"
+      - "k8s.{{ NEW_DOMAIN }}"
+      - "kc.{{ NEW_DOMAIN }}"
+
+# Check each hostname
+- name: Check DNS for each hostname
+  shell: "dig +short {{ item }} @8.8.8.8 | head -1"
+  register: dns_results
+  changed_when: false
+  failed_when: false
+  loop: "{{ DNS_HOSTNAMES }}"
+
+# Track overall status
+- name: Initialize DNS check status
+  set_fact:
+    all_dns_good: true
+
+# Display results for each hostname
+- name: Process DNS results
+  debug:
+    msg: "Checking {{ item.item }}... {{ '✅ (' + item.stdout + ')' if item.stdout == LB_IP else ('❌ (not found)' if item.stdout == '' else '⚠️  (resolves to ' + item.stdout + ', expected ' + LB_IP + ')') }}"
+  loop: "{{ dns_results.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Update DNS check status
+  set_fact:
+    all_dns_good: false
+  when: item.stdout != LB_IP
+  loop: "{{ dns_results.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Display separator
+  debug:
+    msg: ""
+
+# Display final status
+- name: Display DNS configuration status
+  debug:
+    msg: "{{ '✅ DNS configuration looks correct!' if all_dns_good else '⚠️  DNS configuration needs attention' }}"
+
+# Display required DNS records if issues found
+- name: Display DNS requirements
+  when: not all_dns_good
+  debug:
+    msg:
+      - ""
+      - "Required DNS records:"
+      - "  A record: *.{{ NEW_DOMAIN }} -> {{ LB_IP }}"
+      - "  A record: k8s.{{ NEW_DOMAIN }} -> {{ LB_IP }}"
+      - ""
+      - "For silogen.ai domains, use:"
+      - "  kaytoo setup_dns_cert --domain {{ NEW_DOMAIN }} --ip {{ LB_IP }}"
+
+- name: Display final separator
+  debug:
+    msg: ""

@@ -1,0 +1,11 @@
+---
+# Test wrapper playbook for update_rke2.yaml tasks
+# This allows testing the RKE2 update logic in isolation
+
+- name: Test RKE2 configuration updates
+  hosts: localhost
+  gather_facts: false
+  connection: local
+
+  tasks:
+    - import_tasks: ../../../pkg/ansible/runtime/playbooks/tasks/update/update_rke2.yaml

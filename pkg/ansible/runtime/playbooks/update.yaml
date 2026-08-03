@@ -1,0 +1,103 @@
+---
+- name: Update cluster-forge domain and TLS certificates
+  hosts: all
+  become: yes
+  gather_facts: false
+  vars:
+    NEW_DOMAIN: ""           # Required (unless TLS_ONLY)
+    CERT_OPTION: ""          # Required: generate|provide|cert-manager
+    CERT_PATH: ""            # For cert_option=provide
+    KEY_PATH: ""             # For cert_option=provide
+    DRY_RUN: false           # Optional
+    SKIP_DNS_CHECK: false    # Optional - skip DNS verification
+    TLS_ONLY: false          # Optional - update only TLS certificates
+    SKIP_RKE2: false         # Optional - skip RKE2 layer updates
+    KUBECONFIG: ""           # Optional, defaults to ~/.kube/config
+    FIRST_NODE: true         # Default true for updates (run K8s updates once)
+    CONTROL_PLANE: true      # Default true for updates (run RKE2 updates)
+
+  pre_tasks:
+    - name: Set kubeconfig environment variable
+      set_fact:
+        ansible_env: "{{ ansible_env | combine({'KUBECONFIG': KUBECONFIG}) }}"
+      when: KUBECONFIG != ""
+
+    - name: Validate required variables for domain update
+      fail:
+        msg: "NEW_DOMAIN is required"
+      when: NEW_DOMAIN == "" and not TLS_ONLY
+
+    - name: Validate CERT_OPTION
+      fail:
+        msg: "CERT_OPTION must be one of: generate, provide, cert-manager"
+      when: CERT_OPTION not in ['generate', 'provide', 'cert-manager']
+
+    - name: Validate CERT_PATH and KEY_PATH for provided certificates
+      fail:
+        msg: "CERT_PATH and KEY_PATH are required when CERT_OPTION=provide"
+      when:
+        - CERT_OPTION == 'provide'
+        - (CERT_PATH == "" or KEY_PATH == "")
+
+  tasks:
+    - name: DNS check
+      when: not SKIP_DNS_CHECK and not TLS_ONLY and NEW_DOMAIN != ""
+      import_tasks: tasks/update/dns_check.yaml
+
+    - name: TLS-only update
+      when: TLS_ONLY
+      block:
+        - name: Display TLS update header
+          debug:
+            msg:
+              - "🔒 Starting TLS certificate update"
+              - "===================================="
+              - ""
+
+        - name: Get current domain for TLS update
+          when: NEW_DOMAIN == ""
+          block:
+            - name: Retrieve current domain from ConfigMap
+              command: /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get configmap cluster-domain -n default -o jsonpath='{.data.DOMAIN}'
+              register: current_domain_tls_result
+              failed_when: current_domain_tls_result.stdout == ""
+              changed_when: false
+
+            - name: Set NEW_DOMAIN to current domain
+              set_fact:
+                NEW_DOMAIN: "{{ current_domain_tls_result.stdout }}"
+
+            - name: Display domain for TLS update
+              debug:
+                msg: "  ℹ️  Using current domain: {{ NEW_DOMAIN }}"
+
+        - import_tasks: tasks/update/certificates.yaml
+
+        - name: Display TLS success message
+          debug:
+            msg:
+              - ""
+              - "✅ TLS certificates updated successfully!"
+              - ""
+
+    - name: Full domain update
+      when: not TLS_ONLY
+      block:
+        - name: Display update header
+          debug:
+            msg:
+              - "🚀 Starting domain update process"
+              - "================================"
+              - ""
+
+        - import_tasks: tasks/update/validate.yaml
+        - import_tasks: tasks/update/certificates.yaml
+        - import_tasks: tasks/update/update_config.yaml
+        - import_tasks: tasks/update/verify.yaml
+
+        - name: Display success message
+          debug:
+            msg:
+              - ""
+              - "✅ Domain update completed successfully!"
+              - ""

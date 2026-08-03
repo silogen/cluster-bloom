@@ -1,0 +1,5 @@
+pytest>=7.4.0
+ansible-core>=2.14.0
+ansible-runner>=2.3.0
+PyYAML>=6.0
+pytest-httpserver>=1.0.0
