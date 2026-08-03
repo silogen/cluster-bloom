@@ -5,7 +5,7 @@
 # Tags: [deploy_k8s_apps]
 
 - name: Wait for kubectl to be available
-  when: FIRST_NODE and not NO_DISKS_FOR_CLUSTER
+  when: (FIRST_NODE | default(true) | bool) and not (NO_DISKS_FOR_CLUSTER | default(false) | bool)
   wait_for:
     path: /var/lib/rancher/rke2/bin/kubectl
     state: present
@@ -14,32 +14,32 @@
 
 - name: Setup Node Annotator
   include_tasks: node_annotator.yaml
-  when: FIRST_NODE
+  when: FIRST_NODE | default(true) | bool
   tags: [node_annotator, deploy_k8s_apps]
 
 - name: Setup MetalLB (First Node)
   include_tasks: metallb.yaml
-  when: FIRST_NODE
+  when: FIRST_NODE | default(true) | bool
   tags: [metallb, deploy_k8s_apps]
 
 - name: Setup Storage Provisioner (Small/Medium Clusters - Local-Path)
   include_tasks: local_path.yaml
-  when: FIRST_NODE and not NO_DISKS_FOR_CLUSTER and CLUSTER_SIZE in ["small", "medium"]
+  when: (FIRST_NODE | default(true) | bool) and not (NO_DISKS_FOR_CLUSTER | default(false) | bool) and CLUSTER_SIZE in ["small", "medium"]
   tags: [storage, local-path, deploy_k8s_apps]
 
 - name: Setup Storage Provisioner (Large Clusters - Longhorn)
   include_tasks: longhorn.yaml
-  when: FIRST_NODE and not NO_DISKS_FOR_CLUSTER and CLUSTER_SIZE == "large"
+  when: (FIRST_NODE | default(true) | bool) and not (NO_DISKS_FOR_CLUSTER | default(false) | bool) and CLUSTER_SIZE == "large"
   tags: [storage, longhorn, deploy_k8s_apps]
 
 - name: Create Domain Configuration (First Node)
   include_tasks: domain.yaml
-  when: FIRST_NODE and DOMAIN != ""
+  when: (FIRST_NODE | default(true) | bool) and DOMAIN != ""
   tags: [domain, deploy_k8s_apps]
 
 - name: Preload Container Images
   include_tasks: preload_images.yaml
-  when: FIRST_NODE and PRELOAD_IMAGES is defined and PRELOAD_IMAGES != ""
+  when: (FIRST_NODE | default(true) | bool) and PRELOAD_IMAGES is defined and (PRELOAD_IMAGES | length) > 0
   tags: [images, deploy_k8s_apps]
 
 # ArgoCD is bootstrapped only as part of ClusterForge (see
@@ -48,5 +48,5 @@
 # ArgoCD install here.
 - name: Create Bloom ConfigMap
   include_tasks: bloom_config.yaml
-  when: FIRST_NODE
+  when: FIRST_NODE | default(true) | bool
   tags: [config, deploy_k8s_apps]

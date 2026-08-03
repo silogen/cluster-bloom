@@ -99,10 +99,12 @@ func Validate(cfg Config) []string {
 					}
 				}
 			case "bool":
-				// Bool conversion is handled by YAML parser
+				if _, ok := value.(bool); !ok {
+					errors = append(errors, fmt.Sprintf("%s must be a boolean, got %T", arg.Key, value))
+				}
 			case "str":
 				// Plain string, no pattern validation
-			case "seq":
+			case "array":
 				// Validate sequence/array fields
 				if sequence, ok := value.([]interface{}); ok {
 					// Check if sequence has validation rules
@@ -125,7 +127,7 @@ func Validate(cfg Config) []string {
 					}
 				} else {
 					// Handle legacy comma-separated string format for ADDITIONAL_TLS_SAN_URLS
-					if strVal, isString := value.(string); isString && arg.Key == "ADDITIONAL_TLS_SAN_URLS" && strVal != "" {
+					if strVal, isString := value.(string); isString && arg.Key == "ADDITIONAL_TLS_SAN_URLS" {
 						items := strings.Split(strVal, ",")
 						if len(arg.Sequence) > 0 {
 							seqDef := arg.Sequence[0]
@@ -143,6 +145,8 @@ func Validate(cfg Config) []string {
 								}
 							}
 						}
+					} else {
+						errors = append(errors, fmt.Sprintf("%s must be a sequence, got %T", arg.Key, value))
 					}
 				}
 			case "clusterListenIp":
@@ -193,7 +197,7 @@ func Validate(cfg Config) []string {
 	// Special validation for ADDITIONAL_TLS_SAN_URLS (critical security check)
 	if tlsSans, exists := cfg["ADDITIONAL_TLS_SAN_URLS"]; exists && tlsSans != nil {
 		var domains []string
-		
+
 		// Handle array format
 		if sequence, ok := tlsSans.([]interface{}); ok {
 			for _, item := range sequence {
@@ -208,7 +212,7 @@ func Validate(cfg Config) []string {
 				domains = append(domains, strings.TrimSpace(item))
 			}
 		}
-		
+
 		// Check for wildcards in any domain
 		for i, domain := range domains {
 			if strings.Contains(domain, "*") {
@@ -225,6 +229,11 @@ func Validate(cfg Config) []string {
 	if gpuStackErr := validateGPUStack(cfg); gpuStackErr != "" {
 		errors = append(errors, gpuStackErr)
 	}
+
+	// Validate installer overrides before Ansible connects to the node. Ansible
+	// repeats this check as defense in depth and separately validates the driver
+	// actually installed on the host.
+	errors = append(errors, validateGPUDriverInstallerTuple(cfg)...)
 
 	return errors
 }
@@ -244,6 +253,59 @@ func validateGPUStack(cfg Config) string {
 		return err.Error()
 	}
 	return ""
+}
+
+// validateGPUDriverInstallerTuple ensures that optional installer overrides are
+// either both empty (use the production default) or identify one exact
+// allowlisted tuple.
+func validateGPUDriverInstallerTuple(cfg Config) []string {
+	versionValue, versionExists := cfg["GPU_DRIVER_VERSION"]
+	buildValue, buildExists := cfg["GPU_DRIVER_BUILD"]
+
+	version, versionIsString := versionValue.(string)
+	build, buildIsString := buildValue.(string)
+
+	var errors []string
+	if versionExists && versionValue != nil && !versionIsString {
+		errors = append(errors, fmt.Sprintf("GPU_DRIVER_VERSION must be a string, got %T", versionValue))
+	}
+	if buildExists && buildValue != nil && !buildIsString {
+		errors = append(errors, fmt.Sprintf("GPU_DRIVER_BUILD must be a string, got %T", buildValue))
+	}
+	if len(errors) > 0 {
+		return errors
+	}
+
+	version = strings.TrimSpace(version)
+	build = strings.TrimSpace(build)
+	if version == "" && build == "" {
+		return nil
+	}
+	if version == "" || build == "" {
+		return []string{"GPU_DRIVER_VERSION and GPU_DRIVER_BUILD must be set together"}
+	}
+
+	for _, driver := range supportedGPUDrivers {
+		if driver.InstallerVersion == version && driver.InstallerBuild == build {
+			return nil
+		}
+	}
+
+	supported := make([]string, 0, len(supportedGPUDrivers))
+	for _, driver := range supportedGPUDrivers {
+		supported = append(supported, fmt.Sprintf(
+			"%s / %s (AMD driver %s)",
+			driver.InstallerVersion,
+			driver.InstallerBuild,
+			driver.DriverRelease,
+		))
+	}
+	return []string{fmt.Sprintf(
+		"unsupported GPU driver installer tuple %q / %q; supported tuples: %s",
+		version,
+		build,
+		strings.Join(supported, ", "),
+	)}
 }
 
 func isArgVisible(arg Argument, cfg Config) bool {

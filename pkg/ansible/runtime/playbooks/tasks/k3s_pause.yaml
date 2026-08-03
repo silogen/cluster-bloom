@@ -1,0 +1,99 @@
+---
+# Purpose: Non-destructively pause a k3s installation so RKE2 can start on loaned nodes.
+# Stops services and releases port 6443 / containerd socket paths without uninstalling
+# k3s or touching /var/lib/rancher/k3s. Enabled systemd units stay enabled for later resume.
+# Dependencies: k3s_pause_required (set by data_safety_check) or PAUSE_K3S
+# Usage: Included by cluster-bloom.yaml after data_safety_check when conflicts are detected
+# Tags: [pre_deployment, k3s_pause]
+
+- name: Display k3s pause notice
+  debug:
+    msg:
+      - "⏸️  Pausing k3s (non-destructive) to allow RKE2 deployment"
+      - "   k3s data under /var/lib/rancher/k3s is preserved"
+      - "   systemd enabled state is not changed — resume with systemctl start later"
+
+- name: Check k3s systemd service states before pause
+  systemd:
+    name: "{{ item }}"
+  register: k3s_service_states
+  loop:
+    - k3s
+    - k3s-server
+    - k3s-agent
+  failed_when: false
+  changed_when: false
+
+- name: Stop active k3s systemd services
+  systemd:
+    name: "{{ item.item }}"
+    state: stopped
+  loop: "{{ k3s_service_states.results }}"
+  when:
+    - item.status is defined
+    - item.status.LoadState | default('not-found') != 'not-found'
+    - item.status.ActiveState | default('inactive') == 'active'
+  register: k3s_stop_results
+
+- name: Terminate orphaned k3s-server processes
+  shell: |
+    set -euo pipefail
+    if pgrep -x k3s-server >/dev/null 2>&1; then
+      pkill -TERM -x k3s-server 2>/dev/null || true
+      sleep 3
+      if pgrep -x k3s-server >/dev/null 2>&1; then
+        pkill -KILL -x k3s-server 2>/dev/null || true
+      fi
+    fi
+  args:
+    executable: /bin/bash
+  changed_when: false
+  failed_when: false
+
+- name: Remove stale k3s runtime directory after stop
+  file:
+    path: /run/k3s
+    state: absent
+  failed_when: false
+
+- name: Remove leftover k3s CNI interfaces (best-effort)
+  shell: |
+    for iface in cni0 flannel.1; do
+      if ip link show "$iface" >/dev/null 2>&1; then
+        ip link delete "$iface" || true
+      fi
+    done
+  changed_when: false
+  failed_when: false
+
+- name: Verify Kubernetes API port 6443 is free
+  shell: |
+    if ss -H -ltn 'sport = :6443' 2>/dev/null | grep -q .; then
+      echo "still_listening"
+      ss -H -ltnp 'sport = :6443' || true
+      exit 1
+    fi
+    echo "free"
+  register: k3s_port_check
+  changed_when: false
+
+- name: Fail if port 6443 is still in use after k3s pause
+  fail:
+    msg: |
+      ❌ k3s pause incomplete: port 6443 is still in use.
+
+      Inspect listeners:
+        ss -ltnp 'sport = :6443'
+
+      Stop the remaining process manually and re-run bloom.
+  when: k3s_port_check.rc != 0
+
+- name: k3s pause completed
+  debug:
+    msg:
+      - "✓ k3s paused successfully — proceeding with RKE2 deployment"
+      - "To return this node to k3s after RKE2 testing:"
+      - "  1. sudo ./bloom cli {{ bloom_config_file | default('bloom.yaml') }} --destroy-data"
+      - "  2. sudo systemctl start k3s-server   # or: systemctl start k3s"
+      - "  3. If networking fails, remove stale interfaces and retry:"
+      - "       sudo ip link delete cni0 2>/dev/null; sudo ip link delete flannel.1 2>/dev/null"

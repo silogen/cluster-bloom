@@ -8,10 +8,39 @@
 ## Features
 
 - Automated RKE2 Kubernetes cluster deployment
-- ROCm setup and configuration for AMD GPU nodes
+- Validated AMD GPU driver setup for containerized ROCm workloads
 - Disk management and Longhorn storage integration
 - Multi-node cluster support with easy node joining
 - ClusterForge integration
+
+## Table of Contents
+
+- [Getting Started](#getting-started)
+- [Usage](#usage)
+- [Supported AMD GPU Drivers](#supported-amd-gpu-drivers)
+- [Documentation](#documentation)
+- [Configuration](#configuration)
+- [Installation Process](#installation-process)
+- [Dependencies](#dependencies)
+
+## Supported AMD GPU Drivers
+
+Bloom manages the host AMD GPU kernel driver without installing host ROCm
+runtime, HIP, SDK, or workload libraries. Standalone AMD-SMI diagnostics are
+installed by default.
+
+For the full GPU driver compatibility table, see
+[GPU Driver Support](docs/gpu-driver-support.md#supported-version-matrix).
+
+## Documentation
+
+- [Documentation Index](docs/README.md) — Complete documentation by deployment and operations topic.
+- [AMD GPU Driver and Container ROCm Support](docs/rocm-support.md) — Host-driver policy and Kubernetes GPU integration.
+- [GPU Driver Support](docs/gpu-driver-support.md) — Driver detection, installation, validation, and recovery behavior.
+- [GPU Driver Installation Quick Reference](GPU_AND_ROCM_INSTALLATION.md) — Driver policy, configuration, and host verification commands.
+- [Configuration Reference](docs/configuration-reference.md) — All supported Bloom configuration fields.
+- [Installation Guide](docs/installation-guide.md) — End-to-end deployment procedure.
+- [Product Requirements](docs/PRD.md) — Product scope, requirements, and supported GPU policy.
 
 ## Getting Started
 
@@ -98,6 +127,8 @@ sudo ./bloom run bloom-playbook/cluster-bloom.yaml
 - Exported playbooks work with `sudo ./bloom run` or `ansible-playbook bloom-playbook/cluster-bloom.yaml`
 - `--destroy-data` cannot be combined with `--export`
 - **Existing Installations**: For existing cluster installations, run `bloom cleanup bloom.yaml` (or `bloom cli bloom.yaml --destroy-data`) before export or redeployment
+- **Partial-run Resume**: Use `--preserve-existing-rke2` (also compatible with `--export`) to reconcile an existing RKE2 installation while retaining RKE2 state; disk safety checks still apply
+- **Loaned Nodes with k3s**: Bloom automatically pauses conflicting k3s installs (non-destructive). Resume k3s after RKE2 testing with `systemctl start k3s-server` once RKE2 is removed via `--destroy-data`
 - **Optimized Cleanup**: Best-effort node drain (~30s timeout) that internally uses kubectl's `--force` and `--disable-eviction` to bypass stuck pods; skips volume detach wait when no Longhorn volumes detected
 - **Disk Wipe Preview**: Both `bloom cleanup` and `--destroy-data` show a preview with:
   - User files listed (up to 5), or count shown if more than 5
@@ -134,7 +165,11 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | FIX_DNS | **Opt-in** to allow automatic DNS fixes. Only modifies DNS if broken and external DNS works. Creates backups and auto-rolls back on failure. | false |
 | FIRST_NODE | Set to true if this is the first node in the cluster | true |
 | GPU_NODE | Set to true if this node has GPUs | true |
-| GPU_STACK_FAMILY | GPU family that drives ROCm + GPU Operator install defaults (radeon \| instinct). Empty resolves to instinct (current defaults). radeon selects the ROCm 7.13 tech-preview stack. Example: "radeon" | "" |
+| GPU_STACK_FAMILY | GPU family that selects the ClusterForge GPU Operator and DeviceConfig profile (`radeon` \| `instinct`). It does not install host ROCm. | "" |
+| GPU_DRIVER_SKIP_INSTALL | Leave the host GPU stack untouched by skipping driver validation, installation, and standalone AMD-SMI. | false |
+| GPU_INSTALL_HOST_TOOLS | Install standalone AMD-SMI matched to the effective driver. | true |
+| GPU_DRIVER_VERSION | Advanced exact `amdgpu-install` version override; must be paired with `GPU_DRIVER_BUILD`. | "" |
+| GPU_DRIVER_BUILD | Advanced package build override paired with `GPU_DRIVER_VERSION`. | "" |
 | JOIN_TOKEN | The token used to join additional nodes to the cluster | |
 | NO_DISKS_FOR_CLUSTER | Set to true to skip disk-related operations | false |
 | RKE2_VERSION | Specific RKE2 version to install (e.g., "v1.34.1+rke2r1") | "" |
@@ -148,9 +183,6 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | RANCHER_DISK | Device path for dedicated `/var/lib/rancher` storage (e.g. `/dev/nvme2n1`). Primarily for GPU worker nodes with heavy workloads. Bloom formats and mounts this device automatically. Mutually exclusive with `NO_DISKS_FOR_CLUSTER`. | "" |
 | RKE2_EXTRA_CONFIG | Additional RKE2 configuration in YAML format | "" |
 | RKE2_INSTALLATION_URL | RKE2 installation script URL | https://get.rke2.io |
-| ROCM_BASE_URL | ROCm base repository URL | https://repo.radeon.com/amdgpu-install/7.2.3/ubuntu/ |
-| ROCM_DEB_PACKAGE | ROCm DEB package name | amdgpu-install_7.2.3.70203-1_all.deb |
-| ROCM_ALLOW_VERSION_MISMATCH | Force continuation past the early ROCm version guard when the installed ROCm does not match the GPU_STACK_FAMILY train (accepts true\|TRUE\|1) | false |
 
 ### OIDC Configuration Examples
 
@@ -312,13 +344,10 @@ sudo ./bloom run bloom-playbook/cluster-bloom.yaml --config additional-config.ya
 sudo ./bloom run bloom-playbook/cluster-bloom.yaml --verbose
 ```
 
-> **GPU nodes — ROCm version guard**: On a GPU node whose already-installed ROCm does not match the train required by `GPU_STACK_FAMILY` (e.g. `radeon` on a host with ROCm 7.2.3), bloom fails fast during node validation. To proceed anyway with the installed ROCm, set this in `bloom.yaml`:
->
-> ```yaml
-> ROCM_ALLOW_VERSION_MISMATCH: true   # accepts true|TRUE|1
-> ```
->
-> With `bloom run` you can also pass it as an extra-var (`-e ROCM_ALLOW_VERSION_MISMATCH=true`). See [docs/rocm-support.md](docs/rocm-support.md#version-compatibility-guard-fail-fast) for details.
+> **GPU nodes**: Bloom accepts only the six exact driver tuples in the
+> [supported matrix](#supported-amd-gpu-drivers). Unknown, mixed, or ambiguous
+> out-of-tree drivers stop deployment before repository or package changes.
+> Existing host ROCm userspace is left untouched.
 
 ## Installation Process
 
@@ -327,7 +356,7 @@ Cluster-Bloom performs the following steps during installation:
 1. Checks for supported Ubuntu version
 2. Installs required packages (jq, nfs-common, open-iscsi)
 3. Configures firewall and networking
-4. Sets up ROCm for GPU nodes
+4. Validates or installs the AMD DKMS driver for GPU nodes
 5. Prepares and installs RKE2
 6. Configures storage (local-path for small/medium clusters, Longhorn for large clusters)
 7. Sets up Kubernetes tools and configuration

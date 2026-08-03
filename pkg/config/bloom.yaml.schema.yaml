@@ -58,7 +58,7 @@ schema:
     GPU_STACK_FAMILY:
       type: gpuStackFamily
       default: ""
-      desc: "GPU family that drives ROCm + GPU Operator install defaults (radeon | instinct). Empty = instinct (current qualified defaults). Radeon selects the ROCm 7.13 tech-preview stack."
+      desc: "GPU family that selects the GPU Operator defaults (radeon | instinct). Host driver policy is shared: retain an exact supported DKMS driver or install production driver 31.40.0. Host ROCm is not required."
       section: "📋 Basic Configuration"
 
     # 🔗 Additional Node Configuration
@@ -153,7 +153,7 @@ schema:
       section: "🔒 SSL/TLS Configuration"
       sequence:
         - type: str
-          pattern: "^(?!.*\\*)([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\\.)+[a-zA-Z]{2,}$"
+          pattern: "^([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\\.)+[a-zA-Z]{2,}$"
           pattern-title: "Enter a valid domain name (e.g., api.example.com) - wildcards (*.domain.com) are not supported by RKE2"
 
     USE_CERT_MANAGER:
@@ -186,24 +186,33 @@ schema:
       section: "🔒 SSL/TLS Configuration"
 
     # ⚙️ Advanced Configuration
-    ROCM_BASE_URL:
-      type: url
-      default: https://repo.radeon.com/amdgpu-install/7.2.3/ubuntu/
-      desc: ROCm base repository URL
-      applicable: when(GPU_NODE == true)
-      section: "⚙️ Advanced Configuration"
-
-    ROCM_DEB_PACKAGE:
-      type: str
-      default: amdgpu-install_7.2.3.70203-1_all.deb
-      desc: ROCm DEB package name
-      applicable: when(GPU_NODE == true)
-      section: "⚙️ Advanced Configuration"
-
-    ROCM_ALLOW_VERSION_MISMATCH:
+    #
+    # EAI-5657: driver-only host policy, with optional standalone AMD-SMI.
+    GPU_DRIVER_SKIP_INSTALL:
       type: bool
       default: false
-      desc: "Force continuation past the early ROCm version guard when a GPU node's already-installed ROCm does not match the train required by GPU_STACK_FAMILY (e.g. radeon needs 7.13 but host has 7.2.3). Normally this warns and exits early; set true (accepts true|TRUE|1) to proceed anyway with the installed ROCm."
+      desc: "Skip GPU driver compatibility validation, driver installation, and standalone AMD-SMI installation; leave the node's GPU stack untouched."
+      applicable: when(GPU_NODE == true)
+      section: "⚙️ Advanced Configuration"
+
+    GPU_INSTALL_HOST_TOOLS:
+      type: bool
+      default: true
+      desc: "Install standalone AMD-SMI host diagnostics after the supported DKMS driver is active. Installs only AMD-SMI and minimal dependencies, never the full ROCm runtime or SDK."
+      applicable: when(GPU_NODE == true)
+      section: "⚙️ Advanced Configuration"
+
+    GPU_DRIVER_VERSION:
+      type: str
+      default: ""
+      desc: "Force an exact validated amdgpu-install version instead of the production 31.40 default. Supported values: 7.0.2, 7.1.1, 7.2.3, 7.2.4, 31.30, 31.40. Must be paired with GPU_DRIVER_BUILD."
+      applicable: when(GPU_NODE == true)
+      section: "⚙️ Advanced Configuration"
+
+    GPU_DRIVER_BUILD:
+      type: str
+      default: ""
+      desc: "Build suffix paired with GPU_DRIVER_VERSION (70002-1, 70101-1, 70203-1, 70204-1, 313000-1, or 314000-1), forming the amdgpu-install_<version>.<build>_all.deb filename."
       applicable: when(GPU_NODE == true)
       section: "⚙️ Advanced Configuration"
 

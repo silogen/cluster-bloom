@@ -18,7 +18,7 @@
     SERVER_IP: ""
     JOIN_TOKEN: ""
     NO_DISKS_FOR_CLUSTER: false
-    CLUSTER_DISKS: []
+    CLUSTER_DISKS: ""
     CLUSTER_PREMOUNTED_DISKS: ""
     USE_CERT_MANAGER: false
     CERT_OPTION: ""
@@ -35,6 +35,12 @@
     #          Creates backups before modification with automatic rollback on failure
     #          WARNING: Will overwrite /etc/resolv.conf if DNS is detected as broken
     FIX_DNS: false
+
+    # PAUSE_K3S: Legacy force flag; k3s conflicts are paused automatically by default.
+    # Set SKIP_K3S_PAUSE: true to fail instead of auto-pausing on loaned nodes.
+    PAUSE_K3S: false
+    SKIP_K3S_PAUSE: false
+    RKE2_PRESERVE_EXISTING: false
     
     # DNS_SERVERS: Custom DNS servers for RKE2 cluster
     #              If set, these nameservers will be written to /etc/rancher/rke2/resolv.conf
@@ -43,12 +49,75 @@
     
     CLUSTERFORGE_REPO: "https://github.com/silogen/cluster-forge.git"
     BLOOM_DIR: "/tmp/bloom"
-    rocm_required_version: "7.2.3"  # single source of truth — update this to change ROCm version
-    rocm_deb_build: "70203-1"  # build identifier paired with rocm_required_version
-    rocm_base_url: "https://repo.radeon.com/amdgpu-install/{{ rocm_required_version }}/ubuntu/"
-    rocm_deb_package: "amdgpu-install_{{ rocm_required_version }}.{{ rocm_deb_build }}_all.deb"
-    rocm_instinct_min_patch: 3
-    rocm_version_exact_required: false
+    # Controller/login user that should own user-facing Bloom output. This
+    # resolves to the pre-sudo user when ansible-playbook itself runs via sudo,
+    # and to USER for normal local/exported execution.
+    bloom_effective_user: >-
+      {{
+        lookup('env', 'SUDO_USER')
+        | default(lookup('env', 'USER'), true)
+        | default(ansible_user | default(ansible_user_id | default('root'), true), true)
+      }}
+    # EAI-5657: exact driver compatibility policy. These play-level defaults
+    # also support direct ansible-playbook use when Bloom's Go layer is bypassed.
+    GPU_INSTALL_HOST_TOOLS: true
+    gpu_driver_default_version: "31.40"
+    gpu_driver_default_build: "314000-1"
+    gpu_driver_supported:
+      - DriverRelease: "30.10.2"
+        InstallerVersion: "7.0.2"
+        InstallerBuild: "70002-1"
+        DKMSModuleVersion: "6.14.14"
+        DKMSBuild: "2226257"
+        DKMSPackageCode: "30100200"
+        PairedROCm: "7.0.2"
+        HostToolsChannel: legacy
+        HostToolsPackage: amd-smi-lib
+      - DriverRelease: "30.20.1"
+        InstallerVersion: "7.1.1"
+        InstallerBuild: "70101-1"
+        DKMSModuleVersion: "6.16.6"
+        DKMSBuild: "2255209"
+        DKMSPackageCode: "30200100"
+        PairedROCm: "7.1.1"
+        HostToolsChannel: legacy
+        HostToolsPackage: amd-smi-lib
+      - DriverRelease: "30.30.3"
+        InstallerVersion: "7.2.3"
+        InstallerBuild: "70203-1"
+        DKMSModuleVersion: "6.16.13"
+        DKMSBuild: "2327507"
+        DKMSPackageCode: "30300300"
+        PairedROCm: "7.2.3"
+        HostToolsChannel: legacy
+        HostToolsPackage: amd-smi-lib
+      - DriverRelease: "30.30.4"
+        InstallerVersion: "7.2.4"
+        InstallerBuild: "70204-1"
+        DKMSModuleVersion: "6.16.13"
+        DKMSBuild: "2341068"
+        DKMSPackageCode: "30300400"
+        PairedROCm: "7.2.4"
+        HostToolsChannel: legacy
+        HostToolsPackage: amd-smi-lib
+      - DriverRelease: "31.30.0"
+        InstallerVersion: "31.30"
+        InstallerBuild: "313000-1"
+        DKMSModuleVersion: "6.19.4"
+        DKMSBuild: "2337710"
+        DKMSPackageCode: "31300000"
+        PairedROCm: "7.13.0"
+        HostToolsChannel: core
+        HostToolsPackage: amdrocm-amdsmi7.13
+      - DriverRelease: "31.40.0"
+        InstallerVersion: "31.40"
+        InstallerBuild: "314000-1"
+        DKMSModuleVersion: "6.19.14"
+        DKMSBuild: "2364437"
+        DKMSPackageCode: "31400000"
+        PairedROCm: "7.14.0"
+        HostToolsChannel: core-multiarch
+        HostToolsPackage: amdrocm-amdsmi7.14
     gpu_stack_family_resolved: instinct
     rke2_installation_url: "https://get.rke2.io"
 
@@ -84,11 +153,12 @@
 
   pre_tasks:
     - name: Check passwordless sudo is configured
-      command: sudo -n true
-      become: false
+      ansible.builtin.command:
+        cmd: /bin/true
+      become: true
       changed_when: false
       register: sudo_check
-      failed_when: false
+      ignore_errors: true
 
     - name: Fail if passwordless sudo is not configured
       fail:
@@ -98,8 +168,7 @@
           Fix: run the following command on the target host and then retry:
 
             echo "$USER ALL=(ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/cluster-bloom-nopasswd
-      become: false
-      when: sudo_check.rc != 0
+      when: sudo_check.failed | default(false)
 
     - name: Gather facts
       ansible.builtin.setup:
@@ -114,7 +183,12 @@
       vars:
         validate_no_disks_for_cluster: "{{ NO_DISKS_FOR_CLUSTER | default(false) }}"
         validate_cluster_disks: "{{ CLUSTER_DISKS | default('') }}"
-        validate_config_file: "{{ ansible_config_file | default('bloom.yaml') }}"
+        validate_config_file: "{{ bloom_config_file | default('bloom.yaml') }}"
+
+    - name: Pause conflicting k3s installation (loaned nodes)
+      tags: [pre_deployment, k3s_pause]
+      include_tasks: tasks/k3s_pause.yaml
+      when: (k3s_pause_required | default(false) | bool) or (PAUSE_K3S | default(false) | bool)
 
     - name: Node Validation
       tags: [validate_node]

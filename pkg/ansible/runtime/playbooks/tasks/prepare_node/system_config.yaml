@@ -18,7 +18,7 @@
         state: present
         sysctl_file: /etc/sysctl.conf
         reload: yes
-      when: current_inotify.stdout | int < inotify_target_value
+      when: (current_inotify.stdout | int) < (inotify_target_value | int)
   tags: [system, prep_node]
 
 - name: Open Firewall Ports
@@ -45,7 +45,7 @@
   tags: [firewall, prep_node]
 
 - name: Update Udev Rules (GPU nodes)
-  when: GPU_NODE
+  when: GPU_NODE | default(false) | bool
   block:
     - name: Create AMD GPU udev rules
       copy:

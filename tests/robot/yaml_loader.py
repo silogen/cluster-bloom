@@ -103,7 +103,7 @@ def get_visibility_steps(field_name, field_def):
         steps.append({'action': 'wait', 'target': field_name})
 
     # Fields that require GPU_NODE=true (ensure it's checked)
-    elif field_name in ['ROCM_BASE_URL', 'ROCM_DEB_PACKAGE']:
+    elif field_name in ['GPU_DRIVER_SKIP_INSTALL', 'GPU_DRIVER_VERSION', 'GPU_DRIVER_BUILD']:
         steps.append({'action': 'check', 'target': 'GPU_NODE'})
         steps.append({'action': 'wait', 'target': field_name})
 

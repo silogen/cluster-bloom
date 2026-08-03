@@ -2,12 +2,12 @@
 
 ## Executive Summary
 
-ClusterBloom is an automated Kubernetes cluster deployment and configuration tool specifically designed for AMD GPU environments. It streamlines the complex process of setting up production-ready Kubernetes clusters using RKE2, with specialized support for ROCm, Longhorn storage, and multi-node cluster configurations.
+ClusterBloom is an automated Kubernetes cluster deployment and configuration tool specifically designed for AMD GPU environments. It streamlines the complex process of setting up production-ready Kubernetes clusters using RKE2, with a validated AMD GPU host-driver policy for containerized ROCm workloads, Longhorn storage, and multi-node cluster configurations.
 
 ## Product Overview
 
 ### Purpose
-ClusterBloom automates the deployment of Kubernetes clusters with AMD GPU support, eliminating the manual complexity of configuring ROCm, storage management, networking, and cluster joining procedures.
+ClusterBloom automates the deployment of Kubernetes clusters with AMD GPU support, eliminating the manual complexity of configuring the host GPU driver, storage management, networking, and cluster joining procedures. ROCm runtimes and workload libraries remain in workload containers rather than being installed on the host.
 
 ### Target Users
 - DevOps Engineers managing AMD GPU workloads
@@ -44,10 +44,43 @@ Automated deployment of production-ready RKE2 clusters with first node initializ
 
 **[📄 Detailed Documentation](./rke2-deployment.md)**
 
-### AMD GPU Support with ROCm
-Automated AMD GPU driver installation, device detection, permission configuration, and Kubernetes GPU resource integration for AI/ML workloads.
+### AMD GPU Driver Support for Containerized ROCm
+Automated AMD GPU driver validation or installation, device detection,
+permission configuration, and Kubernetes GPU resource integration for AI/ML
+workloads. ClusterBloom installs the driver with
+`amdgpu-install --usecase=dkms`; it does not install host ROCm runtime, HIP,
+SDK, or workload libraries. Standalone AMD-SMI diagnostics are installed by
+default and may be disabled independently.
+
+#### Supported version matrix
+
+ClusterBloom uses an exact allowlist rather than a minimum-version comparison.
+User-provided installer overrides are validated by the Bloom binary when it
+reads `bloom.yaml`, before Ansible starts. Ansible repeats that static tuple
+check and performs the target-dependent package, DKMS, and active-module
+validation.
+
+For the full GPU driver compatibility table, see
+[GPU Driver Support](gpu-driver-support.md#supported-version-matrix).
+
+On a fresh node, the production default is AMD driver `31.40.0` from
+`amdgpu-install_31.40.314000-1_all.deb`. Existing drivers are retained only
+when package metadata and DKMS registration identify one exact supported tuple.
+Unknown, mixed, or ambiguous out-of-tree drivers stop deployment before
+repository or package changes. Bloom also verifies the DKMS module built for
+the running kernel and requires a reboot when the selected module is not yet
+active.
+
+The matrix is defined in `pkg/config/gpu_stack_matrix.go` and represented as
+`gpu_driver_supported` in
+`pkg/ansible/runtime/playbooks/cluster-bloom.yaml`. The GPU installation and
+validation tasks consume that variable in both embedded and exported
+playbooks. Explicit CamelCase serialization tags preserve the field names
+expected by Ansible during export.
 
 **[📄 Detailed Documentation](./rocm-support.md)**
+
+**[📄 Driver Policy and Verification](./gpu-driver-support.md)**
 
 ### Storage Management with Longhorn
 Distributed block storage with automatic disk detection, interactive selection, persistent mounting, and Longhorn CSI integration for reliable persistent volumes.
@@ -254,7 +287,8 @@ ClusterBloom validates system requirements before installation:
 - **Ubuntu Version**: 20.04, 22.04, or 24.04
 - **Kernel Modules**: overlay, br_netfilter (amdgpu for GPU nodes)
 
-See [VALIDATION.md](VALIDATION.md) for complete validation documentation.
+See the [Installation Guide](installation-guide.md) for deployment validation
+and verification procedures.
 
 ### Error Handling and Recovery
 - Graceful failures with clear error messages and recovery suggestions
@@ -303,7 +337,7 @@ Browser-based testing with chromedp and comprehensive mock system:
 - End-to-end integration tests
 - Form validation and dynamic behavior tests
 
-**[📄 Technical Architecture](./07-technical-architecture.md)**
+**[📄 Technical Architecture](./technical-architecture.md)**
 
 ## Current Limitations and Known Issues
 
@@ -339,7 +373,7 @@ Browser-based testing with chromedp and comprehensive mock system:
 ### Secondary Metrics
 - **Node Addition Time**: Target <10 minutes for additional node joining
 - **Storage Performance**: Longhorn performance meeting baseline requirements
-- **GPU Utilization**: Successful ROCm workload execution
+- **GPU Utilization**: Successful GPU-accelerated workload execution with ROCm supplied by workload containers
 - **Operational Stability**: 99.9% cluster uptime after initial setup
 
 ## Future Roadmap
@@ -367,9 +401,6 @@ Browser-based testing with chromedp and comprehensive mock system:
 
 **[📄 Manual Installation Guide](./installation-guide.md)**  
 Complete manual installation procedures for understanding automation or performing custom installations.
-
-**[📄 Cloud Platform Compatibility](./cloud-compatibility.md)**  
-Infrastructure dependencies, migration strategies, and configuration for multi-platform deployments (EKS, AKS, GKE).
 
 **[📄 Configuration Reference](./configuration-reference.md)**  
 Comprehensive configuration variable reference with examples and validation rules.

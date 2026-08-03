@@ -1,0 +1,222 @@
+---
+# Install AMD-SMI as a standalone host diagnostic. This intentionally does not
+# install ROCm runtime, HIP, SDK or workload libraries.
+
+- name: Locate existing amd-smi
+  shell: |
+    for candidate in \
+      "$(command -v amd-smi 2>/dev/null)" \
+      /usr/local/bin/amd-smi \
+      /opt/rocm/bin/amd-smi \
+      /opt/rocm-*/bin/amd-smi \
+      /opt/rocm/core-*/bin/amd-smi; do
+      for path in $candidate; do
+        if [ -n "$path" ] && [ -x "$path" ]; then
+          readlink -f "$path"
+          exit 0
+        fi
+      done
+    done
+    exit 1
+  register: gpu_amd_smi_before
+  changed_when: false
+  failed_when: false
+
+- name: Report existing standalone or ROCm-provided AMD-SMI
+  debug:
+    msg: |
+      AMD-SMI is already available at {{ gpu_amd_smi_before.stdout | trim }}.
+      Bloom leaves the existing tool and any host ROCm userspace untouched.
+  when: gpu_amd_smi_before.rc == 0
+
+- name: Install AMD-SMI repository prerequisites
+  apt:
+    name:
+      - ca-certificates
+      - gpg
+    state: present
+  when: gpu_amd_smi_before.rc != 0
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+
+- name: Configure standalone AMD-SMI repository coordinates
+  set_fact:
+    gpu_amd_smi_repo_url: >-
+      {% if gpu_driver_effective.HostToolsChannel == 'legacy' -%}
+      https://repo.radeon.com/rocm/apt/{{ gpu_driver_effective.PairedROCm }}
+      {%- elif gpu_driver_effective.HostToolsChannel == 'core-multiarch' -%}
+      https://repo.amd.com/rocm/packages-multi-arch/ubuntu{{ ansible_distribution_version | replace('.', '') }}
+      {%- else -%}
+      https://repo.amd.com/rocm/packages/ubuntu{{ ansible_distribution_version | replace('.', '') }}
+      {%- endif %}
+    gpu_amd_smi_key_url: >-
+      {% if gpu_driver_effective.HostToolsChannel == 'legacy' -%}
+      https://repo.radeon.com/rocm/rocm.gpg.key
+      {%- elif gpu_driver_effective.HostToolsChannel == 'core-multiarch' -%}
+      https://repo.amd.com/rocm/packages-multi-arch/gpg/rocm.gpg
+      {%- else -%}
+      https://repo.amd.com/rocm/packages/gpg/rocm.gpg
+      {%- endif %}
+    gpu_amd_smi_keyring: >-
+      {{ '/etc/apt/keyrings/bloom-rocm.gpg'
+         if gpu_driver_effective.HostToolsChannel == 'legacy'
+         else '/etc/apt/keyrings/bloom-amdrocm.gpg' }}
+  when: gpu_amd_smi_before.rc != 0
+
+- name: Ensure apt keyring directory exists
+  file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+  when: gpu_amd_smi_before.rc != 0
+
+- name: Download standalone AMD-SMI repository key
+  get_url:
+    url: "{{ gpu_amd_smi_key_url }}"
+    dest: /tmp/bloom-amd-smi-repo.key
+    mode: "0644"
+  when: gpu_amd_smi_before.rc != 0
+
+- name: Install standalone AMD-SMI repository keyring
+  shell: "gpg --dearmor --yes --output {{ gpu_amd_smi_keyring }} /tmp/bloom-amd-smi-repo.key"
+  when: gpu_amd_smi_before.rc != 0
+  changed_when: true
+
+- name: Register Bloom-owned standalone AMD-SMI repository
+  copy:
+    dest: /etc/apt/sources.list.d/bloom-amd-smi.list
+    mode: "0644"
+    content: |
+      deb [arch=amd64 signed-by={{ gpu_amd_smi_keyring }}] {{ gpu_amd_smi_repo_url }} {{ (ansible_distribution_release ~ ' main') if gpu_driver_effective.HostToolsChannel == 'legacy' else 'stable main' }}
+  when: gpu_amd_smi_before.rc != 0
+
+- name: Refresh standalone AMD-SMI repository metadata
+  apt:
+    update_cache: true
+  when: gpu_amd_smi_before.rc != 0
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+
+- name: Resolve exact legacy AMD-SMI package version
+  shell: >-
+    apt-cache madison amd-smi-lib |
+    awk '$3 ~ /{{ gpu_driver_effective.InstallerBuild.split("-") | first }}/ { print $3; exit }'
+  register: gpu_amd_smi_legacy_candidate
+  changed_when: false
+  when:
+    - gpu_amd_smi_before.rc != 0
+    - gpu_driver_effective.HostToolsChannel == 'legacy'
+
+- name: Read Core SDK AMD-SMI package candidate
+  shell: "apt-cache policy {{ gpu_driver_effective.HostToolsPackage }} | awk '/Candidate:/ { print $2; exit }'"
+  register: gpu_amd_smi_core_candidate
+  changed_when: false
+  when:
+    - gpu_amd_smi_before.rc != 0
+    - gpu_driver_effective.HostToolsChannel != 'legacy'
+
+- name: Fail if standalone AMD-SMI package is unavailable
+  fail:
+    msg: |
+      The standalone AMD-SMI package matched to driver
+      {{ gpu_driver_effective.DriverRelease }} could not be resolved.
+      Expected package: {{ gpu_driver_effective.HostToolsPackage }}
+      Repository: {{ gpu_amd_smi_repo_url }}
+      Inspect:
+        apt-cache policy {{ gpu_driver_effective.HostToolsPackage }}
+        cat /etc/apt/sources.list.d/bloom-amd-smi.list
+  when:
+    - gpu_amd_smi_before.rc != 0
+    - >-
+      (
+        gpu_driver_effective.HostToolsChannel == 'legacy' and
+        (gpu_amd_smi_legacy_candidate.stdout | default('') | trim) == ''
+      ) or (
+        gpu_driver_effective.HostToolsChannel != 'legacy' and
+        (gpu_amd_smi_core_candidate.stdout | default('') | trim) in ['', '(none)']
+      )
+
+- name: Install exact legacy standalone AMD-SMI package
+  command:
+    argv:
+      - apt-get
+      - -o
+      - "Dpkg::Options::=--force-confnew"
+      - -o
+      - "Dpkg::Options::=--force-confmiss"
+      - install
+      - --yes
+      - --allow-downgrades
+      - "amd-smi-lib={{ gpu_amd_smi_legacy_candidate.stdout | trim }}"
+  when:
+    - gpu_amd_smi_before.rc != 0
+    - gpu_driver_effective.HostToolsChannel == 'legacy'
+  changed_when: true
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+
+- name: Install versioned Core SDK standalone AMD-SMI package
+  apt:
+    name: "{{ gpu_driver_effective.HostToolsPackage }}"
+    state: present
+  when:
+    - gpu_amd_smi_before.rc != 0
+    - gpu_driver_effective.HostToolsChannel != 'legacy'
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+
+- name: Locate amd-smi after standalone installation
+  shell: |
+    for candidate in \
+      "$(command -v amd-smi 2>/dev/null)" \
+      /opt/rocm/bin/amd-smi \
+      /opt/rocm-*/bin/amd-smi \
+      /opt/rocm/core-*/bin/amd-smi; do
+      for path in $candidate; do
+        if [ -n "$path" ] && [ -x "$path" ]; then
+          readlink -f "$path"
+          exit 0
+        fi
+      done
+    done
+    exit 1
+  register: gpu_amd_smi_after
+  changed_when: false
+  failed_when: false
+
+- name: Fail if amd-smi is unavailable after standalone installation
+  fail:
+    msg: |
+      {{ gpu_driver_effective.HostToolsPackage }} was installed but no amd-smi
+      executable was found under PATH or /opt/rocm*. Inspect:
+        dpkg -L {{ gpu_driver_effective.HostToolsPackage }}
+  when: gpu_amd_smi_after.rc != 0
+
+- name: Expose standalone amd-smi on PATH
+  file:
+    src: "{{ gpu_amd_smi_after.stdout | trim }}"
+    dest: /usr/local/bin/amd-smi
+    state: link
+    force: true
+  when: (gpu_amd_smi_after.stdout | trim) != '/usr/local/bin/amd-smi'
+
+- name: Verify standalone AMD-SMI version
+  command: /usr/local/bin/amd-smi version
+  register: gpu_amd_smi_version
+  changed_when: false
+
+- name: Verify standalone AMD-SMI detects GPUs
+  command: /usr/local/bin/amd-smi list
+  register: gpu_amd_smi_list
+  changed_when: false
+
+- name: Report standalone AMD-SMI method
+  debug:
+    msg: |
+      AMD-SMI host diagnostics: ready
+      Binary: {{ gpu_amd_smi_after.stdout | trim }}
+      Driver pairing used for a new install: {{ gpu_driver_effective.DriverRelease }} -> ROCm {{ gpu_driver_effective.PairedROCm }} package train
+      Installation method: {% if gpu_amd_smi_before.rc == 0 %}existing amd-smi retained{% elif gpu_driver_effective.HostToolsChannel == 'legacy' %}exact amd-smi-lib package from repo.radeon.com/rocm/apt/{{ gpu_driver_effective.PairedROCm }}{% else %}versioned {{ gpu_driver_effective.HostToolsPackage }} package from the ROCm Core SDK repository{% endif %}
+      Scope: AMD-SMI plus its minimal system dependencies only; no ROCm runtime, HIP, SDK, or workload libraries were requested.
+      GPU query:
+      {{ gpu_amd_smi_list.stdout }}

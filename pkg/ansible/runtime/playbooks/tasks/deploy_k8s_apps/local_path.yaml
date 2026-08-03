@@ -4,10 +4,14 @@
 
 - name: Prepare Local Storage Paths
   block:
-    - name: Process CLUSTER_DISKS string into disk list
+    - name: Normalize CLUSTER_DISKS into disk list
       set_fact:
-        cluster_disks_raw: "{{ CLUSTER_DISKS.split(',') | map('trim') | select('!=', '') | list }}"
-      when: CLUSTER_DISKS is defined and CLUSTER_DISKS is string and CLUSTER_DISKS != ""
+        cluster_disks_raw: >-
+          {{
+            (CLUSTER_DISKS.split(',') | map('trim') | reject('equalto', '') | list)
+            if (CLUSTER_DISKS | default('')) is string
+            else (CLUSTER_DISKS | default([]) | list)
+          }}
 
     - name: Build indexed mount paths for CLUSTER_DISKS
       set_fact:

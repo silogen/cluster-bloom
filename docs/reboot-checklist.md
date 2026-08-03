@@ -24,6 +24,18 @@ This checklist covers the essential aspects of rebooting GPU-enabled cluster nod
 
 **🎯 Target Environment**: GPU-enabled Kubernetes clusters running AI/ML workloads with Longhorn distributed storage and disks mounted at `/mnt/diskX` locations.
 
+### Bloom GPU driver reboot handoff
+
+When Bloom installs or activates a mapped AMD DKMS driver, it may end the play
+before cluster deployment and write `/var/lib/bloom/reboot-required.json`. The
+CLI then offers to reboot the node; `--yes` auto-confirms. After rebooting, rerun
+the same Bloom command. GPU preparation is idempotent and resumes by verifying
+the active driver before installing standalone AMD-SMI.
+
+If Bloom reports that a reboot was already attempted but the requirement
+remains, follow its manual diagnostics rather than rebooting repeatedly. See
+[GPU Driver Support](gpu-driver-support.md) for the complete flow.
+
 ## Pre-Reboot Preparation
 
 ### 1. Document Current State
@@ -67,9 +79,9 @@ echo "⚠️  No GPU device plugin found"
 if command -v nvidia-smi >/dev/null 2>&1; then
     echo "Current NVIDIA GPU status:"
     nvidia-smi --query-gpu=index,name,utilization.gpu,memory.used,memory.total --format=csv
-elif command -v rocm-smi >/dev/null 2>&1; then
+elif command -v amd-smi >/dev/null 2>&1; then
     echo "Current AMD GPU status:"
-    rocm-smi --showuse --csv
+    amd-smi list
 fi
 
 echo -e "\n=== Longhorn Storage Health Check ==="
@@ -904,12 +916,12 @@ if command -v nvidia-smi >/dev/null 2>&1; then
         echo "✓ NVIDIA GPUs appear healthy"
     fi
     
-elif command -v rocm-smi >/dev/null 2>&1; then
+elif command -v amd-smi >/dev/null 2>&1; then
     echo "AMD GPU Status:"
-    rocm-smi --showtemp --showmeminfo --csv
+    amd-smi list
     
-    # Check ROCm functionality
-    if rocm-smi --showuse | grep -q "GPU use"; then
+    # Check AMD GPU diagnostics
+    if amd-smi list >/dev/null 2>&1; then
         echo "✓ AMD GPUs detected and functional"
     else
         echo "⚠️  AMD GPU detection may have issues"
@@ -1037,7 +1049,7 @@ if [ -n "$RUNNING_GPU_PODS" ]; then
             GPU_RESOURCE='"nvidia.com/gpu": 1'
         elif kubectl describe node $(hostname) | grep -q "amd.com/gpu"; then
             GPU_TEST_IMAGE="rocm/rocm-terminal:latest"  
-            GPU_TEST_CMD='["rocm-smi"]'
+            GPU_TEST_CMD='["amd-smi", "list"]'
             GPU_RESOURCE='"amd.com/gpu": 1'
         else
             echo "No GPU resources detected for testing"
@@ -1147,7 +1159,7 @@ kubectl logs -n kube-system -l name=nvidia-device-plugin --tail=50
 
 # Verify GPU driver and runtime
 nvidia-container-runtime --version  # For NVIDIA
-rocm-smi --version                   # For AMD
+amd-smi version                      # For AMD
 
 # Check node GPU labels and taints
 kubectl describe node $(hostname) | grep -A 5 -B 5 -E "gpu|GPU"

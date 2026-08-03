@@ -7,14 +7,14 @@
 - name: DNS Configuration Notice
   debug:
     msg: |
-      DNS modifications are {{ 'ENABLED' if FIX_DNS else 'DISABLED (opt-in required)' }}.
-      {% if not FIX_DNS %}
+      DNS modifications are {{ 'ENABLED' if (FIX_DNS | bool) else 'DISABLED (opt-in required)' }}.
+      {% if not (FIX_DNS | bool) %}
       To enable automatic DNS fixes, set FIX_DNS: true in your configuration.
       This will only modify DNS if it's broken and external DNS is reachable.
       {% endif %}
 
 - name: Fix DNS resolution (safe mode)
-  when: FIX_DNS
+  when: FIX_DNS | default(false) | bool
   block:
     - name: Check current DNS configuration
       shell: cat /etc/resolv.conf
@@ -49,11 +49,11 @@
     # Only modify DNS if it's actually broken AND external DNS works
     - name: Determine if DNS needs fixing
       set_fact:
-        dns_needs_fixing: "{{ dns_test.rc != 0 and dns_test_alt.rc == 0 }}"
+        dns_needs_fixing: "{{ (dns_test.rc != 0 and dns_test_alt.rc == 0) | bool }}"
 
     - name: DNS Status Decision
       debug:
-        msg: "{{ 'DNS is broken and will be fixed' if dns_needs_fixing else 'DNS is working, no changes needed' }}"
+        msg: "{{ 'DNS is broken and will be fixed' if (dns_needs_fixing | bool) else 'DNS is working, no changes needed' }}"
 
     - name: Backup current resolv.conf before modification
       copy:
@@ -61,12 +61,12 @@
         dest: /etc/resolv.conf.backup-{{ ansible_date_time.epoch }}
         remote_src: yes
         mode: "0644"
-      when: dns_needs_fixing
+      when: dns_needs_fixing | bool
 
     - name: Make resolv.conf mutable (if immutable)
       shell: chattr -i /etc/resolv.conf 2>/dev/null || true
       ignore_errors: yes
-      when: dns_needs_fixing
+      when: dns_needs_fixing | bool
 
     - name: Configure working DNS servers (only if broken)
       copy:
@@ -79,7 +79,7 @@
           # nameserver 4.4.4.4
         dest: /etc/resolv.conf
         mode: "0644"
-      when: dns_needs_fixing
+      when: dns_needs_fixing | bool
       register: dns_modified
 
     - name: Verify DNS is working after changes
@@ -91,7 +91,7 @@
       retries: 3
       delay: 2
       until: dns_verify.rc == 0
-      when: dns_needs_fixing
+      when: dns_needs_fixing | bool
 
     - name: Rollback DNS changes if verification failed
       block:
@@ -107,7 +107,7 @@
               DNS modification failed verification and has been rolled back.
               Original configuration restored from backup.
               Manual DNS configuration may be required.
-      when: dns_needs_fixing and dns_verify is defined and dns_verify.rc != 0
+      when: (dns_needs_fixing | bool) and dns_verify is defined and dns_verify.rc != 0
 
 - name: Stop services that may lock apt
   shell: |
@@ -161,9 +161,20 @@
     fi
   ignore_errors: yes
 
+# amdgpu-install's .deb ships /etc/apt/sources.list.d/rocm.list as a conffile,
+# so it survives on disk from any prior run (partial or complete) regardless
+# of whether this run installs a driver. Bloom's driver-only flow never needs
+# it (see gpu_driver_only.yaml), and a stale/unreachable rocm entry here fails
+# apt-get update below for every subsequent task, not just GPU ones.
+- name: Remove stale ROCm apt repository left by a previous amdgpu-install run
+  file:
+    path: /etc/apt/sources.list.d/rocm.list
+    state: absent
+  ignore_errors: yes
+
 - name: Ensure universe repository is enabled
   shell: |
-    add-apt-repository -y universe || true
+    add-apt-repository -y --no-update universe || true
   environment:
     DEBIAN_FRONTEND: noninteractive
   ignore_errors: yes

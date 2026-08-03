@@ -215,62 +215,13 @@ func (p *OutputProcessor) PrintSummary() {
 		fmt.Println()
 	}
 
-	// Print credential information if CLUSTERFORGE_RELEASE is configured
-	if p.config != nil {
-		clusterforgeRelease := p.config["CLUSTERFORGE_RELEASE"]
-		domain := p.config["DOMAIN"]
-
-		if clusterforgeRelease != "" && clusterforgeRelease != "none" && domain != "" {
-			fmt.Println()
-			fmt.Println("🚀 ClusterForge Deployment:")
-			fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-			fmt.Println("⏳ Services are starting up. Endpoints will be available once envoy-gateway is ready.")
-			fmt.Println()
-			fmt.Println("Run this command to wait for services to be ready (Ctrl+C to exit early):")
-			fmt.Println()
-			fmt.Println("  # Wait for envoy-gateway pods to be ready")
-			fmt.Println("  kubectl wait --for=condition=ready pod --all -n envoy-gateway-system --timeout=600s && \\")
-			fmt.Println("  # Wait for cluster-auth job to complete (creates initial auth configuration)")
-			fmt.Println("  kubectl wait --for=condition=complete job --all -n cluster-auth --timeout=600s && \\")
-			fmt.Println("  echo ''")
-			fmt.Println("  echo '✅ Services are ready! Endpoints are now accessible.'")
-			fmt.Println()
-			fmt.Println("Once ready, access these endpoints:")
-			fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-			fmt.Println()
-			fmt.Println("📋 Credential Information:")
-			fmt.Println()
-			fmt.Printf("🔐 AI Resource Manager - DevUser:\n")
-			fmt.Printf("   URL:      https://airmui.%s\n", domain)
-			fmt.Printf("   Username: devuser@%s\n", domain)
-			fmt.Printf("   Password: kubectl -n keycloak get secret airm-realm-credentials -o jsonpath='{.data.KEYCLOAK_INITIAL_DEVUSER_PASSWORD}' | base64 --decode && echo\n")
-			fmt.Println()
-			fmt.Printf("💼 AI Workbench - DevUser:\n")
-			fmt.Printf("   URL:      https://aiwbui.%s\n", domain)
-			fmt.Printf("   Username: devuser@%s\n", domain)
-			fmt.Printf("   Password: kubectl -n keycloak get secret airm-realm-credentials -o jsonpath='{.data.KEYCLOAK_INITIAL_DEVUSER_PASSWORD}' | base64 --decode && echo\n")
-			fmt.Println()
-			fmt.Printf("📦 ArgoCD - Admin:\n")
-			fmt.Printf("   URL:      https://argocd.%s\n", domain)
-			fmt.Printf("   Username: admin\n")
-			fmt.Printf("   Password: kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 --decode && echo\n")
-			fmt.Println()
-			fmt.Printf("🔧 Gitea - Admin:\n")
-			fmt.Printf("   URL:      https://gitea.%s\n", domain)
-			fmt.Printf("   Username: silogen-admin\n")
-			fmt.Printf("   Password: kubectl -n cf-gitea get secret gitea-admin-credentials -o jsonpath='{.data.password}' | base64 --decode && echo\n")
-			fmt.Println()
-			fmt.Printf("🔐 OpenBao - Root Token:\n")
-			fmt.Printf("   URL:      https://openbao.%s\n", domain)
-			fmt.Printf("   Token:    kubectl -n cf-openbao get secret openbao-keys -o jsonpath='{.data.root_token}' | base64 --decode && echo\n")
-			fmt.Println()
-			fmt.Printf("🔑 Keycloak - Admin:\n")
-			fmt.Printf("   URL:      https://kc.%s\n", domain)
-			fmt.Printf("   Username: silogen-admin\n")
-			fmt.Printf("   Password: kubectl -n keycloak get secret keycloak-credentials -o jsonpath='{.data.KEYCLOAK_INITIAL_ADMIN_PASSWORD}' | base64 --decode && echo\n")
-			fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		}
-	}
+	// The ClusterForge deployment banner + credentials block used to print here
+	// based on config alone (CLUSTERFORGE_RELEASE + DOMAIN set), regardless of
+	// whether cluster-forge was actually deployed. It now lives in the top-level
+	// bloom process (cmd.printClusterForgeSummary), which runs on the host and
+	// can check for real deployment evidence via kubectl before printing — this
+	// ansible child pivot-roots into a bundled rootfs and cannot reliably query
+	// the cluster.
 }
 
 // extractJoinInfoMessage extracts join information from Ansible debug output

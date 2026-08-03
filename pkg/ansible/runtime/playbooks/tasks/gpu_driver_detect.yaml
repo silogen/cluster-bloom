@@ -1,0 +1,190 @@
+---
+# Detect and classify an existing package-managed or manual amdgpu DKMS driver.
+# A stock inbox amdgpu module is intentionally not an installed DKMS release:
+# on a fresh node Bloom replaces it with the production 31.40 DKMS driver.
+
+- name: Read installed amdgpu-dkms package version
+  shell: "dpkg-query -W -f='${Version}' amdgpu-dkms 2>/dev/null || true"
+  register: gpu_driver_detected_package
+  changed_when: false
+
+- name: Read existing amdgpu DKMS registrations
+  shell: "dkms status -m amdgpu 2>/dev/null || true"
+  register: gpu_driver_detected_dkms
+  changed_when: false
+
+- name: Detect host ROCm runtime packages
+  shell: |
+    dpkg-query -W -f='${Package}\n' 2>/dev/null \
+      | grep -E '^(rocm($|-hip|-language|-opencl|-ml)|hip-runtime-amd$|amdrocm[0-9]|amdrocm-(core-sdk|runtime))' \
+      || true
+  register: gpu_driver_detected_rocm_packages
+  changed_when: false
+
+- name: Initialize GPU driver compatibility matches
+  set_fact:
+    gpu_driver_compatibility_matches: []
+
+- name: Match installed GPU driver against validated tuples
+  set_fact:
+    gpu_driver_compatibility_matches: "{{ gpu_driver_compatibility_matches + [item] }}"
+  loop: "{{ gpu_driver_supported }}"
+  loop_control:
+    label: "amdgpu {{ item.DriverRelease }} / ROCm {{ item.PairedROCm }}"
+  when: >-
+    (
+      (gpu_driver_detected_package.stdout | trim) != '' and
+      item.DKMSPackageCode in (gpu_driver_detected_package.stdout | trim) and
+      item.DKMSModuleVersion in (gpu_driver_detected_package.stdout | trim) and
+      item.DKMSBuild in (gpu_driver_detected_package.stdout | trim)
+    ) or (
+      (gpu_driver_detected_package.stdout | trim) == '' and
+      (gpu_driver_detected_dkms.stdout | trim) != '' and
+      item.DKMSModuleVersion in gpu_driver_detected_dkms.stdout and
+      item.DKMSBuild in gpu_driver_detected_dkms.stdout
+    )
+
+- name: Resolve existing GPU driver policy state
+  set_fact:
+    gpu_driver_policy_state: >-
+      {{
+        ('unvalidated-rocm' if (gpu_driver_detected_rocm_packages.stdout | trim) != '' else 'none')
+        if ((gpu_driver_detected_package.stdout | trim) == '' and
+            (gpu_driver_detected_dkms.stdout | trim) == '')
+        else
+        ('supported' if (gpu_driver_compatibility_matches | length) == 1 else 'unsupported')
+      }}
+
+- name: Resolve supported existing GPU driver tuple
+  set_fact:
+    gpu_driver_compatibility: "{{ gpu_driver_compatibility_matches | first }}"
+  when: gpu_driver_policy_state == 'supported'
+
+- name: Check all DKMS registrations are from the matched release
+  shell: |
+    set -e
+    while IFS= read -r line; do
+      [ -z "$line" ] && continue
+      echo "$line" | grep -F "{{ gpu_driver_compatibility.DKMSModuleVersion }}" >/dev/null
+      echo "$line" | grep -F "{{ gpu_driver_compatibility.DKMSBuild }}" >/dev/null
+    done <<'EOF'
+    {{ gpu_driver_detected_dkms.stdout }}
+    EOF
+  register: gpu_driver_dkms_consistent
+  changed_when: false
+  failed_when: false
+  when:
+    - gpu_driver_policy_state == 'supported'
+
+- name: Reject mixed DKMS releases
+  set_fact:
+    gpu_driver_policy_state: unsupported
+  when:
+    - gpu_driver_dkms_consistent is defined
+    - gpu_driver_dkms_consistent.rc | default(0) != 0
+
+- name: Resolve requested driver installer tuple
+  set_fact:
+    gpu_driver_version_resolved: "{{ (GPU_DRIVER_VERSION | default('') | trim) if (GPU_DRIVER_VERSION | default('') | trim != '') else gpu_driver_default_version }}"
+    gpu_driver_build_resolved: "{{ (GPU_DRIVER_BUILD | default('') | trim) if (GPU_DRIVER_BUILD | default('') | trim != '') else gpu_driver_default_build }}"
+    gpu_driver_target_matches: []
+
+- name: Match requested installer against validated tuples
+  set_fact:
+    gpu_driver_target_matches: "{{ gpu_driver_target_matches + [item] }}"
+  loop: "{{ gpu_driver_supported }}"
+  loop_control:
+    label: "{{ item.InstallerVersion }}.{{ item.InstallerBuild }}"
+  when:
+    - item.InstallerVersion == gpu_driver_version_resolved
+    - item.InstallerBuild == gpu_driver_build_resolved
+
+- name: Fail if requested GPU driver installer is not validated
+  fail:
+    msg: |
+      Unsupported GPU driver installer requested:
+        amdgpu-install_{{ gpu_driver_version_resolved }}.{{ gpu_driver_build_resolved }}_all.deb
+
+      Select one exact validated tuple:
+        7.0.2.70002-1  -> driver 30.10.2 -> DKMS 6.14.14 -> paired ROCm 7.0.2
+        7.1.1.70101-1  -> driver 30.20.1 -> DKMS 6.16.6  -> paired ROCm 7.1.1
+        7.2.3.70203-1  -> driver 30.30.3 -> DKMS 6.16.13 -> paired ROCm 7.2.3
+        7.2.4.70204-1  -> driver 30.30.4 -> DKMS 6.16.13 -> paired ROCm 7.2.4
+        31.30.313000-1 -> driver 31.30.0 -> DKMS 6.19.4  -> paired ROCm 7.13.0
+        31.40.314000-1 -> driver 31.40.0 -> DKMS 6.19.14 -> paired ROCm 7.14.0
+  when: (gpu_driver_target_matches | length) != 1
+
+- name: Resolve target GPU driver tuple
+  set_fact:
+    gpu_driver_target: "{{ gpu_driver_target_matches | first }}"
+
+- name: Print GPU driver compatibility synopsis
+  debug:
+    msg: |
+      === GPU host stack synopsis ===
+      Decision: {% if gpu_driver_policy_state == 'supported' %}retain supported driver {{ gpu_driver_compatibility.DriverRelease }}; do not install or replace the driver{% elif gpu_driver_policy_state == 'none' %}fresh/inbox-only node; install amdgpu-install_{{ gpu_driver_target.InstallerVersion }}.{{ gpu_driver_target.InstallerBuild }}_all.deb, then DKMS-only driver {{ gpu_driver_target.DriverRelease }}{% elif gpu_driver_policy_state == 'unvalidated-rocm' %}HALT; host ROCm is installed but no allowlisted DKMS driver can be validated{% else %}HALT; the installed out-of-tree driver is not an exact validated tuple{% endif %}
+      AMD-SMI: {% if GPU_INSTALL_HOST_TOOLS | default(true) | bool %}ensure the standalone package matched to the retained/installed driver is present after the driver is active{% else %}disabled by GPU_INSTALL_HOST_TOOLS=false{% endif %}.
+      Host ROCm: not required, not installed by this flow, and any existing userspace is left untouched when its driver is validated.
+
+      Supported existing DKMS drivers (host ROCm is not required):
+        ROCm 7.0.2 -> installer 7.0.2.70002-1  -> driver 30.10.2 -> DKMS 6.14.14.30100200-2226257
+        ROCm 7.1.1 -> installer 7.1.1.70101-1  -> driver 30.20.1 -> DKMS 6.16.6.30200100-2255209
+        ROCm 7.2.3 -> installer 7.2.3.70203-1  -> driver 30.30.3 -> DKMS 6.16.13.30300300-2327507
+        ROCm 7.2.4 -> installer 7.2.4.70204-1  -> driver 30.30.4 -> DKMS 6.16.13.30300400-2341068
+        ROCm 7.13.0 -> installer 31.30.313000-1 -> driver 31.30.0 -> DKMS 6.19.4.31300000-2337710
+        ROCm 7.14.0 -> installer 31.40.314000-1 -> driver 31.40.0 -> DKMS 6.19.14.31400000-2364437
+
+      Detected amdgpu-dkms package: {{ gpu_driver_detected_package.stdout | trim | default('none', true) }}
+      Existing DKMS registrations: {{ gpu_driver_detected_dkms.stdout | trim | default('none', true) }}
+      Host ROCm runtime packages: {{ gpu_driver_detected_rocm_packages.stdout | trim | default('none', true) }}
+
+- name: Fail on an incompatible existing amdgpu DKMS driver
+  fail:
+    msg: |
+      ClusterBloom found an existing out-of-tree amdgpu driver that is not an
+      exact validated tuple, so it stopped without changing the GPU repository
+      or driver.
+
+      Detected package:
+        {{ gpu_driver_detected_package.stdout | trim | default('none', true) }}
+      Detected DKMS registrations:
+        {{ gpu_driver_detected_dkms.stdout | trim | default('none', true) }}
+
+      Supported releases are 30.10.2, 30.20.1, 30.30.3, 30.30.4, 31.30.0 and 31.40.0.
+
+      Choose one remediation, then rerun Bloom:
+        1. Preserve host ROCm: use AMD's instructions for that ROCm release to
+           install its validated paired driver, and ensure `dkms status -m amdgpu`
+           shows it installed for `uname -r`.
+        2. Use Bloom's driver-only default: remove the existing out-of-tree
+           amdgpu DKMS package/registrations with the uninstall procedure for
+           the way they were installed. Verify:
+             dpkg-query -W amdgpu-dkms  # should report no package
+             dkms status -m amdgpu      # should report no registrations
+           Then rerun Bloom; it installs driver 31.40.0 through
+           amdgpu-install_31.40.314000-1_all.deb.
+
+      Bloom will not silently replace an unrecognized driver because doing so
+      can break an existing host ROCm installation.
+  when: gpu_driver_policy_state == 'unsupported'
+
+- name: Fail if host ROCm has no validated DKMS driver
+  fail:
+    msg: |
+      ClusterBloom found host ROCm runtime packages but no package-managed or
+      manually registered amdgpu DKMS release to compare with the support table:
+        {{ gpu_driver_detected_rocm_packages.stdout }}
+
+      Bloom will not replace an inbox or otherwise unidentifiable driver under
+      an existing ROCm userspace installation. Choose one remediation:
+        1. Install the exact supported driver paired with that ROCm release,
+           then verify `dkms status -m amdgpu` for `uname -r`.
+        2. Remove host ROCm and its GPU stack using AMD's documented uninstall
+           procedure, verify the ROCm runtime packages and amdgpu DKMS
+           registrations are gone, then rerun Bloom. Bloom will install driver
+           31.40.0 without host ROCm.
+  when: gpu_driver_policy_state == 'unvalidated-rocm'
+
+- name: Mark GPU driver policy as checked
+  set_fact:
+    gpu_driver_policy_checked: true

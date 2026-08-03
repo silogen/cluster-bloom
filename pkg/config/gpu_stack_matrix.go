@@ -2,53 +2,97 @@ package config
 
 import "fmt"
 
-// GPU stack version pins, by GPU family. These are the qualified host ROCm,
-// GPU Operator chart, and DeviceConfig ROCm-driver versions that move together
-// as one matrix row.
+// GPU stack version pins, by GPU family.
 //
-// The OperatorPath pins are real: instinct uses the qualified v1.4.1 chart and
-// radeon uses the v1.5.1-beta.0 tech-preview chart, both vendored under
-// cluster-forge sources/amd-gpu-operator. The radeon host ROCm and DeviceConfig
-// driver versions are sourced outside cluster-bloom / cluster-forge (ROCm PMO /
-// EAI-5906); the strings below mirror those values and are not authoritative
-// pins owned here.
+// EAI-5657 installs no host ROCm runtime. It manages an allowlisted amdgpu DKMS
+// driver and, by default, the standalone AMD-SMI diagnostics package. ROCm
+// versions in DriverCompatibility document the release paired with each driver;
+// ROCm itself is neither required nor installed by the driver flow.
+//
+// The OperatorPath pins are unrelated to the host driver: instinct uses the
+// qualified v1.4.1 chart and radeon uses the v1.5.1-beta.0 tech-preview chart,
+// both vendored under cluster-forge sources/amd-gpu-operator. These still
+// drive the (unchanged) GPU Operator + DeviceConfig deploy in cluster-forge.
 const (
-	// Instinct: the existing qualified defaults (no behavior change).
-	instinctHostRocmVersion    = "7.2.3"
-	instinctHostRocmDebBuild   = "70203-1"
-	// instinctHostRocmMinPatch is the minimum 7.2.x patch Bloom accepts on GPU
-	// nodes when GPU_STACK_FAMILY is instinct (or empty). Newer patches such as
-	// 7.2.4 are allowed without triggering amdgpu-install.
-	instinctHostRocmMinPatch = 3
+	defaultDriverPackageVersion = "31.40"
+	defaultDriverPackageBuild   = "314000-1"
+
 	instinctOperatorPath       = "amd-gpu-operator/v1.4.1"
 	instinctOperatorConfigPath = "amd-gpu-operator-config/v1.4.1"
 	instinctDriverVersion      = "7.0"
 
-	// Radeon: ROCm 7.13 tech preview.
-	radeonHostRocmVersion    = "7.13.0"
-	radeonHostRocmDebBuild   = "71300-1"
 	radeonOperatorPath       = "amd-gpu-operator/v1.5.1-beta.0"
 	radeonOperatorConfigPath = "amd-gpu-operator-config/v1.5.1-beta.0"
 	radeonDriverVersion      = "7.13"
 )
 
+// DriverCompatibility is an exact, validated driver tuple. Do not replace this
+// allowlist with a >= comparison: the driver release, DKMS source and paired
+// ROCm train need to be reviewed together. PairedROCm is informational and is
+// also used to select a matching standalone AMD-SMI package.
+type DriverCompatibility struct {
+	DriverRelease     string `json:"DriverRelease" yaml:"DriverRelease"`
+	InstallerVersion  string `json:"InstallerVersion" yaml:"InstallerVersion"`
+	InstallerBuild    string `json:"InstallerBuild" yaml:"InstallerBuild"`
+	DKMSModuleVersion string `json:"DKMSModuleVersion" yaml:"DKMSModuleVersion"`
+	DKMSBuild         string `json:"DKMSBuild" yaml:"DKMSBuild"`
+	DKMSPackageCode   string `json:"DKMSPackageCode" yaml:"DKMSPackageCode"`
+	PairedROCm        string `json:"PairedROCm" yaml:"PairedROCm"`
+	HostToolsChannel  string `json:"HostToolsChannel" yaml:"HostToolsChannel"`
+	HostToolsPackage  string `json:"HostToolsPackage" yaml:"HostToolsPackage"`
+}
+
+var supportedGPUDrivers = []DriverCompatibility{
+	{
+		DriverRelease: "30.10.2", InstallerVersion: "7.0.2", InstallerBuild: "70002-1",
+		DKMSModuleVersion: "6.14.14", DKMSBuild: "2226257", DKMSPackageCode: "30100200", PairedROCm: "7.0.2",
+		HostToolsChannel: "legacy", HostToolsPackage: "amd-smi-lib",
+	},
+	{
+		DriverRelease: "30.20.1", InstallerVersion: "7.1.1", InstallerBuild: "70101-1",
+		DKMSModuleVersion: "6.16.6", DKMSBuild: "2255209", DKMSPackageCode: "30200100", PairedROCm: "7.1.1",
+		HostToolsChannel: "legacy", HostToolsPackage: "amd-smi-lib",
+	},
+	{
+		DriverRelease: "30.30.3", InstallerVersion: "7.2.3", InstallerBuild: "70203-1",
+		DKMSModuleVersion: "6.16.13", DKMSBuild: "2327507", DKMSPackageCode: "30300300", PairedROCm: "7.2.3",
+		HostToolsChannel: "legacy", HostToolsPackage: "amd-smi-lib",
+	},
+	{
+		DriverRelease: "30.30.4", InstallerVersion: "7.2.4", InstallerBuild: "70204-1",
+		DKMSModuleVersion: "6.16.13", DKMSBuild: "2341068", DKMSPackageCode: "30300400", PairedROCm: "7.2.4",
+		HostToolsChannel: "legacy", HostToolsPackage: "amd-smi-lib",
+	},
+	{
+		DriverRelease: "31.30.0", InstallerVersion: "31.30", InstallerBuild: "313000-1",
+		DKMSModuleVersion: "6.19.4", DKMSBuild: "2337710", DKMSPackageCode: "31300000", PairedROCm: "7.13.0",
+		HostToolsChannel: "core", HostToolsPackage: "amdrocm-amdsmi7.13",
+	},
+	{
+		DriverRelease: "31.40.0", InstallerVersion: "31.40", InstallerBuild: "314000-1",
+		DKMSModuleVersion: "6.19.14", DKMSBuild: "2364437", DKMSPackageCode: "31400000", PairedROCm: "7.14.0",
+		HostToolsChannel: "core-multiarch", HostToolsPackage: "amdrocm-amdsmi7.14",
+	},
+}
+
 // minRadeonRocmMajor / minRadeonRocmMinor express the unsupported-combination
-// rule from EAI-6030: Radeon requires the ROCm 7.13 tech-preview train; ROCm 7.2
-// (and older) is too old and must block the install.
+// rule from EAI-6030: Radeon requires the ROCm 7.13 tech-preview
+// GPU-Operator/DeviceConfig train; anything older is too old and must block.
+// This still applies here even though this branch installs no host ROCm,
+// because DeviceConfigDriverVersion still selects the GPU Operator chart.
 const (
 	minRadeonRocmMajor = 7
 	minRadeonRocmMinor = 13
 )
 
-// StackProfile is the resolved per-family ROCm / GPU Operator stack. Bloom owns
-// host ROCm (the HostRocm* fields drive the ansible amdgpu-install vars) and
-// passes OperatorPath + OperatorConfigPath + DeviceConfigDriverVersion through
-// to cluster-forge so the GPU Operator, its config chart, and the DeviceConfig
-// all match the same family.
+// StackProfile is the resolved per-family GPU stack. DriverPackage* drives the
+// ansible amdgpu-install (driver-only) task; OperatorPath + OperatorConfigPath
+// + DeviceConfigDriverVersion pass through to cluster-forge so the GPU
+// Operator and its DeviceConfig match the same family.
 type StackProfile struct {
 	Family                    string
-	HostRocmVersion           string
-	HostRocmDebBuild          string
+	DriverPackageVersion      string
+	DriverPackageBuild        string
 	OperatorPath              string
 	OperatorConfigPath        string
 	DeviceConfigDriverVersion string
@@ -64,8 +108,8 @@ func ResolveStackProfile(family string) (StackProfile, error) {
 	case "", "instinct":
 		return StackProfile{
 			Family:                    "instinct",
-			HostRocmVersion:           instinctHostRocmVersion,
-			HostRocmDebBuild:          instinctHostRocmDebBuild,
+			DriverPackageVersion:      defaultDriverPackageVersion,
+			DriverPackageBuild:        defaultDriverPackageBuild,
 			OperatorPath:              instinctOperatorPath,
 			OperatorConfigPath:        instinctOperatorConfigPath,
 			DeviceConfigDriverVersion: instinctDriverVersion,
@@ -74,8 +118,8 @@ func ResolveStackProfile(family string) (StackProfile, error) {
 	case "radeon":
 		profile := StackProfile{
 			Family:                    "radeon",
-			HostRocmVersion:           radeonHostRocmVersion,
-			HostRocmDebBuild:          radeonHostRocmDebBuild,
+			DriverPackageVersion:      defaultDriverPackageVersion,
+			DriverPackageBuild:        defaultDriverPackageBuild,
 			OperatorPath:              radeonOperatorPath,
 			OperatorConfigPath:        radeonOperatorConfigPath,
 			DeviceConfigDriverVersion: radeonDriverVersion,
@@ -92,11 +136,12 @@ func ResolveStackProfile(family string) (StackProfile, error) {
 }
 
 // ApplyGPUStackVars resolves GPU_STACK_FAMILY and injects the derived ansible
-// vars into cfg. These override the play-level defaults in cluster-bloom.yaml
-// (host ROCm) and carry the resolved GPU Operator path + DeviceConfig ROCm
-// version through to the cluster-forge deploy tasks. Call after Validate, which
-// guarantees the family resolves; any resolution error here is returned so the
-// caller can fail loudly rather than install a mismatched stack.
+// vars into cfg. gpu_driver_default_version / gpu_driver_default_build are the
+// family-based defaults for the driver-only install task; they are only used
+// by ansible when GPU_DRIVER_VERSION / GPU_DRIVER_BUILD are left unset. Call
+// after Validate, which guarantees the family resolves; any resolution error
+// here is returned so the caller can fail loudly rather than install a
+// mismatched stack.
 func ApplyGPUStackVars(cfg Config) error {
 	family := ""
 	if v, ok := cfg["GPU_STACK_FAMILY"]; ok && v != nil {
@@ -108,11 +153,12 @@ func ApplyGPUStackVars(cfg Config) error {
 	if err != nil {
 		return err
 	}
-	// Host ROCm: override the cluster-bloom.yaml play vars via extra-vars.
-	cfg["rocm_required_version"] = profile.HostRocmVersion
-	cfg["rocm_deb_build"] = profile.HostRocmDebBuild
-	cfg["rocm_version_exact_required"] = false
-	cfg["rocm_instinct_min_patch"] = instinctHostRocmMinPatch
+	// Driver-only install defaults, overridable via GPU_DRIVER_VERSION /
+	// GPU_DRIVER_BUILD. Validate checks user overrides before this point;
+	// Ansible repeats the check before using the resolved tuple.
+	cfg["gpu_driver_default_version"] = profile.DriverPackageVersion
+	cfg["gpu_driver_default_build"] = profile.DriverPackageBuild
+	cfg["gpu_driver_supported"] = supportedGPUDrivers
 	// Forge-bound selections consumed by the deploy_clusterforge tasks.
 	cfg["gpu_operator_path"] = profile.OperatorPath
 	cfg["gpu_operator_config_path"] = profile.OperatorConfigPath
@@ -122,8 +168,9 @@ func ApplyGPUStackVars(cfg Config) error {
 	return nil
 }
 
-// checkRadeonSupported enforces the Radeon minimum-ROCm rule. It guards against
-// a future edit pinning the radeon row to a too-old ROCm train (e.g. 7.2).
+// checkRadeonSupported enforces the Radeon minimum-DeviceConfig rule. It
+// guards against a future edit pinning the radeon row to a too-old GPU
+// Operator DeviceConfig train (e.g. 7.2).
 func checkRadeonSupported(p StackProfile) error {
 	major, minor, err := parseRocmMajorMinor(p.DeviceConfigDriverVersion)
 	if err != nil {
@@ -139,45 +186,13 @@ func checkRadeonSupported(p StackProfile) error {
 	return nil
 }
 
-// HostRocmVersionAcceptable reports whether an installed host ROCm version may
-// be left in place for the given GPU stack family. Instinct accepts 7.2.x with
-// patch >= instinctHostRocmMinPatch (e.g. 7.2.3, 7.2.4). Radeon accepts the
-// pinned major.minor train with patch >= the pinned patch (e.g. 7.13.0,
-// 7.13.1 when required is 7.13.0).
-func HostRocmVersionAcceptable(family, installed, required string) (bool, error) {
-	major, minor, patch, err := parseRocmVersion(installed)
-	if err != nil {
-		return false, err
-	}
-	switch family {
-	case "", "instinct":
-		return major == 7 && minor == 2 && patch >= instinctHostRocmMinPatch, nil
-	case "radeon":
-		reqMajor, reqMinor, reqPatch, err := parseRocmVersion(required)
-		if err != nil {
-			return false, err
-		}
-		return major == reqMajor && minor == reqMinor && patch >= reqPatch, nil
-	default:
-		return false, fmt.Errorf("unknown GPU stack family %q", family)
-	}
-}
-
-// parseRocmVersion parses ROCm versions like "7.2.3" or "7.13.0-preview".
-func parseRocmVersion(version string) (major, minor, patch int, err error) {
-	n, _ := fmt.Sscanf(version, "%d.%d.%d", &major, &minor, &patch)
-	if n < 3 {
-		return 0, 0, 0, fmt.Errorf("invalid ROCm version %q", version)
-	}
-	return major, minor, patch, nil
-}
-
-// parseRocmMajorMinor parses a "MAJOR" or "MAJOR.MINOR[.PATCH]" ROCm version.
+// parseRocmMajorMinor parses a "MAJOR" or "MAJOR.MINOR[.PATCH]" version string
+// (used for the GPU Operator DeviceConfig version, not a host ROCm install).
 // A bare major (e.g. "7") yields minor 0.
 func parseRocmMajorMinor(version string) (int, int, error) {
 	var major, minor int
 	if n, _ := fmt.Sscanf(version, "%d.%d", &major, &minor); n >= 1 {
 		return major, minor, nil
 	}
-	return 0, 0, fmt.Errorf("invalid ROCm version %q", version)
+	return 0, 0, fmt.Errorf("invalid version %q", version)
 }

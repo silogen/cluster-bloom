@@ -176,7 +176,7 @@ func buildConfigWithField(fieldName string, value string) Config {
 		if value == "true" || value == "True" {
 			delete(config, "CERT_OPTION")
 		}
-	case "ROCM_BASE_URL", "ROCM_DEB_PACKAGE":
+	case "GPU_DRIVER_SKIP_INSTALL", "GPU_INSTALL_HOST_TOOLS", "GPU_DRIVER_VERSION", "GPU_DRIVER_BUILD":
 		config["GPU_NODE"] = true
 	case "CLUSTER_DISKS":
 		delete(config, "NO_DISKS_FOR_CLUSTER")

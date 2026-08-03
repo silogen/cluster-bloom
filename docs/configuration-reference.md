@@ -33,8 +33,8 @@ Configuration sources in priority order (highest to lowest):
 
 #### GPU_NODE
 - **Type**: Boolean
-- **Default**: `false`
-- **Description**: Enables GPU-specific configurations and ROCm installation
+- **Default**: `true`
+- **Description**: Enables AMD GPU driver validation or installation, device configuration, and Kubernetes GPU integration. Bloom does not install host ROCm workload libraries.
 - **Values**: `true` | `false`
 - **Example**: `GPU_NODE: true`
 
@@ -57,15 +57,37 @@ Configuration sources in priority order (highest to lowest):
 #### GPU_STACK_FAMILY
 - **Type**: String (single value)
 - **Default**: `""` (empty, resolves to `instinct`)
-- **Description**: Selects the ROCm + GPU Operator install defaults by GPU family. This is independent of `AIM_HARDWARE_FAMILY` (which selects the AIM model catalog). Empty or `instinct` keeps the current qualified defaults (host ROCm `7.2.3`, GPU Operator `v1.4.1`, DeviceConfig ROCm driver `7.0`), so existing installs are unchanged. `radeon` selects the ROCm 7.13 tech-preview stack.
+- **Description**: Selects the ClusterForge AMD GPU Operator and DeviceConfig profile. This is independent of both the host driver allowlist and `AIM_HARDWARE_FAMILY`. Empty or `instinct` selects GPU Operator `v1.4.1` with DeviceConfig driver train `7.0`; `radeon` selects GPU Operator `v1.5.1-beta.0` with DeviceConfig driver train `7.13`.
 - **Values**: `radeon` | `instinct` (lowercase, single value)
 - **Example**: `GPU_STACK_FAMILY: "radeon"`
 - **Notes**:
-  - Single-select by design: host ROCm is one version per node, so a heterogeneous Radeon + Instinct GPU stack cannot be expressed here. The AIM catalog (`AIM_HARDWARE_FAMILY`) can still be heterogeneous.
-  - Selecting `radeon` defaults host ROCm and the GPU Operator to the ROCm 7.13 tech-preview train. These components are tech preview, not production qualified, and bloom prints a notice at install time.
+  - This setting does not install host ROCm. The production-default host driver remains `31.40.0` for both families.
+  - The `radeon` GPU Operator and DeviceConfig profile is tech preview; Bloom prints a notice at install time.
   - Unsupported combinations (for example a Radeon stack resolving to ROCm 7.2) fail validation before install with an error naming the incompatible component.
-  - **Overriding the version guard**: when a GPU node already has ROCm installed that does not match the selected family's train (e.g. `radeon` on a host with ROCm 7.2.3), bloom aborts early during node validation with an "Unsupported ROCm version" message. This guard is a hard fail (no interactive prompt, because bloom pipes ansible output over SSH with no TTY). To proceed anyway with the currently installed ROCm, set [`ROCM_ALLOW_VERSION_MISMATCH`](#rocm_allow_version_mismatch) in `bloom.yaml`.
-  - The exact ROCm 7.13 tech-preview version strings and the vendored GPU Operator chart are tracked in EAI-5906; until that lands the `radeon` row carries placeholder pins.
+
+#### GPU_DRIVER_SKIP_INSTALL
+- **Type**: Boolean
+- **Default**: `false`
+- **Description**: Leaves the host GPU stack untouched by skipping driver compatibility validation, driver installation, and standalone AMD-SMI installation.
+- **Values**: `true` | `false`
+- **Example**: `GPU_DRIVER_SKIP_INSTALL: true`
+
+#### GPU_INSTALL_HOST_TOOLS
+- **Type**: Boolean
+- **Default**: `true`
+- **Description**: Installs and verifies the standalone AMD-SMI package matched to the effective driver. This does not install a host ROCm runtime.
+- **Values**: `true` | `false`
+- **Example**: `GPU_INSTALL_HOST_TOOLS: false`
+
+#### GPU_DRIVER_VERSION and GPU_DRIVER_BUILD
+- **Type**: String pair
+- **Defaults**: `""` and `""` (resolve to installer version `31.40`, build `314000-1`, and AMD driver `31.40.0`)
+- **Description**: Advanced override selecting one exact validated `amdgpu-install` package. Both values must be set together and match a supported tuple. Bloom validates the pair while reading `bloom.yaml`, before Ansible starts.
+- **Supported pairs**: See the
+  [full GPU driver compatibility table](gpu-driver-support.md#supported-version-matrix).
+
+See [GPU Driver Support](gpu-driver-support.md) for detection and
+verification behavior.
 
 ### Cluster Joining Configuration
 
@@ -343,15 +365,6 @@ Configuration sources in priority order (highest to lowest):
 - **Values**: `true` | `false`
 - **Example**: `SKIP_RANCHER_PARTITION_CHECK: true`
 
-#### ROCM_ALLOW_VERSION_MISMATCH
-- **Type**: Boolean
-- **Default**: `false`
-- **Description**: Force continuation past the early ROCm version guard. On a GPU node, if the already-installed ROCm does not match the train required by `GPU_STACK_FAMILY` (e.g. `radeon` needs ROCm 7.13 but the host has 7.2.3), bloom warns and exits early during node validation. Set this to skip that guard and proceed with the installed ROCm. The guard is a hard fail with no interactive prompt (bloom pipes ansible output over SSH, so there is no TTY).
-- **Values**: `true` | `false` (also accepts `TRUE` / `1`)
-- **Applicable**: `GPU_NODE: true`
-- **Example**: `ROCM_ALLOW_VERSION_MISMATCH: true`
-- **Notes**: Works with `bloom cli bloom.yaml`. With `bloom run` it can also be passed as an extra-var: `-e ROCM_ALLOW_VERSION_MISMATCH=true`.
-
 #### RANCHER_DISK
 - **Type**: String (device path)
 - **Default**: None  
@@ -623,6 +636,8 @@ bloom cli <config-file> [flags]
 - `--export`: Export the playbook to `./bloom-playbook/` (overwrites if exists) instead of executing it
 - `--dry-run`: Run in check mode without making changes
 - `--destroy-data`: ⚠️ DANGER: Wipes the cluster before redeploying (RKE2 uninstall, Longhorn cleanup, bloom-managed disk wipe). Shows a disk wipe preview before confirmation. Premounted disks (CLUSTER_PREMOUNTED_DISKS) have their bloom artifacts cleaned but their filesystem and fstab entries preserved
+- `--preserve-existing-rke2`: Resume or reconcile an existing RKE2 installation without treating its running services and state directories as safety conflicts. Other safety checks, including disk checks, remain enforced
+- `--pause-k3s`: Legacy alias — k3s conflicts are paused automatically; this flag still forces the pause step
 - `--playbook string`: Playbook to run (default: "cluster-bloom.yaml")
 - `--tags string`: Run only tasks with specific tags (e.g., cleanup, validate, storage)
 
@@ -633,6 +648,9 @@ sudo ./bloom cli bloom.yaml
 
 # Export playbook for inspection (writes ./bloom-playbook/)
 ./bloom cli bloom.yaml --export
+
+# Resume an exported deployment after a partial run while preserving RKE2 state
+./bloom cli bloom.yaml --export --preserve-existing-rke2
 
 # Dry run deployment
 sudo ./bloom cli bloom.yaml --dry-run
@@ -705,6 +723,7 @@ sudo ./bloom run bloom-playbook/cluster-bloom.yaml
 - **Restricted Environments**: Generate playbooks on one system, execute on another
 - **Learning**: Study the generated Ansible code to understand cluster setup
 - **Existing Installations**: Run `bloom cleanup <config-file>` before export or deployment on existing clusters (`--destroy-data` cannot be combined with `--export`)
+- **Loaned Nodes with k3s**: Bloom automatically pauses conflicting k3s before RKE2 deploy (non-destructive). After testing, remove RKE2 with `--destroy-data`, then `systemctl start k3s-server` (or `k3s`) to resume
 
 **Technical Details:**
 - **Directory Layout**: Export writes `./bloom-playbook/` with the root playbook, `bloom-vars.yaml` (config values), and the embedded `tasks/` and `manifests/` trees
@@ -717,6 +736,6 @@ sudo ./bloom run bloom-playbook/cluster-bloom.yaml
 
 ## See Also
 
-- [PRD.md](../../PRD.md) - Product overview
-- [06-technical-architecture.md](07-technical-architecture.md) - Technical architecture
-- [07-installation-guide.md](08-installation-guide.md) - Installation procedures
+- [PRD](PRD.md) - Product overview and requirements
+- [Technical Architecture](technical-architecture.md) - Technical architecture
+- [Installation Guide](installation-guide.md) - Installation procedures

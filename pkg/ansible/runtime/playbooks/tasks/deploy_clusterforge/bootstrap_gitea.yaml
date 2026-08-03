@@ -209,30 +209,30 @@
 
 - name: Skip job creation if already completed
   ansible.builtin.set_fact:
-    skip_gitea_job: "{{ gitea_job_status.rc == 0 and gitea_job_status.stdout | int > 0 }}"
+    skip_gitea_job: "{{ (gitea_job_status.rc == 0 and (gitea_job_status.stdout | default('0') | int) > 0) | bool }}"
 
 - name: Delete existing incomplete Gitea init job
   ansible.builtin.command: |
     kubectl delete job gitea-init-job -n cf-gitea --ignore-not-found
-  when: not skip_gitea_job and gitea_job_status.rc == 0
+  when: not (skip_gitea_job | bool) and gitea_job_status.rc == 0
   changed_when: true
 
 - name: Deploy Gitea init job
   ansible.builtin.shell: |
     helm template {{ gitea_init_helm_args | join(' ') }} | kubectl apply -f -
-  when: not skip_gitea_job
+  when: not (skip_gitea_job | bool)
   changed_when: true
 
 - name: Wait for Gitea init job to complete
   ansible.builtin.command: |
     kubectl wait --for=condition=complete --timeout=300s job/gitea-init-job -n cf-gitea
-  when: not skip_gitea_job
+  when: not (skip_gitea_job | bool)
   changed_when: false
   register: gitea_job_wait
   failed_when: false
 
 - name: Check for job failure
-  when: not skip_gitea_job and gitea_job_wait.rc != 0
+  when: not (skip_gitea_job | bool) and gitea_job_wait.rc != 0
   block:
     - name: Get failed pod logs
       ansible.builtin.shell: |
