@@ -1,0 +1,1 @@
+- Ensure when adding or removing features that the docs/PRD.md and the docs/installation-guide.md are aligned and updated to match implementation
