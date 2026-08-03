@@ -60,21 +60,8 @@ reads `bloom.yaml`, before Ansible starts. Ansible repeats that static tuple
 check and performs the target-dependent package, DKMS, and active-module
 validation.
 
-Each tuple represents a validated combination of AMD driver release, DKMS
-package/module identity, and AMD's associated ROCm release:
-
-| AMD driver | DKMS package/module | Associated ROCm |
-|---|---|---|
-| `30.10.2` | `6.14.14.30100200-2226257` | `7.0.2` |
-| `30.20.1` | `6.16.6.30200100-2255209` | `7.1.1` |
-| `30.30.3` | `6.16.13.30300300-2327507` | `7.2.3` |
-| `30.30.4` | `6.16.13.30300400-2341068` | `7.2.4` |
-| `31.30.0` | `6.19.4.31300000-2337710` | `7.13.0` |
-| `31.40.0` | `6.19.14.31400000-2364437` | `7.14.0` |
-
-The associated ROCm value documents AMD's coordinated release train and selects
-the matching standalone AMD-SMI package. It does not require that ROCm release
-to be installed on the host.
+For the full GPU driver compatibility table, see
+[GPU Driver Support](gpu-driver-support.md#supported-version-matrix).
 
 On a fresh node, the production default is AMD driver `31.40.0` from
 `amdgpu-install_31.40.314000-1_all.deb`. Existing drivers are retained only

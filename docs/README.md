@@ -14,9 +14,9 @@ This documentation provides complete guidance for deploying, configuring, and ma
 
 ### Core Deployment
 - [**RKE2 Deployment**](rke2-deployment.md) - Kubernetes cluster foundation setup and configuration
-- [**AMD GPU Driver and Container ROCm Support**](rocm-support.md) - Supported host-driver matrix and Kubernetes integration for containerized ROCm workloads
+- [**AMD GPU Driver and Container ROCm Support**](rocm-support.md) - Host-driver policy and Kubernetes integration for containerized ROCm workloads
 - [**GPU Driver Support**](gpu-driver-support.md) - Driver detection, installation, validation, standalone AMD-SMI, and recovery behavior
-- [**GPU Driver Installation Quick Reference**](../GPU_AND_ROCM_INSTALLATION.txt) - Plain-text matrix, configuration, and host verification commands
+- [**GPU Driver Installation Quick Reference**](../GPU_AND_ROCM_INSTALLATION.md) - Driver policy, configuration, and host verification commands
 - [**Storage Management**](storage-management.md) - Longhorn distributed storage configuration and management
 - [**Longhorn Drive Setup and Recovery**](longhorn-drive-setup-and-recovery.md) - Detailed drive recovery, RAID handling, and storage troubleshooting
 

@@ -356,7 +356,7 @@ func runAnsible(configFile string) {
 
 	// Validate config (after injecting CLI flags)
 	// Skip validation for cert update tags to allow separate cert-update-config.yaml
-	if tags == "" || !strings.Contains(tags, "update_cert") {
+	if tags == "" || (!strings.Contains(tags, "update_cert")  && !strings.Contains(tags, "deploy_clusterforge")) {
 		errors := config.Validate(cfg)
 		if len(errors) > 0 {
 			fmt.Fprintln(os.Stderr, "Configuration validation errors:")

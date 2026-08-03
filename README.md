@@ -29,25 +29,15 @@ Bloom manages the host AMD GPU kernel driver without installing host ROCm
 runtime, HIP, SDK, or workload libraries. Standalone AMD-SMI diagnostics are
 installed by default.
 
-| AMD driver | DKMS package/module | Associated ROCm |
-|---|---|---|
-| `30.10.2` | `6.14.14.30100200-2226257` | `7.0.2` |
-| `30.20.1` | `6.16.6.30200100-2255209` | `7.1.1` |
-| `30.30.3` | `6.16.13.30300300-2327507` | `7.2.3` |
-| `30.30.4` | `6.16.13.30300400-2341068` | `7.2.4` |
-| `31.30.0` | `6.19.4.31300000-2337710` | `7.13.0` |
-| `31.40.0` | `6.19.14.31400000-2364437` | `7.14.0` |
-
-The production default for a fresh node is driver `31.40.0`. The associated
-ROCm release identifies AMD's coordinated release train and selects a matching
-AMD-SMI package; Bloom does not install that ROCm release on the host.
+For the full GPU driver compatibility table, see
+[GPU Driver Support](docs/gpu-driver-support.md#supported-version-matrix).
 
 ## Documentation
 
 - [Documentation Index](docs/README.md) — Complete documentation by deployment and operations topic.
-- [AMD GPU Driver and Container ROCm Support](docs/rocm-support.md) — Supported driver matrix and Kubernetes GPU integration.
+- [AMD GPU Driver and Container ROCm Support](docs/rocm-support.md) — Host-driver policy and Kubernetes GPU integration.
 - [GPU Driver Support](docs/gpu-driver-support.md) — Driver detection, installation, validation, and recovery behavior.
-- [GPU Driver Installation Quick Reference](GPU_AND_ROCM_INSTALLATION.txt) — Plain-text matrix, configuration, and host verification commands.
+- [GPU Driver Installation Quick Reference](GPU_AND_ROCM_INSTALLATION.md) — Driver policy, configuration, and host verification commands.
 - [Configuration Reference](docs/configuration-reference.md) — All supported Bloom configuration fields.
 - [Installation Guide](docs/installation-guide.md) — End-to-end deployment procedure.
 - [Product Requirements](docs/PRD.md) — Product scope, requirements, and supported GPU policy.

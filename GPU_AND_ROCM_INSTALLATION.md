@@ -1,98 +1,91 @@
-================================================================================
-AMD GPU DRIVER AND CONTAINER ROCM SUPPORT
-================================================================================
+# AMD GPU Driver and Container ROCm Support
 
 ClusterBloom manages the AMD GPU kernel driver for containerized ROCm workloads.
 It does not install a host ROCm runtime, HIP SDK, or workload libraries.
 Standalone AMD-SMI diagnostics are installed by default.
 
-SUPPORTED VERSION MATRIX
-------------------------
-
-AMD Driver   DKMS package/module                    Associated ROCm
-30.10.2      6.14.14.30100200-2226257               7.0.2
-30.20.1      6.16.6.30200100-2255209                7.1.1
-30.30.3      6.16.13.30300300-2327507               7.2.3
-30.30.4      6.16.13.30300400-2341068               7.2.4
-31.30.0      6.19.4.31300000-2337710                7.13.0
-31.40.0      6.19.14.31400000-2364437               7.14.0
+For the full GPU driver compatibility table, see
+[GPU Driver Support](docs/gpu-driver-support.md#supported-version-matrix).
 
 The associated ROCm version identifies AMD's coordinated release train and the
 matching standalone AMD-SMI package. ClusterBloom does not require or install
 that ROCm version on the host.
 
-INSTALLATION POLICY
--------------------
+## Installation policy
 
-1. Detect amdgpu-dkms package metadata and DKMS registrations.
+1. Detect `amdgpu-dkms` package metadata and DKMS registrations.
 2. Retain an existing driver only when it matches one exact supported tuple.
-3. On a fresh node, install production driver 31.40.0 from
-   amdgpu-install_31.40.314000-1_all.deb with:
+3. On a fresh node, install production driver `31.40.0` from
+   `amdgpu-install_31.40.314000-1_all.deb` with:
 
-     amdgpu-install --usecase=dkms
+   ```bash
+   amdgpu-install --usecase=dkms
+   ```
 
 4. Stop before repository or package changes when an unknown, ambiguous, or
    mixed out-of-tree driver is detected.
 5. Verify that DKMS built the effective module for the running kernel and that
-   modprobe selects /lib/modules/<kernel>/updates/dkms/amdgpu.ko*.
+   `modprobe` selects `/lib/modules/<kernel>/updates/dkms/amdgpu.ko*`.
 6. When the selected DKMS module is not yet active, write
-   /var/lib/bloom/reboot-required.json and end the play before GPU-dependent
-   deployment. The CLI offers to reboot; --yes auto-confirms.
+   `/var/lib/bloom/reboot-required.json` and end the play before GPU-dependent
+   deployment. The CLI offers to reboot; `--yes` auto-confirms.
 7. After rebooting, rerun Bloom. It verifies the active module and clears the
    marker. A persistent requirement after an attempted reboot stops with manual
    diagnostics instead of entering a reboot loop.
 8. Install and verify standalone AMD-SMI matched to the effective driver unless
-   GPU_INSTALL_HOST_TOOLS is false.
+   `GPU_INSTALL_HOST_TOOLS` is `false`.
 
-CONFIGURATION
--------------
+## Configuration
 
-GPU_NODE
-  Enables GPU driver preparation and Kubernetes GPU integration.
+### `GPU_NODE`
 
-GPU_DRIVER_SKIP_INSTALL
-  Default: false
-  Set true to skip driver validation, driver installation, and standalone
-  AMD-SMI, leaving the host GPU stack untouched.
+Enables GPU driver preparation and Kubernetes GPU integration.
 
-GPU_INSTALL_HOST_TOOLS
-  Default: true
-  Set false for a strict kernel-driver-only host without standalone AMD-SMI.
+### `GPU_DRIVER_SKIP_INSTALL`
 
-GPU_DRIVER_VERSION and GPU_DRIVER_BUILD
-  Default: empty, resolving to 31.40 and 314000-1.
-  Both values must be set together and match one supported installer pair:
+Default: `false`
 
-  7.0.2 / 70002-1
-  7.1.1 / 70101-1
-  7.2.3 / 70203-1
-  7.2.4 / 70204-1
-  31.30 / 313000-1
-  31.40 / 314000-1
+Set to `true` to skip driver validation, driver installation, and standalone
+AMD-SMI, leaving the host GPU stack untouched.
 
-GPU_STACK_FAMILY
-  Selects the ClusterForge AMD GPU Operator and DeviceConfig profile. It does
-  not select or install host ROCm. Empty resolves to instinct; radeon selects
-  the tech-preview operator profile.
+### `GPU_INSTALL_HOST_TOOLS`
 
-VERIFICATION
-------------
+Default: `true`
+
+Set to `false` for a strict kernel-driver-only host without standalone AMD-SMI.
+
+### `GPU_DRIVER_VERSION` and `GPU_DRIVER_BUILD`
+
+Default: empty, resolving to `31.40` and `314000-1`.
+
+Both values must be set together and match an installer pair in the
+[full GPU driver compatibility table](docs/gpu-driver-support.md#configuration).
+
+### `GPU_STACK_FAMILY`
+
+Selects the ClusterForge AMD GPU Operator and DeviceConfig profile. It does not
+select or install host ROCm. Empty resolves to `instinct`; `radeon` selects the
+tech-preview operator profile.
+
+## Verification
 
 Run these checks on the host:
 
-  dpkg-query -W amdgpu-install amdgpu-dkms
-  dkms status -m amdgpu
-  modinfo -n amdgpu
-  modinfo -F version amdgpu
-  amd-smi version
-  amd-smi list
+```bash
+dpkg-query --show amdgpu-install amdgpu-dkms
+dkms status --module amdgpu
+modinfo --filename amdgpu
+modinfo --field version amdgpu
+amd-smi version
+amd-smi list
+```
 
-The host must expose /dev/kfd and at least one /dev/dri/renderD* device.
-Kubernetes must report the NFD AMD GPU label and amd.com/gpu allocatable
+The host must expose `/dev/kfd` and at least one `/dev/dri/renderD*` device.
+Kubernetes must report the NFD AMD GPU label and `amd.com/gpu` allocatable
 resource.
 
 For detailed behavior and recovery guidance, see:
 
-  docs/gpu-driver-support.md
-  docs/rocm-support.md
-  docs/configuration-reference.md
+- [GPU Driver Support](docs/gpu-driver-support.md)
+- [AMD GPU Driver and Container ROCm Support](docs/rocm-support.md)
+- [Configuration Reference](docs/configuration-reference.md)

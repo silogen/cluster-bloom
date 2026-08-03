@@ -210,8 +210,7 @@ func printClusterForgeCredentials(domain string, aiwbOnly bool) {
 }
 
 // cfgString reads a string config value, tolerating an absent/nil/non-string
-// entry. Local to this file so the fix_prepare_node_tag branch stays
-// self-contained (configString lives in an EAI-7530-only file).
+// entry.
 func cfgString(cfg config.Config, key string) string {
 	v, ok := cfg[key]
 	if !ok || v == nil {
