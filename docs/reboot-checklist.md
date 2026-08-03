@@ -34,7 +34,7 @@ the active driver before installing standalone AMD-SMI.
 
 If Bloom reports that a reboot was already attempted but the requirement
 remains, follow its manual diagnostics rather than rebooting repeatedly. See
-[GPU Driver-Only Host Policy](gpu-driver-only-spike.md) for the complete flow.
+[GPU Driver Support](gpu-driver-support.md) for the complete flow.
 
 ## Pre-Reboot Preparation
 

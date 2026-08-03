@@ -93,6 +93,6 @@ resource.
 
 For detailed behavior and recovery guidance, see:
 
-  docs/gpu-driver-only-spike.md
+  docs/gpu-driver-support.md
   docs/rocm-support.md
   docs/configuration-reference.md

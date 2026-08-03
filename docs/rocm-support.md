@@ -32,7 +32,7 @@ The default fresh-node installation is driver `31.40.0`, using
 `amdgpu-install_31.40.314000-1_all.deb` and
 `amdgpu-install --usecase=dkms`.
 
-See [GPU Driver-Only Host Policy](gpu-driver-only-spike.md) for package
+See [GPU Driver Support](gpu-driver-support.md) for package
 selection, detection, fail-safe behavior, and verification details.
 
 ## Installation behavior

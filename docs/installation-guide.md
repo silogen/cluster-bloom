@@ -185,7 +185,13 @@ mixed out-of-tree driver. After installation, it verifies the DKMS module for
 the running kernel. If the old module is still active, Bloom requests a reboot
 and performs the remaining validation on the next run.
 
-See [GPU Driver-Only Host Policy](gpu-driver-only-spike.md) for detailed
+If `GPU_DRIVER_VERSION` and `GPU_DRIVER_BUILD` are overridden, Bloom validates
+that both fields are present and form one supported installer tuple while
+reading `bloom.yaml`. This fails before Ansible connects to the node. Ansible
+then verifies the installed package, DKMS registration, and active kernel
+module on the target host.
+
+See [GPU Driver Support](gpu-driver-support.md) for detailed
 installation and recovery behavior, and [AMD GPU Driver and Container ROCm
 Support](rocm-support.md) for Kubernetes integration.
 

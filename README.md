@@ -46,7 +46,7 @@ AMD-SMI package; Bloom does not install that ROCm release on the host.
 
 - [Documentation Index](docs/README.md) — Complete documentation by deployment and operations topic.
 - [AMD GPU Driver and Container ROCm Support](docs/rocm-support.md) — Supported driver matrix and Kubernetes GPU integration.
-- [GPU Driver-Only Host Policy](docs/gpu-driver-only-spike.md) — Driver detection, installation, validation, and recovery behavior.
+- [GPU Driver Support](docs/gpu-driver-support.md) — Driver detection, installation, validation, and recovery behavior.
 - [GPU Driver Installation Quick Reference](GPU_AND_ROCM_INSTALLATION.txt) — Plain-text matrix, configuration, and host verification commands.
 - [Configuration Reference](docs/configuration-reference.md) — All supported Bloom configuration fields.
 - [Installation Guide](docs/installation-guide.md) — End-to-end deployment procedure.

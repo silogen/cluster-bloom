@@ -82,7 +82,7 @@ Configuration sources in priority order (highest to lowest):
 #### GPU_DRIVER_VERSION and GPU_DRIVER_BUILD
 - **Type**: String pair
 - **Defaults**: `""` and `""` (resolve to installer version `31.40`, build `314000-1`, and AMD driver `31.40.0`)
-- **Description**: Advanced override selecting one exact validated `amdgpu-install` package. Both values must be set together and match a supported tuple.
+- **Description**: Advanced override selecting one exact validated `amdgpu-install` package. Both values must be set together and match a supported tuple. Bloom validates the pair while reading `bloom.yaml`, before Ansible starts.
 - **Supported pairs**:
 
   | `GPU_DRIVER_VERSION` | `GPU_DRIVER_BUILD` | AMD driver | DKMS package/module | Associated ROCm |
@@ -94,9 +94,13 @@ Configuration sources in priority order (highest to lowest):
   | `31.30` | `313000-1` | `31.30.0` | `6.19.4.31300000-2337710` | `7.13.0` |
   | `31.40` | `314000-1` | `31.40.0` | `6.19.14.31400000-2364437` | `7.14.0` |
 
+The `7.2.4` to `31.30` jump is intentional: these fields contain AMD
+installer-package versions. Older allowlisted packages use ROCm-aligned `7.x`
+names, while newer packages use the `31.x` driver release stream.
+
 The associated ROCm release identifies AMD's coordinated release train and the
 matching standalone AMD-SMI package; Bloom does not install that ROCm release.
-See [GPU Driver-Only Host Policy](gpu-driver-only-spike.md) for detection and
+See [GPU Driver Support](gpu-driver-support.md) for detection and
 verification behavior.
 
 ### Cluster Joining Configuration

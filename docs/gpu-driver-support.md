@@ -1,4 +1,4 @@
-# GPU Driver-Only Host Policy (EAI-5657)
+# GPU Driver Support
 
 ClusterBloom manages the host AMD GPU kernel driver without installing the ROCm
 runtime, HIP, SDK, or workload libraries. Host ROCm is not required for
@@ -7,6 +7,15 @@ containerized AIM, AIWB, AIRM, NFD, or the AMD GPU Operator.
 By default Bloom also installs AMD-SMI as a standalone host diagnostic. That
 small optional userspace component does not turn the host into a full ROCm
 runtime installation.
+
+## Table of contents
+
+- [Supported version matrix](#supported-version-matrix)
+- [Installation behavior](#installation-behavior)
+- [Standalone AMD-SMI](#standalone-amd-smi)
+- [Configuration](#configuration)
+- [Blacklisting](#blacklisting)
+- [Verification](#verification)
 
 ## Supported version matrix
 
@@ -17,17 +26,17 @@ The exact supported tuples are:
 
 | AMD driver | DKMS package/module | Associated ROCm |
 |---|---|---|
-| `30.10.2` | `6.14.14.30100200-2226257` | `7.0.2` |
-| `30.20.1` | `6.16.6.30200100-2255209` | `7.1.1` |
-| `30.30.3` | `6.16.13.30300300-2327507` | `7.2.3` |
-| `30.30.4` | `6.16.13.30300400-2341068` | `7.2.4` |
-| `31.30.0` | `6.19.4.31300000-2337710` | `7.13.0` |
+| `30.10.2` | `6.14.14.30100200-2226257` |  `7.0.2` |
+| `30.20.1` | `6.16.6.30200100-2255209`  |  `7.1.1` |
+| `30.30.3` | `6.16.13.30300300-2327507` |  `7.2.3` |
+| `30.30.4` | `6.16.13.30300400-2341068` |  `7.2.4` |
+| `31.30.0` | `6.19.4.31300000-2337710`  | `7.13.0` |
 | `31.40.0` | `6.19.14.31400000-2364437` | `7.14.0` |
 
 The paired ROCm release documents AMD's coordinated release train and selects a
 matching AMD-SMI package. Bloom does not require or install that ROCm release.
 
-## Installation synopsis
+## Installation behavior
 
 Bloom applies this policy:
 
@@ -99,11 +108,10 @@ GPU_DRIVER_BUILD: ""
 GPU_INSTALL_HOST_TOOLS: true
 ```
 
-The empty driver values resolve to `31.40` and `314000-1`. Advanced overrides
-are accepted only when they form one of the six exact supported installer
-tuples:
+The empty driver values resolve to `31.40` and `314000-1`. These fields identify
+the `amdgpu-install` package, not the resulting AMD driver:
 
-| `GPU_DRIVER_VERSION` | `GPU_DRIVER_BUILD` | Resulting AMD driver |
+| Installer package version (`GPU_DRIVER_VERSION`) | Installer build (`GPU_DRIVER_BUILD`) | Resulting AMD driver |
 |---|---|---|
 | `7.0.2` | `70002-1` | `30.10.2` |
 | `7.1.1` | `70101-1` | `30.20.1` |
@@ -112,7 +120,17 @@ tuples:
 | `31.30` | `313000-1` | `31.30.0` |
 | `31.40` | `314000-1` | `31.40.0` |
 
-Unsupported override combinations fail before download.
+The jump from `7.2.4` to `31.30` is intentional. AMD's older
+`amdgpu-install` packages in this allowlist use ROCm-aligned `7.x` package
+versions, while the newer packages use the `31.x` AMD driver release stream.
+These values therefore are not one continuous semantic-version sequence.
+
+When Bloom reads `bloom.yaml`, it requires both override fields together and
+checks the pair against this table before starting Ansible or connecting to the
+node. Ansible repeats the tuple check as defense in depth. Detection and
+validation of the driver actually installed on the host remain in Ansible
+because they require access to package, DKMS, kernel-module, and ROCm state on
+the target node.
 
 `GPU_STACK_FAMILY` selects the ClusterForge GPU Operator and DeviceConfig
 profile only. Both families share this host-driver policy and default to driver
@@ -135,23 +153,80 @@ playbook runs.
 
 ## Verification
 
-Useful host checks are:
+Run the following checks on the GPU host after Bloom completes.
+
+### 1. Confirm the installed packages
+
+This prints the installed `amdgpu-install` and `amdgpu-dkms` package versions.
+Both package names should resolve instead of reporting that no package was
+found.
 
 ```bash
-dpkg-query -W amdgpu-install amdgpu-dkms
-dkms status -m amdgpu
-modinfo -n amdgpu
-modinfo -F version amdgpu
+dpkg-query --show amdgpu-install amdgpu-dkms
+```
+
+### 2. Confirm DKMS built the driver for this kernel
+
+The result should contain an `amdgpu` entry with status `installed` for the
+kernel returned by `uname --kernel-release`.
+
+```bash
+uname --kernel-release
+dkms status --module amdgpu
+```
+
+### 3. Confirm the selected module is the DKMS module
+
+The path should be under
+`/lib/modules/<kernel>/updates/dkms/amdgpu.ko*`. A path under the stock kernel
+tree means the inbox driver is still selected and a reboot may be required.
+
+```bash
+modinfo --filename amdgpu
+modinfo --field version amdgpu
+```
+
+### 4. Confirm the selected module is active
+
+The first command reads the source version of the currently loaded module. The
+second reads the source version of the module selected for the running kernel.
+The two values should match.
+
+```bash
 cat /sys/module/amdgpu/srcversion
-modinfo -F srcversion amdgpu
+modinfo --field srcversion amdgpu
+```
+
+### 5. Confirm standalone AMD-SMI works
+
+These commands report the AMD-SMI version and list the GPUs visible to the
+host. Skip this check when `GPU_INSTALL_HOST_TOOLS: false`.
+
+```bash
 amd-smi version
 amd-smi list
 ```
 
-`/lib/modules/<kernel>/updates/dkms/amdgpu.ko*` identifies the selected DKMS
-module. Matching active and selected `srcversion` values confirms that the
-selected module is active.
+### 6. Confirm the required device files exist
 
-The host must also expose `/dev/kfd` and at least one `/dev/dri/renderD*`
-device. Kubernetes validation should confirm the NFD AMD GPU label and the
-`amd.com/gpu` allocatable resource.
+`/dev/kfd` provides compute access and `/dev/dri/renderD*` provides render
+devices. At least one render device must be present.
+
+```bash
+ls -l /dev/kfd /dev/dri/renderD*
+```
+
+### 7. Confirm Kubernetes advertises the GPU
+
+Run this from a host with cluster access. The output should include an AMD GPU
+label from Node Feature Discovery and a non-zero `amd.com/gpu` allocatable
+resource. First list the nodes, then replace the example value with the GPU
+node's Kubernetes name.
+
+```bash
+kubectl get nodes
+GPU_NODE_NAME="replace-with-gpu-node-name"
+kubectl get node "$GPU_NODE_NAME" --show-labels | grep -i amd
+kubectl get node "$GPU_NODE_NAME" \
+  --output jsonpath='{.status.allocatable.amd\.com/gpu}{"\n"}'
+```

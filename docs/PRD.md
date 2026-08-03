@@ -55,6 +55,11 @@ default and may be disabled independently.
 #### Supported version matrix
 
 ClusterBloom uses an exact allowlist rather than a minimum-version comparison.
+User-provided installer overrides are validated by the Bloom binary when it
+reads `bloom.yaml`, before Ansible starts. Ansible repeats that static tuple
+check and performs the target-dependent package, DKMS, and active-module
+validation.
+
 Each tuple represents a validated combination of AMD driver release, DKMS
 package/module identity, and AMD's associated ROCm release:
 
@@ -88,7 +93,7 @@ expected by Ansible during export.
 
 **[📄 Detailed Documentation](./rocm-support.md)**
 
-**[📄 Driver Policy and Verification](./gpu-driver-only-spike.md)**
+**[📄 Driver Policy and Verification](./gpu-driver-support.md)**
 
 ### Storage Management with Longhorn
 Distributed block storage with automatic disk detection, interactive selection, persistent mounting, and Longhorn CSI integration for reliable persistent volumes.
