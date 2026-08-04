@@ -14,11 +14,11 @@ func TestLoadSchema(t *testing.T) {
 		t.Fatal("LoadSchema() returned no arguments")
 	}
 
-	// Check that we have expected number of fields (39 fields in schema including
+	// Check that we have expected number of fields (40 fields in schema including
 	// CLUSTER_SIZE, AIM_HARDWARE_FAMILY, GPU_STACK_FAMILY, GPU_DRIVER_SKIP_INSTALL,
-	// GPU_INSTALL_HOST_TOOLS, GPU_DRIVER_VERSION and GPU_DRIVER_BUILD)
-	if len(args) != 39 {
-		t.Errorf("Expected 39 arguments, got %d", len(args))
+	// GPU_INSTALL_HOST_TOOLS, GPU_DRIVER_VERSION, GPU_DRIVER_BUILD, and LONGHORN_V2_DATA_ENGINE)
+	if len(args) != 40 {
+		t.Errorf("Expected 40 arguments, got %d", len(args))
 	}
 
 	// Verify critical fields are present

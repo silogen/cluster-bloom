@@ -1,14 +1,27 @@
 ---
 # Purpose: Generate and configure node labels for Kubernetes cluster
-# Dependencies: NO_DISKS_FOR_CLUSTER, GPU_NODE, cluster_disks_list variables
+# Dependencies: NO_DISKS_FOR_CLUSTER, GPU_NODE, cluster_disks_list, cluster_block_disk_paths
 # Usage: Imported by deploy_cluster/main.yaml
 # Tags: [rke2, deploy_cluster]
 
-- name: Build disk labels list
+- name: Build V1 filesystem disk labels list
   set_fact:
     disk_labels: "{{ (disk_labels | default([])) + ['bloom.disk___mnt___disk' + (((disk_index_offset | default(0) | int) + (item.0 | int)) | string) + '=disk' + (item.1 | replace('/', '___'))] }}"
   loop: "{{ range(cluster_disks_list | default([]) | length) | list | zip(cluster_disks_list | default([])) | list }}"
-  when: not (NO_DISKS_FOR_CLUSTER | default(false) | bool) and cluster_disks_list is defined and cluster_disks_list | length > 0
+  when:
+    - not (NO_DISKS_FOR_CLUSTER | default(false) | bool)
+    - not (LONGHORN_V2_DATA_ENGINE | default(true) | bool)
+    - cluster_disks_list is defined
+    - cluster_disks_list | length > 0
+
+- name: Build V2 block disk labels list
+  set_fact:
+    disk_labels: "{{ disk_labels | default([]) + ['bloom.disk' + (item | trim | regex_replace('^/', '') | regex_replace('/', '___')) + '=block'] }}"
+  loop: "{{ cluster_block_disk_paths | default(cluster_disks_list | default([])) }}"
+  when:
+    - not (NO_DISKS_FOR_CLUSTER | default(false) | bool)
+    - LONGHORN_V2_DATA_ENGINE | default(true) | bool
+    - (cluster_block_disk_paths | default(cluster_disks_list | default([]))) | length > 0
 
 - name: Parse premounted disks into list
   set_fact:

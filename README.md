@@ -186,6 +186,7 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | CLUSTER_LISTEN_IP | Network IP specification for cluster binding. Supports exact IP ("192.168.1.100") or subnet CIDR ("192.168.1.0/24"). Overrides auto-detection for multi-homed systems. | "" |
 | CLUSTER_SIZE | Size category for cluster deployment planning. Options: small, medium, large | medium |
 | CLUSTER_PREMOUNTED_DISKS | Comma-separated list of absolute disk paths to use for Longhorn | "" |
+| LONGHORN_V2_DATA_ENGINE | Use Longhorn V2 data engine with raw block-type `CLUSTER_DISKS` (default). Set `false` for V1 filesystem disks at `/mnt/diskN`. | true |
 | CLUSTERFORGE_RELEASE | ClusterForge version to deploy. Accepts version tags (e.g. `v2.0.2`), full release URLs, `latest` (fetches newest GitHub release via API), `none`, or `""` to skip | `latest` |
 | CONTROL_PLANE | Set to true if this node should be a control plane node | false, only applies when FIRST_NODE is false |
 | DOCKERHUB_USER | DockerHub username for authenticated pulls (reduces rate limit errors). Must be set together with `DOCKERHUB_TOKEN`. | "" |
@@ -393,6 +394,19 @@ Cluster-Bloom performs the following steps during installation:
 6. Configures storage (local-path for small/medium clusters, Longhorn for large clusters)
 7. Sets up Kubernetes tools and configuration
 8. Installs ClusterForge
+
+## Documentation
+
+Full documentation lives in [docs/](docs/README.md). Frequently referenced topics:
+
+- [Installation Guide](docs/installation-guide.md) — Complete step-by-step installation procedures
+- [Configuration Reference](docs/configuration-reference.md) — All configuration options and parameters
+- [Storage Management](docs/storage-management.md) — Longhorn storage configuration and the cleanup sequence
+- [Longhorn Drive Setup and Recovery](docs/longhorn-drive-setup-and-recovery.md) — Drive recovery, RAID handling, and storage troubleshooting
+- [Longhorn V2 Data Engine Evaluation](docs/longhorn-v2-data-engine-evaluation.md) — V2 data engine migration design and implementation notes
+- [Technical Architecture](docs/technical-architecture.md) — System design and component interactions
+- [Network Configuration](docs/network-configuration.md) — Networking setup, load balancing, and connectivity
+- [Certificate Management](docs/certificate-management.md) — TLS/SSL certificate handling and automation
 
 ## Dependencies
 

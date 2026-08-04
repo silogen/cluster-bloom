@@ -64,6 +64,16 @@
         - longhorn.yaml
         - httproute-longhorn.yaml
 
+    - name: Patch Longhorn manifest for V1 data engine when V2 is disabled
+      replace:
+        path: /var/lib/rancher/rke2/server/manifests/longhorn.yaml
+        regexp: "{{ item.regexp }}"
+        replace: "{{ item.replace }}"
+      loop:
+        - { regexp: 'v2-data-engine: true', replace: 'v2-data-engine: false' }
+        - { regexp: 'dataEngine: "v2"', replace: 'dataEngine: "v1"' }
+      when: not (LONGHORN_V2_DATA_ENGINE | default(true) | bool)
+
 
 
 - name: Validate Longhorn Storage

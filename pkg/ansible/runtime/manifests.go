@@ -76,3 +76,26 @@ func extractFS(embedFS embed.FS, srcPath, destDir string) error {
 		return nil
 	})
 }
+
+// writeEmbeddedLonghornUninstallManifest extracts the bundled uninstall job manifest
+// to a temporary file for kubectl apply. The caller must invoke cleanup when done.
+func writeEmbeddedLonghornUninstallManifest() (path string, cleanup func(), err error) {
+	data, readErr := longhornManifests.ReadFile("manifests/longhorn/uninstall.yaml")
+	if readErr != nil {
+		return "", nil, fmt.Errorf("read embedded uninstall manifest: %w", readErr)
+	}
+	f, createErr := os.CreateTemp("", "longhorn-uninstall-*.yaml")
+	if createErr != nil {
+		return "", nil, fmt.Errorf("create temp uninstall manifest: %w", createErr)
+	}
+	if _, writeErr := f.Write(data); writeErr != nil {
+		f.Close()
+		os.Remove(f.Name())
+		return "", nil, fmt.Errorf("write temp uninstall manifest: %w", writeErr)
+	}
+	if closeErr := f.Close(); closeErr != nil {
+		os.Remove(f.Name())
+		return "", nil, fmt.Errorf("close temp uninstall manifest: %w", closeErr)
+	}
+	return f.Name(), func() { os.Remove(f.Name()) }, nil
+}

@@ -11,6 +11,7 @@ This documentation provides complete guidance for deploying, configuring, and ma
 ### Getting Started
 - [**Cluster Sizing and Configurations**](cluster-sizing-configurations.md) - Hardware requirements, sizing guidelines, and deployment planning
 - [**Product Requirements**](PRD.md) - Product scope, capabilities, and validated GPU driver policy
+- [**Installation Guide**](installation-guide.md) - Step-by-step installation procedures and operational commands (replaces the removed manual-steps quick reference)
 
 ### Core Deployment
 - [**RKE2 Deployment**](rke2-deployment.md) - Kubernetes cluster foundation setup and configuration
@@ -19,6 +20,11 @@ This documentation provides complete guidance for deploying, configuring, and ma
 - [**GPU Driver Installation Quick Reference**](../GPU_AND_ROCM_INSTALLATION.md) - Driver policy, configuration, and host verification commands
 - [**Storage Management**](storage-management.md) - Longhorn distributed storage configuration and management
 - [**Longhorn Drive Setup and Recovery**](longhorn-drive-setup-and-recovery.md) - Detailed drive recovery, RAID handling, and storage troubleshooting
+
+### Design and Evaluation
+- [**Longhorn V2 Data Engine Evaluation**](longhorn-v2-data-engine-evaluation.md) — V2 migration design, cleanup behaviour, and implementation notes
+
+> **Note on `manual-steps-quick-reference.md`:** That file was removed in commit `eefe525` as obsolete (739 lines duplicating installation-guide and other docs, with stale numbered paths like `01-rke2-deployment.md`). It was not restored — substituting [Installation Guide](installation-guide.md) avoids maintaining a second command cheat sheet. Restore only if you need a single-page ops crib sheet after an accuracy audit against current bloom behaviour.
 
 ### Infrastructure Configuration  
 - [**Network Configuration**](network-configuration.md) - Networking setup, load balancing, and connectivity
@@ -36,7 +42,7 @@ This documentation provides complete guidance for deploying, configuring, and ma
 
 ### For New Users
 1. Start with [Cluster Sizing and Configurations](cluster-sizing-configurations.md) to plan your deployment
-2. Follow the [Installation Guide](installation-guide.md) for step-by-step setup
+2. Follow the [Installation Guide](installation-guide.md) for step-by-step setup and common operational commands
 3. Reference the [Configuration Reference](configuration-reference.md) for supported options
 
 ### For System Administrators

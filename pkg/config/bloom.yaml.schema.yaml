@@ -114,6 +114,12 @@ schema:
       desc: Comma-separated list of premounted disk paths
       section: "💾 Storage Configuration"
 
+    LONGHORN_V2_DATA_ENGINE:
+      type: bool
+      default: true
+      desc: Use Longhorn V2 data engine with raw block-type CLUSTER_DISKS (wipefs only, no mount/fstab). When false, uses V1 filesystem-type disks with ext4 mounts at /mnt/diskN.
+      section: "💾 Storage Configuration"
+
     SKIP_RANCHER_PARTITION_CHECK:
       type: bool
       default: false

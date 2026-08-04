@@ -166,6 +166,8 @@ Advanced debugging and transparency features allow users to export generated Ans
   - Clear progress messages during potentially long-running operations
   - Note: `--force` flag on `bloom cleanup` skips confirmation prompt (not related to kubectl drain)
 - **Premounted Disk Safety**: `CLUSTER_PREMOUNTED_DISKS` filesystems are preserved during cleanup; only bloom artifacts (pvc-*, replicas, longhorn-disk.cfg) are removed
+- **Block Device Preservation**: Cleanup never hot-removes block devices from the kernel. V2 `CLUSTER_DISKS` get `wipefs -a` only; V1 disks are wiped and reformatted; `RANCHER_DISK` is wiped and reformatted.
+- **Longhorn V2 Data Engine**: Enabled by default via `LONGHORN_V2_DATA_ENGINE`. Block-type `CLUSTER_DISKS` skip mount/fstab; see [Longhorn V2 Data Engine Evaluation](docs/longhorn-v2-data-engine-evaluation.md).
 - **Smart Mount Index Allocation**: `CLUSTER_DISKS` mount indexes are chosen to avoid collisions with premounted disk indexes, allowing both to coexist in the same config
 
 **Example Usage:**

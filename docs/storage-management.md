@@ -60,37 +60,43 @@ UUID=<disk-uuid> /mnt/disk0 ext4 defaults,nofail 0 2
 
 ### Longhorn Integration
 Configures Longhorn distributed storage system:
-- **Version**: v1.8.0 (v1 data engine, tgt + open-iscsi)
-- **Storage Class**: `mlstorage` (default)
-- **Replica Count**: 3 (configurable)
-- **Data Locality**: Configurable (disabled, best-effort, strict)
+- **Version**: v1.12.0
+- **Data engine**: V2 by default (`LONGHORN_V2_DATA_ENGINE: true`); V1 filesystem disks when `false`
+- **Storage Class**: `mlstorage` (`dataEngine: v2` by default)
+- **Replica Count**: 1 in bundled `mlstorage` (configurable in manifest)
+- **Data Locality**: best-effort
 
 **Where the version lives in Cluster-Bloom**
 
-Longhorn is not selected via `bloom.yaml`. Bloom ships a pinned static manifest:
+Longhorn is pinned in static manifests, not selected via arbitrary version strings in `bloom.yaml`:
 
 | Location | Role |
 |----------|------|
-| `pkg/ansible/runtime/manifests/longhorn/longhorn.yaml` | Full Longhorn install (CRDs, Deployments, image tags such as `longhornio/longhorn-manager:v1.8.0`) |
-| `pkg/ansible/runtime/playbooks/tasks/deploy_k8s_apps/longhorn.yaml` | Copies that manifest into RKE2 when `FIRST_NODE` is true, `CLUSTER_SIZE` is `large`, and `NO_DISKS_FOR_CLUSTER` is false |
+| `pkg/ansible/runtime/manifests/longhorn/longhorn.yaml` | Full Longhorn v1.12.0 install (CRDs, Deployments, default settings including `v2-data-engine: true`) |
+| `pkg/ansible/runtime/manifests/scripts/longhorn_preflight_check.sh` | Downloads matching `longhornctl` v1.12.0 |
+| `pkg/ansible/runtime/playbooks/tasks/prepare_node/block_storage.yaml` | V2: `wipefs -a` on `CLUSTER_DISKS` (no mount/fstab) |
+| `pkg/ansible/runtime/playbooks/tasks/prepare_node/storage.yaml` | V1: ext4 format + `/mnt/diskN` mount + fstab |
+| `pkg/ansible/runtime/playbooks/tasks/prepare_node/longhorn_v2_prep.yaml` | V2: hugepages, kernel modules |
 
-To bump Longhorn, update the manifest blob and image tags, adjust this document, and re-test storage cleanup on a node with active Longhorn-backed PVCs.
+Set `LONGHORN_V2_DATA_ENGINE: false` to use V1 filesystem-type disks on the same Longhorn v1.12.0 bundle (manifest patched at deploy time).
 
-**iSCSI target naming (v1 data engine)**
+**iSCSI target naming (V1 data engine only)**
 
-Volumes attached through the CSI driver use Longhorn's `go-iscsi-helper` library. Each volume target is named:
+When `LONGHORN_V2_DATA_ENGINE: false`, volumes use the v1 tgt + open-iscsi stack. Each volume target is named:
 
 ```
 iqn.2019-10.io.longhorn:<volume-name>
 ```
 
-Upstream source: [`iscsidev.GetTargetName()`](https://github.com/longhorn/go-iscsi-helper/blob/master/iscsidev/iscsi.go) in `longhorn/go-iscsi-helper`. The `2019-10` segment is the IQN registration date in standard IQN format, not a Longhorn release number. This prefix has been stable across v1.x releases; routine Longhorn upgrades within the v1 engine should keep using it unless upstream changes `GetTargetName()`.
+Bloom's destructive cleanup (`pkg/ansible/runtime/cleanup.go`, constant `longhornIQNPrefix`) logs out only those sessions. OCI boot-volume iSCSI sessions are left untouched.
 
-Bloom's destructive cleanup (`pkg/ansible/runtime/cleanup.go`, constant `longhornIQNPrefix`) parses `iscsiadm -m session`, matches only that prefix, and logs out those sessions by session ID (`iscsiadm -m session -r <sid> --logout`). Other iSCSI sessions — notably OCI bare-metal boot volumes (`iqn.2015-02.oracle.boot:uefi`) — are left untouched.
+**Longhorn V2 data engine (default)**
 
-**Longhorn v2 data engine (SPDK)**
+V2 volumes use NVMe-TCP (not iSCSI). `CLUSTER_DISKS` devices are registered as raw block disks (`diskType: block`) via node labels and the node-annotator CronJob. Bloom runs `wipefs -a` before Longhorn claims the device; no ext4 mount or fstab entry is created.
 
-Longhorn v2 volumes use SPDK/NVMe-oF rather than kernel iSCSI. They do not appear in `iscsiadm -m session` and are outside Bloom's scoped iSCSI logout. Cleanup for those volumes relies on mount and CSI/kubelet teardown only. Cluster-Bloom does not enable the v2 data engine by default.
+V2 node prerequisites (configured by `longhorn_v2_prep.yaml`): 2 GiB of 2 MiB hugepages, `vfio_pci`, `uio_pci_generic`, and `nvme_tcp` modules.
+
+See [Longhorn V2 Data Engine Evaluation](longhorn-v2-data-engine-evaluation.md) for design rationale and cleanup behaviour.
 
 **Longhorn Features**:
 - **Distributed Storage**: Replicated block storage across nodes
@@ -148,7 +154,8 @@ sudo ./bloom cleanup bloom.yaml
 ```
 
 **Sequence:**
-1. **Best-effort node drain** (if cluster reachable, ~30s timeout)
+1. **Longhorn API cleanup** (when cluster reachable) — sets `deleting-confirmation-flag` and runs the upstream `longhorn-uninstall` job
+2. **Best-effort node drain** (if cluster reachable, ~30s timeout)
    - Internally passes `--force` and `--disable-eviction` to kubectl drain to bypass stuck pods with finalizers or PodDisruptionBudgets
    - Automatically skips Longhorn volume detach wait when no volumes detected
    - Clear progress messages during potentially long operations
@@ -158,6 +165,8 @@ sudo ./bloom cleanup bloom.yaml
 5. **Pre-clean future mount range** — removes bloom artifacts (`pvc-*`, `replicas`, `longhorn-disk.cfg`) from the directories that will be used in the next deployment, preserving user files
 6. **Clean premounted disks** (`CLUSTER_PREMOUNTED_DISKS`) — removes bloom artifacts only; filesystem, fstab entry, and user files are preserved
 7. **Remove bloom-managed fstab entries** and wipe `CLUSTER_DISKS` device signatures
+
+**Block devices are never removed from the kernel.** Cleanup wipes and reformats `CLUSTER_DISKS` and `RANCHER_DISK` (`wipefs -a` + `mkfs.ext4 -F`), but leaves the devices attached, so they remain visible in `lsblk` and can be reused directly by the next deployment.
 
 ### `bloom cli bloom.yaml --destroy-data`
 

@@ -35,7 +35,7 @@ type iscsiSession struct {
 // This ordering is required because Longhorn uses iSCSI sessions that remain
 // in the kernel even after the Longhorn process is killed; skipping the iSCSI
 // logout leaves the device busy and causes rm/umount to block or silently fail.
-func CleanupLonghornMounts() error {
+func CleanupLonghornMounts(v2DataEngine bool) error {
 	fmt.Println("💾 Cleaning Longhorn mounts and PVCs...")
 
 	// Step 1: Graceful kubectl drain (best-effort, cluster may already be down)
@@ -100,13 +100,13 @@ func CleanupLonghornMounts() error {
 		fmt.Printf("      ℹ️  Node %s is not a member of this cluster — skipping drain\n", nodeName)
 	}
 
-	// Step 2: iSCSI logout — releases kernel block device mappings for Longhorn volumes.
-	// Must happen before umount; without this the device remains busy regardless of
-	// whether the Longhorn process is alive. Never use an unscoped logout here:
-	// cloud boot volumes can also use iSCSI, and logging out every session detaches
-	// the live root disk.
-	fmt.Println("   🔌 Logging out Longhorn iSCSI sessions...")
-	logoutLonghornISCSISessions()
+	// Step 2: iSCSI logout — V1 data engine only. V2 uses NVMe-TCP, not iSCSI.
+	if v2DataEngine {
+		fmt.Println("   ℹ️  V2 data engine — skipping Longhorn iSCSI logout")
+	} else {
+		fmt.Println("   🔌 Logging out Longhorn iSCSI sessions...")
+		logoutLonghornISCSISessions()
+	}
 
 	// Step 3: Graceful TERM then KILL of Longhorn processes in dependency order
 	// Use exact binary name matching to avoid killing unrelated processes.
@@ -417,83 +417,15 @@ func CleanupBloomDisks(clusterDisks string) error {
 		fmt.Printf("   ⚠️  Warning: Failed to remove longhorn plugins directory: %v\n", err)
 	}
 
-	// Delete unmounted disk devices (matching Bloom v1 logic)
-	//
-	// NOTE: "-d/--nodeps" makes lsblk report ONLY the whole-disk row and omit its
-	// partitions entirely. A partitioned boot disk (e.g. "sda" with root on "sda1")
-	// therefore shows an EMPTY MOUNTPOINT on the disk-level row even though the disk
-	// is very much in use — previously causing this loop to treat the live OS disk
-	// as an orphaned/unmounted device and hot-remove it via
-	// /sys/block/<dev>/device/delete, which yanks the root filesystem out from under
-	// the running system and bricks the node. We now list partitions too and only
-	// consider a "sd*" disk eligible for deletion when neither it nor any of its
-	// partitions/children are mounted, and we additionally always refuse to touch
-	// whatever disk backs "/", regardless of what lsblk reports.
-	fmt.Println("   🗑️  Checking for unmounted disks to delete...")
-	rootDisk := rootFilesystemDisk()
-	cmd = exec.Command("lsblk", "-nl", "-o", "NAME,TYPE,MOUNTPOINT,PKNAME")
-	output, err = cmd.Output()
-	if err != nil {
-		return fmt.Errorf("lsblk command failed: %w", err)
-	}
-
-	type diskInfo struct {
-		mountpoint string
-		inUse      bool // true if the disk itself or any partition/child is mounted or present
-	}
-	disks := map[string]*diskInfo{}
-
-	scanner = bufio.NewScanner(strings.NewReader(string(output)))
-	for scanner.Scan() {
-		fields := strings.Fields(scanner.Text())
-		if len(fields) < 2 {
-			continue
-		}
-		name, typ := fields[0], fields[1]
-		mountpoint := ""
-		if len(fields) >= 3 {
-			mountpoint = fields[2]
-		}
-		pkname := ""
-		if len(fields) >= 4 {
-			pkname = fields[3]
-		}
-
-		if typ == "disk" {
-			if disks[name] == nil {
-				disks[name] = &diskInfo{}
-			}
-			disks[name].mountpoint = mountpoint
-			continue
-		}
-
-		// Any partition/child device (part, lvm, crypt, etc.) means the parent
-		// disk is in use and must never be treated as an orphaned bare device,
-		// whether or not that specific child happens to be mounted right now.
-		if pkname != "" {
-			if disks[pkname] == nil {
-				disks[pkname] = &diskInfo{}
-			}
-			disks[pkname].inUse = true
-		}
-	}
-
-	for name, info := range disks {
-		if !strings.HasPrefix(name, "sd") || info.mountpoint != "" || info.inUse {
-			continue
-		}
-		if rootDisk != "" && name == rootDisk {
-			fmt.Printf("      🛑 SKIPPING /dev/%s: backs the root filesystem — refusing to delete\n", name)
-			continue
-		}
-		deleteCmd := exec.Command("sudo", "tee", "/sys/block/"+name+"/device/delete")
-		deleteCmd.Stdin = strings.NewReader("1\n")
-		if err := deleteCmd.Run(); err != nil {
-			fmt.Printf("      ⚠️  Warning: Failed to delete /dev/%s\n", name)
-		} else {
-			fmt.Printf("      ✓ Deleted /dev/%s\n", name)
-		}
-	}
+	// Cleanup deliberately does NOT hot-remove block devices via
+	// /sys/block/<dev>/device/delete. Bloom v1 did that for every unmounted bare
+	// "sd*" disk to purge stale Longhorn iSCSI LUNs, but CleanupLonghornMounts now
+	// logs those sessions out and deletes their node records so the kernel drops the
+	// LUNs on its own. The sweep could not distinguish a stale LUN from a freshly
+	// unmounted unpartitioned CLUSTER_DISKS/RANCHER_DISK volume, so it detached the
+	// node's own data disks — they disappeared from lsblk until a SCSI rescan or
+	// reboot despite still being attached. wipefs + mkfs.ext4 above already leaves
+	// the disks in the intended clean state.
 
 	// Skip filesystem sync as it commonly hangs on systems with I/O issues
 	// The 500ms delay below is sufficient for kernel to release mounts
@@ -504,31 +436,6 @@ func CleanupBloomDisks(clusterDisks string) error {
 
 	fmt.Println("   ✅ Disk cleanup completed")
 	return nil
-}
-
-// rootFilesystemDisk returns the base block device name (e.g. "sda") backing the
-// root filesystem "/", so destructive whole-disk operations can categorically
-// refuse to target the OS disk regardless of what other detection logic decides.
-// Returns "" if it cannot be determined, in which case callers should NOT treat
-// that as "safe" — the caller's other checks still apply.
-func rootFilesystemDisk() string {
-	out, err := exec.Command("findmnt", "-n", "-o", "SOURCE", "/").Output()
-	if err != nil {
-		return ""
-	}
-	source := strings.TrimSpace(string(out))
-	source = strings.TrimPrefix(source, "/dev/")
-	if source == "" {
-		return ""
-	}
-	// If "/" is on a partition (e.g. sda1), resolve to its parent whole disk (sda).
-	if pk, err := exec.Command("lsblk", "-no", "PKNAME", "/dev/"+source).Output(); err == nil {
-		if parent := strings.TrimSpace(string(pk)); parent != "" {
-			return parent
-		}
-	}
-	// "/" is directly on a whole disk (no partition).
-	return source
 }
 
 // unmountClusterDisks directly unmounts all devices found in CLUSTER_DISKS
@@ -581,7 +488,7 @@ func GenerateCleanupTasks(clusterDisks string, premountedDisks string, rancherDi
 						"This playbook will PERMANENTLY DESTROY:",
 						"• Entire Kubernetes cluster (RKE2 uninstall)",
 						"• ALL Longhorn storage volumes and data",
-						"• ALL managed disk devices (wipefs + deletion)",
+						"• ALL managed disk devices (wipefs + reformat)",
 						fmt.Sprintf("• All data on storage devices: %s", clusterDisks),
 						"",
 						"This action cannot be undone.",

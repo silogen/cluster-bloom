@@ -1,0 +1,37 @@
+---
+# Purpose: Prepare raw block devices for Longhorn V2 (no filesystem or mount)
+# Dependencies: CLUSTER_DISKS, LONGHORN_V2_DATA_ENGINE
+# Usage: Imported by prepare_node/main.yaml when V2 data engine is enabled
+# Tags: [storage, prep_node, longhorn_v2]
+
+- name: Convert CLUSTER_DISKS from comma-separated string to list
+  set_fact:
+    cluster_disks_list: "{{ CLUSTER_DISKS.split(',') if CLUSTER_DISKS is string and CLUSTER_DISKS | trim != '' else (CLUSTER_DISKS if CLUSTER_DISKS is not string and CLUSTER_DISKS is iterable else []) }}"
+
+- name: Resolve stable by-id path for each cluster disk when available
+  shell: |
+    dev="{{ item | trim }}"
+    base=$(basename "$dev")
+    for link in /dev/disk/by-id/*; do
+      [ -e "$link" ] || continue
+      target=$(readlink -f "$link" 2>/dev/null || true)
+      if [ "$target" = "/dev/$base" ] || [ "$target" = "$dev" ]; then
+        echo "$link"
+        exit 0
+      fi
+    done
+    echo "$dev"
+  loop: "{{ cluster_disks_list | default([]) }}"
+  register: cluster_disk_stable_paths
+  changed_when: false
+  when: cluster_disks_list | length > 0
+
+- name: Record stable block device paths for node labels
+  set_fact:
+    cluster_block_disk_paths: "{{ cluster_disk_stable_paths.results | map(attribute='stdout') | map('trim') | list }}"
+  when: cluster_disks_list | length > 0
+
+- name: Wipe filesystem signatures from block disks (required before Longhorn add)
+  command: wipefs -a {{ item | trim }}
+  loop: "{{ cluster_disks_list | default([]) }}"
+  when: cluster_disks_list | length > 0

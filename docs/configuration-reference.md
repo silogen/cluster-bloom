@@ -122,6 +122,12 @@ verification behavior.
 - **Description**: Manual disk specification for pre-mounted disks
 - **Example**: `CLUSTER_PREMOUNTED_DISKS: "/mnt/disk0,/mnt/disk1"`
 
+#### LONGHORN_V2_DATA_ENGINE
+- **Type**: Boolean
+- **Default**: `true`
+- **Description**: Use Longhorn V2 data engine with raw block-type `CLUSTER_DISKS`. Bloom runs `wipefs -a` only (no ext4 mount or fstab). When `false`, uses V1 filesystem-type disks mounted at `/mnt/diskN`.
+- **Example**: `LONGHORN_V2_DATA_ENGINE: true`
+
 #### CLUSTER_DISKS
 - **Type**: String (comma-separated device names)
 - **Default**: None
@@ -732,6 +738,7 @@ sudo ./bloom run bloom-playbook/cluster-bloom.yaml
 - **Full Compatibility**: Exported playbooks work with the `bloom run` command and standard Ansible tools when run from the `./bloom-playbook/` directory
 - **Disk Wipe Preview**: Both `bloom cleanup` and `bloom cli --destroy-data` show a preview of bloom-managed mounts and the future mount range before requiring confirmation
 - **Premounted Disk Safety**: `CLUSTER_PREMOUNTED_DISKS` entries have bloom artifacts (pvc-*, replicas, longhorn-disk.cfg) removed but their filesystem, fstab entry, and user files are preserved
+- **Block Device Preservation**: Cleanup never hot-removes block devices from the kernel. V2 `CLUSTER_DISKS` get `wipefs -a` only; V1 disks are wiped and reformatted; `RANCHER_DISK` is wiped and reformatted.
 - **Smart Index Allocation**: Mount indexes are chosen as the lowest contiguous range not conflicting with premounted disk indexes (from fstab and config), so `CLUSTER_DISKS` and `CLUSTER_PREMOUNTED_DISKS` can coexist
 
 ## See Also

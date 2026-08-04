@@ -1,0 +1,45 @@
+---
+# Purpose: Prepare host for Longhorn V2 data engine (SPDK / NVMe-TCP)
+# Dependencies: LONGHORN_V2_DATA_ENGINE, NO_DISKS_FOR_CLUSTER
+# Usage: Imported by prepare_node/main.yaml before block disk preparation
+# Tags: [storage, prep_node, longhorn_v2]
+
+- name: Load V2 data engine kernel modules
+  modprobe:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - vfio_pci
+    - uio_pci_generic
+    - nvme_tcp
+  failed_when: false
+
+- name: Persist V2 data engine kernel modules at boot
+  copy:
+    dest: /etc/modules-load.d/longhorn-v2.conf
+    mode: "0644"
+    content: |
+      vfio_pci
+      uio_pci_generic
+      nvme_tcp
+
+- name: Check current 2MiB hugepage allocation
+  shell: grep -E '^HugePages_Total:' /proc/meminfo | awk '{print $2}'
+  register: hugepages_total
+  changed_when: false
+
+- name: Configure 2MiB hugepages for Longhorn V2 (1024 pages = 2GiB)
+  sysctl:
+    name: vm.nr_hugepages
+    value: "1024"
+    sysctl_set: true
+    state: present
+    reload: true
+  when: (hugepages_total.stdout | trim | int) < 1024
+
+- name: Persist hugepage allocation across reboots
+  lineinfile:
+    path: /etc/sysctl.d/99-longhorn-v2-hugepages.conf
+    line: "vm.nr_hugepages = 1024"
+    create: true
+    mode: "0644"

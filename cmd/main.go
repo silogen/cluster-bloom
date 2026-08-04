@@ -189,6 +189,9 @@ This command performs the full cluster teardown sequence:
      filesystem and fstab entry intact
   7. Removes bloom-managed fstab entries and wipes CLUSTER_DISKS devices
 
+Disks are wiped and reformatted but never detached from the kernel, so they stay
+visible in lsblk and can be reused by the next deployment.
+
 When a config file is provided, CLUSTER_DISKS and CLUSTER_PREMOUNTED_DISKS are read
 from it. Before confirmation, a disk wipe preview is shown:
   - Bloom-managed mounts to be wiped (with user file warnings)
@@ -617,7 +620,7 @@ func confirmCleanupOperation() bool {
 	fmt.Println("This will PERMANENTLY DESTROY:")
 	fmt.Println("• Entire Kubernetes cluster (RKE2 uninstall)")
 	fmt.Println("• ALL Longhorn storage volumes and data")
-	fmt.Println("• ALL managed disk devices (wipefs + deletion)")
+	fmt.Println("• ALL managed disk devices (wipefs + reformat)")
 	fmt.Println("• All cluster configuration and state")
 	fmt.Println()
 	fmt.Println("This action cannot be undone.")
@@ -798,9 +801,18 @@ func runClusterCleanup(cfg config.Config) {
 		}
 	}
 
-	fmt.Printf("   ⚙️  Config: CLUSTER_DISKS=%q, CLUSTER_PREMOUNTED_DISKS=%q, RANCHER_DISK=%q\n", clusterDisks, premountedDisks, rancherDisk)
+	fmt.Printf("   ⚙️  Config: CLUSTER_DISKS=%q, CLUSTER_PREMOUNTED_DISKS=%q, RANCHER_DISK=%q, LONGHORN_V2_DATA_ENGINE=%v\n",
+		clusterDisks, premountedDisks, rancherDisk, runtime.ConfigBool(cfg, "LONGHORN_V2_DATA_ENGINE", true))
+
+	v2DataEngine := runtime.ConfigBool(cfg, "LONGHORN_V2_DATA_ENGINE", true)
+
+	// Step 0: Longhorn API cleanup when cluster is still reachable
+	if _, apiErr := runtime.TryCleanupLonghornViaAPI("/etc/rancher/rke2/rke2.yaml"); apiErr != nil {
+		fmt.Printf("   ⚠️  Longhorn API cleanup incomplete — continuing with host-level teardown: %v\n", apiErr)
+	}
+
 	// Step 1: Clean Longhorn Mounts (equivalent to CleanLonghornMountsStep)
-	if err := runtime.CleanupLonghornMounts(); err != nil {
+	if err := runtime.CleanupLonghornMounts(v2DataEngine); err != nil {
 		errors = append(errors, fmt.Errorf("Longhorn cleanup: %w", err))
 	}
 
@@ -813,8 +825,11 @@ func runClusterCleanup(cfg config.Config) {
 
 	// Step 3: Pre-clean bloom artifacts from directories in the future mount range,
 	// leaving user files intact. Done before fstab is rewritten so mounts are still valid.
-	if err := runtime.PrecleanFutureMountPoints(clusterDisks, premountedDisks); err != nil {
-		errors = append(errors, fmt.Errorf("Future mount pre-clean: %w", err))
+	// Not applicable for V2 block disks (no /mnt/diskN mounts).
+	if !v2DataEngine {
+		if err := runtime.PrecleanFutureMountPoints(clusterDisks, premountedDisks); err != nil {
+			errors = append(errors, fmt.Errorf("Future mount pre-clean: %w", err))
+		}
 	}
 
 	// Step 4: Clean premounted disk contents BEFORE CleanupBloomDisks strips fstab.
@@ -832,7 +847,11 @@ func runClusterCleanup(cfg config.Config) {
 	}
 
 	// Step 5: Clean Disks — strips fstab entries and wipes CLUSTER_DISKS
-	if err := runtime.CleanupBloomDisks(clusterDisks); err != nil {
+	if v2DataEngine {
+		if err := runtime.CleanupBloomBlockDisks(clusterDisks); err != nil {
+			errors = append(errors, fmt.Errorf("V2 block disk cleanup: %w", err))
+		}
+	} else if err := runtime.CleanupBloomDisks(clusterDisks); err != nil {
 		errors = append(errors, fmt.Errorf("Disk cleanup: %w", err))
 	}
 
