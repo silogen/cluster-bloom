@@ -208,8 +208,8 @@ func (p *OutputProcessor) PrintSummary() {
 	fmt.Printf("Playbook complete: %s\n", p.stats.Summary())
 	fmt.Printf("Total time: %s\n", formatDuration(duration))
 
-	// Print join information if available
-	if p.joinInfo != "" {
+	// Print join information only when the playbook fully succeeded
+	if p.joinInfo != "" && p.stats.Failed == 0 && p.stats.Unreachable == 0 {
 		fmt.Println()
 		fmt.Print(p.joinInfo)
 		fmt.Println()
