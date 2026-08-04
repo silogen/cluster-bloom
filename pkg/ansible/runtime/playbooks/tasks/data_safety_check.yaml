@@ -309,6 +309,30 @@
     unmounted_premounted_disks is defined and
     unmounted_premounted_disks | length > 0
 
+# TLS certificate file existence checks (when CERT_OPTION is 'existing')
+- name: Validate TLS certificate files exist (when CERT_OPTION is existing)
+  when: CERT_OPTION | default('generate') == 'existing'
+  block:
+    - name: Check TLS_CERT file exists
+      stat:
+        path: "{{ TLS_CERT }}"
+      register: tls_cert_stat
+
+    - name: Check TLS_KEY file exists
+      stat:
+        path: "{{ TLS_KEY }}"
+      register: tls_key_stat
+
+    - name: Fail if TLS_CERT file not found
+      fail:
+        msg: "TLS_CERT file not found at {{ TLS_CERT }} — place the certificate on the node before running bloom"
+      when: not tls_cert_stat.stat.exists
+
+    - name: Fail if TLS_KEY file not found
+      fail:
+        msg: "TLS_KEY file not found at {{ TLS_KEY }} — place the key on the node before running bloom"
+      when: not tls_key_stat.stat.exists
+
 # Success message
 - name: Pre-deployment data safety validation completed
   debug:
