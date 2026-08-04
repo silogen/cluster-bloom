@@ -16,7 +16,14 @@
 
 - name: Build V2 block disk labels list
   set_fact:
-    disk_labels: "{{ disk_labels | default([]) + ['bloom.disk' + (item | trim | regex_replace('^/', '') | regex_replace('/', '___')) + '=block'] }}"
+    disk_labels: >-
+      {{ disk_labels | default([]) + [
+        (
+          'bloom.diskv2' + (item | basename | regex_replace(':', '--') | regex_replace('[^A-Za-z0-9._-]', '_'))
+          if '/by-id/' in item else
+          'bloom.disk' + (item | trim | regex_replace('/', '___') | regex_replace(':', '--'))
+        ) + '=block'
+      ] }}
   loop: "{{ cluster_block_disk_paths | default(cluster_disks_list | default([])) }}"
   when:
     - not (NO_DISKS_FOR_CLUSTER | default(false) | bool)

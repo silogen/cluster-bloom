@@ -42,8 +42,13 @@ spec:
                           label_key=$(echo "$entry" | cut -d= -f1)
                           label_value=$(echo "$entry" | cut -d= -f2-)
                           if [ "$label_value" = "block" ]; then
-                            device_path=$(echo "$label_key" | sed 's/^bloom\.disk//' | sed 's/___/\//g')
-                            disk_name=$(basename "$device_path" | tr '/' '-')
+                            if echo "$label_key" | grep -q '^bloom\.diskv2'; then
+                              basename_enc=$(echo "$label_key" | sed 's/^bloom\.diskv2//')
+                              device_path="/dev/disk/by-id/$(echo "$basename_enc" | sed 's/--/:/g')"
+                            else
+                              device_path=$(echo "$label_key" | sed 's/^bloom\.disk//' | sed 's/___/\//g')
+                            fi
+                            disk_name=$(basename "$device_path" | tr ':' '-')
                             json="{\"path\":\"${device_path}\",\"allowScheduling\":true,\"name\":\"${disk_name}\",\"diskType\":\"block\",\"diskDriver\":\"auto\"}"
                           elif echo "$label_value" | grep -q '^premounted'; then
                             mount_point=$(echo "$label_key" | sed 's/^bloom\.disk//' | sed 's/___/\//g')
