@@ -153,22 +153,20 @@
 
   pre_tasks:
     - name: Check passwordless sudo is configured
-      ansible.builtin.command:
-        cmd: /bin/true
-      become: true
-      changed_when: false
-      register: sudo_check
-      ignore_errors: true
+      block:
+        - name: Verify privilege escalation
+          ansible.builtin.command: /bin/true
+          become: true
+          changed_when: false
+      rescue:
+        - name: Fail if passwordless sudo is not configured
+          fail:
+            msg: |
+              ❌ Passwordless sudo is required but not configured for the current user.
 
-    - name: Fail if passwordless sudo is not configured
-      fail:
-        msg: |
-          ❌ Passwordless sudo is required but not configured for the current user.
+              Fix: run the following command on the target host and then retry:
 
-          Fix: run the following command on the target host and then retry:
-
-            echo "$USER ALL=(ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/cluster-bloom-nopasswd
-      when: sudo_check.failed | default(false)
+                echo "$USER ALL=(ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/cluster-bloom-nopasswd
 
     - name: Gather facts
       ansible.builtin.setup:

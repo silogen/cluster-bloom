@@ -151,7 +151,7 @@ Advanced debugging and transparency features allow users to export generated Ans
 **Key Capabilities:**
 - **Export Mode**: Generate a self-contained playbook directory at `./bloom-playbook/` without execution using `--export`
 - **Configuration Integration**: Exported playbooks include `bloom-vars.yaml` with all user configuration values
-- **Manual Execution**: Exported playbooks can be run separately using the `run` command or `ansible-playbook`
+- **Manual Execution**: Exported playbooks can be run separately using the `run` command or `cd bloom-playbook && ansible-playbook cluster-bloom.yaml`
 - **Debugging Support**: Full visibility into deployment actions before execution
 - **Environment Flexibility**: Export in one environment, execute in another
 - **Existing Installations**: Run `bloom cleanup <config-file>` (or `bloom cli --destroy-data`) before export or redeployment; `--destroy-data` cannot be combined with `--export`
@@ -175,6 +175,8 @@ Advanced debugging and transparency features allow users to export generated Ans
 
 # Execute exported playbook manually
 sudo ./bloom run bloom-playbook/cluster-bloom.yaml
+# or with system ansible-playbook:
+cd bloom-playbook && ansible-playbook cluster-bloom.yaml
 ```
 
 ### Post-Deployment Credential Display
@@ -220,7 +222,7 @@ sudo ./bloom --config bloom.yaml
 ```bash
 ./bloom cli bloom.yaml --export
 ```
-Exports the generated Ansible playbook to `./bloom-playbook/` instead of executing it. The directory contains the root playbook, `bloom-vars.yaml`, and the embedded `tasks/` and `manifests/` trees. This enables debugging playbook generation, understanding what actions will be taken before execution, and provides a workaround for restricted environments where the wrapper lacks execution permissions.
+Exports the generated Ansible playbook to `./bloom-playbook/` instead of executing it. The directory contains the root playbook, `bloom-vars.yaml`, `inventory.ini`, `ansible.cfg`, and the embedded `tasks/` and `manifests/` trees. This enables debugging playbook generation, understanding what actions will be taken before execution, and provides a workaround for restricted environments where the wrapper lacks execution permissions.
 
 **Use Cases:**
 - **Debugging**: Inspect the complete playbook before execution
