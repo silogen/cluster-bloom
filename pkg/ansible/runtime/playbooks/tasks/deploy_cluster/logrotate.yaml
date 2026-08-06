@@ -62,13 +62,22 @@
     dest: /etc/logrotate-bloom.d/rke2.conf
     mode: "0644"
 
+# The extensionless names are from the first version of this task, which was
+# documented as "sudo cp ... /etc/logrotate.d/iscsi-aggressive". A later
+# version switched to a .conf suffix without removing them, so int-test still
+# carries both plus an .bak, and each one duplicates the same two log paths.
+# One stale copy is enough to abort the whole logrotate run, so remove every
+# name this task has ever written.
 - name: Remove logrotate configs written by earlier bloom versions
   file:
     path: "/etc/logrotate.d/{{ item }}"
     state: absent
   loop:
     - iscsi-aggressive.conf
+    - iscsi-aggressive
+    - iscsi-aggressive.bak
     - rke2.conf
+    - rke2
 
 - name: Create logrotate cron job
   copy:
