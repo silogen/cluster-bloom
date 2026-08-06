@@ -4,13 +4,32 @@
 # Usage: Imported by deploy_cluster/main.yaml
 # Tags: [logging, deploy_cluster]
 
+# Not /etc/logrotate.d: these configs name /var/log/syslog and /var/log/kern.log,
+# which the distro's own rsyslog config already covers. logrotate refuses a
+# duplicate log entry and aborts the whole run with "found error in file rsyslog,
+# skipping", so the daily logrotate.service fails and nothing under
+# /etc/logrotate.d gets rotated. They are driven by /etc/cron.d/logrotate-bloom
+# with an explicit path, so a directory outside the include is enough.
+- name: Create bloom logrotate directory
+  file:
+    path: /etc/logrotate-bloom.d
+    state: directory
+    mode: "0755"
+
 - name: Create iSCSI aggressive logrotate config
   copy:
     content: |
-      # /etc/logrotate.d/iscsi-aggressive.conf
+      # /etc/logrotate-bloom.d/iscsi-aggressive.conf
       /var/log/kern.log
       /var/log/syslog
       {
+          # /var/log is root:syslog 775, which logrotate refuses to rotate into
+          # unless it is told whom to become. /etc/logrotate.conf carries the
+          # same "su root adm", but the cron job runs logrotate -f against this
+          # file alone and so never reads it: without this line every run ends
+          # in "skipping ... because parent directory has insecure permissions"
+          # and syslog is never rotated at all.
+          su root adm
           size 200M
           rotate 10
           compress
@@ -23,7 +42,7 @@
               /usr/lib/rsyslog/rsyslog-rotate
           endscript
       }
-    dest: /etc/logrotate.d/iscsi-aggressive.conf
+    dest: /etc/logrotate-bloom.d/iscsi-aggressive.conf
     mode: "0644"
 
 - name: Create RKE2 logrotate config
@@ -40,8 +59,16 @@
           create 0640 root root
           dateext
       }
-    dest: /etc/logrotate.d/rke2.conf
+    dest: /etc/logrotate-bloom.d/rke2.conf
     mode: "0644"
+
+- name: Remove logrotate configs written by earlier bloom versions
+  file:
+    path: "/etc/logrotate.d/{{ item }}"
+    state: absent
+  loop:
+    - iscsi-aggressive.conf
+    - rke2.conf
 
 - name: Create logrotate cron job
   copy:
@@ -51,28 +78,33 @@
       PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 
       # iSCSI logrotate - runs every 10 minutes
-      */10 * * * * root /usr/sbin/logrotate -f /etc/logrotate.d/iscsi-aggressive.conf >> /var/log/logrotate-bloom.log 2>&1
+      */10 * * * * root /usr/sbin/logrotate -f /etc/logrotate-bloom.d/iscsi-aggressive.conf >> /var/log/logrotate-bloom.log 2>&1
 
       # logrotate for RKE2 logs - runs hourly
-      0 * * * * root /usr/sbin/logrotate -f /etc/logrotate.d/rke2.conf >> /var/log/logrotate-bloom.log 2>&1
+      0 * * * * root /usr/sbin/logrotate -f /etc/logrotate-bloom.d/rke2.conf >> /var/log/logrotate-bloom.log 2>&1
     dest: /etc/cron.d/logrotate-bloom
     mode: "0644"
 
 - name: Configure rsyslog rate limiting
   block:
+    # No module(load="imuxsock" ...) here: /etc/rsyslog.conf already loads
+    # imuxsock, a second load is rejected with "module 'imuxsock' already in
+    # this config", and the parameter was spelled SysSockRateLimit.Interval
+    # rather than SysSock.RateLimit.Interval, so it never applied either.
+    #
+    # No dynaFile="default" on the action: omfile takes file or dynaFile, not
+    # both, and no template named 'default' exists, so rsyslog disabled the
+    # action and the rate limit never took effect.
     - name: Create rsyslog iSCSI filter
       copy:
         content: |
           # /etc/rsyslog.d/01-iscsi-filter.conf
-          module(load="imuxsock" SysSockRateLimit.Interval="0")
-
           ruleset(name="iscsi_ratelimit") {
               if ($msg contains "detected conn error") or
               ($msg contains "session recovery timed out") or
               ($msg contains "longhorn") then {
                   action(type="omfile"
                       file="/var/log/syslog"
-                      dynaFile="default"
                       action.execOnlyEveryNthTime="500"
                       action.execOnlyEveryNthTimeTimeout="1200"
                   )
@@ -88,5 +120,4 @@
   service:
     name: cron
     state: started
-    enabled: yes
     enabled: yes
