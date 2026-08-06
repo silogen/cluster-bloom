@@ -19,6 +19,35 @@
 #   - root/sudo privileges
 #   - "Save iptables" handler defined in main playbook
 
+# Task 0: Discard a snapshot taken by an earlier bloom version
+#
+# Before the handler was flushed after prepare_node, the save ran at the end of
+# the play and captured kube-proxy's live ruleset. Those files are still on
+# every node bloomed by an older version, they fail to restore at boot because
+# of the nfacct rule in KUBE-FORWARD, and re-running bloom would not replace
+# one: the handler only fires when a port rule actually changes, which on an
+# already-prepared node it does not.
+#
+# Detecting on KUBE rather than on size or age: kube-proxy's chains are the
+# thing that must never be in this file, and their absence is exactly the
+# condition that makes it safe to keep. A hand-written rules.v4 that predates
+# RKE2 survives untouched.
+- name: Check whether rules.v4 holds another controller's rules
+  ansible.builtin.command:
+    cmd: grep -lE '^(:|-A )(KUBE|CILIUM|ts-)' /etc/iptables/rules.v4
+  register: rules_v4_polluted
+  failed_when: false
+  changed_when: false
+  tags: [iptables, validation]
+
+- name: Remove rules.v4 captured from a running cluster
+  ansible.builtin.file:
+    path: /etc/iptables/rules.v4
+    state: absent
+  when: rules_v4_polluted.rc == 0
+  notify: Save iptables
+  tags: [iptables, remediation]
+
 # Task 1: Check for common INPUT blocking rule
 - name: Check if there is an iptables INPUT rule blocking traffic
   command:
