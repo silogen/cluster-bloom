@@ -18,21 +18,22 @@ import (
 )
 
 var (
-	Version         string // Set via ldflags during build
-	port            int
-	playbookName    string
-	dryRun          bool
-	tags            string
-	destroyData     bool
-	pauseK3s        bool
-	preserveRKE2    bool
-	autoConfirm     bool // --yes/-y, --auto-confirm-prompts, cleanup's --force/-f all bind here
-	extraVars       []string
-	verbose         bool
-	configFile      string
-	export          bool
-	showVersion     bool
-	clusterListenIP string
+	Version              string // Set via ldflags during build
+	port                 int
+	playbookName         string
+	dryRun               bool
+	tags                 string
+	destroyData          bool
+	pauseK3s             bool
+	preserveRKE2         bool
+	autoConfirm          bool // --yes/-y, --auto-confirm-prompts, cleanup's --force/-f all bind here
+	extraVars            []string
+	verbose              bool
+	configFile           string
+	export               bool
+	showVersion          bool
+	clusterListenIP      string
+	cleanupPreflightOnly bool
 )
 
 // rebootMarkerPath is where reboot_required_check.yaml records a pending
@@ -177,20 +178,22 @@ Certificate Updates:
 		Long: `Removes RKE2 services, Longhorn mounts, and managed disks from previous Bloom installations.
 
 This command performs the full cluster teardown sequence:
-  1. Best-effort node drain (if cluster is reachable) with ~30s timeout
+  1. Fail-closed storage preflight against config, fstab, live mounts, and protected devices
+  2. Best-effort node drain (if cluster is reachable) with ~30s timeout
      - Uses --force and --disable-eviction to bypass stuck pods
      - Skips volume detach wait if no Longhorn volumes detected
-  2. Logs out iSCSI sessions and stops Longhorn processes
-  3. Force-unmounts all Longhorn/CSI/kubelet volumes
-  4. Uninstalls RKE2 and removes all RKE2 directories
-  5. Pre-cleans bloom artifacts (pvc-*, replicas, longhorn-disk.cfg) from the future
+  3. Logs out Longhorn-only iSCSI sessions and stops Longhorn processes
+  4. Force-unmounts all Longhorn/CSI/kubelet volumes
+  5. Uninstalls RKE2 and removes all RKE2 directories
+  6. Pre-cleans bloom artifacts (pvc-*, replicas, longhorn-disk.cfg) from the future
      mount range — preserving user files in those directories
-  6. Cleans premounted disk contents (CLUSTER_PREMOUNTED_DISKS) while keeping the
+  7. Cleans premounted disk contents (CLUSTER_PREMOUNTED_DISKS) while keeping the
      filesystem and fstab entry intact
-  7. Removes bloom-managed fstab entries and wipes CLUSTER_DISKS devices
+  8. Removes strictly tagged Bloom fstab entries and wipes CLUSTER_DISKS devices
 
-When a config file is provided, CLUSTER_DISKS and CLUSTER_PREMOUNTED_DISKS are read
-from it. Before confirmation, a disk wipe preview is shown:
+When a config file is provided, CLUSTER_DISKS, CLUSTER_PREMOUNTED_DISKS, and
+RANCHER_DISK are read from it and must agree with live storage state. Before
+confirmation, a disk wipe preview is shown:
   - Bloom-managed mounts to be wiped (with user file warnings)
   - The future mount range that will be pre-cleaned
   - User files listed (up to 5), or count shown if more than 5
@@ -204,15 +207,15 @@ By default, this command requires confirmation before proceeding. Use --force (o
 		Run: func(cmd *cobra.Command, args []string) {
 			checkRootPrivileges("cleanup")
 			// Load config early so the preview can use it before confirmation
-			var cfg config.Config
+			cfg := config.Config{}
 			if len(args) > 0 {
 				var err error
 				cfg, err = config.LoadConfig(args[0])
 				if err != nil {
-					fmt.Fprintf(os.Stderr, "Warning: could not load config %s: %v\n", args[0], err)
-				} else {
-					fmt.Printf("Using config: %s\n", args[0])
+					fmt.Fprintf(os.Stderr, "Error: could not load config %s: %v\n", args[0], err)
+					os.Exit(1)
 				}
+				fmt.Printf("Using config: %s\n", args[0])
 			}
 			// Extract disk vars for the preview
 			clusterDisks := ""
@@ -227,8 +230,32 @@ By default, this command requires confirmation before proceeding. Use --force (o
 			if r, ok := cfg["RANCHER_DISK"].(string); ok {
 				rancherDisk = r
 			}
+			configWasProvided := len(args) > 0
+			storage, err := runtime.ResolveCleanupStorage(clusterDisks, premountedDisks, rancherDisk, configWasProvided)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "❌ Cleanup preflight failed: %v\n", err)
+				os.Exit(1)
+			}
+			if err := runtime.RunCleanupPreflight(storage); err != nil {
+				fmt.Fprintf(os.Stderr, "❌ Cleanup preflight failed: %v\n", err)
+				os.Exit(1)
+			}
+			clusterDisks = storage.ClusterDisks
+			premountedDisks = storage.PremountedDisks
+			rancherDisk = storage.RancherDisk
+			cfg["CLUSTER_DISKS"] = clusterDisks
+			cfg["CLUSTER_PREMOUNTED_DISKS"] = premountedDisks
+			cfg["RANCHER_DISK"] = rancherDisk
+			// The resolved targets become explicit for the second preflight after
+			// confirmation, preventing newly added fstab entries from changing scope.
+			cfg["_CLEANUP_CONFIG_PROVIDED"] = true
+
 			// Show disk wipe preview before asking for confirmation
 			runtime.PrintDiskWipePreview(clusterDisks, premountedDisks, rancherDisk)
+			if cleanupPreflightOnly {
+				fmt.Println("✅ Preflight-only cleanup validation completed; no changes were made")
+				return
+			}
 			// Check if force/--yes flag is used to bypass confirmation
 			if !autoConfirm {
 				if !confirmCleanupOperation() {
@@ -317,6 +344,7 @@ imports (roles, tasks, vars) within that directory tree work as expected.`,
 	// --force/-f is a historical alias for --yes/-y, bound to the same
 	// variable so either name bypasses cleanup's confirmation prompt.
 	cleanupCmd.Flags().BoolVarP(&autoConfirm, "force", "f", false, "Skip confirmation prompt and force immediate cleanup. Alias for --yes/-y (USE WITH CAUTION)")
+	cleanupCmd.Flags().BoolVar(&cleanupPreflightOnly, "preflight-only", false, "Validate bloom.yaml, fstab, live mounts, and protected devices without making changes")
 
 	// Add subcommands
 	rootCmd.AddCommand(webuiCmd)
@@ -357,7 +385,7 @@ func runAnsible(configFile string) {
 
 	// Validate config (after injecting CLI flags)
 	// Skip validation for cert update tags to allow separate cert-update-config.yaml
-	if tags == "" || (!strings.Contains(tags, "update_cert")  && !strings.Contains(tags, "deploy_clusterforge")) {
+	if tags == "" || (!strings.Contains(tags, "update_cert") && !strings.Contains(tags, "deploy_clusterforge")) {
 		errors := config.Validate(cfg)
 		if len(errors) > 0 {
 			fmt.Fprintln(os.Stderr, "Configuration validation errors:")
@@ -402,6 +430,15 @@ func runAnsible(configFile string) {
 
 	// Handle destructive data cleanup if requested
 	if destroyData {
+		storage, err := validateCleanupStorage(cfg, true)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "❌ Cleanup preflight failed: %v\n", err)
+			os.Exit(1)
+		}
+		cfg["CLUSTER_DISKS"] = storage.ClusterDisks
+		cfg["CLUSTER_PREMOUNTED_DISKS"] = storage.PremountedDisks
+		cfg["RANCHER_DISK"] = storage.RancherDisk
+		cfg["_CLEANUP_CONFIG_PROVIDED"] = true
 		if !confirmDestructiveOperation(cfg) {
 			fmt.Println("\n❌ Operation aborted by user. No data was harmed.")
 			os.Exit(0)
@@ -617,7 +654,7 @@ func confirmCleanupOperation() bool {
 	fmt.Println("This will PERMANENTLY DESTROY:")
 	fmt.Println("• Entire Kubernetes cluster (RKE2 uninstall)")
 	fmt.Println("• ALL Longhorn storage volumes and data")
-	fmt.Println("• ALL managed disk devices (wipefs + deletion)")
+	fmt.Println("• ALL managed disk devices (wipefs + reformat)")
 	fmt.Println("• All cluster configuration and state")
 	fmt.Println()
 	fmt.Println("This action cannot be undone.")
@@ -766,6 +803,39 @@ func checkRootPrivileges(commandName string) {
 	}
 }
 
+func validateCleanupStorage(cfg config.Config, configWasProvided bool) (runtime.CleanupStorage, error) {
+	clusterDisks := ""
+	if disks, exists := cfg["CLUSTER_DISKS"]; exists && disks != nil {
+		if disksStr, ok := disks.(string); ok {
+			clusterDisks = disksStr
+		}
+	}
+
+	premountedDisks := ""
+	if pm, exists := cfg["CLUSTER_PREMOUNTED_DISKS"]; exists && pm != nil {
+		if pmStr, ok := pm.(string); ok {
+			premountedDisks = pmStr
+		}
+	}
+
+	rancherDisk := ""
+	if rd, exists := cfg["RANCHER_DISK"]; exists && rd != nil {
+		if rdStr, ok := rd.(string); ok {
+			rancherDisk = rdStr
+		}
+	}
+
+	storage, err := runtime.ResolveCleanupStorage(
+		clusterDisks, premountedDisks, rancherDisk, configWasProvided)
+	if err != nil {
+		return runtime.CleanupStorage{}, err
+	}
+	if err := runtime.RunCleanupPreflight(storage); err != nil {
+		return runtime.CleanupStorage{}, err
+	}
+	return storage, nil
+}
+
 func runClusterCleanup(cfg config.Config) {
 	fmt.Println("🧹 Starting Bloom cluster cleanup...")
 
@@ -774,29 +844,19 @@ func runClusterCleanup(cfg config.Config) {
 
 	var errors []error
 
-	// Extract CLUSTER_DISKS from config
-	clusterDisks := ""
-	if disks, exists := cfg["CLUSTER_DISKS"]; exists && disks != nil {
-		if disksStr, ok := disks.(string); ok {
-			clusterDisks = disksStr
-		}
+	configWasProvided, exists := cfg["_CLEANUP_CONFIG_PROVIDED"].(bool)
+	if !exists {
+		// runClusterCleanup is otherwise reached from `bloom cli <config-file>`.
+		configWasProvided = true
 	}
-
-	// Extract premounted disks config once for use in steps below
-	premountedDisks := ""
-	if pm, exists := cfg["CLUSTER_PREMOUNTED_DISKS"]; exists && pm != nil {
-		if pmStr, ok := pm.(string); ok {
-			premountedDisks = pmStr
-		}
+	storage, err := validateCleanupStorage(cfg, configWasProvided)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Cleanup preflight failed: %v\n", err)
+		os.Exit(1)
 	}
-
-	// Extract RANCHER_DISK from config
-	rancherDisk := ""
-	if rd, exists := cfg["RANCHER_DISK"]; exists && rd != nil {
-		if rdStr, ok := rd.(string); ok {
-			rancherDisk = rdStr
-		}
-	}
+	clusterDisks := storage.ClusterDisks
+	premountedDisks := storage.PremountedDisks
+	rancherDisk := storage.RancherDisk
 
 	fmt.Printf("   ⚙️  Config: CLUSTER_DISKS=%q, CLUSTER_PREMOUNTED_DISKS=%q, RANCHER_DISK=%q\n", clusterDisks, premountedDisks, rancherDisk)
 	// Step 1: Clean Longhorn Mounts (equivalent to CleanLonghornMountsStep)
@@ -827,7 +887,7 @@ func runClusterCleanup(cfg config.Config) {
 
 	// Step 4.5: Clean RANCHER_DISK configuration — unmount bind mount and clean data
 	// Always call - let function decide based on actual mount status
-	if err := runtime.CleanupRancherDisk(""); err != nil {
+	if err := runtime.CleanupRancherDisk(rancherDisk); err != nil {
 		errors = append(errors, fmt.Errorf("RANCHER_DISK cleanup: %w", err))
 	}
 
