@@ -147,17 +147,36 @@ Standalone cleanup command. Accepts an optional config file to read `CLUSTER_DIS
 sudo ./bloom cleanup bloom.yaml
 ```
 
+Run only the non-mutating safety checks with:
+
+```bash
+sudo ./bloom cleanup bloom.yaml --preflight-only
+```
+
+Cleanup runs this preflight before confirmation and repeats it immediately before teardown. It resolves device aliases to kernel block-device identities and:
+
+- Requires `bloom.yaml` `CLUSTER_DISKS`, strict Bloom-managed `/etc/fstab` entries, and live block devices to agree
+- Rejects malformed or misplaced Bloom fstab tags; managed tags are valid only on `/mnt/diskN`, premounted tags require a safe absolute path, and the rancher-disk tag only on `/var/lib/rancher`
+- Refuses any wipe targeting `/`, `/boot`, `/usr`, `/var`, `/etc`, `/home`, `/opt`, `/srv`, active swap, or their underlying partition/LVM/LUKS/md-raid device chain
+- Rejects configured disks with non-Bloom mounts anywhere in their partition/device tree
+- Verifies `RANCHER_DISK` against its exact live mount and fstab source
+
+Any mismatch aborts cleanup before RKE2, Longhorn, fstab, or disk state is changed.
+
+Without a config file, cleanup discovers only entries carrying an exact Bloom fstab tag. Supplying a config file—even one with empty storage values—disables auto-discovery and requires the file to agree with fstab. Untagged legacy `/var/lib/rancher` mounts are reported and preserved rather than inferred as safe wipe targets.
+
 **Sequence:**
-1. **Best-effort node drain** (if cluster reachable, ~30s timeout)
+1. **Destructive cleanup preflight** against config, fstab, live mounts, and protected system devices
+2. **Best-effort node drain** (if cluster reachable, ~30s timeout)
    - Internally passes `--force` and `--disable-eviction` to kubectl drain to bypass stuck pods with finalizers or PodDisruptionBudgets
    - Automatically skips Longhorn volume detach wait when no volumes detected
    - Clear progress messages during potentially long operations
-2. Logout **Longhorn-only** iSCSI sessions (filter `iqn.2019-10.io.longhorn:*`, logout by session ID; boot-volume sessions are preserved) → stop Longhorn processes
-3. Force-unmount all Longhorn/CSI/kubelet volumes (including `volume-subpaths` and `globalmount`)
-4. Uninstall RKE2 and remove its directories
-5. **Pre-clean future mount range** — removes bloom artifacts (`pvc-*`, `replicas`, `longhorn-disk.cfg`) from the directories that will be used in the next deployment, preserving user files
-6. **Clean premounted disks** (`CLUSTER_PREMOUNTED_DISKS`) — removes bloom artifacts only; filesystem, fstab entry, and user files are preserved
-7. **Remove bloom-managed fstab entries** and wipe `CLUSTER_DISKS` device signatures
+3. Logout **Longhorn-only** iSCSI sessions (filter `iqn.2019-10.io.longhorn:*`, logout by session ID; boot-volume sessions are preserved) → stop Longhorn processes
+4. Force-unmount all Longhorn/CSI/kubelet volumes (including `volume-subpaths` and `globalmount`)
+5. Uninstall RKE2 and remove its directories
+6. **Pre-clean future mount range** — removes bloom artifacts (`pvc-*`, `replicas`, `longhorn-disk.cfg`) from the directories that will be used in the next deployment, preserving user files
+7. **Clean premounted disks** (`CLUSTER_PREMOUNTED_DISKS`) — removes bloom artifacts only; filesystem, fstab entry, and user files are preserved
+8. **Remove strictly tagged Bloom-managed fstab entries** and wipe/reformat `CLUSTER_DISKS`
 
 ### `bloom cli bloom.yaml --destroy-data`
 
@@ -243,9 +262,10 @@ RANCHER_DISK: /dev/nvme2n1
 
 **Setup and Cleanup Behavior**:
 - **Setup**: Removes existing `/var/lib/rancher` directory for clean deployment and mounts dedicated device
-- **Cleanup**: Unmounts `/var/lib/rancher` and removes fstab entry
+- **Cleanup**: Validates the configured device against fstab and the live mount, unmounts `/var/lib/rancher`, wipes and reformats the device, and removes the exact fstab entry
+- **Legacy Mount Safety**: Untagged `/var/lib/rancher` mounts are preserved; destructive cleanup requires the exact `# managed by cluster-bloom rancher-disk` tag
 - **Fresh Start**: Creates clean `/var/lib/rancher` directory after cleanup
-- **Device Preservation**: Underlying device is preserved (no reformatting during cleanup)
+- **Attachment Preservation**: The block device remains attached to the host; cleanup never hot-removes it from the kernel
 
 ## Architecture
 

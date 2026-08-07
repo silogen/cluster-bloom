@@ -666,6 +666,27 @@ sudo ./bloom cli bloom.yaml
 sudo ./bloom cli bloom.yaml --tags deploy_clusterforge
 ```
 
+### Cleanup Command
+
+Clean an existing Bloom installation:
+
+```bash
+sudo ./bloom cleanup [config-file]
+```
+
+Cleanup validates configured storage against strict Bloom-managed fstab entries, live block-device identities, mounts, and protected operating-system devices before making changes. A mismatch aborts before teardown or disk writes.
+
+Use `--preflight-only` to run the same checks without confirmation or mutation:
+
+```bash
+sudo ./bloom cleanup bloom.yaml --preflight-only
+```
+
+Other cleanup flags:
+
+- `--force`: Skip the destructive confirmation prompt after preflight succeeds
+- `--yes`: Alias for automatic confirmation
+
 ### Run Command
 
 Execute external Ansible playbook using Bloom's containerized runtime:
@@ -731,6 +752,7 @@ sudo ./bloom run bloom-playbook/cluster-bloom.yaml
 - **Standalone Execution**: The exported root playbook targets `localhost` and sets `BLOOM_DIR` so it can run outside Bloom's containerized runtime
 - **Full Compatibility**: Exported playbooks work with the `bloom run` command and standard Ansible tools when run from the `./bloom-playbook/` directory
 - **Disk Wipe Preview**: Both `bloom cleanup` and `bloom cli --destroy-data` show a preview of bloom-managed mounts and the future mount range before requiring confirmation
+- **Cleanup Preflight**: Both cleanup paths validate `bloom.yaml`, strictly tagged fstab entries, live mounts, block-device identity, and the full system-device dependency chain before teardown
 - **Premounted Disk Safety**: `CLUSTER_PREMOUNTED_DISKS` entries have bloom artifacts (pvc-*, replicas, longhorn-disk.cfg) removed but their filesystem, fstab entry, and user files are preserved
 - **Smart Index Allocation**: Mount indexes are chosen as the lowest contiguous range not conflicting with premounted disk indexes (from fstab and config), so `CLUSTER_DISKS` and `CLUSTER_PREMOUNTED_DISKS` can coexist
 
