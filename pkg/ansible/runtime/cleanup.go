@@ -417,83 +417,12 @@ func CleanupBloomDisks(clusterDisks string) error {
 		fmt.Printf("   ⚠️  Warning: Failed to remove longhorn plugins directory: %v\n", err)
 	}
 
-	// Delete unmounted disk devices (matching Bloom v1 logic)
-	//
-	// NOTE: "-d/--nodeps" makes lsblk report ONLY the whole-disk row and omit its
-	// partitions entirely. A partitioned boot disk (e.g. "sda" with root on "sda1")
-	// therefore shows an EMPTY MOUNTPOINT on the disk-level row even though the disk
-	// is very much in use — previously causing this loop to treat the live OS disk
-	// as an orphaned/unmounted device and hot-remove it via
-	// /sys/block/<dev>/device/delete, which yanks the root filesystem out from under
-	// the running system and bricks the node. We now list partitions too and only
-	// consider a "sd*" disk eligible for deletion when neither it nor any of its
-	// partitions/children are mounted, and we additionally always refuse to touch
-	// whatever disk backs "/", regardless of what lsblk reports.
-	fmt.Println("   🗑️  Checking for unmounted disks to delete...")
-	rootDisk := rootFilesystemDisk()
-	cmd = exec.Command("lsblk", "-nl", "-o", "NAME,TYPE,MOUNTPOINT,PKNAME")
-	output, err = cmd.Output()
-	if err != nil {
-		return fmt.Errorf("lsblk command failed: %w", err)
-	}
-
-	type diskInfo struct {
-		mountpoint string
-		inUse      bool // true if the disk itself or any partition/child is mounted or present
-	}
-	disks := map[string]*diskInfo{}
-
-	scanner = bufio.NewScanner(strings.NewReader(string(output)))
-	for scanner.Scan() {
-		fields := strings.Fields(scanner.Text())
-		if len(fields) < 2 {
-			continue
-		}
-		name, typ := fields[0], fields[1]
-		mountpoint := ""
-		if len(fields) >= 3 {
-			mountpoint = fields[2]
-		}
-		pkname := ""
-		if len(fields) >= 4 {
-			pkname = fields[3]
-		}
-
-		if typ == "disk" {
-			if disks[name] == nil {
-				disks[name] = &diskInfo{}
-			}
-			disks[name].mountpoint = mountpoint
-			continue
-		}
-
-		// Any partition/child device (part, lvm, crypt, etc.) means the parent
-		// disk is in use and must never be treated as an orphaned bare device,
-		// whether or not that specific child happens to be mounted right now.
-		if pkname != "" {
-			if disks[pkname] == nil {
-				disks[pkname] = &diskInfo{}
-			}
-			disks[pkname].inUse = true
-		}
-	}
-
-	for name, info := range disks {
-		if !strings.HasPrefix(name, "sd") || info.mountpoint != "" || info.inUse {
-			continue
-		}
-		if rootDisk != "" && name == rootDisk {
-			fmt.Printf("      🛑 SKIPPING /dev/%s: backs the root filesystem — refusing to delete\n", name)
-			continue
-		}
-		deleteCmd := exec.Command("sudo", "tee", "/sys/block/"+name+"/device/delete")
-		deleteCmd.Stdin = strings.NewReader("1\n")
-		if err := deleteCmd.Run(); err != nil {
-			fmt.Printf("      ⚠️  Warning: Failed to delete /dev/%s\n", name)
-		} else {
-			fmt.Printf("      ✓ Deleted /dev/%s\n", name)
-		}
-	}
+	// Keep cleaned block devices attached to the kernel. Bloom v1 hot-removed all
+	// unmounted bare sd* devices via /sys/block/<device>/device/delete to discard
+	// stale Longhorn iSCSI LUNs. Longhorn sessions and node records are now cleaned
+	// explicitly by CleanupLonghornMounts, so that sweep is unnecessary and cannot
+	// distinguish an orphaned LUN from an unmounted virtio-scsi cloud volume.
+	// Cleanup may wipe and reformat configured disks, but it must never detach them.
 
 	// Skip filesystem sync as it commonly hangs on systems with I/O issues
 	// The 500ms delay below is sufficient for kernel to release mounts
@@ -504,31 +433,6 @@ func CleanupBloomDisks(clusterDisks string) error {
 
 	fmt.Println("   ✅ Disk cleanup completed")
 	return nil
-}
-
-// rootFilesystemDisk returns the base block device name (e.g. "sda") backing the
-// root filesystem "/", so destructive whole-disk operations can categorically
-// refuse to target the OS disk regardless of what other detection logic decides.
-// Returns "" if it cannot be determined, in which case callers should NOT treat
-// that as "safe" — the caller's other checks still apply.
-func rootFilesystemDisk() string {
-	out, err := exec.Command("findmnt", "-n", "-o", "SOURCE", "/").Output()
-	if err != nil {
-		return ""
-	}
-	source := strings.TrimSpace(string(out))
-	source = strings.TrimPrefix(source, "/dev/")
-	if source == "" {
-		return ""
-	}
-	// If "/" is on a partition (e.g. sda1), resolve to its parent whole disk (sda).
-	if pk, err := exec.Command("lsblk", "-no", "PKNAME", "/dev/"+source).Output(); err == nil {
-		if parent := strings.TrimSpace(string(pk)); parent != "" {
-			return parent
-		}
-	}
-	// "/" is directly on a whole disk (no partition).
-	return source
 }
 
 // unmountClusterDisks directly unmounts all devices found in CLUSTER_DISKS
