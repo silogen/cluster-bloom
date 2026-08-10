@@ -192,6 +192,19 @@ func TestFormatCleanupRemediationIncludesBullets(t *testing.T) {
 	}
 }
 
+func TestFormatDeviceProtectionReasonListsExactMountPoints(t *testing.T) {
+	reason := deviceProtection{
+		mountPoints: map[string]struct{}{
+			"/":         {},
+			"/boot":     {},
+			"/boot/efi": {},
+		},
+	}.formatReason()
+	if reason != "system mounts /, /boot, /boot/efi" {
+		t.Fatalf("formatReason() = %q", reason)
+	}
+}
+
 func TestRejectProtectedCleanupTargetRejectsRootDeviceChain(t *testing.T) {
 	out, err := exec.Command("findmnt", "--noheadings", "--output", "SOURCE", "--target", "/").Output()
 	if err != nil {
@@ -211,7 +224,7 @@ func TestRejectProtectedCleanupTargetRejectsRootDeviceChain(t *testing.T) {
 			t.Errorf("rejectProtectedCleanupTarget(%q) allowed a device in the root dependency chain", dependency)
 			continue
 		}
-		if !strings.Contains(err.Error(), "it backs system mount /") {
+		if !strings.Contains(err.Error(), "system mounts") || !strings.Contains(err.Error(), "/") {
 			t.Errorf("rejectProtectedCleanupTarget(%q) = %v, want root protection error", dependency, err)
 		}
 		if !strings.Contains(err.Error(), "Remediation:") {

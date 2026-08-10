@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"syscall"
 )
@@ -104,13 +105,60 @@ func blockDeviceDependencies(device string) ([]string, error) {
 	return dependencies, nil
 }
 
+type deviceProtection struct {
+	mountPoints map[string]struct{}
+	swapReason  string
+}
+
+func (protection deviceProtection) formatReason() string {
+	var parts []string
+	if len(protection.mountPoints) > 0 {
+		mountPoints := make([]string, 0, len(protection.mountPoints))
+		for mountPoint := range protection.mountPoints {
+			mountPoints = append(mountPoints, mountPoint)
+		}
+		sort.Strings(mountPoints)
+		parts = append(parts, "system mounts "+strings.Join(mountPoints, ", "))
+	}
+	if protection.swapReason != "" {
+		parts = append(parts, protection.swapReason)
+	}
+	return strings.Join(parts, "; ")
+}
+
+func blockSourcesForExactMountPoint(mountPoint string) ([]string, error) {
+	out, err := exec.Command(
+		"findmnt",
+		"--raw",
+		"--noheadings",
+		"--output", "SOURCES",
+		"--mountpoint", mountPoint,
+	).Output()
+	if err != nil {
+		return nil, err
+	}
+	sources := strings.FieldsFunc(strings.TrimSpace(string(out)), func(r rune) bool {
+		return r == ',' || r == ' ' || r == '\t' || r == '\n'
+	})
+	var blockSources []string
+	for _, source := range sources {
+		if strings.HasPrefix(source, "/dev/") {
+			blockSources = append(blockSources, source)
+		}
+	}
+	if len(blockSources) == 0 {
+		return nil, fmt.Errorf("mount point %s has no block-device sources", mountPoint)
+	}
+	return blockSources, nil
+}
+
 // protectedSystemDevices identifies every block device backing a critical
 // system mount or active swap, including its lower-level dependencies.
 func protectedSystemDevices() (map[blockDeviceID]string, error) {
-	protected := map[blockDeviceID]string{}
+	protected := map[blockDeviceID]deviceProtection{}
 	rootFound := false
 
-	addSource := func(source, reason string) error {
+	addMountSource := func(source, mountPoint string) error {
 		canonical, _, err := resolveBlockDevice(source)
 		if err != nil {
 			return err
@@ -124,45 +172,52 @@ func protectedSystemDevices() (map[blockDeviceID]string, error) {
 			if err != nil {
 				return err
 			}
-			protected[id] = reason
+			entry := protected[id]
+			if entry.mountPoints == nil {
+				entry.mountPoints = map[string]struct{}{}
+			}
+			entry.mountPoints[mountPoint] = struct{}{}
+			protected[id] = entry
+		}
+		return nil
+	}
+	addSwapSource := func(source, swapReason string) error {
+		canonical, _, err := resolveBlockDevice(source)
+		if err != nil {
+			return err
+		}
+		dependencies, err := blockDeviceDependencies(canonical)
+		if err != nil {
+			return err
+		}
+		for _, dependency := range dependencies {
+			_, id, err := resolveBlockDevice(dependency)
+			if err != nil {
+				return err
+			}
+			entry := protected[id]
+			if entry.swapReason == "" {
+				entry.swapReason = swapReason
+			}
+			protected[id] = entry
 		}
 		return nil
 	}
 
 	for _, mountPoint := range criticalSystemMounts {
-		out, err := exec.Command(
-			"findmnt",
-			"--raw",
-			"--noheadings",
-			"--output", "SOURCES",
-			"--target", mountPoint,
-		).Output()
+		sources, err := blockSourcesForExactMountPoint(mountPoint)
 		if err != nil {
 			if mountPoint == "/" {
 				return nil, fmt.Errorf("determine root filesystem source: %w", err)
 			}
 			continue
 		}
-		sources := strings.FieldsFunc(strings.TrimSpace(string(out)), func(r rune) bool {
-			return r == ',' || r == ' ' || r == '\t' || r == '\n'
-		})
-		if len(sources) == 0 {
-			if mountPoint == "/" {
-				return nil, fmt.Errorf("root filesystem has no block-device sources")
-			}
-			continue
-		}
-		addedSource := false
 		for _, source := range sources {
-			if !strings.HasPrefix(source, "/dev/") {
-				continue
-			}
-			if err := addSource(source, "system mount "+mountPoint); err != nil {
+			if err := addMountSource(source, mountPoint); err != nil {
 				return nil, err
 			}
-			addedSource = true
 		}
-		if mountPoint == "/" && addedSource {
+		if mountPoint == "/" {
 			rootFound = true
 		}
 	}
@@ -178,7 +233,7 @@ func protectedSystemDevices() (map[blockDeviceID]string, error) {
 				continue
 			}
 			if strings.HasPrefix(fields[0], "/dev/") {
-				if err := addSource(fields[0], "active swap"); err != nil {
+				if err := addSwapSource(fields[0], "active swap"); err != nil {
 					return nil, err
 				}
 				continue
@@ -204,14 +259,18 @@ func protectedSystemDevices() (map[blockDeviceID]string, error) {
 				if !strings.HasPrefix(source, "/dev/") {
 					return nil, fmt.Errorf("swapfile %s source %q is not a block device", fields[0], source)
 				}
-				if err := addSource(source, "active swapfile "+fields[0]); err != nil {
+				if err := addSwapSource(source, "active swapfile "+fields[0]); err != nil {
 					return nil, err
 				}
 			}
 		}
 	}
 
-	return protected, nil
+	reasons := make(map[blockDeviceID]string, len(protected))
+	for id, protection := range protected {
+		reasons[id] = protection.formatReason()
+	}
+	return reasons, nil
 }
 
 func protectedConflictForDevice(target string) (canonical, reason string, err error) {
