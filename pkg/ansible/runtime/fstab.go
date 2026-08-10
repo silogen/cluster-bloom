@@ -34,6 +34,12 @@ type bloomFstabEntry struct {
 	raw        string
 }
 
+type activeFstabMount struct {
+	source string
+	raw    string
+	tag    bloomFstabTag
+}
+
 func exactBloomFstabTag(line string) bloomFstabTag {
 	commentIndex := strings.IndexByte(line, '#')
 	if commentIndex < 0 {
@@ -192,6 +198,34 @@ func readBloomFstab() (string, []bloomFstabEntry, error) {
 	return string(data), entries, nil
 }
 
+func findActiveFstabMount(content, mountPoint string) (activeFstabMount, bool, error) {
+	var found activeFstabMount
+	for lineNumber, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		beforeComment := line
+		if commentIndex := strings.IndexByte(line, '#'); commentIndex >= 0 {
+			beforeComment = line[:commentIndex]
+		}
+		fields := strings.Fields(beforeComment)
+		if len(fields) < 2 || fields[1] != mountPoint {
+			continue
+		}
+		if found.raw != "" {
+			return activeFstabMount{}, false, fmt.Errorf(
+				"multiple active fstab entries target %s (including line %d)", mountPoint, lineNumber+1)
+		}
+		found = activeFstabMount{
+			source: fields[0],
+			raw:    line,
+			tag:    exactBloomFstabTag(line),
+		}
+	}
+	return found, found.raw != "", nil
+}
+
 func backupAndWriteFstab(original string, retainedLines []string) error {
 	timestamp := time.Now().Format("20060102-150405.000000000")
 	backupPath := fmt.Sprintf("/etc/fstab.bak-%s", timestamp)
@@ -223,4 +257,24 @@ func removeBloomFstabEntries(tag bloomFstabTag) error {
 		}
 	}
 	return backupAndWriteFstab(original, retained)
+}
+
+func removeExactFstabLine(rawLine string) error {
+	original, err := os.ReadFile("/etc/fstab")
+	if err != nil {
+		return fmt.Errorf("read /etc/fstab: %w", err)
+	}
+	removed := false
+	var retained []string
+	for _, line := range strings.Split(string(original), "\n") {
+		if !removed && line == rawLine {
+			removed = true
+			continue
+		}
+		retained = append(retained, line)
+	}
+	if !removed {
+		return fmt.Errorf("validated fstab entry changed before removal")
+	}
+	return backupAndWriteFstab(string(original), retained)
 }

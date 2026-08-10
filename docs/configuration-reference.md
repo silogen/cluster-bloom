@@ -753,6 +753,7 @@ sudo ./bloom run bloom-playbook/cluster-bloom.yaml
 - **Full Compatibility**: Exported playbooks work with the `bloom run` command and standard Ansible tools when run from the `./bloom-playbook/` directory
 - **Disk Wipe Preview**: Both `bloom cleanup` and `bloom cli --destroy-data` show a preview of bloom-managed mounts and the future mount range before requiring confirmation
 - **Cleanup Preflight**: Both cleanup paths validate `bloom.yaml`, strictly tagged fstab entries, live mounts, block-device identity, and the full system-device dependency chain before teardown
+- **Legacy RANCHER_DISK Adoption**: An explicit `RANCHER_DISK` may clean an untagged legacy `/var/lib/rancher` mount only when its live block-device identity matches; configless cleanup preserves that mount
 - **Premounted Disk Safety**: `CLUSTER_PREMOUNTED_DISKS` entries have bloom artifacts (pvc-*, replicas, longhorn-disk.cfg) removed but their filesystem, fstab entry, and user files are preserved
 - **Smart Index Allocation**: Mount indexes are chosen as the lowest contiguous range not conflicting with premounted disk indexes (from fstab and config), so `CLUSTER_DISKS` and `CLUSTER_PREMOUNTED_DISKS` can coexist
 

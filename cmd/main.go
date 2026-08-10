@@ -231,7 +231,9 @@ By default, this command requires confirmation before proceeding. Use --force (o
 				rancherDisk = r
 			}
 			configWasProvided := len(args) > 0
-			storage, err := runtime.ResolveCleanupStorage(clusterDisks, premountedDisks, rancherDisk, configWasProvided)
+			rancherExplicit := configWasProvided && strings.TrimSpace(rancherDisk) != ""
+			storage, err := runtime.ResolveCleanupStorage(
+				clusterDisks, premountedDisks, rancherDisk, configWasProvided, rancherExplicit)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "❌ Cleanup preflight failed: %v\n", err)
 				os.Exit(1)
@@ -249,6 +251,7 @@ By default, this command requires confirmation before proceeding. Use --force (o
 			// The resolved targets become explicit for the second preflight after
 			// confirmation, preventing newly added fstab entries from changing scope.
 			cfg["_CLEANUP_CONFIG_PROVIDED"] = true
+			cfg["_CLEANUP_RANCHER_EXPLICIT"] = storage.RancherExplicit
 
 			// Show disk wipe preview before asking for confirmation
 			runtime.PrintDiskWipePreview(clusterDisks, premountedDisks, rancherDisk)
@@ -439,6 +442,7 @@ func runAnsible(configFile string) {
 		cfg["CLUSTER_PREMOUNTED_DISKS"] = storage.PremountedDisks
 		cfg["RANCHER_DISK"] = storage.RancherDisk
 		cfg["_CLEANUP_CONFIG_PROVIDED"] = true
+		cfg["_CLEANUP_RANCHER_EXPLICIT"] = storage.RancherExplicit
 		if !confirmDestructiveOperation(cfg) {
 			fmt.Println("\n❌ Operation aborted by user. No data was harmed.")
 			os.Exit(0)
@@ -824,9 +828,13 @@ func validateCleanupStorage(cfg config.Config, configWasProvided bool) (runtime.
 			rancherDisk = rdStr
 		}
 	}
+	rancherExplicit, explicitMarkerExists := cfg["_CLEANUP_RANCHER_EXPLICIT"].(bool)
+	if !explicitMarkerExists {
+		rancherExplicit = configWasProvided && strings.TrimSpace(rancherDisk) != ""
+	}
 
 	storage, err := runtime.ResolveCleanupStorage(
-		clusterDisks, premountedDisks, rancherDisk, configWasProvided)
+		clusterDisks, premountedDisks, rancherDisk, configWasProvided, rancherExplicit)
 	if err != nil {
 		return runtime.CleanupStorage{}, err
 	}
@@ -887,7 +895,7 @@ func runClusterCleanup(cfg config.Config) {
 
 	// Step 4.5: Clean RANCHER_DISK configuration — unmount bind mount and clean data
 	// Always call - let function decide based on actual mount status
-	if err := runtime.CleanupRancherDisk(rancherDisk); err != nil {
+	if err := runtime.CleanupRancherDisk(rancherDisk, storage.RancherExplicit); err != nil {
 		errors = append(errors, fmt.Errorf("RANCHER_DISK cleanup: %w", err))
 	}
 

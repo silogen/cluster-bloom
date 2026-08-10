@@ -14,6 +14,7 @@ type CleanupStorage struct {
 	PremountedDisks  string
 	RancherDisk      string
 	ConfigWasPresent bool
+	RancherExplicit  bool
 }
 
 func splitCleanupValues(value string) []string {
@@ -29,12 +30,16 @@ func splitCleanupValues(value string) []string {
 // ResolveCleanupStorage uses strict fstab discovery only when no config file
 // was supplied. An explicitly provided config remains authoritative even when
 // its storage values are empty and is cross-checked by RunCleanupPreflight.
-func ResolveCleanupStorage(clusterDisks, premountedDisks, rancherDisk string, configWasProvided bool) (CleanupStorage, error) {
+func ResolveCleanupStorage(
+	clusterDisks, premountedDisks, rancherDisk string,
+	configWasProvided, rancherExplicit bool,
+) (CleanupStorage, error) {
 	storage := CleanupStorage{
 		ClusterDisks:     clusterDisks,
 		PremountedDisks:  premountedDisks,
 		RancherDisk:      rancherDisk,
 		ConfigWasPresent: configWasProvided,
+		RancherExplicit:  rancherExplicit,
 	}
 	if storage.ConfigWasPresent {
 		return canonicalizeCleanupStorage(storage)
@@ -217,7 +222,7 @@ func validateClusterDiskScope(clusterDisks string) error {
 func RunCleanupPreflight(storage CleanupStorage) error {
 	fmt.Println("🔎 Running destructive cleanup preflight...")
 
-	_, fstabEntries, err := readBloomFstab()
+	fstabContent, fstabEntries, err := readBloomFstab()
 	if err != nil {
 		return err
 	}
@@ -350,18 +355,33 @@ func RunCleanupPreflight(storage CleanupStorage) error {
 		}
 		recordedRancher := fstabRancher
 		liveRancher := exactMountSource("/var/lib/rancher")
-		if recordedRancher == "" {
-			return fmt.Errorf("RANCHER_DISK is configured but has no strictly tagged Bloom rancher-disk fstab entry")
+		activeRancher, hasActiveRancher, err := findActiveFstabMount(fstabContent, "/var/lib/rancher")
+		if err != nil {
+			return err
+		}
+		if recordedRancher == "" && !storage.RancherExplicit {
+			return fmt.Errorf("configless cleanup requires a strictly tagged Bloom RANCHER_DISK fstab entry")
+		}
+		if recordedRancher == "" && liveRancher == "" {
+			return fmt.Errorf("explicit RANCHER_DISK has no matching live /var/lib/rancher mount or managed fstab entry")
 		}
 		if recordedRancher != "" {
 			if err := compareDeviceSets([]string{storage.RancherDisk}, []string{recordedRancher}); err != nil {
 				return fmt.Errorf("RANCHER_DISK config/fstab mismatch: %w", err)
 			}
 		}
+		if hasActiveRancher {
+			if err := compareDeviceSets([]string{storage.RancherDisk}, []string{activeRancher.source}); err != nil {
+				return fmt.Errorf("RANCHER_DISK config/active fstab mismatch: %w", err)
+			}
+		}
 		if liveRancher != "" {
 			if err := compareDeviceSets([]string{storage.RancherDisk}, []string{liveRancher}); err != nil {
 				return fmt.Errorf("RANCHER_DISK config/live mount mismatch: %w", err)
 			}
+		}
+		if recordedRancher == "" {
+			fmt.Printf("   ✓ Explicit RANCHER_DISK authorizes matching legacy mount %s\n", liveRancher)
 		}
 		mounts, err := blockDeviceTreeMounts(storage.RancherDisk)
 		if err != nil {

@@ -126,8 +126,24 @@ UUID=second /mnt/disk0 ext4 defaults 0 2 # managed by cluster-bloom`
 	}
 }
 
+func TestFindActiveFstabMountIgnoresCommentedEntries(t *testing.T) {
+	input := `# /dev/sdb /var/lib/rancher ext4 defaults 0 2
+/dev/sdc /var/lib/rancher ext4 defaults 0 2`
+	entry, found, err := findActiveFstabMount(input, "/var/lib/rancher")
+	if err != nil || !found || entry.source != "/dev/sdc" || entry.tag != bloomFstabNone {
+		t.Fatalf("findActiveFstabMount() = %#v, %v, %v; want active untagged /dev/sdc", entry, found, err)
+	}
+}
+
+func TestFindActiveFstabMountReturnsNoneForCommentOnly(t *testing.T) {
+	input := `# /dev/sdb /var/lib/rancher ext4 defaults 0 2`
+	if entry, found, err := findActiveFstabMount(input, "/var/lib/rancher"); err != nil || found {
+		t.Fatalf("findActiveFstabMount() = %#v, %v, %v; want no active entry", entry, found, err)
+	}
+}
+
 func TestResolveCleanupStorageDoesNotAutoDiscoverForExplicitEmptyConfig(t *testing.T) {
-	storage, err := ResolveCleanupStorage("", "", "", true)
+	storage, err := ResolveCleanupStorage("", "", "", true, false)
 	if err != nil {
 		t.Fatalf("ResolveCleanupStorage() error = %v", err)
 	}

@@ -820,14 +820,18 @@ func CleanupPremountedDisks(premountedDisks string) error {
 }
 
 // CleanupRancherDisk unmounts the RANCHER_DISK bind mount and cleans the data directory
-func CleanupRancherDisk(rancherDisk string) error {
+func CleanupRancherDisk(rancherDisk string, explicitlyConfigured bool) error {
 	if strings.TrimSpace(rancherDisk) == "" {
 		fmt.Println("   No strictly managed RANCHER_DISK configured - skipping")
 		return nil
 	}
 
 	liveDevice := getDeviceFromCurrentMount("/var/lib/rancher")
-	_, entries, err := readBloomFstab()
+	fstabContent, entries, err := readBloomFstab()
+	if err != nil {
+		return err
+	}
+	activeRancher, hasActiveRancher, err := findActiveFstabMount(fstabContent, "/var/lib/rancher")
 	if err != nil {
 		return err
 	}
@@ -845,7 +849,12 @@ func CleanupRancherDisk(rancherDisk string) error {
 		}
 	}
 	if fstabDevice == "" {
-		return fmt.Errorf("RANCHER_DISK has no strictly tagged fstab entry")
+		if !explicitlyConfigured {
+			return fmt.Errorf("configless RANCHER_DISK cleanup requires a strictly tagged fstab entry")
+		}
+		if liveDevice == "" {
+			return fmt.Errorf("explicit RANCHER_DISK has no matching live /var/lib/rancher mount")
+		}
 	}
 
 	devicePath := strings.TrimSpace(rancherDisk)
@@ -857,6 +866,11 @@ func CleanupRancherDisk(rancherDisk string) error {
 	if fstabDevice != "" {
 		if err := compareDeviceSets([]string{devicePath}, []string{fstabDevice}); err != nil {
 			return fmt.Errorf("RANCHER_DISK does not match /etc/fstab: %w", err)
+		}
+	}
+	if hasActiveRancher {
+		if err := compareDeviceSets([]string{devicePath}, []string{activeRancher.source}); err != nil {
+			return fmt.Errorf("RANCHER_DISK does not match active fstab entry: %w", err)
 		}
 	}
 	if err := assertSafeToWipe(devicePath); err != nil {
@@ -898,9 +912,16 @@ func CleanupRancherDisk(rancherDisk string) error {
 	}
 	fmt.Printf("      ✓ Wiped and formatted %s as ext4\n", devicePath)
 
-	fmt.Println("   📝 Removing strictly tagged /var/lib/rancher fstab entry...")
-	if err := removeBloomFstabEntries(bloomFstabRancher); err != nil {
-		return err
+	if fstabDevice != "" {
+		fmt.Println("   📝 Removing strictly tagged /var/lib/rancher fstab entry...")
+		if err := removeBloomFstabEntries(bloomFstabRancher); err != nil {
+			return err
+		}
+	} else if hasActiveRancher {
+		fmt.Println("   📝 Removing validated legacy /var/lib/rancher fstab entry...")
+		if err := removeExactFstabLine(activeRancher.raw); err != nil {
+			return err
+		}
 	}
 
 	// Create clean /var/lib/rancher directory

@@ -163,7 +163,7 @@ Cleanup runs this preflight before confirmation and repeats it immediately befor
 
 Any mismatch aborts cleanup before RKE2, Longhorn, fstab, or disk state is changed.
 
-Without a config file, cleanup discovers only entries carrying an exact Bloom fstab tag. Supplying a config file—even one with empty storage values—disables auto-discovery and requires the file to agree with fstab. Untagged legacy `/var/lib/rancher` mounts are reported and preserved rather than inferred as safe wipe targets.
+Without a config file, cleanup discovers only entries carrying an exact Bloom fstab tag, so untagged legacy `/var/lib/rancher` mounts are reported and preserved. An explicit `RANCHER_DISK` in a supplied config can authorize a legacy mount without manual fstab tagging, but only when the configured device exactly matches the live `/var/lib/rancher` source (and any active fstab entry). Supplying a config file—even one with empty storage values—disables auto-discovery.
 
 **Sequence:**
 1. **Destructive cleanup preflight** against config, fstab, live mounts, and protected system devices
@@ -176,7 +176,7 @@ Without a config file, cleanup discovers only entries carrying an exact Bloom fs
 5. Uninstall RKE2 and remove its directories
 6. **Pre-clean future mount range** — removes bloom artifacts (`pvc-*`, `replicas`, `longhorn-disk.cfg`) from the directories that will be used in the next deployment, preserving user files
 7. **Clean premounted disks** (`CLUSTER_PREMOUNTED_DISKS`) — removes bloom artifacts only; filesystem, fstab entry, and user files are preserved
-8. **Remove strictly tagged Bloom-managed fstab entries** and wipe/reformat `CLUSTER_DISKS`
+8. **Remove validated Bloom-managed fstab entries** and wipe/reformat `CLUSTER_DISKS`
 
 ### `bloom cli bloom.yaml --destroy-data`
 
@@ -263,7 +263,7 @@ RANCHER_DISK: /dev/nvme2n1
 **Setup and Cleanup Behavior**:
 - **Setup**: Removes existing `/var/lib/rancher` directory for clean deployment and mounts dedicated device
 - **Cleanup**: Validates the configured device against fstab and the live mount, unmounts `/var/lib/rancher`, wipes and reformats the device, and removes the exact fstab entry
-- **Legacy Mount Safety**: Untagged `/var/lib/rancher` mounts are preserved; destructive cleanup requires the exact `# managed by cluster-bloom rancher-disk` tag
+- **Legacy Mount Safety**: Configless cleanup preserves untagged `/var/lib/rancher` mounts. Providing a matching `RANCHER_DISK` explicitly authorizes cleanup without requiring a manual fstab tag; mismatched or stale mappings are rejected
 - **Fresh Start**: Creates clean `/var/lib/rancher` directory after cleanup
 - **Attachment Preservation**: The block device remains attached to the host; cleanup never hot-removes it from the kernel
 
