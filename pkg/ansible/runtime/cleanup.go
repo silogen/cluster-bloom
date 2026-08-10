@@ -1296,19 +1296,9 @@ func shouldAutoDiscover(clusterDisks, premountedDisks, rancherDisk string) bool 
 // PrintDiskWipePreview prints a preview of bloom-managed mounts to be wiped and
 // the future mount range to be pre-cleaned, before the user confirms cleanup.
 func PrintDiskWipePreview(clusterDisks, premountedDisks, rancherDisk string) {
-	// Auto-discover storage if no config parameters provided
-	if shouldAutoDiscover(clusterDisks, premountedDisks, rancherDisk) {
-		discoveredCD, discoveredPD, discoveredRD := discoverAllBloomStorage()
-		clusterDisks = discoveredCD
-		premountedDisks = discoveredPD
-		rancherDisk = discoveredRD
-		
-		// Show discovery info if anything was found
-		if clusterDisks != "" || premountedDisks != "" || rancherDisk != "" {
-			fmt.Println("ℹ️  Auto-discovered bloom-managed storage from fstab")
-		}
-	}
-	
+	// Storage scope is resolved and validated by ResolveCleanupStorage before
+	// preview. Never rediscover here: doing so could add unvalidated legacy
+	// mounts or change the scope shown to the operator.
 	managed := parseManagedFstabMounts()
 
 	var future []string
@@ -1320,7 +1310,9 @@ func PrintDiskWipePreview(clusterDisks, premountedDisks, rancherDisk string) {
 		}
 	}
 
-	if len(managed) == 0 && len(future) == 0 {
+	if len(managed) == 0 && len(future) == 0 &&
+		strings.TrimSpace(premountedDisks) == "" && strings.TrimSpace(rancherDisk) == "" {
+		fmt.Println("ℹ️  No strictly Bloom-managed storage discovered; no disks will be wiped or reformatted")
 		return
 	}
 
