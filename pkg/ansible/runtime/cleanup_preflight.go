@@ -233,6 +233,41 @@ func cleanupPreflightError(message string, hints []string) error {
 	return fmt.Errorf("%s%s", message, formatCleanupRemediation(hints))
 }
 
+func protectedDeviceRemediationHints(device, configKey string) []string {
+	return []string{
+		fmt.Sprintf("Remove %s from %s in bloom.yaml", device, configKey),
+		"Bloom never wipes devices backing /, /boot, /boot/efi, swap, or other critical system mounts",
+	}
+}
+
+func rejectProtectedCleanupTarget(device, configKey string) error {
+	canonical, reason, err := protectedConflictForDevice(device)
+	if err != nil {
+		return err
+	}
+	if reason == "" {
+		return nil
+	}
+	return cleanupPreflightError(
+		fmt.Sprintf("refusing to wipe %s (%s): it backs %s", device, canonical, reason),
+		protectedDeviceRemediationHints(device, configKey),
+	)
+}
+
+func validateConfiguredCleanupTargets(clusterDevices []string, rancherDisk string) error {
+	for _, device := range clusterDevices {
+		if err := rejectProtectedCleanupTarget(device, "CLUSTER_DISKS"); err != nil {
+			return err
+		}
+	}
+	if strings.TrimSpace(rancherDisk) != "" {
+		if err := rejectProtectedCleanupTarget(rancherDisk, "RANCHER_DISK"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func rejectOverlappingCleanupTargets(targets map[string]string) error {
 	var names []string
 	for name := range targets {
@@ -315,7 +350,7 @@ func validateClusterDiskScope(clusterDisks string) error {
 		return err
 	}
 	for _, device := range configured {
-		if err := assertSafeToWipe(device); err != nil {
+		if err := rejectProtectedCleanupTarget(device, "CLUSTER_DISKS"); err != nil {
 			return err
 		}
 	}
@@ -354,6 +389,9 @@ func RunCleanupPreflight(storage CleanupStorage) error {
 	}
 
 	clusterDevices := splitCleanupValues(storage.ClusterDisks)
+	if err := validateConfiguredCleanupTargets(clusterDevices, storage.RancherDisk); err != nil {
+		return err
+	}
 	destructiveTargets := map[string]string{}
 	for index, device := range clusterDevices {
 		destructiveTargets[fmt.Sprintf("CLUSTER_DISKS[%d]", index)] = device
@@ -419,7 +457,7 @@ func RunCleanupPreflight(storage CleanupStorage) error {
 		allowedClusterMounts[id][entry.mountPoint] = struct{}{}
 	}
 	for id, device := range clusterIDs {
-		if err := assertSafeToWipe(device); err != nil {
+		if err := rejectProtectedCleanupTarget(device, "CLUSTER_DISKS"); err != nil {
 			return err
 		}
 		mounts, err := blockDeviceTreeMounts(device)
@@ -479,9 +517,6 @@ func RunCleanupPreflight(storage CleanupStorage) error {
 		canonical, rancherID, err := resolveBlockDevice(storage.RancherDisk)
 		if err != nil {
 			return fmt.Errorf("validate RANCHER_DISK: %w", err)
-		}
-		if err := assertSafeToWipe(storage.RancherDisk); err != nil {
-			return err
 		}
 		if clusterPath, collision := clusterIDs[rancherID]; collision {
 			return fmt.Errorf("RANCHER_DISK %s is also configured as CLUSTER_DISK %s", storage.RancherDisk, clusterPath)

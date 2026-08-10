@@ -192,6 +192,34 @@ func TestFormatCleanupRemediationIncludesBullets(t *testing.T) {
 	}
 }
 
+func TestRejectProtectedCleanupTargetRejectsRootDeviceChain(t *testing.T) {
+	out, err := exec.Command("findmnt", "--noheadings", "--output", "SOURCE", "--target", "/").Output()
+	if err != nil {
+		t.Skipf("cannot determine root source: %v", err)
+	}
+	rootSource := strings.TrimSpace(string(out))
+	if !strings.HasPrefix(rootSource, "/dev/") {
+		t.Skipf("root source %q is not a block device", rootSource)
+	}
+	dependencies, err := blockDeviceDependencies(rootSource)
+	if err != nil {
+		t.Fatalf("blockDeviceDependencies(%q): %v", rootSource, err)
+	}
+	for _, dependency := range dependencies {
+		err := rejectProtectedCleanupTarget(dependency, "CLUSTER_DISKS")
+		if err == nil {
+			t.Errorf("rejectProtectedCleanupTarget(%q) allowed a device in the root dependency chain", dependency)
+			continue
+		}
+		if !strings.Contains(err.Error(), "it backs system mount /") {
+			t.Errorf("rejectProtectedCleanupTarget(%q) = %v, want root protection error", dependency, err)
+		}
+		if !strings.Contains(err.Error(), "Remediation:") {
+			t.Errorf("rejectProtectedCleanupTarget(%q) = %v, want remediation hints", dependency, err)
+		}
+	}
+}
+
 func TestResolveCleanupStorageDoesNotAutoDiscoverForExplicitEmptyConfig(t *testing.T) {
 	storage, err := ResolveCleanupStorage("", "", "", true, false)
 	if err != nil {

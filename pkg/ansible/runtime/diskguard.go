@@ -214,18 +214,29 @@ func protectedSystemDevices() (map[blockDeviceID]string, error) {
 	return protected, nil
 }
 
-// assertSafeToWipe fails closed if target is not a block device or if it is
-// anywhere in the dependency chain of a critical system mount or active swap.
-func assertSafeToWipe(target string) error {
+func protectedConflictForDevice(target string) (canonical, reason string, err error) {
 	canonical, id, err := resolveBlockDevice(target)
 	if err != nil {
-		return err
+		return "", "", err
 	}
 	protected, err := protectedSystemDevices()
 	if err != nil {
-		return fmt.Errorf("build protected-device set: %w", err)
+		return "", "", fmt.Errorf("build protected-device set: %w", err)
 	}
-	if reason, exists := protected[id]; exists {
+	if conflictReason, exists := protected[id]; exists {
+		return canonical, conflictReason, nil
+	}
+	return canonical, "", nil
+}
+
+// assertSafeToWipe fails closed if target is not a block device or if it is
+// anywhere in the dependency chain of a critical system mount or active swap.
+func assertSafeToWipe(target string) error {
+	canonical, reason, err := protectedConflictForDevice(target)
+	if err != nil {
+		return err
+	}
+	if reason != "" {
 		return fmt.Errorf("refusing to wipe %s (%s): it backs %s", target, canonical, reason)
 	}
 	return nil
