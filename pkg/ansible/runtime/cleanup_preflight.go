@@ -211,7 +211,7 @@ func clusterDisksMissingFstabHints(devices []string, configuredRancher, fstabCon
 		return hints
 	}
 	return []string{
-		"CLUSTER_DISKS expects Bloom-managed /mnt/diskN fstab entries tagged '# managed by cluster-bloom'",
+		"CLUSTER_DISKS expects Bloom-managed /mnt/diskN fstab entries tagged '# managed by cluster-bloom', or '# managed by cluster-bloom rancher-disk' for RANCHER_DISK",
 		"Verify bloom.yaml matches the cluster that created those tags, or run configless cleanup to auto-discover tagged storage",
 	}
 }
