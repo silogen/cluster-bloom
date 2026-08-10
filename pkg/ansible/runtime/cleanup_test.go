@@ -142,6 +142,56 @@ func TestFindActiveFstabMountReturnsNoneForCommentOnly(t *testing.T) {
 	}
 }
 
+func TestRancherMisconfigHintsDetectsClusterDiskMappedToRancher(t *testing.T) {
+	ctx := rancherStorageContext{
+		liveSource:   "/dev/sdc",
+		activeSource: "/dev/sdc",
+	}
+	hints := rancherMisconfigHints([]string{"/dev/sdc"}, "", ctx)
+	if len(hints) != 1 || !strings.Contains(hints[0], "set RANCHER_DISK") {
+		t.Fatalf("rancherMisconfigHints() = %#v, want RANCHER_DISK remediation", hints)
+	}
+}
+
+func TestRancherMisconfigHintsDetectsStaleRancherMapping(t *testing.T) {
+	ctx := rancherStorageContext{liveSource: "/dev/sdc"}
+	hints := rancherMisconfigHints([]string{"/dev/sdc"}, "/dev/sdb", ctx)
+	if len(hints) != 1 || !strings.Contains(hints[0], "RANCHER_DISK is /dev/sdb") {
+		t.Fatalf("rancherMisconfigHints() = %#v, want stale mapping remediation", hints)
+	}
+}
+
+func TestClusterDisksMissingFstabHintsPreferRancherRemediation(t *testing.T) {
+	hints := clusterDisksMissingFstabHints(
+		[]string{"/dev/sdc"},
+		"",
+		"/dev/sdc /var/lib/rancher ext4 defaults 0 2",
+		"",
+	)
+	if len(hints) != 1 || !strings.Contains(hints[0], "set RANCHER_DISK") {
+		t.Fatalf("clusterDisksMissingFstabHints() = %#v, want rancher-specific hint", hints)
+	}
+}
+
+func TestClusterDisksMissingFstabHintsFallbackToGenericGuidance(t *testing.T) {
+	hints := clusterDisksMissingFstabHints(
+		[]string{"/dev/sdd"},
+		"",
+		"",
+		"",
+	)
+	if len(hints) != 2 || !strings.Contains(hints[0], "/mnt/diskN") {
+		t.Fatalf("clusterDisksMissingFstabHints() = %#v, want generic guidance", hints)
+	}
+}
+
+func TestFormatCleanupRemediationIncludesBullets(t *testing.T) {
+	got := formatCleanupRemediation([]string{"first hint", "second hint"})
+	if !strings.Contains(got, "Remediation:") || !strings.Contains(got, "• first hint") {
+		t.Fatalf("formatCleanupRemediation() = %q", got)
+	}
+}
+
 func TestResolveCleanupStorageDoesNotAutoDiscoverForExplicitEmptyConfig(t *testing.T) {
 	storage, err := ResolveCleanupStorage("", "", "", true, false)
 	if err != nil {

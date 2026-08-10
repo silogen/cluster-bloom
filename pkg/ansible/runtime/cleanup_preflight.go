@@ -128,6 +128,111 @@ func compareDeviceSets(configured, recorded []string) error {
 	return nil
 }
 
+type rancherStorageContext struct {
+	liveSource   string
+	activeSource string
+	taggedSource string
+}
+
+func rancherStorageContextFrom(fstabContent, fstabRancher string) rancherStorageContext {
+	ctx := rancherStorageContext{taggedSource: fstabRancher}
+	ctx.liveSource = exactMountSource("/var/lib/rancher")
+	if active, found, _ := findActiveFstabMount(fstabContent, "/var/lib/rancher"); found {
+		ctx.activeSource = active.source
+	}
+	return ctx
+}
+
+func deviceAuthorizedAsRancher(device string, ctx rancherStorageContext) bool {
+	for _, source := range []string{ctx.liveSource, ctx.activeSource, ctx.taggedSource} {
+		if source == "" {
+			continue
+		}
+		if compareDeviceSets([]string{device}, []string{source}) == nil {
+			return true
+		}
+	}
+	return false
+}
+
+func deviceUsedForRancher(device, fstabContent, fstabRancher string) bool {
+	if deviceAuthorizedAsRancher(device, rancherStorageContextFrom(fstabContent, fstabRancher)) {
+		return true
+	}
+	mounts, err := blockDeviceTreeMounts(device)
+	if err != nil {
+		return false
+	}
+	for _, mountPoints := range mounts {
+		if strings.Contains(mountPoints, "/var/lib/rancher") {
+			return true
+		}
+	}
+	return false
+}
+
+func rancherMisconfigHints(devices []string, configuredRancher string, ctx rancherStorageContext) []string {
+	var hints []string
+	for _, device := range devices {
+		if !deviceAuthorizedAsRancher(device, ctx) {
+			continue
+		}
+		switch {
+		case strings.TrimSpace(configuredRancher) == "":
+			hints = append(hints, fmt.Sprintf(
+				"%s is the /var/lib/rancher disk; set RANCHER_DISK and remove it from CLUSTER_DISKS",
+				device))
+		case compareDeviceSets([]string{device}, []string{configuredRancher}) != nil:
+			hints = append(hints, fmt.Sprintf(
+				"%s is mounted at /var/lib/rancher but RANCHER_DISK is %s; fix the stale bloom.yaml mapping",
+				device, configuredRancher))
+		default:
+			hints = append(hints, fmt.Sprintf(
+				"%s belongs under RANCHER_DISK, not CLUSTER_DISKS", device))
+		}
+	}
+	return hints
+}
+
+func clusterDisksMissingFstabHints(devices []string, configuredRancher, fstabContent, fstabRancher string) []string {
+	ctx := rancherStorageContextFrom(fstabContent, fstabRancher)
+	hints := rancherMisconfigHints(devices, configuredRancher, ctx)
+	for _, device := range devices {
+		if deviceAuthorizedAsRancher(device, ctx) {
+			continue
+		}
+		if deviceUsedForRancher(device, fstabContent, fstabRancher) {
+			hints = append(hints, fmt.Sprintf(
+				"%s is mounted at /var/lib/rancher; move it to RANCHER_DISK instead of CLUSTER_DISKS",
+				device))
+		}
+	}
+	if len(hints) > 0 {
+		return hints
+	}
+	return []string{
+		"CLUSTER_DISKS expects Bloom-managed /mnt/diskN fstab entries tagged '# managed by cluster-bloom'",
+		"Verify bloom.yaml matches the cluster that created those tags, or run configless cleanup to auto-discover tagged storage",
+	}
+}
+
+func formatCleanupRemediation(hints []string) string {
+	if len(hints) == 0 {
+		return ""
+	}
+	var builder strings.Builder
+	builder.WriteString("\n\nRemediation:")
+	for _, hint := range hints {
+		builder.WriteString("\n  • ")
+		builder.WriteString(hint)
+	}
+	return builder.String()
+}
+
+func cleanupPreflightError(message string, hints []string) error {
+	return fmt.Errorf("%s%s", message, formatCleanupRemediation(hints))
+}
+
 func rejectOverlappingCleanupTargets(targets map[string]string) error {
 	var names []string
 	for name := range targets {
@@ -271,12 +376,28 @@ func RunCleanupPreflight(storage CleanupStorage) error {
 	}
 	if storage.ConfigWasPresent && len(clusterDevices) > 0 && len(fstabCluster) > 0 {
 		if err := compareDeviceSets(clusterDevices, fstabCluster); err != nil {
-			return err
+			ctx := rancherStorageContextFrom(fstabContent, fstabRancher)
+			hints := rancherMisconfigHints(clusterDevices, storage.RancherDisk, ctx)
+			if len(hints) == 0 {
+				hints = []string{
+					"Update CLUSTER_DISKS in bloom.yaml to match the strictly tagged /mnt/diskN fstab entries",
+				}
+			}
+			return fmt.Errorf("%w%s", err, formatCleanupRemediation(hints))
 		}
 	} else if storage.ConfigWasPresent && len(clusterDevices) > 0 && len(fstabCluster) == 0 {
-		return fmt.Errorf("CLUSTER_DISKS are configured but no strict Bloom-managed fstab entries exist")
+		return cleanupPreflightError(
+			"CLUSTER_DISKS are configured but no strict Bloom-managed fstab entries exist",
+			clusterDisksMissingFstabHints(clusterDevices, storage.RancherDisk, fstabContent, fstabRancher),
+		)
 	} else if storage.ConfigWasPresent && len(clusterDevices) == 0 && len(fstabCluster) > 0 {
-		return fmt.Errorf("fstab contains Bloom-managed disks but bloom.yaml CLUSTER_DISKS is empty")
+		return cleanupPreflightError(
+			"fstab contains Bloom-managed disks but bloom.yaml CLUSTER_DISKS is empty",
+			[]string{
+				fmt.Sprintf("Add the fstab devices to CLUSTER_DISKS in bloom.yaml: %s", strings.Join(fstabCluster, ", ")),
+				"Or run configless cleanup to auto-discover strictly tagged storage",
+			},
+		)
 	}
 
 	clusterIDs, err := deviceIDs(clusterDevices)
@@ -308,9 +429,21 @@ func RunCleanupPreflight(storage CleanupStorage) error {
 		for mountedDevice, mountPoints := range mounts {
 			for _, mountPoint := range strings.Fields(mountPoints) {
 				if _, allowed := allowedClusterMounts[id][mountPoint]; !allowed {
-					return fmt.Errorf(
+					message := fmt.Sprintf(
 						"refusing to clean %s: %s is mounted at non-Bloom mount point %s",
 						device, mountedDevice, mountPoint)
+					var hints []string
+					if mountPoint == "/var/lib/rancher" {
+						hints = rancherMisconfigHints(
+							[]string{device}, storage.RancherDisk, rancherStorageContextFrom(fstabContent, fstabRancher))
+					}
+					if len(hints) == 0 {
+						hints = []string{
+							"CLUSTER_DISKS only covers Bloom-managed /mnt/diskN mounts",
+							"Move rancher storage to RANCHER_DISK or fix the stale bloom.yaml mapping",
+						}
+					}
+					return cleanupPreflightError(message, hints)
 				}
 			}
 		}
@@ -398,7 +531,13 @@ func RunCleanupPreflight(storage CleanupStorage) error {
 		}
 		fmt.Printf("   ✓ RANCHER_DISK %-24s -> %s (safe to wipe)\n", storage.RancherDisk, canonical)
 	} else if fstabRancher != "" {
-		return fmt.Errorf("RANCHER_DISK exists in fstab or live mounts but is absent from cleanup configuration")
+		return cleanupPreflightError(
+			"RANCHER_DISK exists in fstab or live mounts but is absent from cleanup configuration",
+			[]string{
+				fmt.Sprintf("Add RANCHER_DISK: %s to bloom.yaml", fstabRancher),
+				"Or run configless cleanup if you only want strictly tagged storage wiped",
+			},
+		)
 	} else if getDeviceFromFstabEntry("/var/lib/rancher") != "" || exactMountSource("/var/lib/rancher") != "" {
 		fmt.Println("   ⚠️  Preserving untagged /var/lib/rancher storage (configless cleanup)")
 		fmt.Println("   ℹ️  To wipe it, rerun cleanup with bloom.yaml containing a matching RANCHER_DISK entry")
