@@ -400,7 +400,8 @@ func RunCleanupPreflight(storage CleanupStorage) error {
 	} else if fstabRancher != "" {
 		return fmt.Errorf("RANCHER_DISK exists in fstab or live mounts but is absent from cleanup configuration")
 	} else if getDeviceFromFstabEntry("/var/lib/rancher") != "" || exactMountSource("/var/lib/rancher") != "" {
-		fmt.Println("   ⚠️  Preserving untagged /var/lib/rancher storage; Bloom only wipes strictly tagged RANCHER_DISK entries")
+		fmt.Println("   ⚠️  Preserving untagged /var/lib/rancher storage (configless cleanup)")
+		fmt.Println("   ℹ️  To wipe it, rerun cleanup with bloom.yaml containing a matching RANCHER_DISK entry")
 	}
 
 	fmt.Println("   ✅ Cleanup preflight passed")
