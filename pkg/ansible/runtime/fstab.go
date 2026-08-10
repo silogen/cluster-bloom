@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -16,6 +17,10 @@ const (
 	fstabPremountedTag = "# premounted by cluster-bloom"
 	fstabRancherTag    = "# managed by cluster-bloom rancher-disk"
 	maxBloomDiskIndex  = 4095
+
+	fstabBackupDirectory    = "/var/backups/cluster-bloom/fstab"
+	maxRetainedFstabBackups = 5
+	fstabBackupFilePrefix   = "fstab-"
 )
 
 type bloomFstabTag int
@@ -292,14 +297,54 @@ func findActiveFstabMount(content, mountPoint string) (activeFstabMount, bool, e
 	return found, found.raw != "", nil
 }
 
+func fstabBackupPath(timestamp string) string {
+	return filepath.Join(fstabBackupDirectory, fstabBackupFilePrefix+timestamp)
+}
+
+func pruneFstabBackupsIn(directory string, maxRetained int) error {
+	if maxRetained <= 0 {
+		return nil
+	}
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("list fstab backups in %s: %w", directory, err)
+	}
+	var backups []string
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasPrefix(entry.Name(), fstabBackupFilePrefix) {
+			continue
+		}
+		backups = append(backups, entry.Name())
+	}
+	if len(backups) <= maxRetained {
+		return nil
+	}
+	sort.Strings(backups)
+	for _, name := range backups[:len(backups)-maxRetained] {
+		if err := os.Remove(filepath.Join(directory, name)); err != nil {
+			return fmt.Errorf("remove old fstab backup %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
 func backupAndWriteFstab(original string, retainedLines []string) error {
 	timestamp := time.Now().Format("20060102-150405.000000000")
-	backupPath := fmt.Sprintf("/etc/fstab.bak-%s", timestamp)
+	if err := os.MkdirAll(fstabBackupDirectory, 0755); err != nil {
+		return fmt.Errorf("create fstab backup directory %s: %w", fstabBackupDirectory, err)
+	}
+	backupPath := fstabBackupPath(timestamp)
 	if err := os.WriteFile(backupPath, []byte(original), 0644); err != nil {
 		return fmt.Errorf("back up fstab to %s: %w", backupPath, err)
 	}
 	if err := os.WriteFile("/etc/fstab", []byte(strings.Join(retainedLines, "\n")), 0644); err != nil {
 		return fmt.Errorf("update /etc/fstab (backup: %s): %w", backupPath, err)
+	}
+	if err := pruneFstabBackupsIn(fstabBackupDirectory, maxRetainedFstabBackups); err != nil {
+		return err
 	}
 	fmt.Printf("      ✓ Backed up fstab to %s\n", backupPath)
 	return nil

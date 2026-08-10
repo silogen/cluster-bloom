@@ -178,6 +178,8 @@ Without a config file, cleanup discovers only entries carrying an exact Bloom fs
 7. **Clean premounted disks** (`CLUSTER_PREMOUNTED_DISKS`) — removes bloom artifacts only; filesystem, fstab entry, and user files are preserved
 8. **Remove validated Bloom-managed fstab entries** and wipe/reformat `CLUSTER_DISKS`
 
+Before modifying `/etc/fstab`, cleanup writes a timestamped backup under `/var/backups/cluster-bloom/fstab/` and retains only the five most recent copies.
+
 ### `bloom cli bloom.yaml --destroy-data`
 
 Equivalent to running `bloom cleanup` then redeploying. Cleanup tasks are prepended to the Ansible playbook. Both paths call the same logic and produce the same end state.
