@@ -123,10 +123,11 @@ verification behavior.
 - **Example**: `CLUSTER_PREMOUNTED_DISKS: "/mnt/disk0,/mnt/disk1"`
 
 #### CLUSTER_DISKS
-- **Type**: String (comma-separated device names)
+- **Type**: String (comma-separated device paths)
 - **Default**: None
 - **Description**: Pre-selected disk devices to use
-- **Example**: `CLUSTER_DISKS: "/dev/nvme0n1,/dev/nvme1n1"`
+- **Examples**: `CLUSTER_DISKS: "/dev/nvme0n1,/dev/nvme1n1"` or `CLUSTER_DISKS: "/dev/disk/by-id/wwn-0x60499ac855614ad59ee9aec267da4eb0"`
+- **Stable aliases**: Full `/dev/disk/by-id/...` paths are supported and preferred where device names may change
 - **Note**: Also skips NVMe drive availability checks
 
 ### Step Control Configuration
@@ -368,10 +369,10 @@ verification behavior.
 #### RANCHER_DISK
 - **Type**: String (device path)
 - **Default**: None  
-- **Description**: Device path for dedicated `/var/lib/rancher` storage. Primarily for GPU worker nodes with intensive workloads. Bloom will format and mount this device automatically.
-- **Example**: `RANCHER_DISK: "/dev/nvme2n1"`
+- **Description**: Device path or stable `/dev/disk/by-id/...` alias for dedicated `/var/lib/rancher` storage. Primarily for GPU worker nodes with intensive workloads. Bloom will format and mount this device automatically.
+- **Examples**: `RANCHER_DISK: "/dev/nvme2n1"` or `RANCHER_DISK: "/dev/disk/by-id/wwn-0x60a633e7e6bb42a5bbf4055829d22c03"`
 - **Requirements**: 
-  - Must be a raw device path starting with `/dev/`
+  - Must be a raw device path starting with `/dev/`; full `/dev/disk/by-id/...` aliases are supported
   - Device must exist and not be already mounted
   - Recommended 500GB+ available space
   - Mutually exclusive with `NO_DISKS_FOR_CLUSTER`
