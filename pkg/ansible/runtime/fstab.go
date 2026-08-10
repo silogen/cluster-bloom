@@ -148,6 +148,12 @@ func parseBloomFstab(content string) ([]bloomFstabEntry, []error) {
 
 		switch tag {
 		case bloomFstabManaged:
+			if entry.mountPoint == "/var/lib/rancher" {
+				parseErrors = append(parseErrors, fmt.Errorf(
+					"fstab line %d: %q is not valid on /var/lib/rancher",
+					lineNumber+1, fstabManagedTag))
+				continue
+			}
 			if _, ok := parseBloomDiskMountPoint(entry.mountPoint); !ok {
 				parseErrors = append(parseErrors, fmt.Errorf(
 					"fstab line %d: Bloom disk tag is not allowed on mount point %q",
@@ -182,6 +188,70 @@ func parseBloomFstab(content string) ([]bloomFstabEntry, []error) {
 	return entries, parseErrors
 }
 
+func bloomTaggedMountPoint(line string) (string, bool) {
+	if exactBloomFstabTag(line) == bloomFstabNone {
+		return "", false
+	}
+	beforeComment := line
+	if commentIndex := strings.IndexByte(line, '#'); commentIndex >= 0 {
+		beforeComment = line[:commentIndex]
+	}
+	fields := strings.Fields(beforeComment)
+	if len(fields) < 2 {
+		return "", false
+	}
+	return fields[1], true
+}
+
+func bloomFstabParseRemediation(content string) []string {
+	var hints []string
+	for lineNumber, line := range strings.Split(content, "\n") {
+		tag := exactBloomFstabTag(line)
+		if tag == bloomFstabNone {
+			continue
+		}
+		mountPoint, ok := bloomTaggedMountPoint(line)
+		if !ok {
+			continue
+		}
+		switch {
+		case tag == bloomFstabManaged && mountPoint == "/var/lib/rancher":
+			hints = append(hints, fmt.Sprintf(
+				"Line %d: /var/lib/rancher must use %q, not %q",
+				lineNumber+1, fstabRancherTag, fstabManagedTag))
+		case tag == bloomFstabRancher && mountPoint != "/var/lib/rancher":
+			hints = append(hints, fmt.Sprintf(
+				"Line %d: %q is only valid on /var/lib/rancher; use %q on /mnt/diskN cluster mounts",
+				lineNumber+1, fstabRancherTag, fstabManagedTag))
+		case tag == bloomFstabManaged:
+			if _, ok := parseBloomDiskMountPoint(mountPoint); !ok {
+				hints = append(hints, fmt.Sprintf(
+					"Line %d: %q is only valid on /mnt/diskN mounts such as /mnt/disk0",
+					lineNumber+1, fstabManagedTag))
+			}
+		}
+	}
+	if len(hints) > 0 {
+		return hints
+	}
+	return []string{
+		fmt.Sprintf("Cluster disks: /mnt/diskN with %q", fstabManagedTag),
+		fmt.Sprintf("Rancher disk: /var/lib/rancher with %q", fstabRancherTag),
+		fmt.Sprintf("Premounted disks: safe absolute path with %q", fstabPremountedTag),
+	}
+}
+
+func invalidBloomFstabError(content string, parseErrors []error) error {
+	var messages []string
+	for _, parseErr := range parseErrors {
+		messages = append(messages, parseErr.Error())
+	}
+	return cleanupPreflightError(
+		"invalid Bloom fstab entries: "+strings.Join(messages, "; "),
+		bloomFstabParseRemediation(content),
+	)
+}
+
 func readBloomFstab() (string, []bloomFstabEntry, error) {
 	data, err := os.ReadFile("/etc/fstab")
 	if err != nil {
@@ -189,11 +259,7 @@ func readBloomFstab() (string, []bloomFstabEntry, error) {
 	}
 	entries, parseErrors := parseBloomFstab(string(data))
 	if len(parseErrors) > 0 {
-		var messages []string
-		for _, parseErr := range parseErrors {
-			messages = append(messages, parseErr.Error())
-		}
-		return "", nil, fmt.Errorf("invalid Bloom fstab entries: %s", strings.Join(messages, "; "))
+		return "", nil, invalidBloomFstabError(string(data), parseErrors)
 	}
 	return string(data), entries, nil
 }

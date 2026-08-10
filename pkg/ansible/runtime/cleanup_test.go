@@ -77,6 +77,26 @@ UUID=rancher /var/lib/rancher ext4 defaults 0 2 # managed by cluster-bloom ranch
 	}
 }
 
+func TestBloomFstabParseRemediationForRancherMountWithClusterTag(t *testing.T) {
+	content := `/dev/sdc /var/lib/rancher ext4 defaults 0 2 # managed by cluster-bloom`
+	hints := bloomFstabParseRemediation(content)
+	if len(hints) != 1 || !strings.Contains(hints[0], fstabRancherTag) {
+		t.Fatalf("bloomFstabParseRemediation() = %#v, want rancher-disk tag guidance", hints)
+	}
+}
+
+func TestInvalidBloomFstabErrorIncludesRemediation(t *testing.T) {
+	content := `/dev/sdc /var/lib/rancher ext4 defaults 0 2 # managed by cluster-bloom`
+	_, errs := parseBloomFstab(content)
+	if len(errs) != 1 {
+		t.Fatalf("parseBloomFstab() errors = %v, want one validation error", errs)
+	}
+	err := invalidBloomFstabError(content, errs)
+	if !strings.Contains(err.Error(), "Remediation:") || !strings.Contains(err.Error(), fstabRancherTag) {
+		t.Fatalf("invalidBloomFstabError() = %v, want remediation with rancher tag", err)
+	}
+}
+
 func TestParseBloomFstabRejectsTagOnCriticalMount(t *testing.T) {
 	input := `/dev/sda1 / ext4 defaults 0 1 # managed by cluster-bloom`
 	entries, errs := parseBloomFstab(input)
