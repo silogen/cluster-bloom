@@ -46,7 +46,7 @@ spec:
                           label_value=$(echo "$entry" | cut -d= -f2-)
                           # Extract mount point from key (e.g., bloom.disk___mnt___disk0 -> /mnt/disk0)
                           mount_point=$(echo "$label_key" | sed 's/^bloom\.disk//' | sed 's/___/\//g')
-                          # Extract disk name from value (e.g., disk___dev___sda -> /dev/sda)
+                          # Normalize the short label value into a Longhorn disk name
                           disk_name=$(echo "$label_value" | sed 's/___/_/g')
                           if [ "$first" = true ]; then
                             first=false
