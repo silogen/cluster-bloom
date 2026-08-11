@@ -19,6 +19,66 @@
 #   - root/sudo privileges
 #   - "Save iptables" handler defined in main playbook
 
+# Task 0: Discard a snapshot taken by an earlier bloom version
+#
+# Before the handler was flushed after prepare_node, the save ran at the end of
+# the play and captured kube-proxy's live ruleset. Those files are still on
+# every node bloomed by an older version, they fail to restore at boot because
+# of the nfacct rule in KUBE-FORWARD, and re-running bloom would not replace
+# one: the handler only fires when a port rule actually changes, which on an
+# already-prepared node it does not.
+#
+# Detecting on KUBE rather than on size or age: kube-proxy's chains are the
+# thing that must never be in this file, and their absence is exactly the
+# condition that makes it safe to keep. A hand-written rules.v4 that predates
+# RKE2 survives untouched.
+#
+# ufw-* excludes the file from rewriting entirely. ufw does not read rules.v4,
+# it programs its own chains from /etc/ufw/*.rules, so a file holding both is
+# one where two tools already disagree about who owns the ruleset. Bloom is not
+# the right place to settle that, and on a node whose operator drives ufw, the
+# snapshot is theirs to manage.
+# rc 0 rewrite, 1 leave alone, 2 ufw owns it, 3 no file yet. The explicit
+# no-file arm matters: grep on a missing path also exits 2, which would report
+# a node that has never had a rules.v4 as a ufw node.
+- name: Check whether rules.v4 holds another controller's rules
+  ansible.builtin.shell:
+    cmd: >-
+      test -f /etc/iptables/rules.v4 || exit 3;
+      grep -qE '^(:|-A )ufw-' /etc/iptables/rules.v4 && exit 2;
+      grep -qE '^(:|-A )(KUBE|CILIUM|ts-)' /etc/iptables/rules.v4
+    executable: /bin/bash
+  register: rules_v4_polluted
+  failed_when: false
+  changed_when: false
+  tags: [iptables, validation]
+
+- name: Note that ufw owns rules.v4 on this node
+  ansible.builtin.debug:
+    msg: >-
+      NOTE /etc/iptables/rules.v4 contains ufw chains, so it is left alone.
+      If netfilter-persistent fails at boot on this node, the snapshot needs
+      regenerating by hand; bloom will not overwrite a file ufw is part of.
+  when: rules_v4_polluted.rc == 2
+  tags: [iptables, validation]
+
+# Replaced in place rather than removed and left to the handler. The handler
+# only runs where flush_handlers is reached, so a targeted run such as
+# --tags iptables would delete the file and never write the replacement,
+# leaving the node with no persisted rules at all. Writing here means the file
+# is never absent, not for a moment and not on any code path.
+#
+# Same iptables-save the handler runs, and it is safe here for the same reason
+# it is safe there: validate_node is before prepare_node, so RKE2 has not
+# started and the live ruleset is still the operator's own. The policy lines it
+# captures are whatever the node already has, so this can only preserve the
+# current firewall posture, never tighten it.
+- name: Replace rules.v4 captured from a running cluster
+  ansible.builtin.shell:
+    cmd: iptables-save > /etc/iptables/rules.v4
+  when: rules_v4_polluted.rc == 0
+  tags: [iptables, remediation]
+
 # Task 1: Check for common INPUT blocking rule
 - name: Check if there is an iptables INPUT rule blocking traffic
   command:
