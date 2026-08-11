@@ -61,9 +61,17 @@ UUID=<disk-uuid> /mnt/disk0 ext4 defaults,nofail 0 2
 ### Longhorn Integration
 Configures Longhorn distributed storage system:
 - **Version**: v1.8.0 (v1 data engine, tgt + open-iscsi)
-- **Storage Class**: `mlstorage` (default)
-- **Replica Count**: 3 (configurable)
-- **Data Locality**: Configurable (disabled, best-effort, strict)
+- **Storage Class**: `default` (marked default class), plus `direct`, `multinode` and `mlstorage`
+- **Replica Count**: 1 on every shipped class
+- **Data Locality**: `best-effort` on `default` and `mlstorage`, `strict-local` on `direct`, `disabled` on `multinode`
+
+Because every class provisions a single replica, Longhorn's own
+`block-if-contains-last-replica` drain policy would make each node holding a
+replica permanently undrainable: the one replica is always the last one. Bloom
+therefore ships `node-drain-policy: allow-if-replica-is-stopped`, which lets a
+drain proceed once the workload pod has been evicted and the volume has
+detached. A cluster that raises `numberOfReplicas` on its volumes can restore
+the stricter policy.
 
 **Where the version lives in Cluster-Bloom**
 
@@ -106,14 +114,20 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: longhorn-default-setting
-  namespace: longhorn-system
+  namespace: longhorn
 data:
-  create-default-disk-labeled-nodes: "true"
-  default-data-path: "/mnt/disk0"
-  replica-soft-anti-affinity: "true"
-  disable-revision-counter: "true"
-  priority-class: "longhorn-critical"
+  default-setting.yaml: |-
+    create-default-disk-labeled-nodes: true
+    priority-class: longhorn-critical
+    disable-revision-counter: true
+    allow-collecting-longhorn-usage-metrics: false
+    node-drain-policy: allow-if-replica-is-stopped
 ```
+
+Longhorn applies these only for keys this ConfigMap actually contains, and only
+to settings that have not been customised on the cluster. Changing a value here
+therefore affects new clusters; an existing cluster needs the Setting patched
+directly.
 
 ### Storage Class Configuration
 Default storage class for PVC provisioning:
@@ -121,7 +135,7 @@ Default storage class for PVC provisioning:
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
-  name: mlstorage
+  name: default
   annotations:
     storageclass.kubernetes.io/is-default-class: "true"
 provisioner: driver.longhorn.io
@@ -129,11 +143,18 @@ allowVolumeExpansion: true
 reclaimPolicy: Delete
 volumeBindingMode: Immediate
 parameters:
-  numberOfReplicas: "3"
-  staleReplicaTimeout: "2880"
+  dataEngine: v1
+  dataLocality: best-effort
+  disableRevisionCounter: "true"
+  numberOfReplicas: "1"
+  staleReplicaTimeout: "30"
   fromBackup: ""
   fsType: "ext4"
 ```
+
+`numberOfReplicas` is a provisioning parameter: Longhorn copies it into each PV
+at creation. Editing the class changes new volumes only, so raising redundancy
+on an existing cluster means patching each `volumes.longhorn.io` object.
 
 ## Cleanup Behaviour
 
