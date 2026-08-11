@@ -726,7 +726,7 @@ The `--export` flag enables a workflow for playbook inspection and manual execut
 
 1. **Generate and Inspect**: Export the playbook directory to review what actions will be performed
 2. **Modify if Needed**: Optionally customize files under `./bloom-playbook/`
-3. **Execute Manually**: Run the playbook using the `run` command or `ansible-playbook`
+3. **Execute Manually**: Run the playbook using the `run` command or system `ansible-playbook` from the export directory
 
 ```bash
 # Step 1: Export playbook directory
@@ -738,6 +738,8 @@ less bloom-playbook/bloom-vars.yaml
 
 # Step 3: Execute the playbook
 sudo ./bloom run bloom-playbook/cluster-bloom.yaml
+# or with system ansible-playbook (loads inventory.ini via ansible.cfg):
+cd bloom-playbook && ansible-playbook cluster-bloom.yaml
 ```
 
 **Use Cases for Export:**
@@ -750,10 +752,10 @@ sudo ./bloom run bloom-playbook/cluster-bloom.yaml
 - **Loaned Nodes with k3s**: Bloom automatically pauses conflicting k3s before RKE2 deploy (non-destructive). After testing, remove RKE2 with `--destroy-data`, then `systemctl start k3s-server` (or `k3s`) to resume
 
 **Technical Details:**
-- **Directory Layout**: Export writes `./bloom-playbook/` with the root playbook, `bloom-vars.yaml` (config values), and the embedded `tasks/` and `manifests/` trees
+- **Directory Layout**: Export writes `./bloom-playbook/` with the root playbook, `bloom-vars.yaml` (config values), `inventory.ini`, `ansible.cfg`, and the embedded `tasks/` and `manifests/` trees
 - **Configuration Integration**: All user configuration values are written to `bloom-vars.yaml` and loaded by the exported root playbook
 - **Standalone Execution**: The exported root playbook targets `localhost` and sets `BLOOM_DIR` so it can run outside Bloom's containerized runtime
-- **Full Compatibility**: Exported playbooks work with the `bloom run` command and standard Ansible tools when run from the `./bloom-playbook/` directory
+- **Full Compatibility**: Exported playbooks work with the `bloom run` command or `cd bloom-playbook && ansible-playbook cluster-bloom.yaml` (run from the export directory so `ansible.cfg` picks up `inventory.ini`)
 - **Disk Wipe Preview**: Both `bloom cleanup` and `bloom cli --destroy-data` show a preview of bloom-managed mounts and the future mount range before requiring confirmation
 - **Cleanup Preflight**: Both cleanup paths validate `bloom.yaml`, strictly tagged fstab entries, live mounts, block-device identity, and the full system-device dependency chain before teardown
 - **Legacy RANCHER_DISK Adoption**: An explicit `RANCHER_DISK` may clean an untagged legacy `/var/lib/rancher` mount only when its live block-device identity matches; configless cleanup preserves that mount

@@ -147,6 +147,8 @@ Export generated Ansible playbooks for inspection without execution:
 
 # Execute exported playbook manually
 sudo ./bloom run bloom-playbook/cluster-bloom.yaml
+# or with system ansible-playbook:
+cd bloom-playbook && ansible-playbook cluster-bloom.yaml
 ```
 
 **Use Cases:**
@@ -156,9 +158,9 @@ sudo ./bloom run bloom-playbook/cluster-bloom.yaml
 - **Manual Control**: Review and modify playbooks before execution
 
 **Important Notes:**
-- `--export` writes a self-contained playbook directory to `./bloom-playbook/` (overwrites if exists), containing the root playbook, `bloom-vars.yaml`, and the `tasks/` and `manifests/` trees
+- `--export` writes a self-contained playbook directory to `./bloom-playbook/` (overwrites if exists), containing the root playbook, `bloom-vars.yaml`, `inventory.ini`, `ansible.cfg`, and the `tasks/` and `manifests/` trees
 - Configuration values from your bloom.yaml are written to `bloom-vars.yaml`
-- Exported playbooks work with `sudo ./bloom run` or `ansible-playbook bloom-playbook/cluster-bloom.yaml`
+- Exported playbooks work with `sudo ./bloom run bloom-playbook/cluster-bloom.yaml` or `cd bloom-playbook && ansible-playbook cluster-bloom.yaml`
 - `--destroy-data` cannot be combined with `--export`
 - **Existing Installations**: For existing cluster installations, run `bloom cleanup bloom.yaml` (or `bloom cli bloom.yaml --destroy-data`) before export or redeployment
 - **Partial-run Resume**: Use `--preserve-existing-rke2` (also compatible with `--export`) to reconcile an existing RKE2 installation while retaining RKE2 state; disk safety checks still apply
