@@ -196,6 +196,16 @@
       tags: [prepare_node]
       import_tasks: tasks/prepare_node/main.yaml
 
+    # Every notifier of "Save iptables" has run by this point: the port rules
+    # in prepare_node and the REJECT removals in validate_node. Flush here so
+    # the snapshot is taken while the ruleset is still only ours. Without this
+    # the handler runs at the end of the play, after RKE2 is up, and saves
+    # kube-proxy's and Cilium's live rules as if they were static config. See
+    # the "Save iptables" handler for what that breaks.
+    - name: Persist iptables before RKE2 starts programming them
+      tags: [prepare_node]
+      ansible.builtin.meta: flush_handlers
+
     - name: Deploy Cluster Tasks
       tags: [deploy_cluster]
       import_tasks: tasks/deploy_cluster/main.yaml
@@ -226,6 +236,25 @@
         group: root
         mode: '0755'
 
+    # iptables-save is a whole-machine dump, so this is only safe while the
+    # ruleset still belongs to us. It is flushed after prepare_node for that
+    # reason. Run late, on a node where RKE2 is already up, it captures
+    # kube-proxy's and Cilium's live rules and writes them to the file
+    # netfilter-persistent replays at boot. Two things then go wrong:
+    #
+    #   - the replay happens ~23s before RKE2 starts, and kube-proxy's
+    #     KUBE-FORWARD rule needs an nfacct object that only exists once
+    #     kube-proxy has created it, so the restore fails with
+    #     "RULE_APPEND failed (No such file or directory)" and the unit is
+    #     left permanently failed
+    #   - when it does not fail it is worse, because it replays a stale
+    #     snapshot of another controller's state. On one int-test node the
+    #     file had grown to 110 KB of KUBE-SVC-*/KUBE-SEP-* chains naming pod
+    #     IPs from two months earlier
+    #
+    # A filter-table-only dump would be the smaller blast radius, but the
+    # filter table is where KUBE-FORWARD lives, so it would not help. Timing
+    # is the fix.
     - name: Save iptables
       shell: iptables-save > /etc/iptables/rules.v4
       ignore_errors: yes

@@ -231,6 +231,12 @@ data:
     priority-class: longhorn-critical
     disable-revision-counter: true
     allow-collecting-longhorn-usage-metrics: false
+    # Every StorageClass below provisions numberOfReplicas: 1, so under
+    # Longhorn's default block-if-contains-last-replica every replica is a
+    # last replica and no node holding one can ever be drained. Allow the
+    # drain once the replica has stopped, which happens as soon as the
+    # workload pod is evicted and the volume detaches.
+    node-drain-policy: allow-if-replica-is-stopped
 kind: ConfigMap
 metadata:
   labels:
