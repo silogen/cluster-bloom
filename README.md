@@ -40,6 +40,7 @@ For the full GPU driver compatibility table, see
 - [GPU Driver Installation Quick Reference](GPU_AND_ROCM_INSTALLATION.md) — Driver policy, configuration, and host verification commands.
 - [Configuration Reference](docs/configuration-reference.md) — All supported Bloom configuration fields.
 - [Storage Management](docs/storage-management.md) — Disk preparation, cleanup preflight, Longhorn integration, and recovery behavior.
+- [Cluster Teardown](docs/cluster-teardown.md) — Multi-node cleanup order for HA control plane and worker clusters.
 - [Installation Guide](docs/installation-guide.md) — End-to-end deployment procedure.
 - [Product Requirements](docs/PRD.md) — Product scope, requirements, and supported GPU policy.
 

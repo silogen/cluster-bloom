@@ -137,7 +137,7 @@ parameters:
 
 ## Cleanup Behaviour
 
-Bloom provides two equivalent paths to clean up storage before redeployment:
+Bloom provides two equivalent paths to clean up storage before redeployment. For multi-node HA clusters, see [Cluster Teardown](cluster-teardown.md) for the recommended order to run cleanup on each node.
 
 ### `bloom cleanup [config-file]`
 

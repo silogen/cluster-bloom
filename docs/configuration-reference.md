@@ -675,6 +675,8 @@ Clean an existing Bloom installation:
 sudo ./bloom cleanup [config-file]
 ```
 
+For multi-node clusters, see [Cluster Teardown](cluster-teardown.md) for the recommended node order (workers first, additional control planes, bootstrap control plane last).
+
 Cleanup validates configured storage against strict Bloom-managed fstab entries, live block-device identities, mounts, and protected operating-system devices before making changes. A mismatch aborts before teardown or disk writes.
 
 Use `--preflight-only` to run the same checks without confirmation or mutation:
