@@ -156,9 +156,6 @@ Certificate Updates:
 		},
 	}
 
-	// Set custom help template to show config fields at bottom
-	rootCmd.SetHelpTemplate(rootCmd.HelpTemplate() + "\n" + buildConfigFieldsHelp())
-
 	webuiCmd := &cobra.Command{
 		Use:   "webui",
 		Short: "Start the web UI configuration generator",
@@ -375,6 +372,21 @@ imports (roles, tasks, vars) within that directory tree work as expected.`,
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(cleanupCmd)
 	rootCmd.AddCommand(updateCmd())
+
+	// Configuration fields are relevant to the root configuration workflow and
+	// the cli command, but would obscure focused help for other subcommands.
+	defaultHelp := rootCmd.HelpFunc()
+	rootCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		if cmd != rootCmd && cmd != cliCmd {
+			defaultHelp(cmd, args)
+			return
+		}
+
+		defaultTemplate := cmd.HelpTemplate()
+		cmd.SetHelpTemplate(defaultTemplate + "\n" + buildConfigFieldsHelp())
+		defaultHelp(cmd, args)
+		cmd.SetHelpTemplate(defaultTemplate)
+	})
 
 	return rootCmd
 }
