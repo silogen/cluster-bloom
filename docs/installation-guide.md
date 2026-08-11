@@ -276,7 +276,7 @@ sudo mkdir -p /var/lib/rancher/rke2/server/manifests
 # Apply standard Longhorn installation or custom configuration
 
 # Wait for Longhorn pods to be ready
-kubectl wait --for=condition=ready pod -l app=longhorn-manager -n longhorn-system --timeout=600s
+kubectl wait --for=condition=ready pod -l app=longhorn-manager -n longhorn --timeout=600s
 ```
 
 **Deploy MetalLB Load Balancer**:
@@ -448,7 +448,7 @@ kubectl get pods -A
 
 **Check Longhorn Status**:
 ```bash
-kubectl get pods -n longhorn-system
+kubectl get pods -n longhorn
 ```
 
 **Verify MetalLB**:

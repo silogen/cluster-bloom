@@ -87,16 +87,16 @@ fi
 echo -e "\n=== Longhorn Storage Health Check ==="
 
 # Check Longhorn manager pods
-kubectl get pods -n longhorn-system | grep longhorn-manager
+kubectl get pods -n longhorn | grep longhorn-manager
 
 # Check Longhorn volume health
-kubectl get volumes -n longhorn-system
+kubectl get volumes -n longhorn
 
 # Check for any degraded volumes
-kubectl get volumes -n longhorn-system -o json | jq -r '.items[] | select(.status.robustness != "healthy") | "\(.metadata.name): \(.status.robustness)"'
+kubectl get volumes -n longhorn -o json | jq -r '.items[] | select(.status.robustness != "healthy") | "\(.metadata.name): \(.status.robustness)"'
 
 # Verify Longhorn nodes are schedulable
-kubectl get lhnodes -n longhorn-system -o wide
+kubectl get lhnodes -n longhorn -o wide
 ```
 
 ### 3. Assess Running GPU Workloads and Storage Status
@@ -316,7 +316,7 @@ if [ "$RECOMMENDED_STRATEGY" = "sequential" ] && [ "$GPU_WORKLOADS_ON_NODE" -gt 
         echo "✓ Node drained successfully"
     else
         echo "⚠️  Drain encountered issues - check remaining workloads"
-        kubectl get pods --all-namespaces --field-selector spec.nodeName="$CURRENT_NODE" --no-headers | grep -v -E "(kube-system|longhorn-system)"
+        kubectl get pods --all-namespaces --field-selector spec.nodeName="$CURRENT_NODE" --no-headers | grep -v -E "(kube-system|longhorn)"
     fi
 
 # Strategy B: Coordinated shutdown for single-node or maintenance
@@ -388,7 +388,7 @@ lsblk -o +UUID > "$BACKUP_DIR/lsblk.backup"
 kubectl get pods --all-namespaces --field-selector spec.nodeName="$(hostname)" -o yaml > "$BACKUP_DIR/node-workloads.yaml" 2>/dev/null || echo "Could not backup workloads"
 
 # Backup Longhorn configuration (if accessible)
-kubectl get lhnodes -n longhorn-system -o yaml > "$BACKUP_DIR/longhorn-nodes.yaml" 2>/dev/null || echo "Could not backup Longhorn nodes"
+kubectl get lhnodes -n longhorn -o yaml > "$BACKUP_DIR/longhorn-nodes.yaml" 2>/dev/null || echo "Could not backup Longhorn nodes"
 
 echo "Configuration backed up to: $BACKUP_DIR"
 ```
@@ -423,12 +423,12 @@ echo "=== Final Reboot Sequence ==="
 
 # 1. Final verification that node is properly drained
 echo "Verifying node drain status..."
-REMAINING_WORKLOADS=$(kubectl get pods --all-namespaces --field-selector spec.nodeName="$(hostname)" --no-headers | grep -v -E "(kube-system|longhorn-system)" | wc -l)
+REMAINING_WORKLOADS=$(kubectl get pods --all-namespaces --field-selector spec.nodeName="$(hostname)" --no-headers | grep -v -E "(kube-system|longhorn)" | wc -l)
 
 if [ "$REMAINING_WORKLOADS" -gt 0 ]; then
     echo "⚠️  $REMAINING_WORKLOADS non-system workloads still running on this node"
     echo "Workloads:"
-    kubectl get pods --all-namespaces --field-selector spec.nodeName="$(hostname)" --no-headers | grep -v -E "(kube-system|longhorn-system)"
+    kubectl get pods --all-namespaces --field-selector spec.nodeName="$(hostname)" --no-headers | grep -v -E "(kube-system|longhorn)"
     echo ""
     echo "Recommend completing workload migration before proceeding"
     read -p "Continue anyway? (yes/no): " FORCE_CONTINUE
@@ -828,16 +828,16 @@ echo -e "\n=== Longhorn status check ==="
 
 # Wait for Longhorn pods to be ready
 echo "Checking Longhorn system status..."
-if kubectl get pods -n longhorn-system >/dev/null 2>&1; then
+if kubectl get pods -n longhorn >/dev/null 2>&1; then
     echo "Longhorn namespace accessible"
     
     # Check Longhorn manager on this node
-    LONGHORN_MANAGER=$(kubectl get pods -n longhorn-system -l app=longhorn-manager --field-selector spec.nodeName=$(hostname) -o name 2>/dev/null)
+    LONGHORN_MANAGER=$(kubectl get pods -n longhorn -l app=longhorn-manager --field-selector spec.nodeName=$(hostname) -o name 2>/dev/null)
     if [ -n "$LONGHORN_MANAGER" ]; then
         echo "✓ Longhorn manager pod found on this node"
         
         # Check if it's running
-        POD_STATUS=$(kubectl get $LONGHORN_MANAGER -n longhorn-system -o jsonpath='{.status.phase}' 2>/dev/null)
+        POD_STATUS=$(kubectl get $LONGHORN_MANAGER -n longhorn -o jsonpath='{.status.phase}' 2>/dev/null)
         if [ "$POD_STATUS" = "Running" ]; then
             echo "✓ Longhorn manager is running"
         else
@@ -848,7 +848,7 @@ if kubectl get pods -n longhorn-system >/dev/null 2>&1; then
     fi
     
     # Check Longhorn node status
-    LH_NODE_STATUS=$(kubectl get lhnodes $(hostname) -n longhorn-system -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)
+    LH_NODE_STATUS=$(kubectl get lhnodes $(hostname) -n longhorn -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)
     if [ "$LH_NODE_STATUS" = "True" ]; then
         echo "✓ Longhorn node is ready"
     else
@@ -1240,16 +1240,16 @@ If Longhorn doesn't detect disks after reboot:
 
 ```bash
 # 1. Verify disk paths in Longhorn match actual mounts
-kubectl get lhnodes -n longhorn-system -o yaml
+kubectl get lhnodes -n longhorn -o yaml
 
 # 2. Check Longhorn manager logs
-kubectl logs -n longhorn-system -l app=longhorn-manager --tail=50
+kubectl logs -n longhorn -l app=longhorn-manager --tail=50
 
 # 3. Restart Longhorn manager if needed
-kubectl delete pods -n longhorn-system -l app=longhorn-manager
+kubectl delete pods -n longhorn -l app=longhorn-manager
 
 # 4. Verify disk tags and scheduling
-kubectl patch lhnode $(hostname) -n longhorn-system --type='json' \
+kubectl patch lhnode $(hostname) -n longhorn --type='json' \
   -p='[{"op": "replace", "path": "/spec/allowScheduling", "value": true}]'
 ```
 

@@ -284,7 +284,7 @@ verification behavior.
 #### OIDC_URL
 - **Type**: String (URL)  
 - **Default**: None
-- **Description**: **DEPRECATED** - Legacy OIDC provider configuration (removed in this branch)
+- **Description**: **DEPRECATED** — Legacy OIDC provider configuration (removed; use `ADDITIONAL_OIDC_PROVIDERS`)
 - **Replacement**: Use `ADDITIONAL_OIDC_PROVIDERS` for multiple provider support
 - **Breaking Change**: This variable no longer works - migrate to `ADDITIONAL_OIDC_PROVIDERS`
 

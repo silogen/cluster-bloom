@@ -61,9 +61,10 @@ UUID=<disk-uuid> /mnt/disk0 ext4 defaults,nofail 0 2
 ### Longhorn Integration
 Configures Longhorn distributed storage system:
 - **Version**: v1.8.0 (v1 data engine, tgt + open-iscsi)
-- **Storage Class**: `mlstorage` (default)
-- **Replica Count**: 3 (configurable)
-- **Data Locality**: Configurable (disabled, best-effort, strict)
+- **Namespace**: `longhorn` (not `longhorn-system`)
+- **Default Storage Class**: `default` (`driver.longhorn.io`, v1 data engine, 1 replica)
+- **Additional Storage Classes**: `mlstorage`, `multinode` (non-default; same provisioner)
+- **Data Locality**: Configurable per storage class (disabled, best-effort, strict)
 
 **Where the version lives in Cluster-Bloom**
 
@@ -116,12 +117,13 @@ data:
 ```
 
 ### Storage Class Configuration
-Default storage class for PVC provisioning:
+Bloom ships Longhorn storage classes in `pkg/ansible/runtime/manifests/longhorn/longhorn.yaml`. The default class for PVC provisioning omits `storageClassName` or uses `default`:
+
 ```yaml
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
-  name: mlstorage
+  name: default
   annotations:
     storageclass.kubernetes.io/is-default-class: "true"
 provisioner: driver.longhorn.io
@@ -129,11 +131,15 @@ allowVolumeExpansion: true
 reclaimPolicy: Delete
 volumeBindingMode: Immediate
 parameters:
-  numberOfReplicas: "3"
-  staleReplicaTimeout: "2880"
-  fromBackup: ""
-  fsType: "ext4"
+  dataEngine: v1
+  dataLocality: best-effort
+  disableRevisionCounter: "true"
+  fsType: ext4
+  numberOfReplicas: "1"
+  staleReplicaTimeout: "30"
 ```
+
+The `mlstorage` class uses the same provisioner and replica count but is not marked as default. Use it explicitly when a workload should not rely on the cluster default storage class.
 
 ## Cleanup Behaviour
 
