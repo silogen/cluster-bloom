@@ -246,6 +246,36 @@ func bloomFstabParseRemediation(content string) []string {
 	}
 }
 
+// staleFstabEntryError explains a Bloom-managed /etc/fstab line whose source
+// (UUID=, LABEL=, or device path) no longer resolves to any device on this
+// host. This most commonly happens when a previous `bloom cleanup` run was
+// interrupted after a device was wiped/reformatted (changing its identity)
+// but before the now-stale fstab line was removed.
+func staleFstabEntryError(entry bloomFstabEntry, resolveErr error) error {
+	tagLabel := fstabManagedTag
+	switch entry.tag {
+	case bloomFstabRancher:
+		tagLabel = fstabRancherTag
+	case bloomFstabPremounted:
+		tagLabel = fstabPremountedTag
+	}
+	return cleanupPreflightError(
+		fmt.Sprintf(
+			"/etc/fstab has a Bloom-managed entry for %s (tagged %q) that references %s, "+
+				"but no device on this system currently has that identity (%v)",
+			entry.mountPoint, tagLabel, entry.source, resolveErr,
+		),
+		[]string{
+			"This usually means a previous 'bloom cleanup' run was interrupted after the device was " +
+				"wiped/reformatted (which changes its UUID) but before the now-stale /etc/fstab line was removed",
+			fmt.Sprintf("Line to remove if the device was already wiped and is no longer needed: %s", entry.raw),
+			"Run 'lsblk -f' or 'blkid' to see which devices currently exist and their UUIDs",
+			"If the device still exists under a new identity, update /etc/fstab (or point the matching " +
+				"config field at it) to match, then re-run 'bloom cleanup'",
+		},
+	)
+}
+
 func invalidBloomFstabError(content string, parseErrors []error) error {
 	var messages []string
 	for _, parseErr := range parseErrors {

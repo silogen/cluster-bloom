@@ -460,11 +460,11 @@ func CleanupBloomDisks(clusterDisks string) error {
 			return err
 		}
 
-		if out, err := exec.Command("wipefs", "-a", device).CombinedOutput(); err != nil {
+		if out, err := runProtectedCommand("wipefs", "-a", device); err != nil {
 			return fmt.Errorf("wipefs failed on %s: %w (%s)", device, err, strings.TrimSpace(string(out)))
 		}
 		fmt.Printf("      ✓ Wiped %s\n", device)
-		if out, err := exec.Command("mkfs.ext4", "-F", device).CombinedOutput(); err != nil {
+		if out, err := runProtectedCommand("mkfs.ext4", "-F", device); err != nil {
 			return fmt.Errorf("mkfs.ext4 failed on %s: %w (%s)", device, err, strings.TrimSpace(string(out)))
 		}
 		fmt.Printf("      ✓ Formatted %s as ext4\n", device)
@@ -878,7 +878,7 @@ func CleanupRancherDisk(rancherDisk string, explicitlyConfigured bool) error {
 			}
 			canonical, _, err := resolveBlockDevice(entry.source)
 			if err != nil {
-				return fmt.Errorf("resolve RANCHER_DISK fstab source %s: %w", entry.source, err)
+				return staleFstabEntryError(entry, err)
 			}
 			fstabDevice = canonical
 		}
@@ -938,15 +938,15 @@ func CleanupRancherDisk(rancherDisk string, explicitlyConfigured bool) error {
 	if err := assertDeviceTreeUnmounted(devicePath); err != nil {
 		return err
 	}
-	fmt.Printf("      🗑️  Wiping filesystem signatures on %s\n", devicePath)
-	if output, err := exec.Command("wipefs", "-a", devicePath).CombinedOutput(); err != nil {
-		return fmt.Errorf("wipe %s: %w (%s)", devicePath, err, strings.TrimSpace(string(output)))
-	}
-	if output, err := exec.Command("mkfs.ext4", "-F", devicePath).CombinedOutput(); err != nil {
-		return fmt.Errorf("format %s: %w (%s)", devicePath, err, strings.TrimSpace(string(output)))
-	}
-	fmt.Printf("      ✓ Wiped and formatted %s as ext4\n", devicePath)
 
+	// Remove the fstab entry *before* wiping the device. wipefs/mkfs change
+	// the device's identity (UUID), so if this step ran afterward and the
+	// process were interrupted or killed between the wipe and the fstab
+	// update, /etc/fstab would be left referencing an identity that no
+	// longer exists anywhere - a confusing, hard-to-diagnose stale state.
+	// Removing the entry first means an interruption during/after the wipe
+	// simply leaves the device untracked by Bloom (no data-loss risk beyond
+	// what the wipe itself already did, and no dangling fstab reference).
 	if fstabDevice != "" {
 		fmt.Println("   📝 Removing strictly tagged /var/lib/rancher fstab entry...")
 		if err := removeBloomFstabEntries(bloomFstabRancher); err != nil {
@@ -958,6 +958,15 @@ func CleanupRancherDisk(rancherDisk string, explicitlyConfigured bool) error {
 			return err
 		}
 	}
+
+	fmt.Printf("      🗑️  Wiping filesystem signatures on %s\n", devicePath)
+	if output, err := runProtectedCommand("wipefs", "-a", devicePath); err != nil {
+		return fmt.Errorf("wipe %s: %w (%s)", devicePath, err, strings.TrimSpace(string(output)))
+	}
+	if output, err := runProtectedCommand("mkfs.ext4", "-F", devicePath); err != nil {
+		return fmt.Errorf("format %s: %w (%s)", devicePath, err, strings.TrimSpace(string(output)))
+	}
+	fmt.Printf("      ✓ Wiped and formatted %s as ext4\n", devicePath)
 
 	// Create clean /var/lib/rancher directory
 	fmt.Println("   📁 Creating clean /var/lib/rancher directory...")

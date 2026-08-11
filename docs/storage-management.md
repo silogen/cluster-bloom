@@ -180,6 +180,8 @@ Without a config file, cleanup discovers only entries carrying an exact Bloom fs
 
 Before modifying `/etc/fstab`, cleanup writes a timestamped backup under `/var/backups/cluster-bloom/fstab/` and retains only the five most recent copies.
 
+**Interrupted Cleanup Safety**: For each disk being wiped, cleanup removes its `/etc/fstab` entry *before* running `wipefs`/`mkfs` (not after), because wiping changes the device's UUID. If cleanup is interrupted mid-wipe, the device is simply left untracked by Bloom rather than referenced by a stale, now-nonexistent UUID. A single Ctrl-C is also deferred until the current disk finishes wiping/formatting (the destructive commands run in their own process group so the interrupt can't kill them directly); pressing Ctrl-C a second time force-exits immediately and may leave that disk mid-operation. If a stale strictly-tagged fstab entry is ever encountered (e.g. from an older Bloom version, manual edits, or a force-exit), cleanup preflight explains the situation and prints the exact `/etc/fstab` line to remove instead of a bare `findfs` error.
+
 ### `bloom cli bloom.yaml --destroy-data`
 
 Equivalent to running `bloom cleanup` then redeploying. Cleanup tasks are prepended to the Ansible playbook. Both paths call the same logic and produce the same end state.
@@ -264,7 +266,7 @@ RANCHER_DISK: /dev/nvme2n1
 
 **Setup and Cleanup Behavior**:
 - **Setup**: Removes existing `/var/lib/rancher` directory for clean deployment and mounts dedicated device
-- **Cleanup**: Validates the configured device against fstab and the live mount, unmounts `/var/lib/rancher`, wipes and reformats the device, and removes the exact fstab entry
+- **Cleanup**: Validates the configured device against fstab and the live mount, unmounts `/var/lib/rancher`, removes the exact fstab entry, then wipes and reformats the device (fstab is updated *before* the wipe so an interruption can't leave a stale entry referencing the device's now-changed UUID)
 - **Legacy Mount Safety**: Configless cleanup preserves untagged `/var/lib/rancher` mounts. Providing a matching `RANCHER_DISK` explicitly authorizes cleanup without requiring a manual fstab tag; mismatched or stale mappings are rejected
 - **Fresh Start**: Creates clean `/var/lib/rancher` directory after cleanup
 - **Attachment Preservation**: The block device remains attached to the host; cleanup never hot-removes it from the kernel

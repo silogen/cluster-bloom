@@ -5,6 +5,7 @@ package runtime
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
 	"sync"
 	"syscall"
@@ -95,6 +96,23 @@ func CheckPendingExit() bool {
 	globalCriticalSection.mu.Lock()
 	defer globalCriticalSection.mu.Unlock()
 	return globalCriticalSection.pendingExit
+}
+
+// runProtectedCommand runs a destructive, slow command (e.g. wipefs, mkfs)
+// in its own process group so a terminal-delivered interrupt (Ctrl-C, which
+// the kernel sends to every process in the foreground process group) cannot
+// kill it directly. Without this, EnterCriticalSection's deferred-exit
+// guarantee only protects the Go process itself; the child process would
+// still receive and act on the same signal, potentially leaving a wipe or
+// format operation partially applied.
+//
+// A caller can still force-kill the whole run via a second Ctrl-C
+// (see handleSignal); this only prevents a single, well-intentioned
+// interrupt from silently corrupting an in-progress destructive operation.
+func runProtectedCommand(name string, args ...string) ([]byte, error) {
+	cmd := exec.Command(name, args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	return cmd.CombinedOutput()
 }
 
 // getSignalExitCode returns the appropriate exit code for a signal

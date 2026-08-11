@@ -54,10 +54,16 @@ func ResolveCleanupStorage(
 	for _, entry := range entries {
 		switch entry.tag {
 		case bloomFstabManaged:
+			if _, _, err := resolveBlockDevice(entry.source); err != nil {
+				return CleanupStorage{}, staleFstabEntryError(entry, err)
+			}
 			clusterSources = append(clusterSources, entry.source)
 		case bloomFstabPremounted:
 			premountedMounts = append(premountedMounts, entry.mountPoint)
 		case bloomFstabRancher:
+			if _, _, err := resolveBlockDevice(entry.source); err != nil {
+				return CleanupStorage{}, staleFstabEntryError(entry, err)
+			}
 			storage.RancherDisk = entry.source
 		}
 	}
@@ -405,7 +411,7 @@ func RunCleanupPreflight(storage CleanupStorage) error {
 		}
 		canonical, _, err := resolveBlockDevice(entry.source)
 		if err != nil {
-			return fmt.Errorf("resolve premounted fstab source %s: %w", entry.source, err)
+			return staleFstabEntryError(entry, err)
 		}
 		destructiveTargets[fmt.Sprintf("CLUSTER_PREMOUNTED_DISKS[%d]", index)] = canonical
 	}
@@ -449,7 +455,7 @@ func RunCleanupPreflight(storage CleanupStorage) error {
 		}
 		_, id, err := resolveBlockDevice(entry.source)
 		if err != nil {
-			return fmt.Errorf("resolve Bloom-managed fstab source %s: %w", entry.source, err)
+			return staleFstabEntryError(entry, err)
 		}
 		if allowedClusterMounts[id] == nil {
 			allowedClusterMounts[id] = map[string]struct{}{}
