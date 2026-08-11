@@ -4,13 +4,22 @@
 # Usage: Imported by deploy_cluster/main.yaml 
 # Tags: [deploy_cluster]
 
-- name: Load required kernel modules
-  modprobe:
-    name: "{{ item }}"
-    state: present
+- name: Check required kernel modules
+  stat:
+    path: "/sys/module/{{ item }}"
   loop:
     - iscsi_tcp
     - dm_mod
+  register: required_kernel_modules
+
+- name: Load required kernel modules
+  modprobe:
+    name: "{{ item.item }}"
+    state: present
+  loop: "{{ required_kernel_modules.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: not item.stat.exists
 
 - name: Ensure kernel modules load on boot
   lineinfile:

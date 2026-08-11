@@ -71,22 +71,21 @@
     - name: Wait for local-path-storage namespace (RKE2 deploy controller takes 30-90s to apply manifests)
       shell: |
         /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+          wait --for=create --timeout=300s namespace/local-path-storage
+        /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
           wait --for=jsonpath='{.status.phase}=Active' --timeout=300s \
           namespace/local-path-storage
-      register: ns_wait
-      retries: 3
-      delay: 10
-      until: ns_wait.rc == 0
       changed_when: false
 
     - name: Wait for local-path-provisioner deployment
       shell: |
         /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+          wait --for=create --timeout=300s \
+          deployment/local-path-provisioner -n local-path-storage
+        /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
           wait --for=condition=Available --timeout=300s \
           deployment/local-path-provisioner -n local-path-storage
-      register: deployment_wait
-      retries: 3
-      delay: 10
+      changed_when: false
 
 - name: Validate Local-Path Storage with Test Pod
   block:
