@@ -130,6 +130,14 @@ func newRootCmd() *cobra.Command {
 		Short: "Kubernetes Cluster Deployment Tool",
 		Long: `Bloom - A tool for generating bloom.yaml configurations and deploying Kubernetes clusters.
 
+ClusterForge Bootstrap (deferred install only):
+  Only needed if the initial bloom cli used CLUSTERFORGE_RELEASE: none (or "").
+  After all nodes have joined, deploy ClusterForge from the first control plane node:
+    sudo bloom cli bloom.yaml --tags deploy_clusterforge
+  Before running, set CLUSTERFORGE_RELEASE to a release tag in bloom.yaml (not "none").
+  If CLUSTERFORGE_RELEASE was already set during the initial bloom cli, ClusterForge
+  deploys automatically and this step is not required.
+
 Certificate Updates:
   To update TLS certificates in an existing cluster, use a separate config with --tags:
     bloom cli cert-update-config.yaml --tags update_cert
@@ -279,6 +287,17 @@ By default, this command requires confirmation before proceeding. Use --force (o
 
 Requires a configuration file (typically bloom.yaml).
 
+ClusterForge Bootstrap (deferred install only):
+  Only needed if the initial bloom cli used CLUSTERFORGE_RELEASE: none (or "").
+  After all nodes have joined, run from the first control plane node:
+    sudo bloom cli bloom.yaml --tags deploy_clusterforge
+  Before running, set CLUSTERFORGE_RELEASE to a release tag in bloom.yaml (not "none").
+  Requires FIRST_NODE: true and DOMAIN. Skips full cluster redeploy; runs only
+  ClusterForge/ArgoCD bootstrap tasks (including Envoy Gateway for HTTPS routes
+  such as https://longhorn.<DOMAIN>/).
+  If CLUSTERFORGE_RELEASE was already set during the initial bloom cli, this step
+  is not required.
+
 Certificate Updates:
   To update TLS certificates in an existing cluster:
     1. Create cert-update.yaml:
@@ -329,7 +348,7 @@ imports (roles, tasks, vars) within that directory tree work as expected.`,
 	// Add CLI command flags
 	cliCmd.Flags().StringVar(&playbookName, "playbook", "cluster-bloom.yaml", "Playbook to run (default: cluster-bloom.yaml)")
 	cliCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Run in check mode without making changes")
-	cliCmd.Flags().StringVar(&tags, "tags", "", "Run only tasks with specific tags (e.g., cleanup, validate, storage)")
+	cliCmd.Flags().StringVar(&tags, "tags", "", "Run only Ansible tasks with this tag (e.g. deploy_clusterforge, update_cert, cleanup, storage)")
 	cliCmd.Flags().BoolVar(&destroyData, "destroy-data", false, "⚠️  DANGER: Wipes cluster (RKE2 uninstall, Longhorn cleanup, disk wipe). Shows disk preview before confirmation. Equivalent to running bloom cleanup then redeploying.")
 	cliCmd.Flags().BoolVar(&pauseK3s, "pause-k3s", false, "Legacy alias: k3s conflicts are paused automatically; this flag still forces the pause step")
 	cliCmd.Flags().BoolVar(&preserveRKE2, "preserve-existing-rke2", false, "Resume/reconcile an existing RKE2 installation without treating its service and state directories as data-safety conflicts")
