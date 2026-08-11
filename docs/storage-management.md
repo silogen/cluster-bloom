@@ -184,7 +184,7 @@ Without a config file, cleanup discovers only entries carrying an exact Bloom fs
 5. **Clean premounted disks** (`CLUSTER_PREMOUNTED_DISKS`) — removes bloom artifacts only; filesystem, fstab entry, and user files are preserved
 6. **Remove validated Bloom-managed fstab entries** and wipe/reformat `CLUSTER_DISKS`
 
-Before modifying `/etc/fstab`, cleanup writes a timestamped backup under `/var/backups/cluster-bloom/fstab/` and retains only the five most recent copies.
+Before modifying `/etc/fstab`, cleanup writes a timestamped backup under `/var/backups/cluster-bloom/fstab/` and retains only the five most recent copies. When the last strictly tagged Bloom fstab entry is removed, cleanup also drops the empty Ansible section markers (`# # # this section is managed by AMD Enterprise AI tool cluster-bloom` / `# # # end of AMD Enterprise AI cluster-bloom`). Premounted entries keep the section intact.
 
 **Interrupted Cleanup Safety**: For each disk being wiped, cleanup removes its `/etc/fstab` entry *before* running `wipefs`/`mkfs` (not after), because wiping changes the device's UUID. If cleanup is interrupted mid-wipe, the device is simply left untracked by Bloom rather than referenced by a stale, now-nonexistent UUID. A single Ctrl-C is also deferred until the current disk finishes wiping/formatting (the destructive commands run in their own process group so the interrupt can't kill them directly); pressing Ctrl-C a second time force-exits immediately and may leave that disk mid-operation. If a stale strictly-tagged fstab entry is ever encountered (e.g. from an older Bloom version, manual edits, or a force-exit), cleanup preflight explains the situation and prints the exact `/etc/fstab` line to remove instead of a bare `findfs` error.
 

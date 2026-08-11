@@ -18,6 +18,9 @@ const (
 	fstabRancherTag    = "# managed by cluster-bloom rancher-disk"
 	maxBloomDiskIndex  = 4095
 
+	fstabSectionHeader = "# # # this section is managed by AMD Enterprise AI tool cluster-bloom"
+	fstabSectionFooter = "# # # end of AMD Enterprise AI cluster-bloom"
+
 	fstabBackupDirectory    = "/var/backups/cluster-bloom/fstab"
 	maxRetainedFstabBackups = 5
 	fstabBackupFilePrefix   = "fstab-"
@@ -361,7 +364,43 @@ func pruneFstabBackupsIn(directory string, maxRetained int) error {
 	return nil
 }
 
+func isBloomFstabSectionMarker(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	return trimmed == fstabSectionHeader || trimmed == fstabSectionFooter
+}
+
+func hasBloomTaggedFstabLine(content string) bool {
+	for _, line := range strings.Split(content, "\n") {
+		if exactBloomFstabTag(line) != bloomFstabNone {
+			return true
+		}
+	}
+	return false
+}
+
+// pruneEmptyBloomFstabSection removes the Ansible deployment section header and
+// footer when no strictly tagged Bloom fstab entries remain. Premounted entries
+// count as tagged and keep the section intact.
+func pruneEmptyBloomFstabSection(lines []string) []string {
+	if hasBloomTaggedFstabLine(strings.Join(lines, "\n")) {
+		return lines
+	}
+	var pruned []string
+	for _, line := range lines {
+		if !isBloomFstabSectionMarker(line) {
+			pruned = append(pruned, line)
+		}
+	}
+	return pruned
+}
+
 func backupAndWriteFstab(original string, retainedLines []string) error {
+	beforePrune := len(retainedLines)
+	retainedLines = pruneEmptyBloomFstabSection(retainedLines)
+	if len(retainedLines) < beforePrune {
+		fmt.Println("      ✓ Removed empty Bloom fstab section markers")
+	}
+
 	timestamp := time.Now().Format("20060102-150405.000000000")
 	if err := os.MkdirAll(fstabBackupDirectory, 0755); err != nil {
 		return fmt.Errorf("create fstab backup directory %s: %w", fstabBackupDirectory, err)

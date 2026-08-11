@@ -75,3 +75,39 @@ func TestStaleFstabEntryErrorExplainsInterruptedCleanup(t *testing.T) {
 		}
 	}
 }
+
+func TestPruneEmptyBloomFstabSectionRemovesMarkersWhenNoTags(t *testing.T) {
+	input := []string{
+		"/dev/sda1 / ext4 defaults 0 1",
+		fstabSectionHeader,
+		fstabSectionFooter,
+	}
+	got := pruneEmptyBloomFstabSection(input)
+	if len(got) != 1 || got[0] != "/dev/sda1 / ext4 defaults 0 1" {
+		t.Fatalf("pruneEmptyBloomFstabSection() = %#v, want root line only", got)
+	}
+}
+
+func TestPruneEmptyBloomFstabSectionKeepsMarkersWhenTaggedEntriesRemain(t *testing.T) {
+	input := []string{
+		fstabSectionHeader,
+		"UUID=abc /mnt/disk0 ext4 defaults 0 2 # managed by cluster-bloom",
+		fstabSectionFooter,
+	}
+	got := pruneEmptyBloomFstabSection(input)
+	if len(got) != len(input) {
+		t.Fatalf("pruneEmptyBloomFstabSection() = %#v, want markers preserved", got)
+	}
+}
+
+func TestPruneEmptyBloomFstabSectionKeepsMarkersForPremountedEntries(t *testing.T) {
+	input := []string{
+		fstabSectionHeader,
+		"UUID=abc /data/storage ext4 defaults 0 2 # premounted by cluster-bloom",
+		fstabSectionFooter,
+	}
+	got := pruneEmptyBloomFstabSection(input)
+	if len(got) != len(input) {
+		t.Fatalf("pruneEmptyBloomFstabSection() = %#v, want premounted entry to retain section", got)
+	}
+}
