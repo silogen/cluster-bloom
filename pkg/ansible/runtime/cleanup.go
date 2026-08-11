@@ -30,6 +30,38 @@ type iscsiSession struct {
 	target string
 }
 
+var longhornProcessNames = []string{"longhorn-engine", "longhorn-instance-manager", "longhorn-manager"}
+
+// longhornCleanupNeeded reports whether any Longhorn artifacts remain on the node.
+// Medium/small clusters never deploy Longhorn; when nothing is present this avoids
+// noisy kubectl drain and no-op umount retries during bloom cleanup.
+func longhornCleanupNeeded() bool {
+	if entries, err := os.ReadDir("/dev/longhorn"); err == nil && len(entries) > 0 {
+		return true
+	}
+	for _, proc := range longhornProcessNames {
+		if exec.Command("pgrep", "-x", proc).Run() == nil {
+			return true
+		}
+	}
+	if out, err := exec.Command("bash", "-c",
+		`mount | grep -E 'longhorn|driver[.]longhorn[.]io'`).Output(); err == nil &&
+		strings.TrimSpace(string(out)) != "" {
+		return true
+	}
+	if entries, err := os.ReadDir("/var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io"); err == nil && len(entries) > 0 {
+		return true
+	}
+	if entries, err := os.ReadDir("/var/lib/longhorn"); err == nil && len(entries) > 0 {
+		return true
+	}
+	out, err := exec.Command("iscsiadm", "-m", "session").Output()
+	if err == nil && len(parseLonghornISCSISessions(string(out))) > 0 {
+		return true
+	}
+	return false
+}
+
 // CleanupLonghornMounts performs cleanup of Longhorn PVCs and mounts.
 // Sequences: graceful kubectl drain → iSCSI logout → TERM/KILL processes → force umount.
 // This ordering is required because Longhorn uses iSCSI sessions that remain
@@ -37,6 +69,10 @@ type iscsiSession struct {
 // logout leaves the device busy and causes rm/umount to block or silently fail.
 func CleanupLonghornMounts() error {
 	fmt.Println("💾 Cleaning Longhorn mounts and PVCs...")
+	if !longhornCleanupNeeded() {
+		fmt.Println("   ℹ️  No Longhorn detected — skipping cleanup")
+		return nil
+	}
 
 	// Step 1: Graceful kubectl drain (best-effort, cluster may already be down)
 	fmt.Println("   🚰 Attempting graceful node drain via kubectl...")
@@ -111,9 +147,8 @@ func CleanupLonghornMounts() error {
 	// Step 3: Graceful TERM then KILL of Longhorn processes in dependency order
 	// Use exact binary name matching to avoid killing unrelated processes.
 	// Longhorn binaries have these exact names in /proc/*/comm.
-	longhornProcs := []string{"longhorn-engine", "longhorn-instance-manager", "longhorn-manager"}
 	anyRunning := false
-	for _, proc := range longhornProcs {
+	for _, proc := range longhornProcessNames {
 		if exec.Command("pgrep", "-x", proc).Run() == nil {
 			anyRunning = true
 			break
@@ -121,13 +156,13 @@ func CleanupLonghornMounts() error {
 	}
 	if anyRunning {
 		fmt.Println("   🛑 Stopping Longhorn processes (TERM)...")
-		for _, proc := range longhornProcs {
+		for _, proc := range longhornProcessNames {
 			exec.Command("pkill", "-TERM", "-x", proc).Run()
 		}
 		time.Sleep(5 * time.Second)
 		// Only KILL if some processes survived TERM
 		stillRunning := false
-		for _, proc := range longhornProcs {
+		for _, proc := range longhornProcessNames {
 			if exec.Command("pgrep", "-x", proc).Run() == nil {
 				stillRunning = true
 				break
@@ -135,7 +170,7 @@ func CleanupLonghornMounts() error {
 		}
 		if stillRunning {
 			fmt.Println("      ⚡ Force killing remaining Longhorn processes (KILL)...")
-			for _, proc := range longhornProcs {
+			for _, proc := range longhornProcessNames {
 				exec.Command("pkill", "-KILL", "-x", proc).Run()
 			}
 		}

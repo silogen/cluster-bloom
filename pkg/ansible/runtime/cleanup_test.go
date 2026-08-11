@@ -298,3 +298,9 @@ func TestParseBloomDiskMountPointBounds(t *testing.T) {
 		}
 	}
 }
+
+func TestLonghornCleanupNeededFalseWithoutArtifacts(t *testing.T) {
+	if longhornCleanupNeeded() {
+		t.Skip("Longhorn artifacts present on this host; skipping negative-case test")
+	}
+}

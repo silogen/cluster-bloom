@@ -162,7 +162,7 @@ sudo ./bloom run bloom-playbook/cluster-bloom.yaml
 - **Existing Installations**: For existing cluster installations, run `bloom cleanup bloom.yaml` (or `bloom cli bloom.yaml --destroy-data`) before export or redeployment
 - **Partial-run Resume**: Use `--preserve-existing-rke2` (also compatible with `--export`) to reconcile an existing RKE2 installation while retaining RKE2 state; disk safety checks still apply
 - **Loaned Nodes with k3s**: Bloom automatically pauses conflicting k3s installs (non-destructive). Resume k3s after RKE2 testing with `systemctl start k3s-server` once RKE2 is removed via `--destroy-data`
-- **Optimized Cleanup**: Best-effort node drain (~30s timeout) that internally uses kubectl's `--force` and `--disable-eviction` to bypass stuck pods; skips volume detach wait when no Longhorn volumes detected
+- **Optimized Cleanup**: Skips Longhorn cleanup entirely when no Longhorn artifacts are detected (typical on `CLUSTER_SIZE: small`/`medium`); when Longhorn is present, runs a best-effort node drain (~30s timeout) with kubectl's `--force` and `--disable-eviction`, and skips volume detach wait when no volumes are attached
 - **Disk Wipe Preview**: Both `bloom cleanup` and `--destroy-data` show a preview with:
   - User files listed (up to 5), or count shown if more than 5
   - `lost+found` folders automatically excluded (ext4 system folder)

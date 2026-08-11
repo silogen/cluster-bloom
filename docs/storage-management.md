@@ -167,16 +167,16 @@ Without a config file, cleanup discovers only entries carrying an exact Bloom fs
 
 **Sequence:**
 1. **Destructive cleanup preflight** against config, fstab, live mounts, and protected system devices
-2. **Best-effort node drain** (if cluster reachable, ~30s timeout)
+2. **Longhorn cleanup** (skipped when no Longhorn artifacts are detected — typical on `CLUSTER_SIZE: small`/`medium`)
+   - Best-effort node drain (if cluster reachable, ~30s timeout)
    - Internally passes `--force` and `--disable-eviction` to kubectl drain to bypass stuck pods with finalizers or PodDisruptionBudgets
    - Automatically skips Longhorn volume detach wait when no volumes detected
-   - Clear progress messages during potentially long operations
-3. Logout **Longhorn-only** iSCSI sessions (filter `iqn.2019-10.io.longhorn:*`, logout by session ID; boot-volume sessions are preserved) → stop Longhorn processes
-4. Force-unmount all Longhorn/CSI/kubelet volumes (including `volume-subpaths` and `globalmount`)
-5. Uninstall RKE2 and remove its directories
-6. **Pre-clean future mount range** — removes bloom artifacts (`pvc-*`, `replicas`, `longhorn-disk.cfg`) from the directories that will be used in the next deployment, preserving user files
-7. **Clean premounted disks** (`CLUSTER_PREMOUNTED_DISKS`) — removes bloom artifacts only; filesystem, fstab entry, and user files are preserved
-8. **Remove validated Bloom-managed fstab entries** and wipe/reformat `CLUSTER_DISKS`
+   - Logout **Longhorn-only** iSCSI sessions (filter `iqn.2019-10.io.longhorn:*`, logout by session ID; boot-volume sessions are preserved) → stop Longhorn processes
+   - Force-unmount all Longhorn/CSI/kubelet volumes (including `volume-subpaths` and `globalmount`)
+3. Uninstall RKE2 and remove its directories
+4. **Pre-clean future mount range** — removes bloom artifacts (`pvc-*`, `replicas`, `longhorn-disk.cfg`) from the directories that will be used in the next deployment, preserving user files
+5. **Clean premounted disks** (`CLUSTER_PREMOUNTED_DISKS`) — removes bloom artifacts only; filesystem, fstab entry, and user files are preserved
+6. **Remove validated Bloom-managed fstab entries** and wipe/reformat `CLUSTER_DISKS`
 
 Before modifying `/etc/fstab`, cleanup writes a timestamped backup under `/var/backups/cluster-bloom/fstab/` and retains only the five most recent copies.
 
