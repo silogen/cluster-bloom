@@ -1527,13 +1527,13 @@ return nil
 }
 start := calculateFutureDiskStart(clusterDisks, premountedDisks, n)
 fmt.Printf("🗂️  Pre-cleaning future mount range /mnt/disk%d–/mnt/disk%d (bloom artifacts only)...\n", start, start+n-1)
-blooPatterns := []string{"pvc-*", "replicas", "longhorn-disk.cfg", "longhorn-disk.cfg.tmp"}
+bloomPatterns := []string{"pvc-*", "replicas", "longhorn-disk.cfg", "longhorn-disk.cfg.tmp"}
 for i := 0; i < n; i++ {
 mp := fmt.Sprintf("/mnt/disk%d", start+i)
 if _, err := os.Stat(mp); os.IsNotExist(err) {
 continue
 }
-for _, pattern := range blooPatterns {
+for _, pattern := range bloomPatterns {
 matches, err := filepath.Glob(filepath.Join(mp, pattern))
 if err != nil {
 return fmt.Errorf("expand Bloom artifact pattern %s: %w", pattern, err)
