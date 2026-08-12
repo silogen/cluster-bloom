@@ -343,9 +343,23 @@ func assertDeviceTreeUnmounted(target string) error {
 	if err != nil {
 		return err
 	}
-	for device, mountPoints := range mounts {
-		return fmt.Errorf("refusing to wipe %s: %s is still mounted at %s",
-			target, device, mountPoints)
+	return mountedDeviceTreeError(target, mounts)
+}
+
+func mountedDeviceTreeError(target string, mounts map[string]string) error {
+	if len(mounts) == 0 {
+		return nil
 	}
-	return nil
+
+	devices := make([]string, 0, len(mounts))
+	for device := range mounts {
+		devices = append(devices, device)
+	}
+	sort.Strings(devices)
+	details := make([]string, 0, len(devices))
+	for _, device := range devices {
+		details = append(details, fmt.Sprintf("%s at %s", device, mounts[device]))
+	}
+	return fmt.Errorf("refusing to wipe %s: mounted device tree entries: %s",
+		target, strings.Join(details, "; "))
 }
