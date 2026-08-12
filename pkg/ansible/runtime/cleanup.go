@@ -18,7 +18,9 @@ import (
 // longhornIQNPrefix is the iSCSI target prefix for Longhorn v1 volumes attached via
 // the tgt + open-iscsi stack (CSI driver.longhorn.io). Upstream defines this in
 // go-iscsi-helper iscsidev.GetTargetName():
-//   return "iqn.2019-10.io.longhorn:" + Volume2ISCSIName(volumeName)
+//
+//	return "iqn.2019-10.io.longhorn:" + Volume2ISCSIName(volumeName)
+//
 // See https://github.com/longhorn/go-iscsi-helper/blob/master/iscsidev/iscsi.go
 // The "2019-10" segment is the IQN registration date, not a Longhorn release tag.
 // Longhorn v2/SPDK volumes do not use iSCSI; see docs/storage-management.md.
@@ -371,7 +373,6 @@ func UninstallRKE2() error {
 	fmt.Println("   ✅ RKE2 uninstall completed")
 	return nil
 }
-
 
 // CleanupBloomDisks removes bloom-managed disks and cleans up disk state
 func CleanupBloomDisks(clusterDisks string) error {
@@ -737,42 +738,42 @@ func extractDiskIndex(mountPoint string) (int, error) {
 
 // isDiskBloomArtifact reports whether the named entry is a Longhorn/bloom artifact.
 func isDiskBloomArtifact(name string) bool {
-return strings.HasPrefix(name, "pvc-") ||
-name == "replicas" ||
-name == "longhorn-disk.cfg" ||
-name == "longhorn-disk.cfg.tmp"
+	return strings.HasPrefix(name, "pvc-") ||
+		name == "replicas" ||
+		name == "longhorn-disk.cfg" ||
+		name == "longhorn-disk.cfg.tmp"
 }
 
 // inspectDirContents returns bloom artifacts and user files found directly inside dir.
 // Excludes lost+found as it's an automatically created ext4 filesystem folder, not user data.
 func inspectDirContents(dir string) (bloom []string, user []string) {
-entries, err := os.ReadDir(dir)
-if err != nil {
-return
-}
-for _, e := range entries {
-if isDiskBloomArtifact(e.Name()) {
-bloom = append(bloom, e.Name())
-} else if e.Name() != "lost+found" {
-user = append(user, e.Name())
-}
-// lost+found is silently excluded - it's an ext4 system folder, not user data
-}
-return
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if isDiskBloomArtifact(e.Name()) {
+			bloom = append(bloom, e.Name())
+		} else if e.Name() != "lost+found" {
+			user = append(user, e.Name())
+		}
+		// lost+found is silently excluded - it's an ext4 system folder, not user data
+	}
+	return
 }
 
 // countClusterDisksStr counts non-empty entries in a comma-separated CLUSTER_DISKS string.
 func countClusterDisksStr(clusterDisks string) int {
-if clusterDisks == "" {
-return 0
-}
-count := 0
-for _, d := range strings.Split(clusterDisks, ",") {
-if strings.TrimSpace(d) != "" {
-count++
-}
-}
-return count
+	if clusterDisks == "" {
+		return 0
+	}
+	count := 0
+	for _, d := range strings.Split(clusterDisks, ",") {
+		if strings.TrimSpace(d) != "" {
+			count++
+		}
+	}
+	return count
 }
 
 // calculateFutureDiskStart returns the lowest start index S such that the sequential
@@ -784,78 +785,78 @@ return count
 // bloom tag from a previous run while no longer being in the current CLUSTER_DISKS
 // config, meaning bloom will NOT wipe it and its mount point remains occupied.
 func calculateFutureDiskStart(clusterDisks, premountedDisks string, diskCount int) int {
-reserved := map[int]bool{}
+	reserved := map[int]bool{}
 
-// Build a set of the block devices in CLUSTER_DISKS — their current mount points
-// will be freed by cleanup and are therefore NOT reserved.
-clusterDevSet := map[string]bool{}
-for _, dev := range strings.Split(clusterDisks, ",") {
-if d := strings.TrimSpace(dev); d != "" {
-clusterDevSet[d] = true
-}
-}
+	// Build a set of the block devices in CLUSTER_DISKS — their current mount points
+	// will be freed by cleanup and are therefore NOT reserved.
+	clusterDevSet := map[string]bool{}
+	for _, dev := range strings.Split(clusterDisks, ",") {
+		if d := strings.TrimSpace(dev); d != "" {
+			clusterDevSet[d] = true
+		}
+	}
 
-// Find the current mount point of each CLUSTER_DISKS device via /proc/mounts.
-clusterDiskMounts := map[string]bool{}
-if data, err := os.ReadFile("/proc/mounts"); err == nil {
-for _, line := range strings.Split(string(data), "\n") {
-fields := strings.Fields(line)
-if len(fields) >= 2 && clusterDevSet[fields[0]] {
-clusterDiskMounts[fields[1]] = true
-}
-}
-}
+	// Find the current mount point of each CLUSTER_DISKS device via /proc/mounts.
+	clusterDiskMounts := map[string]bool{}
+	if data, err := os.ReadFile("/proc/mounts"); err == nil {
+		for _, line := range strings.Split(string(data), "\n") {
+			fields := strings.Fields(line)
+			if len(fields) >= 2 && clusterDevSet[fields[0]] {
+				clusterDiskMounts[fields[1]] = true
+			}
+		}
+	}
 
-// From CLUSTER_PREMOUNTED_DISKS config string
-for _, p := range strings.Split(premountedDisks, ",") {
-if idx, err := extractDiskIndex(strings.TrimSpace(p)); err == nil {
-reserved[idx] = true
-}
-}
+	// From CLUSTER_PREMOUNTED_DISKS config string
+	for _, p := range strings.Split(premountedDisks, ",") {
+		if idx, err := extractDiskIndex(strings.TrimSpace(p)); err == nil {
+			reserved[idx] = true
+		}
+	}
 
-// From strictly parsed /etc/fstab premounted-by-cluster-bloom entries.
-if _, entries, err := readBloomFstab(); err == nil {
-for _, entry := range entries {
-if entry.tag == bloomFstabPremounted {
-if idx, err2 := extractDiskIndex(entry.mountPoint); err2 == nil {
-reserved[idx] = true
-}
-}
-}
-}
+	// From strictly parsed /etc/fstab premounted-by-cluster-bloom entries.
+	if _, entries, err := readBloomFstab(); err == nil {
+		for _, entry := range entries {
+			if entry.tag == bloomFstabPremounted {
+				if idx, err2 := extractDiskIndex(entry.mountPoint); err2 == nil {
+					reserved[idx] = true
+				}
+			}
+		}
+	}
 
-// Reserve every currently-mounted /mnt/diskN that is NOT a CLUSTER_DISKS mount.
-// This covers premounted disks, user disks, and any stale bloom-tagged disks that
-// are no longer in CLUSTER_DISKS — all of which survive cleanup.
-if data, err := os.ReadFile("/proc/mounts"); err == nil {
-for _, line := range strings.Split(string(data), "\n") {
-fields := strings.Fields(line)
-if len(fields) < 2 {
-continue
-}
-mp := fields[1]
-if clusterDiskMounts[mp] {
-continue // CLUSTER_DISKS mount — will be freed
-}
-if idx, err2 := extractDiskIndex(mp); err2 == nil {
-reserved[idx] = true
-}
-}
-}
+	// Reserve every currently-mounted /mnt/diskN that is NOT a CLUSTER_DISKS mount.
+	// This covers premounted disks, user disks, and any stale bloom-tagged disks that
+	// are no longer in CLUSTER_DISKS — all of which survive cleanup.
+	if data, err := os.ReadFile("/proc/mounts"); err == nil {
+		for _, line := range strings.Split(string(data), "\n") {
+			fields := strings.Fields(line)
+			if len(fields) < 2 {
+				continue
+			}
+			mp := fields[1]
+			if clusterDiskMounts[mp] {
+				continue // CLUSTER_DISKS mount — will be freed
+			}
+			if idx, err2 := extractDiskIndex(mp); err2 == nil {
+				reserved[idx] = true
+			}
+		}
+	}
 
-// Find lowest S such that {S, S+1, ..., S+diskCount-1} is free of reserved indexes
-for start := 0; ; start++ {
-ok := true
-for i := 0; i < diskCount; i++ {
-if reserved[start+i] {
-ok = false
-break
-}
-}
-if ok {
-return start
-}
-}
+	// Find lowest S such that {S, S+1, ..., S+diskCount-1} is free of reserved indexes
+	for start := 0; ; start++ {
+		ok := true
+		for i := 0; i < diskCount; i++ {
+			if reserved[start+i] {
+				ok = false
+				break
+			}
+		}
+		if ok {
+			return start
+		}
+	}
 }
 
 // parseManagedFstabMounts returns mount points of bloom-managed (non-premounted) fstab entries.
@@ -880,10 +881,10 @@ func discoverAllBloomStorage() (clusterDisks, premountedDisks, rancherDisk strin
 	if err != nil {
 		return "", "", ""
 	}
-	
+
 	var clusterDiskPaths []string
 	var premountedPaths []string
-	
+
 	for _, entry := range entries {
 		switch entry.tag {
 		case bloomFstabRancher:
@@ -896,15 +897,15 @@ func discoverAllBloomStorage() (clusterDisks, premountedDisks, rancherDisk strin
 			}
 		}
 	}
-	
+
 	clusterDisks = strings.Join(clusterDiskPaths, ",")
 	premountedDisks = strings.Join(premountedPaths, ",")
-	
+
 	// NEW: Legacy detection if no bloom-managed RANCHER_DISK found
 	if rancherDisk == "" {
 		if legacyDevice, isLegacy := detectLegacyRancherMount(); isLegacy {
 			rancherDisk = resolveDevicePathFromSource(legacyDevice)
-			
+
 			// Show warning about legacy mount detection
 			fmt.Println("⚠️  LEGACY MOUNT DETECTED:")
 			fmt.Printf("   Found manually-mounted /var/lib/rancher → %s\n", legacyDevice)
@@ -917,7 +918,7 @@ func discoverAllBloomStorage() (clusterDisks, premountedDisks, rancherDisk strin
 			fmt.Println()
 		}
 	}
-	
+
 	return
 }
 
@@ -928,9 +929,9 @@ func extractDeviceFromFstabLine(line string) string {
 	if len(fields) == 0 {
 		return ""
 	}
-	
+
 	device := fields[0]
-	
+
 	// Handle UUID=... format
 	if strings.HasPrefix(device, "UUID=") {
 		uuid := strings.TrimPrefix(device, "UUID=")
@@ -938,12 +939,12 @@ func extractDeviceFromFstabLine(line string) string {
 			return devicePath
 		}
 	}
-	
+
 	// Return device path directly if it starts with /dev/
 	if strings.HasPrefix(device, "/dev/") {
 		return device
 	}
-	
+
 	return ""
 }
 
@@ -964,21 +965,21 @@ func detectLegacyRancherMount() (device string, isLegacy bool) {
 	if err != nil {
 		return "", false // Not mounted or error
 	}
-	
+
 	source := strings.TrimSpace(string(output))
-	
+
 	// Step 2: Only consider block device mounts (not bind mounts, NFS, etc.)
 	if !strings.HasPrefix(source, "/dev/") && !strings.HasPrefix(source, "UUID=") {
 		return "", false // Not a block device mount
 	}
-	
+
 	// Step 3: Check fstab for this mount point to determine if it's bloom-managed
 	data, err := os.ReadFile("/etc/fstab")
 	if err != nil {
 		// Fail closed: inability to inspect fstab must never authorize a wipe.
 		return "", false
 	}
-	
+
 	// Step 4: Check if there's an existing bloom-managed entry
 	for _, line := range strings.Split(string(data), "\n") {
 		fields := strings.Fields(line)
@@ -989,7 +990,7 @@ func detectLegacyRancherMount() (device string, isLegacy bool) {
 			}
 		}
 	}
-	
+
 	// Step 5: If we reach here, we have an active mount but no bloom-managed fstab entry
 	// This is either a legacy manual mount or an orphaned mount from previous cleanup
 	return source, true // Consider any unmanaged mount as legacy
@@ -1020,7 +1021,7 @@ func detectFstabEntryType(mountPoint string) string {
 	if err != nil {
 		return "none"
 	}
-	
+
 	for _, line := range strings.Split(string(data), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) >= 2 && fields[1] == mountPoint {
@@ -1030,7 +1031,7 @@ func detectFstabEntryType(mountPoint string) string {
 			return "legacy"
 		}
 	}
-	
+
 	return "none"
 }
 
@@ -1040,7 +1041,7 @@ func getDeviceFromCurrentMount(mountPath string) string {
 	if err != nil {
 		return "" // Not currently mounted
 	}
-	
+
 	source := strings.TrimSpace(string(output))
 	return resolveSourceToBlockDevice(source) // Handle UUID= format
 }
@@ -1051,14 +1052,14 @@ func getDeviceFromFstabEntry(mountPath string) string {
 	if err != nil {
 		return ""
 	}
-	
+
 	for _, line := range strings.Split(string(data), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) >= 2 && fields[1] == mountPath {
 			return resolveSourceToBlockDevice(fields[0]) // Handle UUID= format
 		}
 	}
-	
+
 	return ""
 }
 
@@ -1073,12 +1074,12 @@ func resolveSourceToBlockDevice(source string) string {
 		}
 		return strings.TrimSpace(string(output))
 	}
-	
+
 	// Already a device path (/dev/sdb2)
 	if strings.HasPrefix(source, "/dev/") {
 		return source
 	}
-	
+
 	return ""
 }
 
@@ -1123,174 +1124,173 @@ func PrintDiskWipePreview(clusterDisks, premountedDisks, rancherDisk string) {
 		return
 	}
 
-sep := strings.Repeat("─", 62)
-fmt.Printf("\n%s\n", sep)
-fmt.Println("  ⚠️   DISK CLEANUP PREVIEW")
-fmt.Printf("%s\n", sep)
+	sep := strings.Repeat("─", 62)
+	fmt.Printf("\n%s\n", sep)
+	fmt.Println("  ⚠️   DISK CLEANUP PREVIEW")
+	fmt.Printf("%s\n", sep)
 
-if len(managed) > 0 {
-fmt.Println("  Bloom-managed mounts to be WIPED:")
-for _, mp := range managed {
-bloom, user := inspectDirContents(mp)
-switch {
-case len(user) > 0:
-if len(user) > 5 {
-fmt.Printf("    ⚠️  %-18s — %d bloom item(s), ⚠️  %d user file(s) will be LOST\n",
-mp, len(bloom), len(user))
-} else {
-fmt.Printf("    ⚠️  %-18s — %d bloom item(s), ⚠️  %d user file(s) will be LOST: %s\n",
-mp, len(bloom), len(user), strings.Join(user, ", "))
-}
-case len(bloom) > 0:
-fmt.Printf("    ✓  %-18s — bloom state only (%d item(s))\n", mp, len(bloom))
-default:
-fmt.Printf("    ✓  %-18s — empty\n", mp)
-}
-}
-}
-
-if premountedDisks != "" {
-var premountedLines []string
-for p := range strings.SplitSeq(premountedDisks, ",") {
-mp := strings.TrimSpace(p)
-if mp == "" {
-continue
-}
-bloom, _ := inspectDirContents(mp)
-if len(bloom) > 0 {
-premountedLines = append(premountedLines, fmt.Sprintf("    ✓  %-18s — %d bloom artifact(s) removed (filesystem preserved)", mp, len(bloom)))
-}
-	}
-	if len(premountedLines) > 0 {
-		fmt.Println("\n  Premounted disks — bloom artifacts cleaned, filesystem kept:")
-		for _, line := range premountedLines {
-			fmt.Println(line)
-		}
-	}
-}
-
-if rancherDisk != "" {
-	// Check if this is a legacy mount for different preview display
-	if legacyDevice, isLegacy := detectLegacyRancherMount(); isLegacy && legacyDevice != "" {
-		// Legacy-specific preview
-		if _, err := os.Stat("/var/lib/rancher"); err == nil {
-			bloom, user := inspectDirContents("/var/lib/rancher")
-			fmt.Println("\n  RANCHER_DISK — /var/lib/rancher (LEGACY MANUAL MOUNT):")
-			switch {
-			case len(user) > 0:
-				fmt.Printf("    ⚠️  %-18s — manually mounted, will be unmounted\n", "/var/lib/rancher")
-				fmt.Printf("    ⚠️  %-18s — fstab entry will be removed\n", rancherDisk)
-				if len(user) > 5 {
-					fmt.Printf("    ⚠️  %-18s — %d rancher + %d user file(s) will be LOST\n", "RKE2 data", len(bloom), len(user))
-				} else {
-					fmt.Printf("    ⚠️  %-18s — %d rancher + %d user file(s) will be LOST: %s\n", "RKE2 data", len(bloom), len(user), strings.Join(user, ", "))
-				}
-			case len(bloom) > 0:
-				fmt.Printf("    ⚠️  %-18s — manually mounted, will be unmounted\n", "/var/lib/rancher")
-				fmt.Printf("    ⚠️  %-18s — fstab entry will be removed\n", rancherDisk)
-				fmt.Printf("    ⚠️  %-18s — %d rancher artifact(s) will be LOST\n", "RKE2 data", len(bloom))
-			default:
-				fmt.Printf("    ⚠️  %-18s — manually mounted, will be unmounted\n", "/var/lib/rancher")
-				fmt.Printf("    ⚠️  %-18s — fstab entry will be removed\n", rancherDisk)
-				fmt.Printf("    ✓  %-18s — empty\n", "RKE2 data")
-			}
-		} else {
-			fmt.Println("\n  RANCHER_DISK — /var/lib/rancher (LEGACY MANUAL MOUNT):")
-			fmt.Printf("    ⚠️  %-18s — manually mounted, will be unmounted\n", "/var/lib/rancher")
-			fmt.Printf("    ⚠️  %-18s — fstab entry will be removed\n", rancherDisk)
-		}
-	} else {
-		// Regular bloom-managed RANCHER_DISK preview
-		if _, err := os.Stat("/var/lib/rancher"); err == nil {
-			bloom, user := inspectDirContents("/var/lib/rancher")
-			fmt.Println("\n  RANCHER_DISK — /var/lib/rancher will be wiped clean:")
+	if len(managed) > 0 {
+		fmt.Println("  Bloom-managed mounts to be WIPED:")
+		for _, mp := range managed {
+			bloom, user := inspectDirContents(mp)
 			switch {
 			case len(user) > 0:
 				if len(user) > 5 {
-					fmt.Printf("    ⚠️  %-18s — %d rancher item(s), ⚠️  %d user file(s) will be LOST\n",
-						"/var/lib/rancher", len(bloom), len(user))
+					fmt.Printf("    ⚠️  %-18s — %d bloom item(s), ⚠️  %d user file(s) will be LOST\n",
+						mp, len(bloom), len(user))
 				} else {
-					fmt.Printf("    ⚠️  %-18s — %d rancher item(s), ⚠️  %d user file(s) will be LOST: %s\n",
-						"/var/lib/rancher", len(bloom), len(user), strings.Join(user, ", "))
+					fmt.Printf("    ⚠️  %-18s — %d bloom item(s), ⚠️  %d user file(s) will be LOST: %s\n",
+						mp, len(bloom), len(user), strings.Join(user, ", "))
 				}
 			case len(bloom) > 0:
-				fmt.Printf("    ✓  %-18s — rancher state only (%d item(s))\n", "/var/lib/rancher", len(bloom))
+				fmt.Printf("    ✓  %-18s — bloom state only (%d item(s))\n", mp, len(bloom))
 			default:
-				fmt.Printf("    ✓  %-18s — empty\n", "/var/lib/rancher")
+				fmt.Printf("    ✓  %-18s — empty\n", mp)
 			}
-		} else {
-			fmt.Println("\n  RANCHER_DISK — /var/lib/rancher will be wiped clean:")
-			fmt.Printf("    ✓  %-18s — directory will be created\n", "/var/lib/rancher")
 		}
 	}
-}
 
-if len(future) > 0 {
-first := future[0]
-last := future[len(future)-1]
-fmt.Printf("\n  Future mount range (%s – %s): bloom artifacts pre-cleaned, user files preserved\n", first, last)
-for _, mp := range future {
-bloom, user := inspectDirContents(mp)
-if _, err := os.Stat(mp); os.IsNotExist(err) {
-fmt.Printf("    ✓  %-18s — will be created\n", mp)
-continue
-}
-if len(bloom) == 0 && len(user) == 0 {
-fmt.Printf("    ✓  %-18s — empty\n", mp)
-continue
-}
-parts := []string{}
-if len(bloom) > 0 {
-parts = append(parts, fmt.Sprintf("%d bloom artifact(s) removed", len(bloom)))
-}
-if len(user) > 0 {
-if len(user) > 5 {
-parts = append(parts, fmt.Sprintf("%d user file(s) kept", len(user)))
-} else {
-parts = append(parts, fmt.Sprintf("%d user file(s) kept: %s", len(user), strings.Join(user, ", ")))
-}
-}
-flag := "✓ "
-if len(user) > 0 {
-flag = "ℹ️ "
-}
-fmt.Printf("    %s %-16s — %s\n", flag, mp, strings.Join(parts, "; "))
-}
-}
-fmt.Printf("%s\n\n", sep)
+	if premountedDisks != "" {
+		var premountedLines []string
+		for p := range strings.SplitSeq(premountedDisks, ",") {
+			mp := strings.TrimSpace(p)
+			if mp == "" {
+				continue
+			}
+			bloom, _ := inspectDirContents(mp)
+			if len(bloom) > 0 {
+				premountedLines = append(premountedLines, fmt.Sprintf("    ✓  %-18s — %d bloom artifact(s) removed (filesystem preserved)", mp, len(bloom)))
+			}
+		}
+		if len(premountedLines) > 0 {
+			fmt.Println("\n  Premounted disks — bloom artifacts cleaned, filesystem kept:")
+			for _, line := range premountedLines {
+				fmt.Println(line)
+			}
+		}
+	}
+
+	if rancherDisk != "" {
+		// Check if this is a legacy mount for different preview display
+		if legacyDevice, isLegacy := detectLegacyRancherMount(); isLegacy && legacyDevice != "" {
+			// Legacy-specific preview
+			if _, err := os.Stat("/var/lib/rancher"); err == nil {
+				bloom, user := inspectDirContents("/var/lib/rancher")
+				fmt.Println("\n  RANCHER_DISK — /var/lib/rancher (LEGACY MANUAL MOUNT):")
+				switch {
+				case len(user) > 0:
+					fmt.Printf("    ⚠️  %-18s — manually mounted, will be unmounted\n", "/var/lib/rancher")
+					fmt.Printf("    ⚠️  %-18s — fstab entry will be removed\n", rancherDisk)
+					if len(user) > 5 {
+						fmt.Printf("    ⚠️  %-18s — %d rancher + %d user file(s) will be LOST\n", "RKE2 data", len(bloom), len(user))
+					} else {
+						fmt.Printf("    ⚠️  %-18s — %d rancher + %d user file(s) will be LOST: %s\n", "RKE2 data", len(bloom), len(user), strings.Join(user, ", "))
+					}
+				case len(bloom) > 0:
+					fmt.Printf("    ⚠️  %-18s — manually mounted, will be unmounted\n", "/var/lib/rancher")
+					fmt.Printf("    ⚠️  %-18s — fstab entry will be removed\n", rancherDisk)
+					fmt.Printf("    ⚠️  %-18s — %d rancher artifact(s) will be LOST\n", "RKE2 data", len(bloom))
+				default:
+					fmt.Printf("    ⚠️  %-18s — manually mounted, will be unmounted\n", "/var/lib/rancher")
+					fmt.Printf("    ⚠️  %-18s — fstab entry will be removed\n", rancherDisk)
+					fmt.Printf("    ✓  %-18s — empty\n", "RKE2 data")
+				}
+			} else {
+				fmt.Println("\n  RANCHER_DISK — /var/lib/rancher (LEGACY MANUAL MOUNT):")
+				fmt.Printf("    ⚠️  %-18s — manually mounted, will be unmounted\n", "/var/lib/rancher")
+				fmt.Printf("    ⚠️  %-18s — fstab entry will be removed\n", rancherDisk)
+			}
+		} else {
+			// Regular bloom-managed RANCHER_DISK preview
+			if _, err := os.Stat("/var/lib/rancher"); err == nil {
+				bloom, user := inspectDirContents("/var/lib/rancher")
+				fmt.Println("\n  RANCHER_DISK — /var/lib/rancher will be wiped clean:")
+				switch {
+				case len(user) > 0:
+					if len(user) > 5 {
+						fmt.Printf("    ⚠️  %-18s — %d rancher item(s), ⚠️  %d user file(s) will be LOST\n",
+							"/var/lib/rancher", len(bloom), len(user))
+					} else {
+						fmt.Printf("    ⚠️  %-18s — %d rancher item(s), ⚠️  %d user file(s) will be LOST: %s\n",
+							"/var/lib/rancher", len(bloom), len(user), strings.Join(user, ", "))
+					}
+				case len(bloom) > 0:
+					fmt.Printf("    ✓  %-18s — rancher state only (%d item(s))\n", "/var/lib/rancher", len(bloom))
+				default:
+					fmt.Printf("    ✓  %-18s — empty\n", "/var/lib/rancher")
+				}
+			} else {
+				fmt.Println("\n  RANCHER_DISK — /var/lib/rancher will be wiped clean:")
+				fmt.Printf("    ✓  %-18s — directory will be created\n", "/var/lib/rancher")
+			}
+		}
+	}
+
+	if len(future) > 0 {
+		first := future[0]
+		last := future[len(future)-1]
+		fmt.Printf("\n  Future mount range (%s – %s): bloom artifacts pre-cleaned, user files preserved\n", first, last)
+		for _, mp := range future {
+			bloom, user := inspectDirContents(mp)
+			if _, err := os.Stat(mp); os.IsNotExist(err) {
+				fmt.Printf("    ✓  %-18s — will be created\n", mp)
+				continue
+			}
+			if len(bloom) == 0 && len(user) == 0 {
+				fmt.Printf("    ✓  %-18s — empty\n", mp)
+				continue
+			}
+			parts := []string{}
+			if len(bloom) > 0 {
+				parts = append(parts, fmt.Sprintf("%d bloom artifact(s) removed", len(bloom)))
+			}
+			if len(user) > 0 {
+				if len(user) > 5 {
+					parts = append(parts, fmt.Sprintf("%d user file(s) kept", len(user)))
+				} else {
+					parts = append(parts, fmt.Sprintf("%d user file(s) kept: %s", len(user), strings.Join(user, ", ")))
+				}
+			}
+			flag := "✓ "
+			if len(user) > 0 {
+				flag = "ℹ️ "
+			}
+			fmt.Printf("    %s %-16s — %s\n", flag, mp, strings.Join(parts, "; "))
+		}
+	}
+	fmt.Printf("%s\n\n", sep)
 }
 
 // PrecleanFutureMountPoints removes bloom artifacts from directories that will be
 // used in the next deployment, preserving all non-bloom user files intact.
 func PrecleanFutureMountPoints(clusterDisks, premountedDisks string) error {
-n := countClusterDisksStr(clusterDisks)
-if n == 0 {
-return nil
+	n := countClusterDisksStr(clusterDisks)
+	if n == 0 {
+		return nil
+	}
+	start := calculateFutureDiskStart(clusterDisks, premountedDisks, n)
+	fmt.Printf("🗂️  Pre-cleaning future mount range /mnt/disk%d–/mnt/disk%d (bloom artifacts only)...\n", start, start+n-1)
+	bloomPatterns := []string{"pvc-*", "replicas", "longhorn-disk.cfg", "longhorn-disk.cfg.tmp"}
+	for i := 0; i < n; i++ {
+		mp := fmt.Sprintf("/mnt/disk%d", start+i)
+		if _, err := os.Stat(mp); os.IsNotExist(err) {
+			continue
+		}
+		for _, pattern := range bloomPatterns {
+			matches, err := filepath.Glob(filepath.Join(mp, pattern))
+			if err != nil {
+				return fmt.Errorf("expand Bloom artifact pattern %s: %w", pattern, err)
+			}
+			for _, match := range matches {
+				if err := os.RemoveAll(match); err != nil {
+					return fmt.Errorf("remove Bloom artifact %s: %w", match, err)
+				}
+			}
+		}
+	}
+	fmt.Println("   ✅ Pre-clean complete")
+	return nil
 }
-start := calculateFutureDiskStart(clusterDisks, premountedDisks, n)
-fmt.Printf("🗂️  Pre-cleaning future mount range /mnt/disk%d–/mnt/disk%d (bloom artifacts only)...\n", start, start+n-1)
-bloomPatterns := []string{"pvc-*", "replicas", "longhorn-disk.cfg", "longhorn-disk.cfg.tmp"}
-for i := 0; i < n; i++ {
-mp := fmt.Sprintf("/mnt/disk%d", start+i)
-if _, err := os.Stat(mp); os.IsNotExist(err) {
-continue
-}
-for _, pattern := range bloomPatterns {
-matches, err := filepath.Glob(filepath.Join(mp, pattern))
-if err != nil {
-return fmt.Errorf("expand Bloom artifact pattern %s: %w", pattern, err)
-}
-for _, match := range matches {
-if err := os.RemoveAll(match); err != nil {
-return fmt.Errorf("remove Bloom artifact %s: %w", match, err)
-}
-}
-}
-}
-fmt.Println("   ✅ Pre-clean complete")
-return nil
-}
-
 
 // unmountPriorLonghornDisks helper function to handle fstab cleanup
 func unmountPriorLonghornDisks(clusterDisks string) error {
