@@ -394,6 +394,47 @@ func pruneEmptyBloomFstabSection(lines []string) []string {
 	return pruned
 }
 
+func atomicWriteFile(path string, data []byte, mode os.FileMode) (err error) {
+	directory := filepath.Dir(path)
+	temp, err := os.CreateTemp(directory, "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return fmt.Errorf("create temporary file for %s: %w", path, err)
+	}
+	tempPath := temp.Name()
+	defer func() {
+		temp.Close()
+		if err != nil {
+			os.Remove(tempPath)
+		}
+	}()
+
+	if err = temp.Chmod(mode); err != nil {
+		return fmt.Errorf("set permissions on temporary file for %s: %w", path, err)
+	}
+	if _, err = temp.Write(data); err != nil {
+		return fmt.Errorf("write temporary file for %s: %w", path, err)
+	}
+	if err = temp.Sync(); err != nil {
+		return fmt.Errorf("sync temporary file for %s: %w", path, err)
+	}
+	if err = temp.Close(); err != nil {
+		return fmt.Errorf("close temporary file for %s: %w", path, err)
+	}
+	if err = os.Rename(tempPath, path); err != nil {
+		return fmt.Errorf("replace %s atomically: %w", path, err)
+	}
+
+	directoryHandle, err := os.Open(directory)
+	if err != nil {
+		return fmt.Errorf("open directory %s after replacing %s: %w", directory, path, err)
+	}
+	defer directoryHandle.Close()
+	if err = directoryHandle.Sync(); err != nil {
+		return fmt.Errorf("sync directory %s after replacing %s: %w", directory, path, err)
+	}
+	return nil
+}
+
 func backupAndWriteFstab(original string, retainedLines []string) error {
 	beforePrune := len(retainedLines)
 	retainedLines = pruneEmptyBloomFstabSection(retainedLines)
@@ -409,7 +450,7 @@ func backupAndWriteFstab(original string, retainedLines []string) error {
 	if err := os.WriteFile(backupPath, []byte(original), 0644); err != nil {
 		return fmt.Errorf("back up fstab to %s: %w", backupPath, err)
 	}
-	if err := os.WriteFile("/etc/fstab", []byte(strings.Join(retainedLines, "\n")), 0644); err != nil {
+	if err := atomicWriteFile("/etc/fstab", []byte(strings.Join(retainedLines, "\n")), 0644); err != nil {
 		return fmt.Errorf("update /etc/fstab (backup: %s): %w", backupPath, err)
 	}
 	if err := pruneFstabBackupsIn(fstabBackupDirectory, maxRetainedFstabBackups); err != nil {

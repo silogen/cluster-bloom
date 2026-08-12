@@ -51,6 +51,33 @@ func TestPruneFstabBackupsRetainsLatestFiles(t *testing.T) {
 	}
 }
 
+func TestAtomicWriteFileReplacesCompleteFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "fstab")
+	if err := os.WriteFile(path, []byte("old content"), 0600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	if err := atomicWriteFile(path, []byte("new complete content"), 0644); err != nil {
+		t.Fatalf("atomicWriteFile() error = %v", err)
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if string(got) != "new complete content" {
+		t.Fatalf("atomicWriteFile() content = %q, want complete replacement", got)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat() error = %v", err)
+	}
+	if info.Mode().Perm() != 0644 {
+		t.Fatalf("atomicWriteFile() mode = %o, want 0644", info.Mode().Perm())
+	}
+}
+
 func TestStaleFstabEntryErrorExplainsInterruptedCleanup(t *testing.T) {
 	entry := bloomFstabEntry{
 		source:     "UUID=6d051afa-5188-4f47-aa58-e8ed490208b7",
