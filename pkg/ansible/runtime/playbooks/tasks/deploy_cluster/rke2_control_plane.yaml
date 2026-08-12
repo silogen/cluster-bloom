@@ -22,12 +22,24 @@
   args:
     creates: /usr/local/bin/rke2
 
+- name: Reload systemd after RKE2 install
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Stop and disable conflicting rke2-agent service
+  ansible.builtin.systemd:
+    name: rke2-agent
+    state: stopped
+    enabled: false
+  failed_when: false
+
 - name: Enable RKE2 server service
-  service:
+  ansible.builtin.systemd:
     name: rke2-server
-    enabled: yes
+    enabled: true
 
 - name: Start RKE2 server service
-  service:
-    name: rke2-server
-    state: started
+  shell: systemctl start rke2-server
+  register: rke2_start
+  failed_when: rke2_start.rc != 0
+  changed_when: rke2_start.rc == 0
