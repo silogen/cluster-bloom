@@ -3,9 +3,70 @@
 package runtime
 
 import (
+	"os"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestBlockSourcesForExactMountPointFallsBackWhenSourcesColumnIsUnsupported(t *testing.T) {
+	installFakeFindmnt(t, `#!/bin/sh
+case "$*" in
+  *"--output SOURCES"*)
+    printf '%s\n' 'findmnt: unknown column: SOURCES' >&2
+    exit 1
+    ;;
+  *"--output SOURCE"*)
+    printf '%s\n' '/dev/sda1'
+    ;;
+  *)
+    exit 2
+    ;;
+esac
+`)
+
+	got, err := blockSourcesForExactMountPoint("/")
+	if err != nil {
+		t.Fatalf("blockSourcesForExactMountPoint() error = %v", err)
+	}
+	want := []string{"/dev/sda1"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("blockSourcesForExactMountPoint() = %v, want %v", got, want)
+	}
+}
+
+func TestBlockSourcesForExactMountPointFailsClosedForOtherFindmntErrors(t *testing.T) {
+	installFakeFindmnt(t, `#!/bin/sh
+case "$*" in
+  *"--output SOURCES"*)
+    printf '%s\n' 'findmnt: permission denied' >&2
+    exit 1
+    ;;
+  *"--output SOURCE"*)
+    printf '%s\n' '/dev/sda1'
+    ;;
+esac
+`)
+
+	_, err := blockSourcesForExactMountPoint("/")
+	if err == nil {
+		t.Fatal("blockSourcesForExactMountPoint() error = nil, want findmnt failure")
+	}
+	if !strings.Contains(err.Error(), "permission denied") {
+		t.Fatalf("blockSourcesForExactMountPoint() error = %v, want permission details", err)
+	}
+}
+
+func installFakeFindmnt(t *testing.T, script string) {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "findmnt")
+	if err := os.WriteFile(path, []byte(script), 0755); err != nil {
+		t.Fatalf("write fake findmnt: %v", err)
+	}
+	t.Setenv("PATH", dir)
+}
 
 func TestAssertDeviceTreeUnmountedMessageIncludesAllMounts(t *testing.T) {
 	mounts := map[string]string{

@@ -127,14 +127,24 @@ func (protection deviceProtection) formatReason() string {
 }
 
 func blockSourcesForExactMountPoint(mountPoint string) ([]string, error) {
-	out, err := exec.Command(
-		"findmnt",
-		"--raw",
-		"--noheadings",
-		"--output", "SOURCES",
-		"--mountpoint", mountPoint,
-	).Output()
+	runFindmnt := func(column string) ([]byte, error) {
+		return exec.Command(
+			"findmnt",
+			"--raw",
+			"--noheadings",
+			"--output", column,
+			"--mountpoint", mountPoint,
+		).Output()
+	}
+
+	out, err := runFindmnt("SOURCES")
+	if findmntReportsUnknownColumn(err, "SOURCES") {
+		out, err = runFindmnt("SOURCE")
+	}
 	if err != nil {
+		if detail := commandStderr(err); detail != "" {
+			return nil, fmt.Errorf("%w: %s", err, detail)
+		}
 		return nil, err
 	}
 	sources := strings.FieldsFunc(strings.TrimSpace(string(out)), func(r rune) bool {
@@ -150,6 +160,20 @@ func blockSourcesForExactMountPoint(mountPoint string) ([]string, error) {
 		return nil, fmt.Errorf("mount point %s has no block-device sources", mountPoint)
 	}
 	return blockSources, nil
+}
+
+func findmntReportsUnknownColumn(err error, column string) bool {
+	detail := strings.ToLower(commandStderr(err))
+	return strings.Contains(detail, "unknown column") &&
+		strings.Contains(detail, strings.ToLower(column))
+}
+
+func commandStderr(err error) string {
+	exitErr, ok := err.(*exec.ExitError)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(string(exitErr.Stderr))
 }
 
 // protectedSystemDevices identifies every block device backing a critical
