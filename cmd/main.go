@@ -253,10 +253,6 @@ By default, this command requires confirmation before proceeding. Use --force (o
 			cfg["CLUSTER_DISKS"] = clusterDisks
 			cfg["CLUSTER_PREMOUNTED_DISKS"] = premountedDisks
 			cfg["RANCHER_DISK"] = rancherDisk
-			// The resolved targets become explicit for the second preflight after
-			// confirmation, preventing newly added fstab entries from changing scope.
-			cfg["_CLEANUP_CONFIG_PROVIDED"] = true
-			cfg["_CLEANUP_RANCHER_EXPLICIT"] = storage.RancherExplicit
 
 			// Show disk wipe preview before asking for confirmation
 			runtime.PrintDiskWipePreview(clusterDisks, premountedDisks, rancherDisk)
@@ -273,7 +269,11 @@ By default, this command requires confirmation before proceeding. Use --force (o
 			} else {
 				fmt.Println("🚀 Force cleanup requested - bypassing confirmation")
 			}
-			if err := runClusterCleanup(cfg); err != nil {
+			options := cleanupRunOptions{
+				configWasProvided: true,
+				rancherExplicit:   storage.RancherExplicit,
+			}
+			if err := runClusterCleanup(cfg, options); err != nil {
 				fmt.Fprintf(os.Stderr, "❌ Cleanup stopped: %v\n", err)
 				os.Exit(1)
 			}
@@ -467,7 +467,12 @@ func runAnsible(configFile string) {
 
 	// Handle destructive data cleanup if requested
 	if destroyData {
-		storage, err := validateCleanupStorage(cfg, true)
+		rancherDisk, _ := cfg["RANCHER_DISK"].(string)
+		options := cleanupRunOptions{
+			configWasProvided: true,
+			rancherExplicit:   strings.TrimSpace(rancherDisk) != "",
+		}
+		storage, err := validateCleanupStorage(cfg, options)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "❌ Cleanup preflight failed: %v\n", err)
 			os.Exit(1)
@@ -475,13 +480,12 @@ func runAnsible(configFile string) {
 		cfg["CLUSTER_DISKS"] = storage.ClusterDisks
 		cfg["CLUSTER_PREMOUNTED_DISKS"] = storage.PremountedDisks
 		cfg["RANCHER_DISK"] = storage.RancherDisk
-		cfg["_CLEANUP_CONFIG_PROVIDED"] = true
-		cfg["_CLEANUP_RANCHER_EXPLICIT"] = storage.RancherExplicit
+		options.rancherExplicit = storage.RancherExplicit
 		if !confirmDestructiveOperation(cfg) {
 			fmt.Println("\n❌ Operation aborted by user. No data was harmed.")
 			os.Exit(0)
 		}
-		if err := runClusterCleanup(cfg); err != nil {
+		if err := runClusterCleanup(cfg, options); err != nil {
 			fmt.Fprintf(os.Stderr, "❌ Cleanup stopped: %v\n", err)
 			os.Exit(1)
 		}
@@ -844,7 +848,12 @@ func checkRootPrivileges(commandName string) {
 	}
 }
 
-func validateCleanupStorage(cfg config.Config, configWasProvided bool) (runtime.CleanupStorage, error) {
+type cleanupRunOptions struct {
+	configWasProvided bool
+	rancherExplicit   bool
+}
+
+func validateCleanupStorage(cfg config.Config, options cleanupRunOptions) (runtime.CleanupStorage, error) {
 	clusterDisks := ""
 	if disks, exists := cfg["CLUSTER_DISKS"]; exists && disks != nil {
 		if disksStr, ok := disks.(string); ok {
@@ -865,13 +874,10 @@ func validateCleanupStorage(cfg config.Config, configWasProvided bool) (runtime.
 			rancherDisk = rdStr
 		}
 	}
-	rancherExplicit, explicitMarkerExists := cfg["_CLEANUP_RANCHER_EXPLICIT"].(bool)
-	if !explicitMarkerExists {
-		rancherExplicit = configWasProvided && strings.TrimSpace(rancherDisk) != ""
-	}
 
 	storage, err := runtime.ResolveCleanupStorage(
-		clusterDisks, premountedDisks, rancherDisk, configWasProvided, rancherExplicit)
+		clusterDisks, premountedDisks, rancherDisk,
+		options.configWasProvided, options.rancherExplicit)
 	if err != nil {
 		return runtime.CleanupStorage{}, err
 	}
@@ -881,18 +887,13 @@ func validateCleanupStorage(cfg config.Config, configWasProvided bool) (runtime.
 	return storage, nil
 }
 
-func runClusterCleanup(cfg config.Config) error {
+func runClusterCleanup(cfg config.Config, options cleanupRunOptions) error {
 	fmt.Println("🧹 Starting Bloom cluster cleanup...")
 
 	// Initialize signal handling for graceful shutdown
 	runtime.InitSignalHandling()
 
-	configWasProvided, exists := cfg["_CLEANUP_CONFIG_PROVIDED"].(bool)
-	if !exists {
-		// runClusterCleanup is otherwise reached from `bloom cli <config-file>`.
-		configWasProvided = true
-	}
-	storage, err := validateCleanupStorage(cfg, configWasProvided)
+	storage, err := validateCleanupStorage(cfg, options)
 	if err != nil {
 		return fmt.Errorf("cleanup preflight failed: %w", err)
 	}
