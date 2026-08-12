@@ -904,7 +904,7 @@ func discoverAllBloomStorage() (clusterDisks, premountedDisks, rancherDisk strin
 	// NEW: Legacy detection if no bloom-managed RANCHER_DISK found
 	if rancherDisk == "" {
 		if legacyDevice, isLegacy := detectLegacyRancherMount(); isLegacy {
-			rancherDisk = resolveDevicePathFromSource(legacyDevice)
+			rancherDisk = resolveSourceToBlockDevice(legacyDevice)
 
 			// Show warning about legacy mount detection
 			fmt.Println("⚠️  LEGACY MOUNT DETECTED:")
@@ -920,41 +920,6 @@ func discoverAllBloomStorage() (clusterDisks, premountedDisks, rancherDisk strin
 	}
 
 	return
-}
-
-// extractDeviceFromFstabLine extracts the device path from a fstab line
-// Handles both UUID= format and direct device paths
-func extractDeviceFromFstabLine(line string) string {
-	fields := strings.Fields(line)
-	if len(fields) == 0 {
-		return ""
-	}
-
-	device := fields[0]
-
-	// Handle UUID=... format
-	if strings.HasPrefix(device, "UUID=") {
-		uuid := strings.TrimPrefix(device, "UUID=")
-		if devicePath := resolveUUIDToDevice(uuid); devicePath != "" {
-			return devicePath
-		}
-	}
-
-	// Return device path directly if it starts with /dev/
-	if strings.HasPrefix(device, "/dev/") {
-		return device
-	}
-
-	return ""
-}
-
-// resolveUUIDToDevice resolves a UUID to its corresponding device path
-func resolveUUIDToDevice(uuid string) string {
-	// Use blkid to resolve UUID to device path
-	if output, err := exec.Command("blkid", "-U", uuid).Output(); err == nil {
-		return strings.TrimSpace(string(output))
-	}
-	return ""
 }
 
 // detectLegacyRancherMount detects manually mounted /var/lib/rancher without bloom tags
@@ -994,19 +959,6 @@ func detectLegacyRancherMount() (device string, isLegacy bool) {
 	// Step 5: If we reach here, we have an active mount but no bloom-managed fstab entry
 	// This is either a legacy manual mount or an orphaned mount from previous cleanup
 	return source, true // Consider any unmanaged mount as legacy
-}
-
-// resolveDevicePathFromSource converts mount source (UUID= or /dev/) to consistent device path
-func resolveDevicePathFromSource(source string) string {
-	if strings.HasPrefix(source, "UUID=") {
-		uuid := strings.TrimPrefix(source, "UUID=")
-		if devicePath := resolveUUIDToDevice(uuid); devicePath != "" {
-			return devicePath
-		}
-		fmt.Printf("⚠️  Warning: Could not resolve UUID %s to device path\n", uuid)
-		return source // Keep UUID format if resolution fails
-	}
-	return source // Already a device path
 }
 
 // isVarLibRancherMounted checks if /var/lib/rancher is currently mounted
@@ -1063,24 +1015,14 @@ func getDeviceFromFstabEntry(mountPath string) string {
 	return ""
 }
 
-// resolveSourceToBlockDevice converts UUID=/dev/ to actual block device path
+// resolveSourceToBlockDevice resolves supported mount source aliases through
+// the canonical block-device resolver.
 func resolveSourceToBlockDevice(source string) string {
-	if strings.HasPrefix(source, "UUID=") {
-		uuid := strings.TrimPrefix(source, "UUID=")
-		// Resolve UUID to /dev/sdX device path
-		output, err := exec.Command("blkid", "-U", uuid).Output()
-		if err != nil {
-			return ""
-		}
-		return strings.TrimSpace(string(output))
+	canonical, _, err := resolveBlockDevice(source)
+	if err != nil {
+		return ""
 	}
-
-	// Already a device path (/dev/sdb2)
-	if strings.HasPrefix(source, "/dev/") {
-		return source
-	}
-
-	return ""
+	return canonical
 }
 
 // isLegacyRancherMount checks if the given device is a legacy manual mount
@@ -1090,9 +1032,9 @@ func isLegacyRancherMount(device string) bool {
 		return false
 	}
 	// Resolve both to device paths for comparison
-	resolvedLegacy := resolveDevicePathFromSource(legacyDevice)
-	resolvedDevice := resolveDevicePathFromSource(device)
-	return resolvedLegacy == resolvedDevice
+	resolvedLegacy := resolveSourceToBlockDevice(legacyDevice)
+	resolvedDevice := resolveSourceToBlockDevice(device)
+	return resolvedLegacy != "" && resolvedLegacy == resolvedDevice
 }
 
 // shouldAutoDiscover determines if we should auto-discover storage parameters
