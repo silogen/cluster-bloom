@@ -273,7 +273,10 @@ By default, this command requires confirmation before proceeding. Use --force (o
 			} else {
 				fmt.Println("🚀 Force cleanup requested - bypassing confirmation")
 			}
-			runClusterCleanup(cfg)
+			if err := runClusterCleanup(cfg); err != nil {
+				fmt.Fprintf(os.Stderr, "❌ Cleanup stopped: %v\n", err)
+				os.Exit(1)
+			}
 		},
 	}
 
@@ -478,7 +481,10 @@ func runAnsible(configFile string) {
 			fmt.Println("\n❌ Operation aborted by user. No data was harmed.")
 			os.Exit(0)
 		}
-		runClusterCleanup(cfg)
+		if err := runClusterCleanup(cfg); err != nil {
+			fmt.Fprintf(os.Stderr, "❌ Cleanup stopped: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	// Use clean (terse/emoji) output mode by default
@@ -875,13 +881,11 @@ func validateCleanupStorage(cfg config.Config, configWasProvided bool) (runtime.
 	return storage, nil
 }
 
-func runClusterCleanup(cfg config.Config) {
+func runClusterCleanup(cfg config.Config) error {
 	fmt.Println("🧹 Starting Bloom cluster cleanup...")
 
 	// Initialize signal handling for graceful shutdown
 	runtime.InitSignalHandling()
-
-	var errors []error
 
 	configWasProvided, exists := cfg["_CLEANUP_CONFIG_PROVIDED"].(bool)
 	if !exists {
@@ -890,8 +894,7 @@ func runClusterCleanup(cfg config.Config) {
 	}
 	storage, err := validateCleanupStorage(cfg, configWasProvided)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "❌ Cleanup preflight failed: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("cleanup preflight failed: %w", err)
 	}
 	clusterDisks := storage.ClusterDisks
 	premountedDisks := storage.PremountedDisks
@@ -900,12 +903,12 @@ func runClusterCleanup(cfg config.Config) {
 	fmt.Printf("   ⚙️  Config: CLUSTER_DISKS=%q, CLUSTER_PREMOUNTED_DISKS=%q, RANCHER_DISK=%q\n", clusterDisks, premountedDisks, rancherDisk)
 	// Step 1: Clean Longhorn Mounts (equivalent to CleanLonghornMountsStep)
 	if err := runtime.CleanupLonghornMounts(); err != nil {
-		errors = append(errors, fmt.Errorf("Longhorn cleanup: %w", err))
+		return fmt.Errorf("Longhorn cleanup failed: %w", err)
 	}
 
 	// Step 2: Uninstall RKE2 (equivalent to UninstallRKE2Step)
 	if err := runtime.UninstallRKE2(); err != nil {
-		errors = append(errors, fmt.Errorf("RKE2 uninstall: %w", err))
+		return fmt.Errorf("RKE2 uninstall failed: %w", err)
 	}
 
 	// Step 2.5: Process validation removed - config-independent cleanup proven sufficient
@@ -913,7 +916,7 @@ func runClusterCleanup(cfg config.Config) {
 	// Step 3: Pre-clean bloom artifacts from directories in the future mount range,
 	// leaving user files intact. Done before fstab is rewritten so mounts are still valid.
 	if err := runtime.PrecleanFutureMountPoints(clusterDisks, premountedDisks); err != nil {
-		errors = append(errors, fmt.Errorf("Future mount pre-clean: %w", err))
+		return fmt.Errorf("future mount pre-clean failed: %w", err)
 	}
 
 	// Step 4: Clean premounted disk contents BEFORE CleanupBloomDisks strips fstab.
@@ -921,28 +924,20 @@ func runClusterCleanup(cfg config.Config) {
 	// entries and unmounts the disks; if we run after that, mount falls back to device
 	// scan which may fail. Running here while fstab is intact guarantees the mount works.
 	if err := runtime.CleanupPremountedDisks(premountedDisks); err != nil {
-		errors = append(errors, fmt.Errorf("Premounted disk cleanup: %w", err))
+		return fmt.Errorf("premounted disk cleanup failed: %w", err)
 	}
 
 	// Step 4.5: Clean RANCHER_DISK configuration — unmount bind mount and clean data
 	// Always call - let function decide based on actual mount status
 	if err := runtime.CleanupRancherDisk(rancherDisk, storage.RancherExplicit); err != nil {
-		errors = append(errors, fmt.Errorf("RANCHER_DISK cleanup: %w", err))
+		return fmt.Errorf("RANCHER_DISK cleanup failed: %w", err)
 	}
 
 	// Step 5: Clean Disks — strips fstab entries and wipes CLUSTER_DISKS
 	if err := runtime.CleanupBloomDisks(clusterDisks); err != nil {
-		errors = append(errors, fmt.Errorf("Disk cleanup: %w", err))
+		return fmt.Errorf("disk cleanup failed: %w", err)
 	}
 
-	// Report results
-	if len(errors) > 0 {
-		fmt.Printf("⚠️  Cleanup completed with warnings:\n")
-		for _, err := range errors {
-			fmt.Printf("  - %v\n", err)
-		}
-		os.Exit(1)
-	} else {
-		fmt.Println("✅ Bloom cluster cleanup completed successfully")
-	}
+	fmt.Println("✅ Bloom cluster cleanup completed successfully")
+	return nil
 }
