@@ -1534,7 +1534,15 @@ if _, err := os.Stat(mp); os.IsNotExist(err) {
 continue
 }
 for _, pattern := range blooPatterns {
-exec.Command("bash", "-c", "rm -rf "+mp+"/"+pattern+" 2>/dev/null").Run()
+matches, err := filepath.Glob(filepath.Join(mp, pattern))
+if err != nil {
+return fmt.Errorf("expand Bloom artifact pattern %s: %w", pattern, err)
+}
+for _, match := range matches {
+if err := os.RemoveAll(match); err != nil {
+return fmt.Errorf("remove Bloom artifact %s: %w", match, err)
+}
+}
 }
 }
 fmt.Println("   ✅ Pre-clean complete")
