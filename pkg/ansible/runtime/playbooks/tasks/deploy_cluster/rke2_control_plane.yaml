@@ -39,7 +39,16 @@
     enabled: true
 
 - name: Start RKE2 server service
+  # RKE2's systemd unit is Type=notify with an unbounded start timeout, so
+  # `systemctl start` blocks (potentially for minutes) waiting on sd_notify.
+  # A dbus-daemon/dbus-broker hiccup during that long wait drops the D-Bus
+  # call ("Connection reset by peer") even though RKE2 itself may still be
+  # starting fine in the background. Retrying is safe: systemctl start on an
+  # already-active unit returns immediately.
   shell: systemctl start rke2-server
   register: rke2_start
+  until: rke2_start.rc == 0
+  retries: 3
+  delay: 10
   failed_when: rke2_start.rc != 0
   changed_when: rke2_start.rc == 0
