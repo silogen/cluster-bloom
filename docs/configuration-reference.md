@@ -40,7 +40,7 @@ Configuration sources in priority order (highest to lowest):
 
 #### CLUSTER_SIZE
 - **Type**: Enum
-- **Default**: `small`
+- **Default**: `medium`
 - **Description**: Size category for cluster deployment planning
 - **Values**: `small` | `medium` | `large`
 - **Example**: `CLUSTER_SIZE: medium`
