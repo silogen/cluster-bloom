@@ -364,11 +364,11 @@ imports (roles, tasks, vars) within that directory tree work as expected.`,
 	rootCmd.AddCommand(cleanupCmd)
 	rootCmd.AddCommand(updateCmd())
 
-	// Configuration fields are relevant to the root configuration workflow and
-	// the cli command, but would obscure focused help for other subcommands.
+	// Keep the complete configuration reference discoverable from root help
+	// without obscuring the focused help for individual subcommands.
 	defaultHelp := rootCmd.HelpFunc()
 	rootCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
-		if cmd != rootCmd && cmd != cliCmd {
+		if cmd != rootCmd {
 			defaultHelp(cmd, args)
 			return
 		}

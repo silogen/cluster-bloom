@@ -13,9 +13,11 @@ func TestConfigurationFieldsHelpVisibility(t *testing.T) {
 		wantFields bool
 	}{
 		{name: "root", args: []string{"--help"}, wantFields: true},
-		{name: "cli", args: []string{"cli", "--help"}, wantFields: true},
+		{name: "cli", args: []string{"cli", "-h"}, wantFields: false},
 		{name: "cleanup", args: []string{"cleanup", "--help"}, wantFields: false},
 		{name: "webui", args: []string{"webui", "--help"}, wantFields: false},
+		{name: "run", args: []string{"run", "--help"}, wantFields: false},
+		{name: "update", args: []string{"update", "--help"}, wantFields: false},
 		{name: "version", args: []string{"version", "--help"}, wantFields: false},
 	}
 
