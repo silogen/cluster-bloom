@@ -294,7 +294,8 @@ Common workflows:
   Check node readiness without deploying:
     sudo bloom cli bloom.yaml --tags validate_node
 
-  Deploy deferred ClusterForge after all nodes join (set CLUSTERFORGE_RELEASE first):
+  Deploy deferred ClusterForge from the first control plane after all nodes join
+  (set CLUSTERFORGE_RELEASE first):
     sudo bloom cli bloom.yaml --tags deploy_clusterforge
 
   Update TLS certificates using a separate config:
