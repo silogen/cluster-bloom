@@ -368,13 +368,13 @@ imports (roles, tasks, vars) within that directory tree work as expected.`,
 	// without obscuring the focused help for individual subcommands.
 	defaultHelp := rootCmd.HelpFunc()
 	rootCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
-		if cmd != rootCmd {
-			defaultHelp(cmd, args)
-			return
+		appendix := "For the configuration field reference, see './bloom --help'.\n"
+		if cmd == rootCmd {
+			appendix = buildConfigFieldsHelp()
 		}
 
 		defaultTemplate := cmd.HelpTemplate()
-		cmd.SetHelpTemplate(defaultTemplate + "\n" + buildConfigFieldsHelp())
+		cmd.SetHelpTemplate(defaultTemplate + "\n" + appendix)
 		defaultHelp(cmd, args)
 		cmd.SetHelpTemplate(defaultTemplate)
 	})

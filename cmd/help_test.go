@@ -8,17 +8,18 @@ import (
 
 func TestConfigurationFieldsHelpVisibility(t *testing.T) {
 	tests := []struct {
-		name       string
-		args       []string
-		wantFields bool
+		name          string
+		args          []string
+		wantFields    bool
+		wantReference bool
 	}{
 		{name: "root", args: []string{"--help"}, wantFields: true},
-		{name: "cli", args: []string{"cli", "-h"}, wantFields: false},
-		{name: "cleanup", args: []string{"cleanup", "--help"}, wantFields: false},
-		{name: "webui", args: []string{"webui", "--help"}, wantFields: false},
-		{name: "run", args: []string{"run", "--help"}, wantFields: false},
-		{name: "update", args: []string{"update", "--help"}, wantFields: false},
-		{name: "version", args: []string{"version", "--help"}, wantFields: false},
+		{name: "cli", args: []string{"cli", "-h"}, wantReference: true},
+		{name: "cleanup", args: []string{"cleanup", "--help"}, wantReference: true},
+		{name: "webui", args: []string{"webui", "--help"}, wantReference: true},
+		{name: "run", args: []string{"run", "--help"}, wantReference: true},
+		{name: "update", args: []string{"update", "--help"}, wantReference: true},
+		{name: "version", args: []string{"version", "--help"}, wantReference: true},
 	}
 
 	for _, test := range tests {
@@ -37,6 +38,12 @@ func TestConfigurationFieldsHelpVisibility(t *testing.T) {
 			if hasFields != test.wantFields {
 				t.Fatalf("CONFIGURATION FIELDS visibility = %v, want %v\n%s",
 					hasFields, test.wantFields, output.String())
+			}
+
+			hasReference := strings.Contains(output.String(), "For the configuration field reference, see './bloom --help'.")
+			if hasReference != test.wantReference {
+				t.Fatalf("configuration reference note visibility = %v, want %v\n%s",
+					hasReference, test.wantReference, output.String())
 			}
 		})
 	}
