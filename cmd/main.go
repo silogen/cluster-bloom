@@ -287,34 +287,21 @@ By default, this command requires confirmation before proceeding. Use --force (o
 
 Requires a configuration file (typically bloom.yaml).
 
-ClusterForge Bootstrap (deferred install only):
-  Only needed if the initial bloom cli used CLUSTERFORGE_RELEASE: none (or "").
-  After all nodes have joined, run from the first control plane node:
+Common workflows:
+  Deploy a cluster:
+    sudo bloom cli bloom.yaml
+
+  Check node readiness without deploying:
+    sudo bloom cli bloom.yaml --tags validate_node
+
+  Deploy deferred ClusterForge after all nodes join (set CLUSTERFORGE_RELEASE first):
     sudo bloom cli bloom.yaml --tags deploy_clusterforge
-  Before running, set CLUSTERFORGE_RELEASE to a release tag in bloom.yaml (not "none").
-  Requires FIRST_NODE: true and DOMAIN. Skips full cluster redeploy; runs only
-  ClusterForge/ArgoCD bootstrap tasks (including Envoy Gateway for HTTPS routes
-  such as https://longhorn.<DOMAIN>/).
-  If CLUSTERFORGE_RELEASE was already set during the initial bloom cli, this step
-  is not required.
 
-Certificate Updates:
-  To update TLS certificates in an existing cluster:
-    1. Create cert-update.yaml:
-         FIRST_NODE: true
-         NEW_TLS_CERT: /home/ubuntu/tls-cert.pem
-         NEW_TLS_KEY: /home/ubuntu/tls-key.pem
-         RESTART_ENVOY_PODS: true
-    2. Run: bloom cli cert-update.yaml --tags update_cert
-  This skips schema validation and runs only certificate update tasks.
+  Update TLS certificates using a separate config:
+    sudo bloom cli cert-update.yaml --tags update_cert
 
-Export Mode:
-  Use --export flag to write a self-contained playbook directory (./bloom-playbook/)
-  instead of executing it. The directory contains the root playbook, a bloom-vars.yaml
-  file derived from your config, inventory.ini, ansible.cfg, and the tasks/ and
-  manifests/ trees. Run it with:
-    cd bloom-playbook && ansible-playbook cluster-bloom.yaml
-  Example: ./bloom cli bloom.yaml --export`,
+  Export a self-contained playbook without executing it:
+    ./bloom cli bloom.yaml --export`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			if !export {
@@ -348,7 +335,7 @@ imports (roles, tasks, vars) within that directory tree work as expected.`,
 	// Add CLI command flags
 	cliCmd.Flags().StringVar(&playbookName, "playbook", "cluster-bloom.yaml", "Playbook to run (default: cluster-bloom.yaml)")
 	cliCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Run in check mode without making changes")
-	cliCmd.Flags().StringVar(&tags, "tags", "", "Run only Ansible tasks with this tag (e.g. deploy_clusterforge, update_cert, cleanup, storage)")
+	cliCmd.Flags().StringVar(&tags, "tags", "", "Run only Ansible tasks matching tags (e.g. validate_node, deploy_clusterforge, update_cert)")
 	cliCmd.Flags().BoolVar(&destroyData, "destroy-data", false, "⚠️  DANGER: Wipes cluster (RKE2 uninstall, Longhorn cleanup, disk wipe). Shows disk preview before confirmation. Equivalent to running bloom cleanup then redeploying.")
 	cliCmd.Flags().BoolVar(&pauseK3s, "pause-k3s", false, "Legacy alias: k3s conflicts are paused automatically; this flag still forces the pause step")
 	cliCmd.Flags().BoolVar(&preserveRKE2, "preserve-existing-rke2", false, "Resume/reconcile an existing RKE2 installation without treating its service and state directories as data-safety conflicts")

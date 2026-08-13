@@ -39,3 +39,39 @@ func TestConfigurationFieldsHelpVisibility(t *testing.T) {
 		})
 	}
 }
+
+func TestCLIHelpShowsCommonWorkflows(t *testing.T) {
+	rootCmd := newRootCmd()
+	output := new(bytes.Buffer)
+	rootCmd.SetOut(output)
+	rootCmd.SetErr(output)
+	rootCmd.SetArgs([]string{"cli", "--help"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("help command failed: %v", err)
+	}
+
+	help := output.String()
+	for _, want := range []string{
+		"Common workflows:",
+		"sudo bloom cli bloom.yaml",
+		"sudo bloom cli bloom.yaml --tags validate_node",
+		"sudo bloom cli bloom.yaml --tags deploy_clusterforge",
+		"sudo bloom cli cert-update.yaml --tags update_cert",
+		"./bloom cli bloom.yaml --export",
+		"Run only Ansible tasks matching tags (e.g. validate_node, deploy_clusterforge, update_cert)",
+	} {
+		if !strings.Contains(help, want) {
+			t.Errorf("CLI help missing %q\n%s", want, help)
+		}
+	}
+
+	for _, unwanted := range []string{
+		"ClusterForge Bootstrap (deferred install only):",
+		"cleanup, storage",
+	} {
+		if strings.Contains(help, unwanted) {
+			t.Errorf("CLI help unexpectedly contains %q\n%s", unwanted, help)
+		}
+	}
+}
