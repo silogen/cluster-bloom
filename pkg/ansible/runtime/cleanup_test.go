@@ -173,6 +173,15 @@ func TestRancherMisconfigHintsDetectsClusterDiskMappedToRancher(t *testing.T) {
 	}
 }
 
+func TestRancherMisconfigHintsMatchesAbsentDeviceReferences(t *testing.T) {
+	const absentDevice = "/dev/sdz"
+	ctx := rancherStorageContext{activeSource: absentDevice}
+	hints := rancherMisconfigHints([]string{absentDevice}, "", ctx)
+	if len(hints) != 1 || !strings.Contains(hints[0], "set RANCHER_DISK") {
+		t.Fatalf("rancherMisconfigHints() = %#v, want RANCHER_DISK remediation for absent device", hints)
+	}
+}
+
 func TestRancherMisconfigHintsDetectsStaleRancherMapping(t *testing.T) {
 	ctx := rancherStorageContext{liveSource: "/dev/sdc"}
 	hints := rancherMisconfigHints([]string{"/dev/sdc"}, "/dev/sdb", ctx)
