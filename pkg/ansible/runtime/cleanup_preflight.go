@@ -4,7 +4,6 @@ package runtime
 
 import (
 	"fmt"
-	"os/exec"
 	"sort"
 	"strings"
 )
@@ -15,6 +14,12 @@ type CleanupStorage struct {
 	RancherDisk      string
 	ConfigWasPresent bool
 	RancherExplicit  bool
+
+	// Spellings as supplied by the operator or /etc/fstab, before canonicalization
+	// rewrote them to kernel names. Identity checks need these because a stable
+	// reference is exactly the information canonicalization discards.
+	ClusterDisksConfigured string
+	RancherDiskConfigured  string
 }
 
 func splitCleanupValues(value string) []string {
@@ -73,6 +78,9 @@ func ResolveCleanupStorage(
 }
 
 func canonicalizeCleanupStorage(storage CleanupStorage) (CleanupStorage, error) {
+	storage.ClusterDisksConfigured = storage.ClusterDisks
+	storage.RancherDiskConfigured = storage.RancherDisk
+
 	var canonicalCluster []string
 	for _, device := range splitCleanupValues(storage.ClusterDisks) {
 		canonical, _, err := resolveBlockDevice(device)
@@ -90,6 +98,98 @@ func canonicalizeCleanupStorage(storage CleanupStorage) (CleanupStorage, error) 
 		storage.RancherDisk = canonical
 	}
 	return storage, nil
+}
+
+// hasStableDeviceIdentity reports whether reference names a disk in a way that
+// survives detach and reattach. A bare kernel name such as /dev/sdb does not:
+// the kernel reassigns it, so it cannot prove a device is still the one Bloom
+// recorded. UUID=, LABEL=, PARTUUID=, /dev/disk/by-*, and device-mapper names can,
+// the last because they come from on-disk LVM metadata rather than probe order.
+// UUID= is what Bloom itself writes into /etc/fstab.
+func hasStableDeviceIdentity(reference string) bool {
+	reference = strings.TrimSpace(reference)
+	if reference == "" {
+		return false
+	}
+	if strings.HasPrefix(reference, "/dev/disk/by-") || strings.HasPrefix(reference, "/dev/mapper/") {
+		return true
+	}
+	if strings.HasPrefix(reference, "/dev/") {
+		return false
+	}
+	name, value, separated := strings.Cut(reference, "=")
+	if !separated || strings.TrimSpace(value) == "" {
+		return false
+	}
+	switch strings.ToUpper(strings.TrimSpace(name)) {
+	case "UUID", "LABEL", "PARTUUID", "PARTLABEL", "ID":
+		return true
+	}
+	return false
+}
+
+// unverifiableIdentityError refuses a wipe whose target is only ever named by a
+// kernel device name. This is the failure this guard exists for: after a disk is
+// detached and reattached, /dev/sdb can point at a different disk, and comparing
+// one kernel name against another cannot detect it.
+func unverifiableIdentityError(configKey, target string, references []string) error {
+	seen := map[string]struct{}{}
+	var known []string
+	for _, reference := range references {
+		reference = strings.TrimSpace(reference)
+		if reference == "" {
+			continue
+		}
+		if _, duplicate := seen[reference]; duplicate {
+			continue
+		}
+		seen[reference] = struct{}{}
+		known = append(known, reference)
+	}
+	return cleanupPreflightError(
+		fmt.Sprintf(
+			"refusing to wipe %s %s: every reference to this disk is a kernel device name (%s), "+
+				"which the kernel reassigns when a disk is detached and reattached, so Bloom cannot "+
+				"confirm it is still the disk that was recorded",
+			configKey, target, strings.Join(known, ", ")),
+		[]string{
+			fmt.Sprintf("Point %s at a stable path instead, for example /dev/disk/by-id/... (run 'ls -l /dev/disk/by-id')", configKey),
+			"Or give the /etc/fstab entry for this mount a UUID= source, which is what Bloom writes for storage it provisions",
+		},
+	)
+}
+
+// deployDeviceReference picks the spelling the deploy playbook should receive.
+// The Ansible tasks hand these values straight to wipefs, blkid, and mkfs, so
+// only real device paths survive the round trip: a /dev/disk/by-id path is kept
+// because it stays correct across renumbering, while a tag form such as UUID=
+// has to be passed already resolved.
+func deployDeviceReference(configured, canonical string) string {
+	configured = strings.TrimSpace(configured)
+	if strings.HasPrefix(configured, "/dev/") {
+		return configured
+	}
+	return canonical
+}
+
+// DeployClusterDisks returns CLUSTER_DISKS as the deploy playbook should see it,
+// preserving the operator's stable device paths where they were supplied.
+func (storage CleanupStorage) DeployClusterDisks() string {
+	configured := splitCleanupValues(storage.ClusterDisksConfigured)
+	canonical := splitCleanupValues(storage.ClusterDisks)
+	if len(configured) != len(canonical) {
+		return storage.ClusterDisks
+	}
+	references := make([]string, 0, len(canonical))
+	for index := range canonical {
+		references = append(references, deployDeviceReference(configured[index], canonical[index]))
+	}
+	return strings.Join(references, ",")
+}
+
+// DeployRancherDisk returns RANCHER_DISK as the deploy playbook should see it.
+func (storage CleanupStorage) DeployRancherDisk() string {
+	return deployDeviceReference(storage.RancherDiskConfigured, storage.RancherDisk)
 }
 
 func deviceIDs(devices []string) (map[blockDeviceID]string, error) {
@@ -140,13 +240,17 @@ type rancherStorageContext struct {
 	taggedSource string
 }
 
-func rancherStorageContextFrom(fstabContent, fstabRancher string) rancherStorageContext {
+func rancherStorageContextFrom(fstabContent, fstabRancher string) (rancherStorageContext, error) {
 	ctx := rancherStorageContext{taggedSource: fstabRancher}
-	ctx.liveSource = exactMountSource("/var/lib/rancher")
+	liveSource, err := exactMountSource("/var/lib/rancher")
+	if err != nil {
+		return rancherStorageContext{}, err
+	}
+	ctx.liveSource = liveSource
 	if active, found, _ := findActiveFstabMount(fstabContent, "/var/lib/rancher"); found {
 		ctx.activeSource = active.source
 	}
-	return ctx
+	return ctx, nil
 }
 
 func deviceAuthorizedAsRancher(device string, ctx rancherStorageContext) bool {
@@ -162,7 +266,11 @@ func deviceAuthorizedAsRancher(device string, ctx rancherStorageContext) bool {
 }
 
 func deviceUsedForRancher(device, fstabContent, fstabRancher string) bool {
-	if deviceAuthorizedAsRancher(device, rancherStorageContextFrom(fstabContent, fstabRancher)) {
+	ctx, err := rancherStorageContextFrom(fstabContent, fstabRancher)
+	if err != nil {
+		return false
+	}
+	if deviceAuthorizedAsRancher(device, ctx) {
 		return true
 	}
 	mounts, err := blockDeviceTreeMounts(device)
@@ -170,8 +278,10 @@ func deviceUsedForRancher(device, fstabContent, fstabRancher string) bool {
 		return false
 	}
 	for _, mountPoints := range mounts {
-		if strings.Contains(mountPoints, "/var/lib/rancher") {
-			return true
+		for _, mountPoint := range mountPoints {
+			if mountPoint == "/var/lib/rancher" {
+				return true
+			}
 		}
 	}
 	return false
@@ -201,7 +311,10 @@ func rancherMisconfigHints(devices []string, configuredRancher string, ctx ranch
 }
 
 func clusterDisksMissingFstabHints(devices []string, configuredRancher, fstabContent, fstabRancher string) []string {
-	ctx := rancherStorageContextFrom(fstabContent, fstabRancher)
+	ctx, err := rancherStorageContextFrom(fstabContent, fstabRancher)
+	if err != nil {
+		return []string{fmt.Sprintf("Could not read the live mount table: %v", err)}
+	}
 	hints := rancherMisconfigHints(devices, configuredRancher, ctx)
 	for _, device := range devices {
 		if deviceAuthorizedAsRancher(device, ctx) {
@@ -315,17 +428,21 @@ func rejectOverlappingCleanupTargets(targets map[string]string) error {
 	return nil
 }
 
-func exactMountSource(mountPoint string) string {
-	out, err := exec.Command(
-		"findmnt",
-		"--mountpoint", mountPoint,
-		"--noheadings",
-		"--output", "SOURCE",
-	).Output()
+// exactMountSource returns the block device mounted exactly at mountPoint, or
+// an empty string when nothing is mounted there. It reports a read failure as
+// an error rather than as "not mounted", because callers use an empty result to
+// skip drift checks that must not be skipped on uncertainty.
+func exactMountSource(mountPoint string) (string, error) {
+	table, err := readMountTable()
 	if err != nil {
-		return ""
+		return "", err
 	}
-	return strings.TrimSpace(string(out))
+	sources := table.blockSourcesForMountPoint(mountPoint)
+	if len(sources) == 0 {
+		return "", nil
+	}
+	// The last mount at a path is the one currently visible there.
+	return sources[len(sources)-1], nil
 }
 
 func validateClusterDiskScope(clusterDisks string) error {
@@ -340,7 +457,11 @@ func validateClusterDiskScope(clusterDisks string) error {
 			continue
 		}
 		recorded = append(recorded, entry.source)
-		if liveSource := exactMountSource(entry.mountPoint); liveSource != "" {
+		liveSource, err := exactMountSource(entry.mountPoint)
+		if err != nil {
+			return err
+		}
+		if liveSource != "" {
 			if err := compareDeviceSets([]string{entry.source}, []string{liveSource}); err != nil {
 				return fmt.Errorf("fstab/live mount mismatch at %s: %w", entry.mountPoint, err)
 			}
@@ -387,7 +508,11 @@ func RunCleanupPreflight(storage CleanupStorage) error {
 			}
 			fstabRancher = entry.source
 		}
-		if liveSource := exactMountSource(entry.mountPoint); liveSource != "" {
+		liveSource, err := exactMountSource(entry.mountPoint)
+		if err != nil {
+			return err
+		}
+		if liveSource != "" {
 			if err := compareDeviceSets([]string{entry.source}, []string{liveSource}); err != nil {
 				return fmt.Errorf("fstab/live mount mismatch at %s: %w", entry.mountPoint, err)
 			}
@@ -420,7 +545,10 @@ func RunCleanupPreflight(storage CleanupStorage) error {
 	}
 	if storage.ConfigWasPresent && len(clusterDevices) > 0 && len(fstabCluster) > 0 {
 		if err := compareDeviceSets(clusterDevices, fstabCluster); err != nil {
-			ctx := rancherStorageContextFrom(fstabContent, fstabRancher)
+			ctx, ctxErr := rancherStorageContextFrom(fstabContent, fstabRancher)
+			if ctxErr != nil {
+				return ctxErr
+			}
 			hints := rancherMisconfigHints(clusterDevices, storage.RancherDisk, ctx)
 			if len(hints) == 0 {
 				hints = []string{
@@ -448,7 +576,12 @@ func RunCleanupPreflight(storage CleanupStorage) error {
 	if err != nil {
 		return fmt.Errorf("validate CLUSTER_DISKS: %w", err)
 	}
+	configuredClusterIDs, err := deviceIDs(splitCleanupValues(storage.ClusterDisksConfigured))
+	if err != nil {
+		return fmt.Errorf("validate CLUSTER_DISKS: %w", err)
+	}
 	allowedClusterMounts := map[blockDeviceID]map[string]struct{}{}
+	fstabClusterSources := map[blockDeviceID]string{}
 	for _, entry := range fstabEntries {
 		if entry.tag != bloomFstabManaged {
 			continue
@@ -461,25 +594,34 @@ func RunCleanupPreflight(storage CleanupStorage) error {
 			allowedClusterMounts[id] = map[string]struct{}{}
 		}
 		allowedClusterMounts[id][entry.mountPoint] = struct{}{}
+		fstabClusterSources[id] = entry.source
 	}
 	for id, device := range clusterIDs {
 		if err := rejectProtectedCleanupTarget(device, "CLUSTER_DISKS"); err != nil {
 			return err
+		}
+		if !hasStableDeviceIdentity(configuredClusterIDs[id]) &&
+			!hasStableDeviceIdentity(fstabClusterSources[id]) {
+			return unverifiableIdentityError("CLUSTER_DISKS", device,
+				[]string{configuredClusterIDs[id], fstabClusterSources[id]})
 		}
 		mounts, err := blockDeviceTreeMounts(device)
 		if err != nil {
 			return err
 		}
 		for mountedDevice, mountPoints := range mounts {
-			for _, mountPoint := range strings.Fields(mountPoints) {
+			for _, mountPoint := range mountPoints {
 				if _, allowed := allowedClusterMounts[id][mountPoint]; !allowed {
 					message := fmt.Sprintf(
 						"refusing to clean %s: %s is mounted at non-Bloom mount point %s",
 						device, mountedDevice, mountPoint)
 					var hints []string
 					if mountPoint == "/var/lib/rancher" {
-						hints = rancherMisconfigHints(
-							[]string{device}, storage.RancherDisk, rancherStorageContextFrom(fstabContent, fstabRancher))
+						ctx, ctxErr := rancherStorageContextFrom(fstabContent, fstabRancher)
+						if ctxErr != nil {
+							return ctxErr
+						}
+						hints = rancherMisconfigHints([]string{device}, storage.RancherDisk, ctx)
 					}
 					if len(hints) == 0 {
 						hints = []string{
@@ -528,10 +670,17 @@ func RunCleanupPreflight(storage CleanupStorage) error {
 			return fmt.Errorf("RANCHER_DISK %s is also configured as CLUSTER_DISK %s", storage.RancherDisk, clusterPath)
 		}
 		recordedRancher := fstabRancher
-		liveRancher := exactMountSource("/var/lib/rancher")
+		liveRancher, err := exactMountSource("/var/lib/rancher")
+		if err != nil {
+			return err
+		}
 		activeRancher, hasActiveRancher, err := findActiveFstabMount(fstabContent, "/var/lib/rancher")
 		if err != nil {
 			return err
+		}
+		activeRancherSource := ""
+		if hasActiveRancher {
+			activeRancherSource = activeRancher.source
 		}
 		if recordedRancher == "" && !storage.RancherExplicit {
 			return fmt.Errorf("configless cleanup requires a strictly tagged Bloom RANCHER_DISK fstab entry")
@@ -545,7 +694,7 @@ func RunCleanupPreflight(storage CleanupStorage) error {
 			}
 		}
 		if hasActiveRancher {
-			if err := compareDeviceSets([]string{storage.RancherDisk}, []string{activeRancher.source}); err != nil {
+			if err := compareDeviceSets([]string{storage.RancherDisk}, []string{activeRancherSource}); err != nil {
 				return fmt.Errorf("RANCHER_DISK config/active fstab mismatch: %w", err)
 			}
 		}
@@ -553,6 +702,16 @@ func RunCleanupPreflight(storage CleanupStorage) error {
 			if err := compareDeviceSets([]string{storage.RancherDisk}, []string{liveRancher}); err != nil {
 				return fmt.Errorf("RANCHER_DISK config/live mount mismatch: %w", err)
 			}
+		}
+		// The comparisons above all resolve through the live kernel state, so they
+		// agree by construction when every reference is a kernel name that was
+		// reassigned together. At least one stable reference is required to make
+		// them meaningful.
+		if !hasStableDeviceIdentity(storage.RancherDiskConfigured) &&
+			!hasStableDeviceIdentity(recordedRancher) &&
+			!hasStableDeviceIdentity(activeRancherSource) {
+			return unverifiableIdentityError("RANCHER_DISK", storage.RancherDisk,
+				[]string{storage.RancherDiskConfigured, recordedRancher, activeRancherSource, liveRancher})
 		}
 		if recordedRancher == "" {
 			fmt.Printf("   ✓ Explicit RANCHER_DISK authorizes matching legacy mount %s\n", liveRancher)
@@ -562,7 +721,7 @@ func RunCleanupPreflight(storage CleanupStorage) error {
 			return err
 		}
 		for mountedDevice, mountPoints := range mounts {
-			for _, mountPoint := range strings.Fields(mountPoints) {
+			for _, mountPoint := range mountPoints {
 				if mountPoint != "/var/lib/rancher" {
 					return fmt.Errorf(
 						"refusing to clean RANCHER_DISK %s: %s is mounted at %s",
@@ -579,9 +738,15 @@ func RunCleanupPreflight(storage CleanupStorage) error {
 				"Or run configless cleanup if you only want strictly tagged storage wiped",
 			},
 		)
-	} else if getDeviceFromFstabEntry("/var/lib/rancher") != "" || exactMountSource("/var/lib/rancher") != "" {
-		fmt.Println("   ⚠️  Preserving untagged /var/lib/rancher storage (configless cleanup)")
-		fmt.Println("   ℹ️  To wipe it, rerun cleanup with bloom.yaml containing a matching RANCHER_DISK entry")
+	} else {
+		liveRancher, err := exactMountSource("/var/lib/rancher")
+		if err != nil {
+			return err
+		}
+		if getDeviceFromFstabEntry("/var/lib/rancher") != "" || liveRancher != "" {
+			fmt.Println("   ⚠️  Preserving untagged /var/lib/rancher storage (configless cleanup)")
+			fmt.Println("   ℹ️  To wipe it, rerun cleanup with bloom.yaml containing a matching RANCHER_DISK entry")
+		}
 	}
 
 	fmt.Println("   ✅ Cleanup preflight passed")

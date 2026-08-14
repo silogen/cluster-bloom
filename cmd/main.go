@@ -410,9 +410,6 @@ func runAnsible(configFile string) {
 	if clusterListenIP != "" {
 		cfg["CLUSTER_LISTEN_IP"] = clusterListenIP
 	}
-	if pauseK3s {
-		cfg["PAUSE_K3S"] = true
-	}
 
 	// Validate config (after injecting CLI flags)
 	// Skip validation for cert update tags to allow separate cert-update-config.yaml
@@ -427,11 +424,14 @@ func runAnsible(configFile string) {
 		}
 	}
 
-	// Internal Ansible variable: inject only after schema validation so it is not
-	// rejected as an unknown user-facing bloom.yaml key.
+	// Internal Ansible variables: inject only after schema validation so they are
+	// not rejected as unknown user-facing bloom.yaml keys.
 	cfg["bloom_config_file"] = configFile
 	if preserveRKE2 {
 		cfg["RKE2_PRESERVE_EXISTING"] = true
+	}
+	if pauseK3s {
+		cfg["PAUSE_K3S"] = true
 	}
 
 	// Resolve host-driver policy plus GPU Operator/DeviceConfig defaults and
@@ -471,9 +471,12 @@ func runAnsible(configFile string) {
 			fmt.Fprintf(os.Stderr, "❌ Cleanup preflight failed: %v\n", err)
 			os.Exit(1)
 		}
-		cfg["CLUSTER_DISKS"] = storage.ClusterDisks
+		// Preflight validates the canonical kernel names, but the playbook keeps
+		// the operator's original spelling: a /dev/disk/by-id path stays valid if
+		// the kernel renumbers devices between preflight and the wipe.
+		cfg["CLUSTER_DISKS"] = storage.DeployClusterDisks()
 		cfg["CLUSTER_PREMOUNTED_DISKS"] = storage.PremountedDisks
-		cfg["RANCHER_DISK"] = storage.RancherDisk
+		cfg["RANCHER_DISK"] = storage.DeployRancherDisk()
 		options.rancherExplicit = storage.RancherExplicit
 		if !confirmDestructiveOperation(cfg) {
 			fmt.Println("\n❌ Operation aborted by user. No data was harmed.")

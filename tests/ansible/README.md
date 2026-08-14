@@ -236,25 +236,14 @@ assert 'expected' in result.stdout
 
 ## CI/CD Integration
 
-Tests run automatically in GitHub Actions:
+The unit tests run on every pull request in the `unit-tests` job of
+`.github/workflows/run-tests.yml`, alongside the Go unit tests.
 
-```yaml
-# .github/workflows/run-tests.yml
-ansible-playbook-tests:
-  runs-on: ubuntu-latest
-  steps:
-    - uses: actions/checkout@v4
-    - name: Setup Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
-    - name: Install dependencies
-      run: pip install -r tests/ansible/requirements.txt
-    - name: Run tests
-      run: |
-        cd tests/ansible
-        pytest unit/ -v --tb=short
-```
+The playbooks under `playbooks/` are fixtures used by those tests rather than a
+separate suite, and the modules under `library/` replace `command`, `shell`, and
+`systemd` with mocks that always report success. That makes the tests safe to run
+without a cluster, but it also means they exercise task logic only — retry and
+failure handling in the real playbooks is not covered here.
 
 ## Troubleshooting
 

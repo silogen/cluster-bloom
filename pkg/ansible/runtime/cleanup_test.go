@@ -299,8 +299,70 @@ func TestParseBloomDiskMountPointBounds(t *testing.T) {
 	}
 }
 
-func TestLonghornCleanupNeededFalseWithoutArtifacts(t *testing.T) {
-	if longhornCleanupNeeded() {
-		t.Skip("Longhorn artifacts present on this host; skipping negative-case test")
+func TestHasStableDeviceIdentity(t *testing.T) {
+	for _, reference := range []string{
+		"/dev/disk/by-id/wwn-0x5000c500a1b2c3d4",
+		"/dev/disk/by-uuid/7c4a8d09-1234-4f2e-9abc-1234567890ab",
+		"UUID=7c4a8d09-1234-4f2e-9abc-1234567890ab",
+		"uuid=7c4a8d09",
+		"LABEL=data",
+		"PARTUUID=0001-0002",
+		" UUID=7c4a8d09 ",
+		"/dev/mapper/vg--data-longhorn",
+	} {
+		if !hasStableDeviceIdentity(reference) {
+			t.Errorf("hasStableDeviceIdentity(%q) = false, want true", reference)
+		}
+	}
+	for _, reference := range []string{
+		"", "   ", "/dev/sdb", "/dev/sdb1", "/dev/nvme0n1", "/dev/vda", "/dev/md0",
+		"UUID=", "sdb", "no-equals",
+	} {
+		if hasStableDeviceIdentity(reference) {
+			t.Errorf("hasStableDeviceIdentity(%q) = true, want false", reference)
+		}
+	}
+}
+
+func TestUnverifiableIdentityErrorNamesTargetAndRemediation(t *testing.T) {
+	err := unverifiableIdentityError("RANCHER_DISK", "/dev/sdb", []string{"/dev/sdb", "/dev/sdb", ""})
+	if err == nil {
+		t.Fatal("unverifiableIdentityError() = nil, want error")
+	}
+	got := err.Error()
+	for _, want := range []string{"RANCHER_DISK", "/dev/sdb", "/dev/disk/by-id/", "UUID="} {
+		if !strings.Contains(got, want) {
+			t.Errorf("unverifiableIdentityError() = %q, want it to mention %q", got, want)
+		}
+	}
+	if strings.Count(got, "/dev/sdb,") != 0 {
+		t.Errorf("unverifiableIdentityError() = %q, want duplicate references collapsed", got)
+	}
+}
+
+func TestDeployDeviceReferenceKeepsStableOperatorPaths(t *testing.T) {
+	storage := CleanupStorage{
+		ClusterDisks:           "/dev/sdb,/dev/sdc",
+		ClusterDisksConfigured: "/dev/disk/by-id/wwn-0xaaa,/dev/sdc",
+		RancherDisk:            "/dev/sdd",
+		RancherDiskConfigured:  "UUID=7c4a8d09",
+	}
+	// The by-id path survives; the kernel name has nothing better to fall back to.
+	if got, want := storage.DeployClusterDisks(), "/dev/disk/by-id/wwn-0xaaa,/dev/sdc"; got != want {
+		t.Errorf("DeployClusterDisks() = %q, want %q", got, want)
+	}
+	// A tag form cannot be handed to wipefs, so the resolved path is used.
+	if got, want := storage.DeployRancherDisk(), "/dev/sdd"; got != want {
+		t.Errorf("DeployRancherDisk() = %q, want %q", got, want)
+	}
+}
+
+func TestDeployClusterDisksFallsBackWhenListsDisagree(t *testing.T) {
+	storage := CleanupStorage{
+		ClusterDisks:           "/dev/sdb",
+		ClusterDisksConfigured: "/dev/disk/by-id/wwn-0xaaa,/dev/disk/by-id/wwn-0xbbb",
+	}
+	if got, want := storage.DeployClusterDisks(), "/dev/sdb"; got != want {
+		t.Errorf("DeployClusterDisks() = %q, want %q", got, want)
 	}
 }

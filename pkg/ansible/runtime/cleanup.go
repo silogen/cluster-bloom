@@ -561,7 +561,10 @@ func CleanupPremountedDisks(premountedDisks string) error {
 				return fmt.Errorf("mount premounted disk %s: %w", mp, err2)
 			}
 		}
-		liveSource := exactMountSource(mp)
+		liveSource, err := exactMountSource(mp)
+		if err != nil {
+			return err
+		}
 		if liveSource == "" {
 			return fmt.Errorf("premounted cleanup path %s is not an exact mount point", mp)
 		}
@@ -577,7 +580,11 @@ func CleanupPremountedDisks(premountedDisks string) error {
 		for _, pvcPath := range pvcPaths {
 			exec.Command("umount", "-lf", pvcPath).Run()
 		}
-		if err := compareDeviceSets([]string{recordedSource}, []string{exactMountSource(mp)}); err != nil {
+		reSource, err := exactMountSource(mp)
+		if err != nil {
+			return err
+		}
+		if err := compareDeviceSets([]string{recordedSource}, []string{reSource}); err != nil {
 			return fmt.Errorf("premounted cleanup source changed at %s: %w", mp, err)
 		}
 		// Remove PVC dirs and Longhorn disk state; keep the ext4 filesystem intact
@@ -1265,7 +1272,11 @@ func unmountPriorLonghornDisks(clusterDisks string) error {
 		if _, validated := managedLines[entry.raw]; !validated {
 			continue
 		}
-		if exactMountSource(entry.mountPoint) != "" {
+		liveSource, err := exactMountSource(entry.mountPoint)
+		if err != nil {
+			return err
+		}
+		if liveSource != "" {
 			fmt.Printf("      ⏏️  Unmounting bloom-managed mount: %s\n", entry.mountPoint)
 			if output, err := exec.Command("sudo", "umount", "-lf", entry.mountPoint).CombinedOutput(); err != nil {
 				return fmt.Errorf("unmount %s before fstab update: %w (%s)",

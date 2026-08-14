@@ -447,7 +447,9 @@ func backupAndWriteFstab(original string, retainedLines []string) error {
 		return fmt.Errorf("create fstab backup directory %s: %w", fstabBackupDirectory, err)
 	}
 	backupPath := fstabBackupPath(timestamp)
-	if err := os.WriteFile(backupPath, []byte(original), 0644); err != nil {
+	// The backup must reach disk before /etc/fstab is replaced. A crash between
+	// the two would otherwise leave neither the original nor a recoverable copy.
+	if err := atomicWriteFile(backupPath, []byte(original), 0644); err != nil {
 		return fmt.Errorf("back up fstab to %s: %w", backupPath, err)
 	}
 	if err := atomicWriteFile("/etc/fstab", []byte(strings.Join(retainedLines, "\n")), 0644); err != nil {

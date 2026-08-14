@@ -8,8 +8,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 var criticalSystemMounts = []string{
@@ -126,59 +129,164 @@ func (protection deviceProtection) formatReason() string {
 	return strings.Join(parts, "; ")
 }
 
-func blockSourcesForExactMountPoint(mountPoint string) ([]string, error) {
-	runFindmnt := func(column string) ([]byte, error) {
-		return exec.Command(
-			"findmnt",
-			"--raw",
-			"--noheadings",
-			"--output", column,
-			"--mountpoint", mountPoint,
-		).Output()
-	}
+// mountTablePath is the kernel's authoritative list of mounts. Reading it
+// directly replaces per-device findmnt calls, which signal "nothing matched"
+// and a genuine failure through the same exit status: a device that could not
+// be inspected must never be mistaken for an unmounted one.
+var mountTablePath = "/proc/self/mountinfo"
 
-	out, err := runFindmnt("SOURCES")
-	if findmntReportsUnknownColumn(err, "SOURCES") {
-		out, err = runFindmnt("SOURCE")
+type mountEntry struct {
+	mountPoint string
+	deviceID   blockDeviceID
+	source     string
+}
+
+type mountTable []mountEntry
+
+// unescapeMountField decodes the octal escapes that mountinfo uses for space,
+// tab, newline, and backslash inside path fields.
+func unescapeMountField(field string) string {
+	if !strings.Contains(field, `\`) {
+		return field
 	}
+	var builder strings.Builder
+	for index := 0; index < len(field); index++ {
+		if field[index] == '\\' && index+3 < len(field) {
+			if value, err := strconv.ParseUint(field[index+1:index+4], 8, 8); err == nil {
+				builder.WriteByte(byte(value))
+				index += 3
+				continue
+			}
+		}
+		builder.WriteByte(field[index])
+	}
+	return builder.String()
+}
+
+func parseMountDeviceID(field string) (blockDeviceID, error) {
+	majorText, minorText, separated := strings.Cut(field, ":")
+	if !separated {
+		return 0, fmt.Errorf("malformed device number %q", field)
+	}
+	major, err := strconv.ParseUint(majorText, 10, 32)
 	if err != nil {
-		if detail := commandStderr(err); detail != "" {
-			return nil, fmt.Errorf("%w: %s", err, detail)
-		}
-		return nil, err
+		return 0, fmt.Errorf("malformed device major in %q", field)
 	}
-	sources := strings.FieldsFunc(strings.TrimSpace(string(out)), func(r rune) bool {
-		return r == ',' || r == ' ' || r == '\t' || r == '\n'
-	})
-	var blockSources []string
-	for _, source := range sources {
-		if strings.HasPrefix(source, "/dev/") {
-			blockSources = append(blockSources, source)
-		}
+	minor, err := strconv.ParseUint(minorText, 10, 32)
+	if err != nil {
+		return 0, fmt.Errorf("malformed device minor in %q", field)
 	}
-	if len(blockSources) == 0 {
-		return nil, fmt.Errorf("mount point %s has no block-device sources", mountPoint)
-	}
-	return blockSources, nil
+	return blockDeviceID(unix.Mkdev(uint32(major), uint32(minor))), nil
 }
 
-func findmntReportsUnknownColumn(err error, column string) bool {
-	detail := strings.ToLower(commandStderr(err))
-	return strings.Contains(detail, "unknown column") &&
-		strings.Contains(detail, strings.ToLower(column))
+// readMountTable parses every mount the kernel currently reports. It returns
+// either the complete table or an error, so no caller can act on a partial
+// result that looks like "nothing is mounted".
+func readMountTable() (mountTable, error) {
+	data, err := os.ReadFile(mountTablePath)
+	if err != nil {
+		return nil, fmt.Errorf("read mount table %s: %w", mountTablePath, err)
+	}
+	var table mountTable
+	for index, line := range strings.Split(string(data), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		separator := -1
+		for position, field := range fields {
+			if field == "-" {
+				separator = position
+				break
+			}
+		}
+		// Layout: id parent major:minor root mountPoint options [optional...] - fstype source superOptions
+		if separator < 6 || len(fields) < separator+3 {
+			return nil, fmt.Errorf("mount table %s line %d is malformed", mountTablePath, index+1)
+		}
+		deviceID, err := parseMountDeviceID(fields[2])
+		if err != nil {
+			return nil, fmt.Errorf("mount table %s line %d: %w", mountTablePath, index+1, err)
+		}
+		table = append(table, mountEntry{
+			mountPoint: unescapeMountField(fields[4]),
+			deviceID:   deviceID,
+			source:     unescapeMountField(fields[separator+2]),
+		})
+	}
+	return table, nil
 }
 
-func commandStderr(err error) string {
-	exitErr, ok := err.(*exec.ExitError)
-	if !ok {
-		return ""
+// blockSourcesForMountPoint returns the block-device sources mounted exactly at
+// mountPoint. An empty result means nothing is mounted there, which is normal:
+// on most hosts paths such as /usr and /var live on / rather than on their own
+// filesystem. Callers distinguish that from a failure because an unreadable
+// mount table is reported by readMountTable instead.
+func (table mountTable) blockSourcesForMountPoint(mountPoint string) []string {
+	var sources []string
+	for _, entry := range table {
+		if entry.mountPoint != mountPoint {
+			continue
+		}
+		if strings.HasPrefix(entry.source, "/dev/") {
+			sources = append(sources, entry.source)
+		}
 	}
-	return strings.TrimSpace(string(exitErr.Stderr))
+	return sources
+}
+
+// blockSourcesContainingPath returns the block-device sources of the mount that
+// holds path, which for a swapfile is the filesystem it was allocated on.
+func (table mountTable) blockSourcesContainingPath(path string) []string {
+	holder := ""
+	for _, entry := range table {
+		underMount := entry.mountPoint == "/" ||
+			path == entry.mountPoint ||
+			strings.HasPrefix(path, strings.TrimSuffix(entry.mountPoint, "/")+"/")
+		if underMount && len(entry.mountPoint) >= len(holder) {
+			holder = entry.mountPoint
+		}
+	}
+	if holder == "" {
+		return nil
+	}
+	return table.blockSourcesForMountPoint(holder)
+}
+
+// mountPointsForDeviceIDs maps each mounted device in ids to the mount points
+// it serves. Both the mountinfo device number and its source path are matched,
+// because multi-device filesystems such as btrfs report an anonymous device
+// number and identify the real block device only through the source.
+func (table mountTable) mountPointsForDeviceIDs(ids map[blockDeviceID]string) map[string][]string {
+	mounts := map[string][]string{}
+	for _, entry := range table {
+		device, matched := ids[entry.deviceID]
+		if !matched && strings.HasPrefix(entry.source, "/dev/") {
+			// A /dev path that no longer resolves cannot be one of ids, whose
+			// members all resolved successfully, so skipping it is safe.
+			if _, sourceID, err := resolveBlockDevice(entry.source); err == nil {
+				device, matched = ids[sourceID]
+			}
+		}
+		if !matched {
+			continue
+		}
+		mounts[device] = append(mounts[device], entry.mountPoint)
+	}
+	for device, mountPoints := range mounts {
+		sort.Strings(mountPoints)
+		mounts[device] = mountPoints
+	}
+	return mounts
 }
 
 // protectedSystemDevices identifies every block device backing a critical
 // system mount or active swap, including its lower-level dependencies.
 func protectedSystemDevices() (map[blockDeviceID]string, error) {
+	table, err := readMountTable()
+	if err != nil {
+		return nil, err
+	}
 	protected := map[blockDeviceID]deviceProtection{}
 	rootFound := false
 
@@ -229,10 +337,14 @@ func protectedSystemDevices() (map[blockDeviceID]string, error) {
 	}
 
 	for _, mountPoint := range criticalSystemMounts {
-		sources, err := blockSourcesForExactMountPoint(mountPoint)
-		if err != nil {
+		// An empty result here means the path is not a separate filesystem on
+		// this host, so it is already covered by whichever device backs its
+		// parent. It never means the lookup failed: readMountTable already
+		// returned the whole table or an error.
+		sources := table.blockSourcesForMountPoint(mountPoint)
+		if len(sources) == 0 {
 			if mountPoint == "/" {
-				return nil, fmt.Errorf("determine root filesystem source: %w", err)
+				return nil, fmt.Errorf("mount table reports no block device backing /")
 			}
 			continue
 		}
@@ -249,7 +361,13 @@ func protectedSystemDevices() (map[blockDeviceID]string, error) {
 		return nil, fmt.Errorf("could not identify the block device backing /")
 	}
 
-	if data, err := os.ReadFile("/proc/swaps"); err == nil {
+	// A kernel built without swap support has no /proc/swaps. Any other read
+	// failure would leave active swap devices unprotected, so it fails closed.
+	data, err := os.ReadFile("/proc/swaps")
+	if err != nil && !os.IsNotExist(err) {
+		return nil, fmt.Errorf("read active swap devices: %w", err)
+	}
+	if err == nil {
 		lines := strings.Split(string(data), "\n")
 		for _, line := range lines[1:] {
 			fields := strings.Fields(line)
@@ -263,26 +381,11 @@ func protectedSystemDevices() (map[blockDeviceID]string, error) {
 				continue
 			}
 
-			out, err := exec.Command(
-				"findmnt",
-				"--raw",
-				"--noheadings",
-				"--output", "SOURCES",
-				"--target", fields[0],
-			).Output()
-			if err != nil {
-				return nil, fmt.Errorf("resolve filesystem backing swapfile %s: %w", fields[0], err)
-			}
-			swapSources := strings.FieldsFunc(strings.TrimSpace(string(out)), func(r rune) bool {
-				return r == ',' || r == ' ' || r == '\t' || r == '\n'
-			})
+			swapSources := table.blockSourcesContainingPath(fields[0])
 			if len(swapSources) == 0 {
 				return nil, fmt.Errorf("swapfile %s has no block-device source", fields[0])
 			}
 			for _, source := range swapSources {
-				if !strings.HasPrefix(source, "/dev/") {
-					return nil, fmt.Errorf("swapfile %s source %q is not a block device", fields[0], source)
-				}
 				if err := addSwapSource(source, "active swapfile "+fields[0]); err != nil {
 					return nil, err
 				}
@@ -325,10 +428,10 @@ func assertSafeToWipe(target string) error {
 	return nil
 }
 
-// assertDeviceTreeUnmounted checks the target and all of its partitions and
-// layered children. Checking only findmnt --source <whole-disk> misses mounted
-// partitions such as /dev/sda1 when the candidate is /dev/sda.
-func blockDeviceTreeMounts(target string) (map[string]string, error) {
+// blockDeviceTreeMounts reports every mount served by target or by any of its
+// partitions and layered children. Inspecting only the whole disk would miss
+// mounted partitions such as /dev/sda1 when the candidate is /dev/sda.
+func blockDeviceTreeMounts(target string) (map[string][]string, error) {
 	canonical, _, err := resolveBlockDevice(target)
 	if err != nil {
 		return nil, err
@@ -344,22 +447,22 @@ func blockDeviceTreeMounts(target string) (map[string]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("inspect mounts below %s: %w", target, err)
 	}
-	mounts := map[string]string{}
+	treeIDs := map[blockDeviceID]string{}
 	for _, device := range strings.Fields(string(out)) {
-		mountOutput, err := exec.Command(
-			"findmnt",
-			"--source", device,
-			"--noheadings",
-			"--output", "TARGET",
-		).Output()
-		if err != nil {
+		if !strings.HasPrefix(device, "/dev/") {
 			continue
 		}
-		if mountPoints := strings.Fields(string(mountOutput)); len(mountPoints) > 0 {
-			mounts[device] = strings.Join(mountPoints, " ")
+		canonicalDevice, id, err := resolveBlockDevice(device)
+		if err != nil {
+			return nil, fmt.Errorf("inspect mounts below %s: %w", target, err)
 		}
+		treeIDs[id] = canonicalDevice
 	}
-	return mounts, nil
+	table, err := readMountTable()
+	if err != nil {
+		return nil, err
+	}
+	return table.mountPointsForDeviceIDs(treeIDs), nil
 }
 
 func assertDeviceTreeUnmounted(target string) error {
@@ -370,7 +473,7 @@ func assertDeviceTreeUnmounted(target string) error {
 	return mountedDeviceTreeError(target, mounts)
 }
 
-func mountedDeviceTreeError(target string, mounts map[string]string) error {
+func mountedDeviceTreeError(target string, mounts map[string][]string) error {
 	if len(mounts) == 0 {
 		return nil
 	}
@@ -382,7 +485,7 @@ func mountedDeviceTreeError(target string, mounts map[string]string) error {
 	sort.Strings(devices)
 	details := make([]string, 0, len(devices))
 	for _, device := range devices {
-		details = append(details, fmt.Sprintf("%s at %s", device, mounts[device]))
+		details = append(details, fmt.Sprintf("%s at %s", device, strings.Join(mounts[device], " ")))
 	}
 	return fmt.Errorf("refusing to wipe %s: mounted device tree entries: %s",
 		target, strings.Join(details, "; "))
