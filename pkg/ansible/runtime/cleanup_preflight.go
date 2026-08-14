@@ -234,6 +234,21 @@ func compareDeviceSets(configured, recorded []string) error {
 	return nil
 }
 
+// devicesMatch reports whether two device references name the same disk.
+// Literal path equality is checked first so hint generation still works when
+// a referenced device is absent from the runner (for example in CI).
+func devicesMatch(left, right string) bool {
+	left = strings.TrimSpace(left)
+	right = strings.TrimSpace(right)
+	if left == "" || right == "" {
+		return false
+	}
+	if left == right {
+		return true
+	}
+	return compareDeviceSets([]string{left}, []string{right}) == nil
+}
+
 type rancherStorageContext struct {
 	liveSource   string
 	activeSource string
@@ -258,7 +273,7 @@ func deviceAuthorizedAsRancher(device string, ctx rancherStorageContext) bool {
 		if source == "" {
 			continue
 		}
-		if compareDeviceSets([]string{device}, []string{source}) == nil {
+		if devicesMatch(device, source) {
 			return true
 		}
 	}
@@ -298,7 +313,7 @@ func rancherMisconfigHints(devices []string, configuredRancher string, ctx ranch
 			hints = append(hints, fmt.Sprintf(
 				"%s is the /var/lib/rancher disk; set RANCHER_DISK and remove it from CLUSTER_DISKS",
 				device))
-		case compareDeviceSets([]string{device}, []string{configuredRancher}) != nil:
+		case !devicesMatch(device, configuredRancher):
 			hints = append(hints, fmt.Sprintf(
 				"%s is mounted at /var/lib/rancher but RANCHER_DISK is %s; fix the stale bloom.yaml mapping",
 				device, configuredRancher))
