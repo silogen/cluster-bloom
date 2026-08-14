@@ -66,9 +66,10 @@ func TestCLIHelpShowsCommonWorkflows(t *testing.T) {
 		"sudo bloom cli bloom.yaml",
 		"sudo bloom cli bloom.yaml --tags validate_node",
 		"sudo bloom cli bloom.yaml --tags deploy_clusterforge",
+		"sudo bloom cli bloom.yaml --tags gpu",
 		"sudo bloom cli cert-update.yaml --tags update_cert",
 		"./bloom cli bloom.yaml --export",
-		"Run only Ansible tasks matching tags (e.g. validate_node, deploy_clusterforge, update_cert)",
+		"Run only Ansible tasks matching tags (e.g. gpu, validate_node, deploy_clusterforge, update_cert)",
 	} {
 		if !strings.Contains(help, want) {
 			t.Errorf("CLI help missing %q\n%s", want, help)

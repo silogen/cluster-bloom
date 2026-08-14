@@ -301,6 +301,12 @@ Common workflows:
   Update TLS certificates using a separate config:
     sudo bloom cli cert-update.yaml --tags update_cert
 
+  Install or reconcile the AMD DKMS driver only (no cluster deploy, no host
+  ROCm). Useful after a manual ROCm uninstall when GPU_NODE is true and the
+  node has no unsupported amdgpu-dkms/DKMS registrations left:
+    sudo bloom cli bloom.yaml --tags gpu
+  Bloom may end the play and offer to reboot; rerun the same command after reboot.
+
   Export a self-contained playbook without executing it:
     ./bloom cli bloom.yaml --export`,
 		Args: cobra.ExactArgs(1),
@@ -336,7 +342,7 @@ imports (roles, tasks, vars) within that directory tree work as expected.`,
 	// Add CLI command flags
 	cliCmd.Flags().StringVar(&playbookName, "playbook", "cluster-bloom.yaml", "Playbook to run (default: cluster-bloom.yaml)")
 	cliCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Run in check mode without making changes")
-	cliCmd.Flags().StringVar(&tags, "tags", "", "Run only Ansible tasks matching tags (e.g. validate_node, deploy_clusterforge, update_cert)")
+	cliCmd.Flags().StringVar(&tags, "tags", "", "Run only Ansible tasks matching tags (e.g. gpu, validate_node, deploy_clusterforge, update_cert)")
 	cliCmd.Flags().BoolVar(&destroyData, "destroy-data", false, "⚠️  DANGER: Wipes cluster (RKE2 uninstall, Longhorn cleanup, disk wipe). Shows disk preview before confirmation. Equivalent to running bloom cleanup then redeploying.")
 	cliCmd.Flags().BoolVar(&pauseK3s, "pause-k3s", false, "Legacy alias: k3s conflicts are paused automatically; this flag still forces the pause step")
 	cliCmd.Flags().BoolVar(&preserveRKE2, "preserve-existing-rke2", false, "Resume/reconcile an existing RKE2 installation without treating its service and state directories as data-safety conflicts")
