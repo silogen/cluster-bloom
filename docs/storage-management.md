@@ -61,7 +61,8 @@ UUID=<disk-uuid> /mnt/disk0 ext4 defaults,nofail 0 2
 ### Longhorn Integration
 Configures Longhorn distributed storage system:
 - **Version**: v1.8.0 (v1 data engine, tgt + open-iscsi)
-- **Storage Class**: `default` (marked default class), plus `direct`, `multinode` and `mlstorage`
+- **Namespace**: `longhorn` (not `longhorn-system`)
+- **Storage Classes**: `default` (marked default class), plus `direct`, `multinode`, and `mlstorage`
 - **Replica Count**: 1 on every shipped class
 - **Data Locality**: `best-effort` on `default` and `mlstorage`, `strict-local` on `direct`, `disabled` on `multinode`
 
@@ -130,7 +131,8 @@ therefore affects new clusters; an existing cluster needs the Setting patched
 directly.
 
 ### Storage Class Configuration
-Default storage class for PVC provisioning:
+Bloom ships Longhorn storage classes in `pkg/ansible/runtime/manifests/longhorn/longhorn.yaml`. The default class for PVC provisioning omits `storageClassName` or uses `default`:
+
 ```yaml
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
@@ -152,13 +154,15 @@ parameters:
   fsType: "ext4"
 ```
 
+The `mlstorage` class uses the same provisioner and replica count but is not marked as default. Use it explicitly when a workload should not rely on the cluster default storage class.
+
 `numberOfReplicas` is a provisioning parameter: Longhorn copies it into each PV
 at creation. Editing the class changes new volumes only, so raising redundancy
 on an existing cluster means patching each `volumes.longhorn.io` object.
 
 ## Cleanup Behaviour
 
-Bloom provides two equivalent paths to clean up storage before redeployment:
+Bloom provides two equivalent paths to clean up storage before redeployment. For multi-node HA clusters, see [Cluster Teardown](cluster-teardown.md) for the recommended order to run cleanup on each node.
 
 ### `bloom cleanup [config-file]`
 
@@ -168,17 +172,40 @@ Standalone cleanup command. Accepts an optional config file to read `CLUSTER_DIS
 sudo ./bloom cleanup bloom.yaml
 ```
 
+Run only the non-mutating safety checks with:
+
+```bash
+sudo ./bloom cleanup bloom.yaml --preflight-only
+```
+
+Cleanup runs this preflight before confirmation and repeats it immediately before teardown. It resolves device aliases to kernel block-device identities and:
+
+- Requires `bloom.yaml` `CLUSTER_DISKS`, strict Bloom-managed `/etc/fstab` entries, and live block devices to agree
+- Rejects malformed or misplaced Bloom fstab tags; managed tags are valid only on `/mnt/diskN`, premounted tags require a safe absolute path, and the rancher-disk tag only on `/var/lib/rancher`
+- Refuses any wipe targeting `/`, `/boot`, `/usr`, `/var`, `/etc`, `/home`, `/opt`, `/srv`, active swap, or their underlying partition/LVM/LUKS/md-raid device chain
+- Rejects configured disks with non-Bloom mounts anywhere in their partition/device tree
+- Verifies `RANCHER_DISK` against its exact live mount and fstab source
+
+Any mismatch aborts cleanup before RKE2, Longhorn, fstab, or disk state is changed.
+
+Without a config file, cleanup discovers only entries carrying an exact Bloom fstab tag, so untagged legacy `/var/lib/rancher` mounts are reported and preserved. An explicit `RANCHER_DISK` in a supplied config can authorize a legacy mount without manual fstab tagging, but only when the configured device exactly matches the live `/var/lib/rancher` source (and any active fstab entry). Supplying a config file—even one with empty storage values—disables auto-discovery.
+
 **Sequence:**
-1. **Best-effort node drain** (if cluster reachable, ~30s timeout)
+1. **Destructive cleanup preflight** against config, fstab, live mounts, and protected system devices
+2. **Longhorn cleanup** (skipped when no Longhorn artifacts are detected — typical on `CLUSTER_SIZE: small`/`medium`)
+   - Best-effort node drain (if cluster reachable, ~30s timeout)
    - Internally passes `--force` and `--disable-eviction` to kubectl drain to bypass stuck pods with finalizers or PodDisruptionBudgets
    - Automatically skips Longhorn volume detach wait when no volumes detected
-   - Clear progress messages during potentially long operations
-2. Logout **Longhorn-only** iSCSI sessions (filter `iqn.2019-10.io.longhorn:*`, logout by session ID; boot-volume sessions are preserved) → stop Longhorn processes
-3. Force-unmount all Longhorn/CSI/kubelet volumes (including `volume-subpaths` and `globalmount`)
-4. Uninstall RKE2 and remove its directories
-5. **Pre-clean future mount range** — removes bloom artifacts (`pvc-*`, `replicas`, `longhorn-disk.cfg`) from the directories that will be used in the next deployment, preserving user files
-6. **Clean premounted disks** (`CLUSTER_PREMOUNTED_DISKS`) — removes bloom artifacts only; filesystem, fstab entry, and user files are preserved
-7. **Remove bloom-managed fstab entries** and wipe `CLUSTER_DISKS` device signatures
+   - Logout **Longhorn-only** iSCSI sessions (filter `iqn.2019-10.io.longhorn:*`, logout by session ID; boot-volume sessions are preserved) → stop Longhorn processes
+   - Force-unmount all Longhorn/CSI/kubelet volumes (including `volume-subpaths` and `globalmount`)
+3. Uninstall RKE2 and remove its directories
+4. **Pre-clean future mount range** — removes bloom artifacts (`pvc-*`, `replicas`, `longhorn-disk.cfg`) from the directories that will be used in the next deployment, preserving user files
+5. **Clean premounted disks** (`CLUSTER_PREMOUNTED_DISKS`) — removes bloom artifacts only; filesystem, fstab entry, and user files are preserved
+6. **Remove validated Bloom-managed fstab entries** and wipe/reformat `CLUSTER_DISKS`
+
+Before modifying `/etc/fstab`, cleanup writes a timestamped backup under `/var/backups/cluster-bloom/fstab/` and retains only the five most recent copies. When the last strictly tagged Bloom fstab entry is removed, cleanup also drops the empty Ansible section markers (`# # # this section is managed by AMD Enterprise AI tool cluster-bloom` / `# # # end of AMD Enterprise AI cluster-bloom`). Premounted entries keep the section intact.
+
+**Interrupted Cleanup Safety**: For each disk being wiped, cleanup removes its `/etc/fstab` entry *before* running `wipefs`/`mkfs` (not after), because wiping changes the device's UUID. If cleanup is interrupted mid-wipe, the device is simply left untracked by Bloom rather than referenced by a stale, now-nonexistent UUID. A single Ctrl-C is also deferred until the current disk finishes wiping/formatting (the destructive commands run in their own process group so the interrupt can't kill them directly); pressing Ctrl-C a second time force-exits immediately and may leave that disk mid-operation. If a stale strictly-tagged fstab entry is ever encountered (e.g. from an older Bloom version, manual edits, or a force-exit), cleanup preflight explains the situation and prints the exact `/etc/fstab` line to remove instead of a bare `findfs` error.
 
 ### `bloom cli bloom.yaml --destroy-data`
 
@@ -264,9 +291,10 @@ RANCHER_DISK: /dev/nvme2n1
 
 **Setup and Cleanup Behavior**:
 - **Setup**: Removes existing `/var/lib/rancher` directory for clean deployment and mounts dedicated device
-- **Cleanup**: Unmounts `/var/lib/rancher` and removes fstab entry
+- **Cleanup**: Validates the configured device against fstab and the live mount, unmounts `/var/lib/rancher`, removes the exact fstab entry, then wipes and reformats the device (fstab is updated *before* the wipe so an interruption can't leave a stale entry referencing the device's now-changed UUID)
+- **Legacy Mount Safety**: Configless cleanup preserves untagged `/var/lib/rancher` mounts. Providing a matching `RANCHER_DISK` explicitly authorizes cleanup without requiring a manual fstab tag; mismatched or stale mappings are rejected
 - **Fresh Start**: Creates clean `/var/lib/rancher` directory after cleanup
-- **Device Preservation**: Underlying device is preserved (no reformatting during cleanup)
+- **Attachment Preservation**: The block device remains attached to the host; cleanup never hot-removes it from the kernel
 
 ## Architecture
 

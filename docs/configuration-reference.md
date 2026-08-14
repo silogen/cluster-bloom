@@ -40,7 +40,7 @@ Configuration sources in priority order (highest to lowest):
 
 #### CLUSTER_SIZE
 - **Type**: Enum
-- **Default**: `small`
+- **Default**: `medium`
 - **Description**: Size category for cluster deployment planning
 - **Values**: `small` | `medium` | `large`
 - **Example**: `CLUSTER_SIZE: medium`
@@ -123,10 +123,11 @@ verification behavior.
 - **Example**: `CLUSTER_PREMOUNTED_DISKS: "/mnt/disk0,/mnt/disk1"`
 
 #### CLUSTER_DISKS
-- **Type**: String (comma-separated device names)
+- **Type**: String (comma-separated device paths)
 - **Default**: None
 - **Description**: Pre-selected disk devices to use
-- **Example**: `CLUSTER_DISKS: "/dev/nvme0n1,/dev/nvme1n1"`
+- **Examples**: `CLUSTER_DISKS: "/dev/nvme0n1,/dev/nvme1n1"` or `CLUSTER_DISKS: "/dev/disk/by-id/wwn-0x60499ac855614ad59ee9aec267da4eb0"`
+- **Stable aliases**: Full `/dev/disk/by-id/...` paths are supported and preferred where device names may change
 - **Note**: Also skips NVMe drive availability checks
 
 ### Step Control Configuration
@@ -283,7 +284,7 @@ verification behavior.
 #### OIDC_URL
 - **Type**: String (URL)  
 - **Default**: None
-- **Description**: **DEPRECATED** - Legacy OIDC provider configuration (removed in this branch)
+- **Description**: **DEPRECATED** — Legacy OIDC provider configuration (removed; use `ADDITIONAL_OIDC_PROVIDERS`)
 - **Replacement**: Use `ADDITIONAL_OIDC_PROVIDERS` for multiple provider support
 - **Breaking Change**: This variable no longer works - migrate to `ADDITIONAL_OIDC_PROVIDERS`
 
@@ -368,10 +369,10 @@ verification behavior.
 #### RANCHER_DISK
 - **Type**: String (device path)
 - **Default**: None  
-- **Description**: Device path for dedicated `/var/lib/rancher` storage. Primarily for GPU worker nodes with intensive workloads. Bloom will format and mount this device automatically.
-- **Example**: `RANCHER_DISK: "/dev/nvme2n1"`
+- **Description**: Device path or stable `/dev/disk/by-id/...` alias for dedicated `/var/lib/rancher` storage. Primarily for GPU worker nodes with intensive workloads. Bloom will format and mount this device automatically.
+- **Examples**: `RANCHER_DISK: "/dev/nvme2n1"` or `RANCHER_DISK: "/dev/disk/by-id/wwn-0x60a633e7e6bb42a5bbf4055829d22c03"`
 - **Requirements**: 
-  - Must be a raw device path starting with `/dev/`
+  - Must be a raw device path starting with `/dev/`; full `/dev/disk/by-id/...` aliases are supported
   - Device must exist and not be already mounted
   - Recommended 500GB+ available space
   - Mutually exclusive with `NO_DISKS_FOR_CLUSTER`
@@ -666,6 +667,29 @@ sudo ./bloom cli bloom.yaml
 sudo ./bloom cli bloom.yaml --tags deploy_clusterforge
 ```
 
+### Cleanup Command
+
+Clean an existing Bloom installation:
+
+```bash
+sudo ./bloom cleanup [config-file]
+```
+
+For multi-node clusters, see [Cluster Teardown](cluster-teardown.md) for the recommended node order (workers first, additional control planes, bootstrap control plane last).
+
+Cleanup validates configured storage against strict Bloom-managed fstab entries, live block-device identities, mounts, and protected operating-system devices before making changes. A mismatch aborts before teardown or disk writes.
+
+Use `--preflight-only` to run the same checks without confirmation or mutation:
+
+```bash
+sudo ./bloom cleanup bloom.yaml --preflight-only
+```
+
+Other cleanup flags:
+
+- `--force`: Skip the destructive confirmation prompt after preflight succeeds
+- `--yes`: Alias for automatic confirmation
+
 ### Run Command
 
 Execute external Ansible playbook using Bloom's containerized runtime:
@@ -733,6 +757,8 @@ cd bloom-playbook && ansible-playbook cluster-bloom.yaml
 - **Standalone Execution**: The exported root playbook targets `localhost` and sets `BLOOM_DIR` so it can run outside Bloom's containerized runtime
 - **Full Compatibility**: Exported playbooks work with the `bloom run` command or `cd bloom-playbook && ansible-playbook cluster-bloom.yaml` (run from the export directory so `ansible.cfg` picks up `inventory.ini`)
 - **Disk Wipe Preview**: Both `bloom cleanup` and `bloom cli --destroy-data` show a preview of bloom-managed mounts and the future mount range before requiring confirmation
+- **Cleanup Preflight**: Both cleanup paths validate `bloom.yaml`, strictly tagged fstab entries, live mounts, block-device identity, and the full system-device dependency chain before teardown
+- **Legacy RANCHER_DISK Adoption**: An explicit `RANCHER_DISK` may clean an untagged legacy `/var/lib/rancher` mount only when its live block-device identity matches; configless cleanup preserves that mount
 - **Premounted Disk Safety**: `CLUSTER_PREMOUNTED_DISKS` entries have bloom artifacts (pvc-*, replicas, longhorn-disk.cfg) removed but their filesystem, fstab entry, and user files are preserved
 - **Smart Index Allocation**: Mount indexes are chosen as the lowest contiguous range not conflicting with premounted disk indexes (from fstab and config), so `CLUSTER_DISKS` and `CLUSTER_PREMOUNTED_DISKS` can coexist
 

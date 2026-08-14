@@ -178,9 +178,7 @@ func buildConfigWithField(fieldName string, value string) Config {
 		}
 	case "GPU_DRIVER_SKIP_INSTALL", "GPU_INSTALL_HOST_TOOLS", "GPU_DRIVER_VERSION", "GPU_DRIVER_BUILD":
 		config["GPU_NODE"] = true
-	case "CLUSTER_DISKS":
-		delete(config, "NO_DISKS_FOR_CLUSTER")
-	case "CLUSTER_PREMOUNTED_DISKS":
+	case "CLUSTER_DISKS", "CLUSTER_PREMOUNTED_DISKS", "RANCHER_DISK":
 		delete(config, "NO_DISKS_FOR_CLUSTER")
 	}
 

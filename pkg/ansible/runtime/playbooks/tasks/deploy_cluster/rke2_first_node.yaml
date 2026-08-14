@@ -20,8 +20,15 @@
     enabled: yes
 
 - name: Start RKE2 server service
+  # See rke2_control_plane.yaml for why this retries: a transient D-Bus
+  # disconnect during the long Type=notify start can fail this call even
+  # though RKE2 keeps starting; retrying is safe (idempotent). failed_when
+  # stays false — "Wait for RKE2 to be ready" below is the real success gate.
   shell: systemctl start rke2-server
   register: rke2_start
+  until: rke2_start.rc == 0
+  retries: 3
+  delay: 10
   failed_when: false
   changed_when: rke2_start.rc == 0
 

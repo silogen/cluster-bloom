@@ -29,6 +29,7 @@ This documentation provides complete guidance for deploying, configuring, and ma
 
 ### Operations and Maintenance
 - [**Installation Guide**](installation-guide.md) - Complete step-by-step installation procedures
+- [**Cluster Teardown**](cluster-teardown.md) - Multi-node cleanup order for HA control plane and worker clusters
 - [**Configuration Reference**](configuration-reference.md) - Comprehensive configuration options and parameters
 - [**OIDC Authentication**](oidc-authentication.md) - Single sign-on integration and identity management
 

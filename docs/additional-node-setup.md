@@ -263,6 +263,7 @@ This step configures cluster-wide services, networking, and other essential comp
 
 ## Related Documentation
 
+- [Cluster Teardown](./cluster-teardown.md) — Reverse of the setup order above for multi-node cleanup
 - [Storage Management](./storage-management.md)
 - [Configuration Reference](./configuration-reference.md)
 - [Installation Guide](./installation-guide.md)

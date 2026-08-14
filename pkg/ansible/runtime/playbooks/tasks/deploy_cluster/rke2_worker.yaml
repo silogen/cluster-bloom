@@ -28,6 +28,13 @@
     enabled: yes
 
 - name: Start RKE2 agent service
+  # See rke2_control_plane.yaml for why this retries: a transient D-Bus
+  # disconnect can fail the start call even though the agent keeps starting;
+  # retrying is safe (idempotent).
   service:
     name: rke2-agent
     state: started
+  register: rke2_agent_start
+  until: rke2_agent_start is succeeded
+  retries: 3
+  delay: 10

@@ -32,6 +32,11 @@
     url: "{{ CLUSTERFORGE_RELEASE }}"
     dest: "{{ BLOOM_DIR }}/clusterforge/clusterforge.tar.gz"
     mode: "0644"
+    timeout: 60
+  register: clusterforge_release_download
+  until: clusterforge_release_download is succeeded
+  retries: 5
+  delay: 10
   when: is_release_url | bool
 
 - name: Extract ClusterForge release
