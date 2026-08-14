@@ -4,6 +4,7 @@ package runtime
 
 import (
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -253,12 +254,22 @@ func rancherStorageContextFrom(fstabContent, fstabRancher string) (rancherStorag
 	return ctx, nil
 }
 
+// sameDevice reports whether two sources name the same disk. Identical paths
+// match without touching the host, so a detached or renamed device still
+// resolves instead of failing the comparison.
+func sameDevice(a, b string) bool {
+	if filepath.Clean(strings.TrimSpace(a)) == filepath.Clean(strings.TrimSpace(b)) {
+		return true
+	}
+	return compareDeviceSets([]string{a}, []string{b}) == nil
+}
+
 func deviceAuthorizedAsRancher(device string, ctx rancherStorageContext) bool {
 	for _, source := range []string{ctx.liveSource, ctx.activeSource, ctx.taggedSource} {
 		if source == "" {
 			continue
 		}
-		if compareDeviceSets([]string{device}, []string{source}) == nil {
+		if sameDevice(device, source) {
 			return true
 		}
 	}
@@ -298,7 +309,7 @@ func rancherMisconfigHints(devices []string, configuredRancher string, ctx ranch
 			hints = append(hints, fmt.Sprintf(
 				"%s is the /var/lib/rancher disk; set RANCHER_DISK and remove it from CLUSTER_DISKS",
 				device))
-		case compareDeviceSets([]string{device}, []string{configuredRancher}) != nil:
+		case !sameDevice(device, configuredRancher):
 			hints = append(hints, fmt.Sprintf(
 				"%s is mounted at /var/lib/rancher but RANCHER_DISK is %s; fix the stale bloom.yaml mapping",
 				device, configuredRancher))
