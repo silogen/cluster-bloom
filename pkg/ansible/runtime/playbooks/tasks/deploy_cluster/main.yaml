@@ -48,6 +48,11 @@
   when: not (FIRST_NODE | default(true) | bool) and (CONTROL_PLANE | default(false) | bool)
   tags: [rke2, deploy_cluster]
 
+- name: Wait for Cilium Agent Readiness (Additional Nodes)
+  include_tasks: cilium_agent_ready.yaml
+  when: not (FIRST_NODE | default(true) | bool)
+  tags: [rke2, cilium, deploy_cluster]
+
 - name: Install Kubernetes Tools
   include_tasks: k8s_tools.yaml
   tags: [k8s_tools, deploy_cluster]
@@ -60,6 +65,11 @@
   include_tasks: kubeconfig.yaml
   when: (FIRST_NODE | default(true) | bool) or (CONTROL_PLANE | default(false) | bool)
   tags: [kubeconfig, deploy_cluster]
+
+- name: Wait for Cluster and Cilium Readiness (First Node)
+  include_tasks: cluster_ready.yaml
+  when: FIRST_NODE | default(true) | bool
+  tags: [cilium, deploy_cluster]
 
 - name: Generate Join Command (First Node)
   include_tasks: join_command.yaml

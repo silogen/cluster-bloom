@@ -18,6 +18,76 @@
     - CLUSTERFORGE_RELEASE != ""
   tags: [clusterforge, deploy_clusterforge]
 
+# Nodes are joined first with CLUSTERFORGE_RELEASE "none", so a node whose
+# Longhorn CSI plugin never came up stays latent — it looks Ready and nothing
+# demands a volume from it — until ClusterForge is deployed days later. The
+# failure then surfaces as a five-minute `kubectl wait` timeout on
+# openbao-init-job, four layers above the actual cause. Checking CSI driver
+# registration up front names the bad node instead.
+- name: Verify every node has registered the Longhorn CSI driver
+  shell: |
+    set -o pipefail
+    KUBECTL="/var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml"
+    nodes=$($KUBECTL get nodes -o jsonpath='{.items[*].metadata.name}')
+    # Without this the check passes vacuously: a kubectl failure yields an empty
+    # list, the loop below never runs, and an unchecked cluster reports success.
+    if [ -z "$nodes" ]; then
+      echo "Could not list nodes to verify Longhorn CSI registration"
+      exit 1
+    fi
+    missing=""
+    for node in $nodes; do
+      drivers=$($KUBECTL get csinode "$node" -o jsonpath='{.spec.drivers[*].name}' 2>/dev/null)
+      case " $drivers " in
+        *" driver.longhorn.io "*) ;;
+        *) missing="$missing $node" ;;
+      esac
+    done
+    if [ -n "$missing" ]; then
+      echo "Nodes missing driver.longhorn.io:$missing"
+      exit 1
+    fi
+    echo "All nodes have registered driver.longhorn.io"
+  args:
+    executable: /bin/bash
+  register: longhorn_csinode_check
+  until: longhorn_csinode_check.rc == 0
+  retries: 30
+  delay: 10
+  changed_when: false
+  failed_when: false
+  when:
+    - FIRST_NODE | default(true) | bool
+    - CLUSTERFORGE_RELEASE is defined
+    - CLUSTERFORGE_RELEASE != "none"
+    - CLUSTERFORGE_RELEASE != ""
+    - CLUSTER_SIZE == "large"
+    - not (NO_DISKS_FOR_CLUSTER | default(false) | bool)
+  tags: [clusterforge, longhorn, deploy_clusterforge]
+
+- name: Fail when a node cannot serve Longhorn volumes
+  fail:
+    msg: |
+      {{ longhorn_csinode_check.stdout | trim }}
+
+      Any pod with a Longhorn PVC scheduled onto those nodes will hang in
+      ContainerCreating with "CSINode <node> does not contain driver
+      driver.longhorn.io", and ClusterForge will fail later with an
+      unrelated-looking timeout.
+
+      Check the CSI plugin on the affected node:
+        kubectl -n longhorn get pods -o wide --field-selector spec.nodeName=<node>
+
+      If longhorn-csi-plugin is CrashLoopBackOff with "Failed to initialize
+      Longhorn API client ... context deadline exceeded", its pod sandbox has a
+      dead network namespace. Restarting the container cannot fix that — the
+      sandbox must be recreated:
+        kubectl -n longhorn delete pod <longhorn-csi-plugin-pod>
+  when:
+    - longhorn_csinode_check.rc is defined
+    - longhorn_csinode_check.rc != 0
+  tags: [clusterforge, longhorn, deploy_clusterforge]
+
 - name: Build DISABLED_APPS from AIWB_ONLY flag
   set_fact:
     DISABLED_APPS: >-

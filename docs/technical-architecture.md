@@ -146,8 +146,15 @@ Core cluster deployment:
 
 - **RKE2 Installation**: Download and install RKE2 binaries
 - **Cluster Initialization**: First node cluster bootstrap
-- **Node Joining**: Additional node agent/server setup
+- **Node Joining**: Additional node agent/server setup, registered with the
+  `node.cilium.io/agent-not-ready` taint so nothing is scheduled before the CNI
+  is usable
 - **CNI Deployment**: Cilium network plugin
+- **Readiness Gate**: the run blocks until Cilium is actually serving on the node
+  being provisioned — the agent's local healthz in both cases, plus API server
+  readiness and at least one cilium-operator on the first node. Everything
+  below runs only after this passes; see
+  [RKE2 deployment → Cilium readiness gating](rke2-deployment.md#cilium-readiness-gating).
 
 #### Post-Kubernetes Steps
 Add-ons and integrations after cluster is running:

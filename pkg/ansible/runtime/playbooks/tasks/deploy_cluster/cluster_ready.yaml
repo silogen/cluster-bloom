@@ -1,0 +1,74 @@
+---
+# Purpose: Gate the first node on Cilium being ready before any pod is created
+# Dependencies: RKE2 installed and started, kubeconfig present
+# Usage: Included by deploy_cluster/main.yaml and deploy_k8s_apps/main.yaml (FIRST_NODE only)
+# Tags: [cilium, deploy_cluster, deploy_k8s_apps]
+
+# Bloom's first pod-creating tasks (node_annotator's Job, local_path's
+# storage-test-pod, longhorn's preflight DaemonSet) previously ran as soon as
+# the kubectl binary existed. With cluster-pool IPAM the Cilium agent cannot
+# complete an endpoint creation until the operator has allocated this node's
+# PodCIDR, so pods created before that either 429 or come up with an endpoint
+# whose datapath was never programmed. Node-Ready alone is not enough: it only
+# requires kubelet to see a CNI conflist, which Cilium writes early.
+#
+# Idempotent and re-runnable — included from two call sites, near-free the
+# second time.
+
+- name: Wait for kubectl to be available
+  wait_for:
+    path: /var/lib/rancher/rke2/bin/kubectl
+    state: present
+    timeout: 300
+
+- name: Wait for the API server to be ready
+  command: >-
+    /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml
+    get --raw=/readyz
+  register: apiserver_readyz
+  until: apiserver_readyz.rc == 0
+  retries: 60
+  delay: 5
+  changed_when: false
+
+# Deliberately node-local rather than `kubectl wait node --all` plus
+# `rollout status ds/cilium`. Both of those span the whole fleet, so a single
+# unrelated node that is drained, powered off, or mid-reimage would fail every
+# first-node run — including reruns of --tags deploy_k8s_apps months later —
+# with an error that has nothing to do with what the operator asked for. The
+# race this gate exists to prevent is per-node: what has to be true before
+# bloom creates a pod here is that *this* node's datapath is programmed. Other
+# nodes are covered at their own join by the same check (see
+# deploy_cluster/main.yaml) and by the agent-not-ready taint.
+#
+# In cluster-pool IPAM the agent cannot report healthy until the operator has
+# allocated this node's PodCIDR, so this also subsumes the node-Ready wait:
+# node-Ready only requires kubelet to see a CNI conflist, which Cilium writes
+# well before the datapath works.
+- name: Wait for this node's Cilium agent to be ready
+  include_tasks: cilium_agent_ready.yaml
+
+# Deliberately an explicit "at least one Ready" count, NOT
+# `kubectl wait --for=condition=Ready pod -l name=cilium-operator` and NOT
+# `kubectl rollout status deploy/cilium-operator`.
+#
+# CLUSTER_SIZE: large is the only size that runs Longhorn, and it is also the
+# only size that gets no cilium HelmChartConfig (see cilium_config.yaml), so it
+# runs the RKE2 chart default of 2 operator replicas with hard pod
+# anti-affinity. During first-node bloom there is exactly one node, so one
+# operator pod is Pending by design and both of the "simpler" forms above would
+# hang for their full timeout in precisely the scenario this gate exists to fix.
+- name: Wait for at least one cilium-operator to be Ready
+  shell: >-
+    set -o pipefail;
+    /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml
+    -n kube-system get pods -l name=cilium-operator
+    -o jsonpath='{range .items[*]}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}'
+    | grep -x True > /dev/null
+  args:
+    executable: /bin/bash
+  register: cilium_operator_ready
+  until: cilium_operator_ready.rc == 0
+  retries: 60
+  delay: 5
+  changed_when: false

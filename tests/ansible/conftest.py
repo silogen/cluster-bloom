@@ -145,6 +145,47 @@ server: https://127.0.0.1:9345
 
 
 @pytest.fixture
+def cilium_operator_not_ready():
+    """Make the mocked cilium-operator readiness check fail N times first
+
+    Returns a callable taking the number of not-ready responses the mock shell
+    module should hand back before reporting Ready.
+    """
+    state = Path("/tmp/mock_cilium_operator_not_ready")
+    # A previous run killed mid-test leaves this behind, which would silently
+    # change the attempt count every later test sees.
+    state.unlink(missing_ok=True)
+
+    def _set(attempts):
+        state.write_text(str(attempts))
+        return state
+
+    yield _set
+
+    state.unlink(missing_ok=True)
+
+
+@pytest.fixture(autouse=True)
+def cilium_agent_not_ready():
+    """Make the mocked Cilium agent healthz fail N times first
+
+    Autouse because there is no Cilium agent in the container: without the mock
+    state being clean, cluster_ready.yaml's agent gate would inherit a stale
+    countdown from a killed run.
+    """
+    state = Path("/tmp/mock_cilium_agent_not_ready")
+    state.unlink(missing_ok=True)
+
+    def _set(attempts):
+        state.write_text(str(attempts))
+        return state
+
+    yield _set
+
+    state.unlink(missing_ok=True)
+
+
+@pytest.fixture
 def rke2_config_fixtures():
     """Create multiple RKE2 config fixture states for testing
 
