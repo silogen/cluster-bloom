@@ -109,6 +109,10 @@ func TestDevicePathPattern(t *testing.T) {
 	testPatternWithExamples(t, "devicePath")
 }
 
+func TestSingleDevicePathPattern(t *testing.T) {
+	testPatternWithExamples(t, "singleDevicePath")
+}
+
 func TestDiskListPattern(t *testing.T) {
 	testPatternWithExamples(t, "diskList")
 }

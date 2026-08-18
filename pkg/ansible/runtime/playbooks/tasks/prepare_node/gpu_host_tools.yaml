@@ -75,6 +75,11 @@
     url: "{{ gpu_amd_smi_key_url }}"
     dest: /tmp/bloom-amd-smi-repo.key
     mode: "0644"
+    timeout: 60
+  register: gpu_amd_smi_key_download
+  until: gpu_amd_smi_key_download is succeeded
+  retries: 5
+  delay: 10
   when: gpu_amd_smi_before.rc != 0
 
 - name: Install standalone AMD-SMI repository keyring

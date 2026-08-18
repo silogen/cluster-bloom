@@ -25,7 +25,7 @@
             echo "${ADMIN_CLIENT_ID}|${ADMIN_CLIENT_SECRET}"
           register: airm_admin_client_creds_result
           changed_when: false
-          no_log: false
+          no_log: true
 
         - name: Parse AIRM admin client credentials
           set_fact:

@@ -5,6 +5,23 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Go tests
+        run: go test ./...
+
+      # Runs in the container the suite is built for: fixtures that write to
+      # /etc/rancher/rke2 refuse to run outside one.
+      - name: Ansible unit tests
+        run: bash tests/ansible/run_tests_docker.sh
+
   integration-tests:
     runs-on: ubuntu-latest
     steps:

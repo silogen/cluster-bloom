@@ -4,17 +4,30 @@
 # Usage: Imported by deploy_cluster/main.yaml
 # Tags: [k8s_tools, deploy_cluster]
 
+# These downloads retry because a single dropped connection to an upstream
+# CDN otherwise aborts the whole bloom run. Retrying is safe: get_url writes
+# to a temporary file and only replaces dest once the transfer completes.
 - name: Download yq
   get_url:
     url: https://github.com/mikefarah/yq/releases/download/v4.46.1/yq_linux_amd64
     dest: /usr/local/bin/yq
     mode: "0755"
+    timeout: 60
+  register: yq_download
+  until: yq_download is succeeded
+  retries: 5
+  delay: 10
 
 - name: Download kubectl
   get_url:
     url: https://dl.k8s.io/release/v1.34.2/bin/linux/amd64/kubectl
     dest: /usr/local/bin/kubectl
     mode: "0755"
+    timeout: 60
+  register: kubectl_download
+  until: kubectl_download is succeeded
+  retries: 5
+  delay: 10
 
 - name: Install Helm
   shell: |

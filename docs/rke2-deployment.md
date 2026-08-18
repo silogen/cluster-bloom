@@ -20,6 +20,7 @@ Initializes the primary cluster node with all necessary configurations:
 
 **Key Features**:
 - Write kubeconfig with mode 0644 for easy access
+- Give the cluster in the generated `~/.kube/config` the name of `DOMAIN`, thus clusters from different installations do not have the same name
 - Disable default ingress controller (applications provide their own)
 - Configure TLS SANs for secure API access
 - Set up node labels for Longhorn storage integration

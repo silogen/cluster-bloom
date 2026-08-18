@@ -1,0 +1,8 @@
+---
+- name: Test RKE2 node label generation
+  hosts: localhost
+  gather_facts: false
+  connection: local
+
+  tasks:
+    - import_tasks: ../../../pkg/ansible/runtime/playbooks/tasks/deploy_cluster/node_labels.yaml

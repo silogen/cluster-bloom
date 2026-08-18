@@ -6,8 +6,12 @@
 
 - name: Build disk labels list
   set_fact:
-    disk_labels: "{{ (disk_labels | default([])) + ['bloom.disk___mnt___disk' + (((disk_index_offset | default(0) | int) + (item.0 | int)) | string) + '=disk' + (item.1 | replace('/', '___'))] }}"
+    disk_labels: "{{ (disk_labels | default([])) + ['bloom.disk___mnt___disk' ~ disk_index ~ '=disk' ~ disk_index] }}"
   loop: "{{ range(cluster_disks_list | default([]) | length) | list | zip(cluster_disks_list | default([])) | list }}"
+  vars:
+    # The value becomes the Longhorn disk name. Keep it independent of the
+    # device path because Kubernetes label values are limited to 63 characters.
+    disk_index: "{{ ((disk_index_offset | default(0) | int) + (item.0 | int)) | string }}"
   when: not (NO_DISKS_FOR_CLUSTER | default(false) | bool) and cluster_disks_list is defined and cluster_disks_list | length > 0
 
 - name: Parse premounted disks into list

@@ -121,10 +121,9 @@ schema:
       section: "💾 Storage Configuration"
 
     RANCHER_DISK:
-      type: str
-      pattern: ^/dev/[a-zA-Z0-9]+$|^$
+      type: singleDevicePath
       default: ""
-      desc: Device path for dedicated /var/lib/rancher storage. Primarily for GPU worker nodes with heavy workloads. Bloom will format and mount this device automatically.
+      desc: Device path or stable /dev/disk/by-id alias for dedicated /var/lib/rancher storage. Primarily for GPU worker nodes with heavy workloads. Bloom will format and mount this device automatically.
       section: "💾 Storage Configuration"
       examples:
         - "/dev/nvme2n1"
@@ -478,9 +477,9 @@ types:
         - "/path/to/file"       # local path
   devicePath:
     type: str
-    pattern: ^(/dev/[a-zA-Z0-9]+)(,/dev/[a-zA-Z0-9]+)*$|^$
-    desc: Comma-separated Linux device paths
-    errorMessage: Enter comma-separated device paths like /dev/nvme0n1,/dev/nvme1n1
+    pattern: ^(/dev/([a-zA-Z0-9]+|disk/by-id/[a-zA-Z0-9._:+\-]+))(,/dev/([a-zA-Z0-9]+|disk/by-id/[a-zA-Z0-9._:+\-]+))*$|^$
+    desc: Comma-separated Linux device paths or stable /dev/disk/by-id aliases
+    errorMessage: Enter comma-separated device paths like /dev/nvme0n1,/dev/disk/by-id/wwn-0x1234
     examples:
       valid:
         - "/dev/nvme0n1"
@@ -489,6 +488,9 @@ types:
         - "/dev/nvme0n1,/dev/sda"
         - "/dev/vda"
         - "/dev/sda1"
+        - "/dev/disk/by-id/wwn-0x60499ac855614ad59ee9aec267da4eb0"
+        - "/dev/disk/by-id/scsi-1ORACLE_BlockVolume:855614ad59ee9aec267da4eb0"
+        - "/dev/sda,/dev/disk/by-id/wwn-0x60499ac855614ad59ee9aec267da4eb0"
       invalid:
         - "nvme0n1"                   # missing /dev
         - "/dev/"                     # incomplete
@@ -499,6 +501,27 @@ types:
         - "/dev/nvme0n1 /dev/sda"     # space separator
         - "/dev/nvme_0"               # underscore not allowed
         - "/mnt/disk1"                # not /dev path
+        - "wwn-0x60499ac855614ad59ee9aec267da4eb0" # missing /dev/disk/by-id
+        - "/dev/disk/by-id/"           # missing identifier
+        - "/dev/disk/by-id/../sda"     # traversal is not allowed
+
+  singleDevicePath:
+    type: str
+    pattern: ^/dev/([a-zA-Z0-9]+|disk/by-id/[a-zA-Z0-9._:+\-]+)$|^$
+    desc: Linux device path or stable /dev/disk/by-id alias
+    errorMessage: Enter a device path like /dev/sdb or /dev/disk/by-id/wwn-0x1234
+    examples:
+      valid:
+        - "/dev/sdb"
+        - "/dev/nvme0n1"
+        - "/dev/disk/by-id/wwn-0x60a633e7e6bb42a5bbf4055829d22c03"
+        - "/dev/disk/by-id/scsi-1ORACLE_BlockVolume:7e6bb42a5bbf4055829d22c03"
+      invalid:
+        - "sdb"
+        - "/dev/"
+        - "/dev/sdb,/dev/sdc"
+        - "/dev/disk/by-id/"
+        - "/dev/disk/by-id/../sdc"
 
   diskList:
     type: str
