@@ -292,14 +292,25 @@
 
 # The skip above is a substring test, so it also fires on a commented-out
 # node-taint or on `node-taints`. Silently dropping the protection is exactly
-# how this class of fault goes unnoticed for days, so say so in the run output.
-- name: Warn that RKE2_EXTRA_CONFIG suppressed the Cilium readiness taint
-  debug:
-    msg: >-
-      RKE2_EXTRA_CONFIG defines node-taint, so bloom did not add
-      node.cilium.io/agent-not-ready=true:NoExecute to this joining node. Pods
-      may be scheduled here before Cilium has programmed the datapath. Add the
-      taint to your own node-taint list — see docs/configuration-reference.md.
+# how this class of fault goes unnoticed for days, so fail the run instead of
+# leaving a warning that's easy to miss in the output.
+- name: Fail when RKE2_EXTRA_CONFIG suppressed the Cilium readiness taint
+  fail:
+    msg: |
+      ❌ RKE2_EXTRA_CONFIG defines node-taint on this joining node!
+
+      Bloom did not add its own node.cilium.io/agent-not-ready=true:NoExecute
+      taint, because two node-taint keys in one config.yaml would collide.
+      Without it, pods may be scheduled on this node before Cilium has
+      programmed the datapath.
+
+      📋 To fix this issue:
+      Add the Cilium taint to your own node-taint list in RKE2_EXTRA_CONFIG:
+        node-taint:
+          - "<your-existing-taint>"
+          - "node.cilium.io/agent-not-ready=true:NoExecute"
+
+      💡 See docs/configuration-reference.md for the RKE2_EXTRA_CONFIG example.
   when:
     - not (FIRST_NODE | default(true) | bool)
     - "'node-taint' in (RKE2_EXTRA_CONFIG | default(''))"

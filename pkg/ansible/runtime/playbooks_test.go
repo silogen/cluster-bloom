@@ -19,6 +19,9 @@ type playbookTask struct {
 		Path  string `yaml:"path"`
 		Block string `yaml:"block"`
 	} `yaml:"blockinfile"`
+	Fail struct {
+		Msg string `yaml:"msg"`
+	} `yaml:"fail"`
 }
 
 func (t playbookTask) whenText() string {
@@ -116,6 +119,34 @@ func TestCiliumTaintSkipsTheFirstNode(t *testing.T) {
 
 	if got := taint.Blockinfile.Path; got != "/etc/rancher/rke2/config.yaml" {
 		t.Errorf("the taint must land in the RKE2 config kubelet reads at registration, got %q", got)
+	}
+}
+
+// An operator whose own RKE2_EXTRA_CONFIG already sets node-taint collides
+// with the Cilium taint above, so bloom skips adding it. Leaving that as a
+// debug-only warning meant an operator who didn't know to add the Cilium
+// taint themselves got a log line, not a failure, while the datapath race
+// this playbook exists to close stayed open on that node.
+func TestRKE2ExtraConfigTaintCollisionFailsLoudly(t *testing.T) {
+	tasks := loadTasks(t, "tasks/deploy_cluster/prepare_rke2.yaml")
+
+	var collision *playbookTask
+	for i := range tasks {
+		if strings.Contains(tasks[i].Fail.Msg, "node-taint") && strings.Contains(tasks[i].Fail.Msg, "RKE2_EXTRA_CONFIG") {
+			collision = &tasks[i]
+			break
+		}
+	}
+	if collision == nil {
+		t.Fatal("prepare_rke2.yaml no longer fails when RKE2_EXTRA_CONFIG suppresses the Cilium taint")
+	}
+
+	when := collision.whenText()
+	if !strings.Contains(when, "not (FIRST_NODE") {
+		t.Errorf("the collision check must never apply to the first node, got when: %s", when)
+	}
+	if !strings.Contains(when, "RKE2_EXTRA_CONFIG") {
+		t.Errorf("the collision check must be gated on RKE2_EXTRA_CONFIG, got when: %s", when)
 	}
 }
 

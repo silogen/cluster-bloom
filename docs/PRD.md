@@ -40,7 +40,7 @@ Designed for growth to 100+ nodes.
 ## Core Features
 
 ### Automated RKE2 Kubernetes Deployment
-Automated deployment of production-ready RKE2 clusters with first node initialization, additional node joining, Cilium CNI integration, and compliance-ready audit logging.
+Automated deployment of production-ready RKE2 clusters with first node initialization, additional node joining, Cilium CNI integration, and compliance-ready audit logging. Joining nodes are gated with a Cilium readiness taint so no pod is scheduled before the node's CNI datapath is programmed; see [Cilium readiness gating](./rke2-deployment.md#cilium-readiness-gating).
 
 **[📄 Detailed Documentation](./rke2-deployment.md)**
 
@@ -83,7 +83,7 @@ expected by Ansible during export.
 **[📄 Driver Policy and Verification](./gpu-driver-support.md)**
 
 ### Storage Management with Longhorn
-Distributed block storage with automatic disk detection, interactive selection, persistent mounting, and Longhorn CSI integration for reliable persistent volumes.
+Distributed block storage with automatic disk detection, interactive selection, persistent mounting, and Longhorn CSI integration for reliable persistent volumes. Before deploying ClusterForge, bloom verifies every node has registered the Longhorn CSI driver and fails naming the offending nodes rather than surfacing an unrelated timeout later; see [CSI precondition before ClusterForge](./rke2-deployment.md#csi-precondition-before-clusterforge).
 
 **[📄 Detailed Documentation](./storage-management.md)**
 

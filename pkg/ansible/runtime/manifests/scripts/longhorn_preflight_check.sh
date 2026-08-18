@@ -6,13 +6,11 @@ set -o pipefail
 LonghornVersion=v1.10.0
 OS=linux
 ARCH=amd64
-# A single `longhornctl check preflight` deploys and tears down a DaemonSet,
-# which takes 30-60s; retrying faster than that is pure API churn.
-CHECK_FREQUENCY=${CHECK_FREQUENCY:-30}
+CHECK_FREQUENCY=${CHECK_FREQUENCY:-5}  # Default: check every 5 seconds
 TIMEOUT=${TIMEOUT:-600}  # Default: 10 minutes (600 seconds)
-KUBECTL=${KUBECTL:-/var/lib/rancher/rke2/bin/kubectl}
-KUBECONFIG_PATH=${KUBECONFIG_PATH:-/etc/rancher/rke2/rke2.yaml}
-PREFLIGHT_NAMESPACE=${PREFLIGHT_NAMESPACE:-default}
+KUBECTL=/var/lib/rancher/rke2/bin/kubectl
+KUBECONFIG_PATH=/etc/rancher/rke2/rke2.yaml
+PREFLIGHT_NAMESPACE=default
 
 # Calculate max attempts based on timeout and frequency
 MAX_ATTEMPTS=$((TIMEOUT / CHECK_FREQUENCY))
