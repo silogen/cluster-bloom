@@ -1,5 +1,9 @@
 # GPU Driver Support
 
+> **Version scope:** This document applies to ClusterBloom versions
+> `>= v2.3.0-rcx`. It does not describe the GPU driver behavior in the
+> `v2.2.1` latest release.
+
 ClusterBloom manages the host AMD GPU kernel driver without installing the ROCm
 runtime, HIP, SDK, or workload libraries. Host ROCm is not required for
 containerized AIM, AIWB, AIRM, NFD, or the AMD GPU Operator.
