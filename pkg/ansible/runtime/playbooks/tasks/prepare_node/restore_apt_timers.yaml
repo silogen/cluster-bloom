@@ -15,9 +15,12 @@
 # minutes on a GPU node. Re-arming earlier would put the timer back into the
 # lock contention the stop block exists to avoid.
 
+# masked: false because some images ship these units masked. systemctl enable
+# fails on a masked unit, which stopped bloom on those nodes.
 - name: Re-arm apt timers stopped during package installation
   systemd:
     name: "{{ item }}"
+    masked: false
     enabled: true
     state: started
     daemon_reload: true
@@ -28,6 +31,7 @@
 - name: Start unattended-upgrades service
   systemd:
     name: unattended-upgrades.service
+    masked: false
     enabled: true
     state: started
 
