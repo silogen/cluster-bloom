@@ -37,7 +37,11 @@
           missingok
           notifempty
           create 0640 syslog adm
-          dateext
+          # No dateext. A size condition rotates more than once a day on a
+          # busy node, and dateext names every archive after the day alone,
+          # so the second rotation of a day collides with the first and is
+          # skipped. The numbered suffix has no such limit and it is what
+          # the distribution uses for every other log here.
           postrotate
               /usr/lib/rsyslog/rsyslog-rotate
           endscript
@@ -57,7 +61,7 @@
           missingok
           notifempty
           create 0640 root root
-          dateext
+          # No dateext, for the reason given on the iSCSI config above.
       }
     dest: /etc/logrotate-bloom.d/rke2.conf
     mode: "0644"
@@ -90,10 +94,10 @@
 #
 # No -f on either command. -f forces the rotation whatever the config says,
 # so "size 200M" and "size 100M" below never applied: every run rotated, and
-# with dateext only the first run of a day could, the rest ending in
-# "destination /var/log/syslog-<date> already exists, skipping rotation".
-# Without -f logrotate rotates when the file passes the size, which is what
-# the two configs were written for.
+# with the dateext the configs used to carry, only the first run of a day
+# could, the rest ending in "destination /var/log/syslog-<date> already
+# exists, skipping rotation". Without -f logrotate rotates when the file
+# passes the size, which is what the two configs were written for.
 #
 # Offsets rather than a state file for each job: the iSCSI config and the
 # distribution rsyslog config both name /var/log/syslog and /var/log/kern.log,

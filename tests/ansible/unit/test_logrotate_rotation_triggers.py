@@ -76,3 +76,15 @@ def test_every_config_still_has_a_size_condition():
         assert re.search(r"^\s*size\s+\d+[kMG]?\s*$", content, re.M), (
             f"{dest} has no size condition, so nothing triggers its rotation"
         )
+
+
+
+
+def test_no_config_uses_dateext():
+    """A size condition rotates more than once a day on a busy node, and
+    dateext names every archive after the day alone, so the second rotation
+    of a day collides with the first and is skipped."""
+    for dest, content in configs().items():
+        assert not re.search(r"^\s*dateext\s*$", content, re.M), (
+            f"{dest} uses dateext, which caps it at one rotation a day"
+        )
