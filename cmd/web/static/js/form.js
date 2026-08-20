@@ -98,7 +98,16 @@ function createFormField(argument, config) {
         input.id = argument.key;
         input.name = argument.key;
         input.value = getDefaultValue(argument);
-        input.placeholder = argument.default || '';
+        if (argument.key === 'AIM_HARDWARE_FAMILY') {
+            input.placeholder = 'Leave empty to auto-detect from this host';
+            const hint = document.createElement('div');
+            hint.className = 'description';
+            hint.id = 'aim-hardware-family-detect-hint';
+            hint.textContent = 'Detecting host hardware...';
+            group.appendChild(hint);
+        } else {
+            input.placeholder = argument.default || '';
+        }
 
         // Apply HTML5 validation attributes from schema
         if (argument.pattern) {

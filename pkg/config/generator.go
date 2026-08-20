@@ -7,6 +7,7 @@ import (
 
 // GenerateYAML generates a bloom.yaml file from the configuration
 func GenerateYAML(cfg Config) string {
+	prepared := PrepareGeneratedConfig(cfg)
 	var lines []string
 
 	// Get schema to maintain order and get defaults
@@ -15,7 +16,7 @@ func GenerateYAML(cfg Config) string {
 	// Create a sorted list of keys for consistent output
 	var keys []string
 	for _, arg := range schema {
-		if value, exists := cfg[arg.Key]; exists && value != nil {
+		if value, exists := prepared[arg.Key]; exists && value != nil {
 			// Always include FIRST_NODE and GPU_NODE
 			if arg.Key == "FIRST_NODE" || arg.Key == "GPU_NODE" {
 				keys = append(keys, arg.Key)
@@ -30,7 +31,7 @@ func GenerateYAML(cfg Config) string {
 
 	// Generate YAML lines
 	for _, key := range keys {
-		value := cfg[key]
+		value := prepared[key]
 		line := formatYAMLLine(key, value)
 		if line != "" {
 			lines = append(lines, line)
@@ -38,6 +39,19 @@ func GenerateYAML(cfg Config) string {
 	}
 
 	return strings.Join(lines, "\n") + "\n"
+}
+
+// PrepareGeneratedConfig applies runtime defaults before YAML export or validation.
+func PrepareGeneratedConfig(cfg Config) Config {
+	if cfg == nil {
+		cfg = Config{}
+	}
+	prepared := Config{}
+	for key, value := range cfg {
+		prepared[key] = value
+	}
+	ApplyAIMHardwareFamilyDefault(prepared)
+	return prepared
 }
 
 func isDefaultValue(arg Argument, value any) bool {

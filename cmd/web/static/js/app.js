@@ -19,6 +19,8 @@ async function init() {
         });
         renderForm(schema, currentConfig);
 
+        await updateAIMHardwareFamilyHint();
+
         // Setup event listeners
         setupEventListeners();
     } catch (error) {

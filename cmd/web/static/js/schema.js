@@ -61,3 +61,29 @@ function getDefaultValue(argument) {
     }
     return argument.default || '';
 }
+
+async function fetchDetectedHardware() {
+    const response = await fetch('/api/detect-hardware');
+    if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    return response.json();
+}
+
+async function updateAIMHardwareFamilyHint() {
+    const hint = document.getElementById('aim-hardware-family-detect-hint');
+    if (!hint) {
+        return;
+    }
+
+    try {
+        const detected = await fetchDetectedHardware();
+        let text = `Auto-detected on this host: ${detected.aim_hardware_family}`;
+        if (detected.warnings && detected.warnings.length > 0) {
+            text += ` (${detected.warnings.join('; ')})`;
+        }
+        hint.textContent = text;
+    } catch (error) {
+        hint.textContent = 'Host hardware detection unavailable in the web UI.';
+    }
+}
