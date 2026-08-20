@@ -119,7 +119,7 @@
         before the GPU is usable with the mapped driver.
       packages: >-
         {{
-          (((bloom_reboot_pkgs_raw.content | b64decode).split('\n') | select('truthy') | list)
+          (((bloom_reboot_pkgs_raw.content | b64decode).splitlines() | select('truthy') | list)
           if bloom_reboot_pkgs_raw.content is defined
           else ['amdgpu-dkms'])
         }}
