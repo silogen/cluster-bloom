@@ -52,7 +52,7 @@ schema:
     AIM_HARDWARE_FAMILY:
       type: hardwareFamilyList
       default: ""
-      desc: "Comma-separated AIM model families (cpu,epyc,instinct,radeon). Empty auto-detects known AMD GPU/EPYC families, or defaults to cpu when none are detected. Explicit incompatible families require [y/N] confirmation unless --yes/-y is set."
+      desc: "Comma-separated AIM model families (cpu,epyc,instinct,radeon). Default empty: auto-detected from host hardware at install or YAML generation, falling back to cpu when none are detected. Explicit incompatible families require [y/N] confirmation unless --yes/-y is set."
       section: "📋 Basic Configuration"
 
     GPU_STACK_FAMILY:

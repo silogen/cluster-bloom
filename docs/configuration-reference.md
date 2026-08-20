@@ -48,7 +48,7 @@ Configuration sources in priority order (highest to lowest):
 
 #### AIM_HARDWARE_FAMILY
 - **Type**: String (comma-separated list)
-- **Default**: Auto-detected from host hardware
+- **Default**: `""` (empty; auto-detected from host hardware at install or YAML generation)
 - **Description**: Selects which AIM model sources cluster-forge installs, by hardware family. When empty or omitted, Bloom detects known AMD GPUs from PCI device IDs and detects AMD EPYC from `/proc/cpuinfo`; host ROCm is not required. It selects every detected optimized family and falls back to `cpu` when none are detected. When explicitly set, only the listed families are installed.
 - **Values**: any comma-separated combination of `cpu`, `epyc`, `instinct`, `radeon` (lowercase, no spaces)
 - **Example**: `AIM_HARDWARE_FAMILY: "epyc,instinct"`
