@@ -36,6 +36,13 @@ The exact supported tuples are:
 | `30.30.4` | `6.16.13.30300400-2341068` |
 | `31.30.0` | `6.19.4.31300000-2337710`  |
 | `31.40.0` | `6.19.14.31400000-2364437` |
+| `31.40.1` | `6.19.14.31400100-2377056` |
+
+AMD publishes every driver in this table for Ubuntu 22.04 (`jammy`) and 24.04
+(`noble`). Driver `31.30.0` and newer are also published for Ubuntu 26.04
+(`resolute`); the `7.x` installer packages are not. On a fresh node Bloom stops
+with a clear message when the Ubuntu release has no packages for the selected
+driver.
 
 ## Installation behavior
 
@@ -120,6 +127,7 @@ the `amdgpu-install` package, not the resulting AMD driver:
 | `7.2.4` | `70204-1` | `30.30.4` |
 | `31.30` | `313000-1` | `31.30.0` |
 | `31.40` | `314000-1` | `31.40.0` |
+| `31.40.1` | `314001-1` | `31.40.1` |
 
 The jump from `7.2.4` to `31.30` is intentional. AMD's older
 `amdgpu-install` packages in this allowlist use ROCm-aligned `7.x` package

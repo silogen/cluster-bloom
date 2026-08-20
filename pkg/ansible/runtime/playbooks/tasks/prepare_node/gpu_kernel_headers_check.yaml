@@ -88,7 +88,9 @@
         continue
       fi
       if [ -z "${modules_candidate}" ] || [ "${modules_candidate}" = "(none)" ]; then
-        continue
+        # Ubuntu 26.04 has no modules-extra package at all; those modules ship
+        # in linux-modules. Keep the pair, drop the third package.
+        modules_pkg=""
       fi
       for image_pkg in \
         "linux-image-${kernel_version}" \
@@ -213,17 +215,18 @@
 
 - name: Install the newest available kernel package set while bypassing the image pin
   command:
-    argv:
-      - apt-get
-      - -y
-      - -o
-      - Dir::Etc::preferences=/dev/null
-      - -o
-      - Dir::Etc::preferencesparts=/var/lib/bloom/empty-apt-preferences
-      - install
-      - "{{ gpu_kernel_latest_image_pkg }}"
-      - "{{ gpu_kernel_latest_headers_pkg }}"
-      - "{{ gpu_kernel_latest_modules_extra_pkg }}"
+    argv: >-
+      {{
+        [
+          'apt-get', '-y',
+          '-o', 'Dir::Etc::preferences=/dev/null',
+          '-o', 'Dir::Etc::preferencesparts=/var/lib/bloom/empty-apt-preferences',
+          'install',
+          gpu_kernel_latest_image_pkg,
+          gpu_kernel_latest_headers_pkg,
+          gpu_kernel_latest_modules_extra_pkg,
+        ] | select | list
+      }}
   when:
     - not (gpu_kernel_headers_available | bool)
     - not (gpu_kernel_marker.attempted | default(false) | bool)
@@ -242,10 +245,14 @@
         driver cannot be built. Bloom installed the newest available kernel
         for this host's flavor ({{ gpu_kernel_latest_version }}); a reboot is
         required to boot into it before headers will match again.
-      packages:
-        - "{{ gpu_kernel_latest_image_pkg }}"
-        - "{{ gpu_kernel_latest_headers_pkg }}"
-        - "{{ gpu_kernel_latest_modules_extra_pkg }}"
+      packages: >-
+        {{
+          [
+            gpu_kernel_latest_image_pkg,
+            gpu_kernel_latest_headers_pkg,
+            gpu_kernel_latest_modules_extra_pkg,
+          ] | select | list
+        }}
       attempted: false
       detected_at: "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
       run_id: "{{ bloom_run_id | default('') }}"
