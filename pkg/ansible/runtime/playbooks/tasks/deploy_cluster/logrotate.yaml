@@ -79,6 +79,19 @@
     - rke2.conf
     - rke2
 
+# Neither job runs on minute 0, and no two of them share a minute. Both use
+# logrotate's default state file /var/lib/logrotate/status, and logrotate
+# takes an exclusive lock on it: a second logrotate that starts while the
+# first still holds the lock exits with "error: state file
+# /var/lib/logrotate/status is already locked". Three runs used to meet on
+# minute 0, the two below plus the distribution logrotate.service, which
+# logrotate.timer starts at 00:00. The error is collected in
+# /var/log/logrotate-bloom.log.
+#
+# Offsets rather than a state file for each job: the iSCSI config and the
+# distribution rsyslog config both name /var/log/syslog and /var/log/kern.log,
+# and the one shared state file is what stops the size rotation here and the
+# weekly rotation there from rotating the same file twice.
 - name: Create logrotate cron job
   copy:
     content: |
@@ -86,11 +99,11 @@
       SHELL=/bin/sh
       PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 
-      # iSCSI logrotate - runs every 10 minutes
-      */10 * * * * root /usr/sbin/logrotate -f /etc/logrotate-bloom.d/iscsi-aggressive.conf >> /var/log/logrotate-bloom.log 2>&1
+      # iSCSI logrotate - runs every 10 minutes, on minutes 1 to 51
+      1,11,21,31,41,51 * * * * root /usr/sbin/logrotate -f /etc/logrotate-bloom.d/iscsi-aggressive.conf >> /var/log/logrotate-bloom.log 2>&1
 
-      # logrotate for RKE2 logs - runs hourly
-      0 * * * * root /usr/sbin/logrotate -f /etc/logrotate-bloom.d/rke2.conf >> /var/log/logrotate-bloom.log 2>&1
+      # logrotate for RKE2 logs - runs hourly, on minute 5
+      5 * * * * root /usr/sbin/logrotate -f /etc/logrotate-bloom.d/rke2.conf >> /var/log/logrotate-bloom.log 2>&1
     dest: /etc/cron.d/logrotate-bloom
     mode: "0644"
 
