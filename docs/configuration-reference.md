@@ -52,7 +52,7 @@ Configuration sources in priority order (highest to lowest):
 - **Description**: Selects which AIM model sources cluster-forge installs, by hardware family. When empty or omitted, Bloom detects known AMD GPUs from PCI device IDs and detects AMD EPYC from `/proc/cpuinfo`; host ROCm is not required. It selects every detected optimized family and falls back to `cpu` when none are detected. When explicitly set, only the listed families are installed.
 - **Values**: any comma-separated combination of `cpu`, `epyc`, `instinct`, `radeon` (lowercase, no spaces)
 - **Example**: `AIM_HARDWARE_FAMILY: "epyc,instinct"`
-- **Compatibility gate**: If an explicit value includes an optimized family whose hardware was not detected on this host, Bloom warns that those models will appear undeployable unless compatible hardware exists on another cluster node and requires `[y/N]` confirmation before installation. `--yes`/`-y` bypasses this prompt. A failed best-effort hardware scan is not treated as proof of incompatibility.
+- **Compatibility gate**: If an explicit value includes an optimized family whose hardware was not detected on this host, Bloom warns that those models will appear undeployable unless compatible hardware exists on another cluster node and requires `[y/N]` confirmation before full installation and `--tags deploy_clusterforge` runs. `--yes`/`-y` bypasses this prompt. A failed best-effort hardware scan is not treated as proof of incompatibility. `--export` writes the resolved catalog into `bloom-vars.yaml` but skips the confirmation prompt because no installation is performed.
 - **Notes**: `instinct` and `radeon` are GPU families; `cpu` and `epyc` are CPU inference targets. In a `bloom.yaml` file the value is a normal comma-separated string. cluster-bloom splits it into a list before passing it to cluster-forge, so no comma-escaping is needed at the bloom layer.
 
 #### GPU_STACK_FAMILY
@@ -725,7 +725,7 @@ sudo ./bloom run bloom-playbook/cluster-bloom.yaml --verbose
 
 The `--export` flag enables a workflow for playbook inspection and manual execution:
 
-1. **Generate and Inspect**: Export the playbook directory to review what actions will be performed
+1. **Generate and Inspect**: Export the playbook directory to review what actions will be performed. Auto-detected `AIM_HARDWARE_FAMILY` values are written into `bloom-vars.yaml`; the explicit-family compatibility confirmation prompt is skipped because export does not install anything.
 2. **Modify if Needed**: Optionally customize files under `./bloom-playbook/`
 3. **Execute Manually**: Run the playbook using the `run` command or system `ansible-playbook` from the export directory
 
