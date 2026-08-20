@@ -8,9 +8,10 @@ found the dated name already taken:
     error: destination /var/log/syslog-20260820 already exists, skipping
     rotation
 
-At */10 that is 143 error lines a day into /var/log/logrotate-bloom.log, and
-a syslog that grows unchecked between midnights. Reproduced with logrotate
-3.21.0.
+At */10 that is 143 failed rotations a day, and two error lines each,
+because the config names both /var/log/syslog and /var/log/kern.log. A
+syslog then grows unchecked between midnights. Measured on a node the
+installer had just built: two error lines at every tick after the first.
 
 The defect was invisible on the fleet because an earlier one hid it: the
 configs lived in /etc/logrotate.d and had no `su root adm`, so every cron run
