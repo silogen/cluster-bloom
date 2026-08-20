@@ -31,4 +31,7 @@ func TestParseLspciAMDOutputIgnoresUnknownAMDDevices(t *testing.T) {
 	if len(got.Families) != 0 {
 		t.Fatalf("families = %v, want none", got.Families)
 	}
+	if !reflect.DeepEqual(got.UnmappedDeviceIDs, []string{"ffff"}) {
+		t.Fatalf("unmapped = %v, want [ffff]", got.UnmappedDeviceIDs)
+	}
 }

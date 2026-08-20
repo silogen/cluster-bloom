@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestDefaultAIMHardwareFamily(t *testing.T) {
+func TestFormatAIMHardwareFamily(t *testing.T) {
 	tests := []struct {
 		name     string
 		detected DetectedHardware
@@ -36,8 +36,8 @@ func TestDefaultAIMHardwareFamily(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := DefaultAIMHardwareFamily(test.detected); got != test.want {
-				t.Fatalf("DefaultAIMHardwareFamily() = %q, want %q", got, test.want)
+			if got := FormatAIMHardwareFamily(test.detected); got != test.want {
+				t.Fatalf("FormatAIMHardwareFamily() = %q, want %q", got, test.want)
 			}
 		})
 	}

@@ -9,11 +9,6 @@ import (
 	"strings"
 )
 
-const (
-	FamilyInstinct = "instinct"
-	FamilyRadeon   = "radeon"
-)
-
 type amdGPUDevice struct {
 	Family string
 	Model  string
@@ -71,8 +66,9 @@ var amdGPUDevicesByID = map[string]amdGPUDevice{
 var amdPCIDeviceLine = regexp.MustCompile(`\[[0-9a-fA-F]{4}]:.*\[1002:([0-9a-fA-F]{4})]`)
 
 type DetectedGPUFamilies struct {
-	Families []string
-	Models   map[string][]string
+	Families          []string
+	Models            map[string][]string
+	UnmappedDeviceIDs []string
 }
 
 func (d DetectedGPUFamilies) DescribeFamily(family string) string {
@@ -97,14 +93,17 @@ func DetectAMDGPUFamilies() (DetectedGPUFamilies, error) {
 func ParseLspciAMDOutput(output string) DetectedGPUFamilies {
 	result := DetectedGPUFamilies{Models: map[string][]string{}}
 	seen := map[string]bool{}
+	unmapped := map[string]bool{}
 	scanner := bufio.NewScanner(strings.NewReader(output))
 	for scanner.Scan() {
 		match := amdPCIDeviceLine.FindStringSubmatch(scanner.Text())
 		if match == nil {
 			continue
 		}
-		device, ok := amdGPUDevicesByID[strings.ToLower(match[1])]
+		deviceID := strings.ToLower(match[1])
+		device, ok := amdGPUDevicesByID[deviceID]
 		if !ok {
+			unmapped[deviceID] = true
 			continue
 		}
 		key := device.Family + "/" + device.Model
@@ -114,6 +113,10 @@ func ParseLspciAMDOutput(output string) DetectedGPUFamilies {
 		seen[key] = true
 		result.Models[device.Family] = append(result.Models[device.Family], device.Model)
 	}
+	for deviceID := range unmapped {
+		result.UnmappedDeviceIDs = append(result.UnmappedDeviceIDs, deviceID)
+	}
+	sort.Strings(result.UnmappedDeviceIDs)
 	for family := range result.Models {
 		result.Families = append(result.Families, family)
 	}

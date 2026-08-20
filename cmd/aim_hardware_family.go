@@ -14,39 +14,42 @@ type aimHardwareFamilyReport struct {
 }
 
 func resolveAIMHardwareFamilyDefault(cfg config.Config) aimHardwareFamilyReport {
+	wasExplicit := strings.TrimSpace(configStringValue(cfg, "AIM_HARDWARE_FAMILY")) != ""
+	scan, applied := config.ApplyAIMHardwareFamilyDefault(cfg)
+
 	report := aimHardwareFamilyReport{
-		WasExplicit: strings.TrimSpace(configStringValue(cfg, "AIM_HARDWARE_FAMILY")) != "",
+		Detected:    scan.Detected,
+		WasExplicit: wasExplicit,
 	}
 
-	gpus, err := config.DetectAMDGPUFamilies()
-	if err != nil {
-		if verbose {
-			fmt.Fprintf(os.Stderr, "Note: AMD GPU detection unavailable (%v)\n", err)
-		}
-	} else {
-		report.Detected.GPU = gpus
-		report.Detected.GPUScanSucceeded = true
+	for _, warning := range scan.Warnings() {
+		fmt.Fprintf(os.Stderr, "Note: %s\n", warning)
 	}
 
-	epyc, model, err := config.DetectAMDEPYCCPU()
-	if err != nil {
-		if verbose {
-			fmt.Fprintf(os.Stderr, "Note: AMD EPYC CPU detection unavailable (%v)\n", err)
+	if applied {
+		family := configStringValue(cfg, "AIM_HARDWARE_FAMILY")
+		fmt.Printf("🔎 AIM_HARDWARE_FAMILY=%s (auto-detected from host hardware", family)
+		details := describeDetectedHardware(scan.Detected)
+		if details != "" {
+			fmt.Printf(": %s", details)
 		}
-	} else {
-		report.Detected.CPUScanSucceeded = true
-		if epyc {
-			report.Detected.EPYCModel = model
-		}
-	}
-
-	if !report.WasExplicit {
-		family := config.DefaultAIMHardwareFamily(report.Detected)
-		cfg["AIM_HARDWARE_FAMILY"] = family
-		fmt.Printf("🔎 AIM_HARDWARE_FAMILY=%s (auto-detected from host hardware)\n", family)
+		fmt.Println(")")
 	}
 
 	return report
+}
+
+func describeDetectedHardware(detected config.DetectedHardware) string {
+	var parts []string
+	for _, family := range detected.GPU.Families {
+		if models := detected.GPU.DescribeFamily(family); models != "" {
+			parts = append(parts, fmt.Sprintf("%s (%s)", family, models))
+		}
+	}
+	if detected.HasEPYC() {
+		parts = append(parts, fmt.Sprintf("epyc (%s)", detected.EPYCModel))
+	}
+	return strings.Join(parts, ", ")
 }
 
 func confirmAIMHardwareFamilyCompatibility(

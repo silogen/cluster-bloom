@@ -34,10 +34,6 @@ func (d DetectedHardware) DefaultAIMFamilies() []string {
 	return families
 }
 
-func DefaultAIMHardwareFamily(detected DetectedHardware) string {
-	return strings.Join(detected.DefaultAIMFamilies(), ",")
-}
-
 // UnsupportedAIMHardwareFamilies returns explicitly requested model families
 // for which this host has no compatible hardware. Generic CPU models are
 // compatible with every host. Unknown scan results are not reported as

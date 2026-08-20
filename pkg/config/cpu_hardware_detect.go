@@ -7,11 +7,6 @@ import (
 	"strings"
 )
 
-const (
-	FamilyCPU  = "cpu"
-	FamilyEPYC = "epyc"
-)
-
 var cpuInfoContents = func() (string, error) {
 	data, err := os.ReadFile("/proc/cpuinfo")
 	return string(data), err
