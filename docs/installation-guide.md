@@ -364,6 +364,22 @@ kubectl create secret tls cluster-tls \
   -n default
 ```
 
+### AIM Model Catalog (`AIM_HARDWARE_FAMILY`)
+
+ClusterBloom selects which AIM model sources ClusterForge installs. When the field is empty or omitted from `bloom.yaml`, Bloom auto-detects known AMD GPU families from PCI device IDs and AMD EPYC from `/proc/cpuinfo`, then falls back to `cpu` when none are detected. Host ROCm is not required for detection.
+
+```bash
+# Omit the field to auto-detect at install time
+grep -v '^AIM_HARDWARE_FAMILY:' bloom.yaml > bloom-detected.yaml
+
+# Or set an explicit catalog when targeting hardware on another node
+cat >> bloom.yaml <<'EOF'
+AIM_HARDWARE_FAMILY: "epyc,instinct"
+EOF
+```
+
+Explicit values that include optimized families not detected on this host require `[y/N]` confirmation before installation unless `--yes`/`-y` is set. The web UI shows the detected catalog while the field is empty and writes the resolved value into generated YAML.
+
 **Deploy ClusterForge** (Optional):
 ```bash
 # Download ClusterForge release
