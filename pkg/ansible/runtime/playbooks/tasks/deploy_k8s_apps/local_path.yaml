@@ -52,13 +52,10 @@
         - local-path-provisioner.yaml
         - local-path-storageclass.yaml
 
-    - name: Get current node name for single-node configuration
-      shell: |
-        /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
-          get nodes -o jsonpath='{.items[0].metadata.name}'
-      register: current_node_name
-      changed_when: false
-
+    # The manifest maps the paths to DEFAULT_PATH_FOR_NON_LISTED_NODES, which
+    # applies to every node. A map that names one node gives no path to the
+    # other nodes, and a volume for a pod on a join node then stays Pending.
+    # Bloom gives each node the same /mnt/diskN paths from its CLUSTER_DISKS.
     - name: Template local-path config manifest to RKE2
       template:
         src: "manifests/local-path/local-path-config.yaml"
@@ -66,7 +63,6 @@
         mode: "0644"
       vars:
         CLUSTER_DISK_PATHS: "{{ local_path_dirs }}"
-        LOCAL_PATH_NODE_NAME: "{{ current_node_name.stdout }}"
 
     - name: Wait for local-path-storage namespace (RKE2 deploy controller takes 30-90s to apply manifests)
       shell: |
