@@ -5,6 +5,28 @@
 
 from ansible.module_utils.basic import AnsibleModule
 
+# Each module invocation is a fresh process, so a test that wants the
+# cilium-operator readiness check to fail before it succeeds has to leave the
+# remaining-failure count on disk. Absent the file the operator is Ready, which
+# keeps every other test unaffected.
+CILIUM_OPERATOR_STATE = '/tmp/mock_cilium_operator_not_ready'
+
+
+def cilium_operator_response():
+    try:
+        with open(CILIUM_OPERATOR_STATE) as f:
+            remaining = int(f.read().strip() or 0)
+    except (IOError, OSError, ValueError):
+        remaining = 0
+
+    if remaining <= 0:
+        return 0, 'True'
+
+    with open(CILIUM_OPERATOR_STATE, 'w') as f:
+        f.write(str(remaining - 1))
+    # `grep -qx True` prints nothing and exits 1 when no operator is Ready.
+    return 1, ''
+
 
 def main():
     module = AnsibleModule(
@@ -16,6 +38,9 @@ def main():
             creates=dict(type='path'),
             removes=dict(type='path'),
             stdin=dict(type='str'),
+            # `shell:` tasks are dispatched to this module, so it has to accept
+            # every argument the shell action plugin forwards.
+            executable=dict(type='str'),
         ),
         supports_check_mode=True
     )
@@ -66,6 +91,25 @@ def main():
                 'stderr': '',
                 'cmd': cmd,
                 'msg': 'MOCK kubectl: cluster-info'
+            }
+        elif 'name=cilium-operator' in cmd:
+            rc, stdout = cilium_operator_response()
+            result = {
+                'changed': False,
+                'rc': rc,
+                'stdout': stdout,
+                'stderr': '',
+                'cmd': cmd,
+                'msg': 'MOCK kubectl: cilium-operator readiness'
+            }
+        elif '--raw=/readyz' in cmd:
+            result = {
+                'changed': False,
+                'rc': 0,
+                'stdout': 'ok',
+                'stderr': '',
+                'cmd': cmd,
+                'msg': 'MOCK kubectl: apiserver readyz'
             }
         elif 'wait' in cmd and 'node' in cmd:
             result = {

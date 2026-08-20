@@ -36,12 +36,12 @@
         dest: /tmp/longhorn_preflight.sh
         mode: "0755"
 
+    # No HOME needed: the script uses the RKE2 kubeconfig directly, like every
+    # other kubectl caller in this repo.
     - name: Run Longhorn preflight check
       shell: bash /tmp/longhorn_preflight.sh
       register: longhorn_preflight
       failed_when: false
-      environment:
-        HOME: "{{ ansible_env.HOME }}"
 
     - name: Display preflight results
       debug:
