@@ -25,7 +25,7 @@
       {
           # /var/log is root:syslog 775, which logrotate refuses to rotate into
           # unless it is told whom to become. /etc/logrotate.conf carries the
-          # same "su root adm", but the cron job runs logrotate -f against this
+          # same "su root adm", but the cron job runs logrotate against this
           # file alone and so never reads it: without this line every run ends
           # in "skipping ... because parent directory has insecure permissions"
           # and syslog is never rotated at all.
@@ -88,6 +88,13 @@
 # logrotate.timer starts at 00:00. The error is collected in
 # /var/log/logrotate-bloom.log.
 #
+# No -f on either command. -f forces the rotation whatever the config says,
+# so "size 200M" and "size 100M" below never applied: every run rotated, and
+# with dateext only the first run of a day could, the rest ending in
+# "destination /var/log/syslog-<date> already exists, skipping rotation".
+# Without -f logrotate rotates when the file passes the size, which is what
+# the two configs were written for.
+#
 # Offsets rather than a state file for each job: the iSCSI config and the
 # distribution rsyslog config both name /var/log/syslog and /var/log/kern.log,
 # and the one shared state file is what stops the size rotation here and the
@@ -100,10 +107,10 @@
       PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 
       # iSCSI logrotate - runs every 10 minutes, on minutes 1 to 51
-      1,11,21,31,41,51 * * * * root /usr/sbin/logrotate -f /etc/logrotate-bloom.d/iscsi-aggressive.conf >> /var/log/logrotate-bloom.log 2>&1
+      1,11,21,31,41,51 * * * * root /usr/sbin/logrotate /etc/logrotate-bloom.d/iscsi-aggressive.conf >> /var/log/logrotate-bloom.log 2>&1
 
       # logrotate for RKE2 logs - runs hourly, on minute 5
-      5 * * * * root /usr/sbin/logrotate -f /etc/logrotate-bloom.d/rke2.conf >> /var/log/logrotate-bloom.log 2>&1
+      5 * * * * root /usr/sbin/logrotate /etc/logrotate-bloom.d/rke2.conf >> /var/log/logrotate-bloom.log 2>&1
     dest: /etc/cron.d/logrotate-bloom
     mode: "0644"
 
