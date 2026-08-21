@@ -45,7 +45,7 @@ func resolveAIMHardwareFamilyDefault(cfg config.Config) aimHardwareFamilyReport 
 	if applied {
 		family := configStringValue(cfg, "AIM_HARDWARE_FAMILY")
 		fmt.Printf("🔎 AIM_HARDWARE_FAMILY=%s (auto-detected from host hardware", family)
-		details := describeDetectedHardware(scan.Detected)
+		details := scan.Detected.Describe()
 		if details != "" {
 			fmt.Printf(": %s", details)
 		}
@@ -53,19 +53,6 @@ func resolveAIMHardwareFamilyDefault(cfg config.Config) aimHardwareFamilyReport 
 	}
 
 	return report
-}
-
-func describeDetectedHardware(detected config.DetectedHardware) string {
-	var parts []string
-	for _, family := range detected.GPU.Families {
-		if models := detected.GPU.DescribeFamily(family); models != "" {
-			parts = append(parts, fmt.Sprintf("%s (%s)", family, models))
-		}
-	}
-	if detected.HasEPYC() {
-		parts = append(parts, fmt.Sprintf("epyc (%s)", detected.EPYCModel))
-	}
-	return strings.Join(parts, ", ")
 }
 
 func confirmAIMHardwareFamilyCompatibility(

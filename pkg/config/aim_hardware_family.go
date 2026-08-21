@@ -35,6 +35,21 @@ func (d DetectedHardware) HasEPYC() bool {
 	return d.EPYCModel != ""
 }
 
+// Describe returns a human-readable summary of detected hardware families with
+// their model details.
+func (d DetectedHardware) Describe() string {
+	var parts []string
+	for _, family := range d.GPU.Families {
+		if models := d.GPU.DescribeFamily(family); models != "" {
+			parts = append(parts, family + " (" + models + ")")
+		}
+	}
+	if d.HasEPYC() {
+		parts = append(parts, "epyc ("+d.EPYCModel+")")
+	}
+	return strings.Join(parts, ", ")
+}
+
 // DefaultAIMFamilies returns the most specific model families supported by
 // this host. Generic CPU is the safe fallback when no optimized AMD family is
 // detected.
