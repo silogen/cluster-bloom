@@ -336,7 +336,7 @@ imports (roles, tasks, vars) within that directory tree work as expected.`,
 	// Add flags
 	rootCmd.PersistentFlags().IntVarP(&port, "port", "p", 62078, "Port for web UI (fails if in use)")
 	rootCmd.Flags().BoolVarP(&showVersion, "version", "v", false, "Show version information")
-	rootCmd.PersistentFlags().BoolVarP(&autoConfirm, "yes", "y", false, "Automatically confirm all interactive prompts (--destroy-data, cleanup, reboot-required). Same as --auto-confirm-prompts. USE WITH CAUTION")
+	rootCmd.PersistentFlags().BoolVarP(&autoConfirm, "yes", "y", false, "Automatically confirm all interactive prompts (hardware compatibility, --destroy-data, cleanup, reboot-required). Same as --auto-confirm-prompts. USE WITH CAUTION")
 	rootCmd.PersistentFlags().BoolVar(&autoConfirm, "auto-confirm-prompts", false, "Alias for --yes/-y")
 
 	// Add CLI command flags
@@ -411,6 +411,10 @@ func runAnsible(configFile string) {
 		cfg["CLUSTER_LISTEN_IP"] = clusterListenIP
 	}
 
+	// Resolve the AIM model catalog from physical hardware before validation.
+	// PCI detection does not depend on a working amdgpu driver or host ROCm.
+	aimHardwareReport := resolveAIMHardwareFamilyDefault(cfg)
+
 	// Validate config (after injecting CLI flags)
 	// Skip validation for cert update tags to allow separate cert-update-config.yaml
 	if tags == "" || (!strings.Contains(tags, "update_cert") && !strings.Contains(tags, "deploy_clusterforge")) {
@@ -451,6 +455,15 @@ func runAnsible(configFile string) {
 			os.Exit(1)
 		}
 		return
+	}
+
+	// An explicit catalog may intentionally target hardware on another node,
+	// but require acknowledgement before installing models that this host
+	// cannot deploy. --yes/-y bypasses this prompt.
+	if shouldGateAIMHardwareFamily(dryRun, tags) &&
+		!confirmAIMHardwareFamilyCompatibility(cfg, aimHardwareReport) {
+		fmt.Println("❌ Installation aborted by user.")
+		os.Exit(1)
 	}
 
 	// Tie any reboot-required marker written by ansible to this invocation.

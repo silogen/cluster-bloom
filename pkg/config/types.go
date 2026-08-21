@@ -35,3 +35,11 @@ type SaveRequest struct {
 	Config   Config `json:"config"`
 	Filename string `json:"filename"`
 }
+
+// DetectHardwareResponse is the JSON response for /api/detect-hardware
+type DetectHardwareResponse struct {
+	AIMHardwareFamily string   `json:"aim_hardware_family"`
+	GPUFamilies       []string `json:"gpu_families,omitempty"`
+	EPYCModel         string   `json:"epyc_model,omitempty"`
+	Warnings          []string `json:"warnings,omitempty"`
+}

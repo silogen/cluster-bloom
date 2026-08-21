@@ -200,6 +200,13 @@ ClusterBloom uses a modular architecture with command-based interfaces, sequenti
 ```
 Interactive wizard for generating bloom.yaml configuration files with input validation and optional automatic launch.
 
+#### AIM Model Catalog Auto-Detection
+When `AIM_HARDWARE_FAMILY` is empty or omitted, ClusterBloom detects known AMD GPU families from PCI device IDs (`lspci`) and AMD EPYC CPUs from `/proc/cpuinfo` without requiring host ROCm. It selects every detected optimized family and falls back to `cpu` when none are detected. The web UI previews the detected catalog on the configuration form and writes the resolved value into generated `bloom.yaml` files.
+
+If an operator explicitly sets families whose hardware was not detected on the install host, Bloom warns that those models will appear undeployable unless compatible hardware exists on another cluster node and requires `[y/N]` confirmation before full installs and `--tags deploy_clusterforge` runs. `--yes`/`-y` bypasses that prompt. Failed best-effort hardware scans are not treated as proof of incompatibility.
+
+See [Configuration Reference](./configuration-reference.md#aim_hardware_family) for field details.
+
 #### Node Validation (Proof Command)
 ```bash
 sudo ./bloom proof
@@ -222,7 +229,7 @@ sudo ./bloom --config bloom.yaml
 ```bash
 ./bloom cli bloom.yaml --export
 ```
-Exports the generated Ansible playbook to `./bloom-playbook/` instead of executing it. The directory contains the root playbook, `bloom-vars.yaml`, `inventory.ini`, `ansible.cfg`, and the embedded `tasks/` and `manifests/` trees. This enables debugging playbook generation, understanding what actions will be taken before execution, and provides a workaround for restricted environments where the wrapper lacks execution permissions.
+Exports the generated Ansible playbook to `./bloom-playbook/` instead of executing it. The directory contains the root playbook, `bloom-vars.yaml`, `inventory.ini`, `ansible.cfg`, and the embedded `tasks/` and `manifests/` trees. Auto-detected `AIM_HARDWARE_FAMILY` values are written into `bloom-vars.yaml`, but the explicit-family compatibility confirmation prompt is skipped during export because no installation is performed.
 
 **Use Cases:**
 - **Debugging**: Inspect the complete playbook before execution
