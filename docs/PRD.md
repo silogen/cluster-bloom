@@ -203,6 +203,8 @@ Interactive wizard for generating bloom.yaml configuration files with input vali
 #### AIM Model Catalog Auto-Detection
 When `AIM_HARDWARE_FAMILY` is empty or omitted, ClusterBloom detects known AMD GPU families from PCI device IDs (`lspci`) and AMD EPYC CPUs from `/proc/cpuinfo` without requiring host ROCm. It selects every detected optimized family and falls back to `cpu` when none are detected. The web UI previews the detected catalog on the configuration form and writes the resolved value into generated `bloom.yaml` files.
 
+The catalog is deployed cluster-wide during the first node installation (when ClusterForge is installed). Subsequent worker nodes do not re-deploy the catalog. For heterogeneous clusters where GPU workers join after a CPU-only control plane, set `AIM_HARDWARE_FAMILY` explicitly on the first node to include all hardware families that will exist in the cluster.
+
 If an operator explicitly sets families whose hardware was not detected on the install host, Bloom warns that those models will appear undeployable unless compatible hardware exists on another cluster node and requires `[y/N]` confirmation before full installs and `--tags deploy_clusterforge` runs. `--yes`/`-y` bypasses that prompt. Failed best-effort hardware scans are not treated as proof of incompatibility.
 
 See [Configuration Reference](./configuration-reference.md#aim_hardware_family) for field details.
