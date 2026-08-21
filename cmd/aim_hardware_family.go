@@ -30,7 +30,7 @@ type aimHardwareFamilyReport struct {
 }
 
 func resolveAIMHardwareFamilyDefault(cfg config.Config) aimHardwareFamilyReport {
-	wasExplicit := strings.TrimSpace(configStringValue(cfg, "AIM_HARDWARE_FAMILY")) != ""
+	wasExplicit := strings.TrimSpace(configStringOrEmpty(cfg, "AIM_HARDWARE_FAMILY")) != ""
 	scan, applied := config.ApplyAIMHardwareFamilyDefault(cfg)
 
 	report := aimHardwareFamilyReport{
@@ -43,7 +43,7 @@ func resolveAIMHardwareFamilyDefault(cfg config.Config) aimHardwareFamilyReport 
 	}
 
 	if applied {
-		family := configStringValue(cfg, "AIM_HARDWARE_FAMILY")
+		family := configStringOrEmpty(cfg, "AIM_HARDWARE_FAMILY")
 		fmt.Printf("🔎 AIM_HARDWARE_FAMILY=%s (auto-detected from host hardware", family)
 		details := scan.Detected.Describe()
 		if details != "" {
@@ -63,7 +63,7 @@ func confirmAIMHardwareFamilyCompatibility(
 		return true
 	}
 
-	value := configStringValue(cfg, "AIM_HARDWARE_FAMILY")
+	value := configStringOrEmpty(cfg, "AIM_HARDWARE_FAMILY")
 	unsupported := config.UnsupportedAIMHardwareFamilies(value, report.Detected)
 	if len(unsupported) == 0 {
 		return true
@@ -92,7 +92,7 @@ func shouldGateAIMHardwareFamily(dryRun bool, tags string) bool {
 	return false
 }
 
-func configStringValue(cfg config.Config, key string) string {
+func configStringOrEmpty(cfg config.Config, key string) string {
 	value, _ := cfg[key].(string)
 	return value
 }
