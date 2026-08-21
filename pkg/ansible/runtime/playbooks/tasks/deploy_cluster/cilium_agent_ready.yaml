@@ -1,0 +1,36 @@
+---
+# Purpose: Block a joining node from reporting success until its Cilium agent is healthy
+# Dependencies: none (node-local — joining nodes have no kubeconfig)
+# Usage: Included by deploy_cluster/main.yaml for non-first nodes
+# Tags: [rke2, cilium, deploy_cluster]
+
+# Without this, bloom reports success on a joining node the instant systemd
+# accepts the rke2 unit start. Everything after that point in the run is
+# FIRST_NODE-gated, so a node whose Cilium agent never came up exits bloom
+# cleanly and looks Ready, while the DaemonSet pods placed on it during that
+# window may be permanently wedged. Failing here converts a silent, days-long
+# latent fault into an immediate one.
+#
+# The agent is hostNetwork, so its own readiness endpoint is reachable from the
+# host netns without a kubeconfig — this is the same probe the cilium DaemonSet
+# uses for readinessProbe.
+#
+# use_proxy: no is required, not cosmetic: ansible's uri does not bypass
+# 127.0.0.1 on its own, so on a host with http_proxy set every attempt would be
+# sent to the proxy and fail.
+#
+# timeout is set explicitly because the default is 30s, and the port is filtered
+# rather than refused while the agent is starting — leaving it at the default
+# would stretch the retry budget below from ~20 minutes to over an hour.
+- name: Wait for the Cilium agent to report healthy on this node
+  uri:
+    url: http://127.0.0.1:9879/healthz
+    headers:
+      brief: "true"
+    status_code: 200
+    use_proxy: no
+    timeout: 5
+  register: cilium_healthz
+  until: cilium_healthz.status | default(0) == 200
+  retries: 90
+  delay: 10

@@ -261,6 +261,60 @@
     marker: "# {mark} ANSIBLE MANAGED BLOCK - extra config"
   when: RKE2_EXTRA_CONFIG != ""
 
+# A node that registers before its Cilium agent has programmed the BPF datapath
+# can be handed pods whose endpoint is created but never wired up: the CNI ADD
+# succeeds, the CiliumEndpoint reports ready, and the pod's netns has no
+# connectivity at all. That state never self-heals, because CrashLoopBackOff
+# recreates the container inside the existing sandbox and never the sandbox
+# itself. Registering with this taint keeps pods off the node until
+# cilium-operator clears it; rke2-cilium already ships
+# agent-not-ready-taint-key and remove-cilium-node-taints=true.
+#
+# NEVER apply this to the first node. On a new cluster it is the only node, and
+# RKE2's helm-install-rke2-cilium Job does not tolerate this taint, so tainting
+# the first node blocks the very Cilium install that is supposed to clear the
+# taint — an unrecoverable bootstrap deadlock. The first node is covered by
+# deploy_cluster/cluster_ready.yaml instead.
+#
+# Skipped when the operator supplies their own node-taint via RKE2_EXTRA_CONFIG,
+# since a second node-taint key in the same config.yaml would collide. Those
+# operators must include this taint themselves (see docs/configuration-reference.md).
+- name: Register joining nodes with the Cilium agent-not-ready taint
+  blockinfile:
+    path: /etc/rancher/rke2/config.yaml
+    marker: "# {mark} ANSIBLE MANAGED BLOCK - cilium readiness taint"
+    block: |
+      node-taint:
+        - "node.cilium.io/agent-not-ready=true:NoExecute"
+  when:
+    - not (FIRST_NODE | default(true) | bool)
+    - "'node-taint' not in (RKE2_EXTRA_CONFIG | default(''))"
+
+# The skip above is a substring test, so it also fires on a commented-out
+# node-taint or on `node-taints`. Silently dropping the protection is exactly
+# how this class of fault goes unnoticed for days, so fail the run instead of
+# leaving a warning that's easy to miss in the output.
+- name: Fail when RKE2_EXTRA_CONFIG suppressed the Cilium readiness taint
+  fail:
+    msg: |
+      ❌ RKE2_EXTRA_CONFIG defines node-taint on this joining node!
+
+      Bloom did not add its own node.cilium.io/agent-not-ready=true:NoExecute
+      taint, because two node-taint keys in one config.yaml would collide.
+      Without it, pods may be scheduled on this node before Cilium has
+      programmed the datapath.
+
+      📋 To fix this issue:
+      Add the Cilium taint to your own node-taint list in RKE2_EXTRA_CONFIG:
+        node-taint:
+          - "<your-existing-taint>"
+          - "node.cilium.io/agent-not-ready=true:NoExecute"
+
+      💡 See docs/configuration-reference.md for the RKE2_EXTRA_CONFIG example.
+  when:
+    - not (FIRST_NODE | default(true) | bool)
+    - "'node-taint' in (RKE2_EXTRA_CONFIG | default(''))"
+
 # kubectl connectivity requires two things in the apiserver config that the
 # rewrite of this playbook dropped:
 #   1. tls-san  -> the API server serving cert must list the names clients use

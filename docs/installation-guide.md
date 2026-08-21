@@ -412,12 +412,21 @@ sudo mkdir -p /etc/rancher/rke2
 cat <<EOF | sudo tee /etc/rancher/rke2/config.yaml
 server: https://\<FIRST_NODE_IP\>:9345
 token: <JOIN_TOKEN>
+node-taint:
+  - "node.cilium.io/agent-not-ready=true:NoExecute"
 EOF
 
 # Start agent service
 sudo systemctl enable rke2-agent.service
 sudo systemctl start rke2-agent.service
 ```
+
+> **Never add this taint to the first node.** A single-node cluster's own
+> `helm-install-rke2-cilium` Job does not tolerate it, so tainting the first
+> node blocks the very Cilium install that would clear the taint. The taint
+> above is only for nodes joining an already-running cluster; see
+> [Cilium readiness gating](./rke2-deployment.md#cilium-readiness-gating) for
+> why bloom automates this for every joining node.
 
 ### Additional Control Plane Node Setup
 
@@ -433,12 +442,17 @@ token: <JOIN_TOKEN>
 write-kubeconfig-mode: "0644"
 tls-san:
   - $(hostname -I | awk '{print $1}')
+node-taint:
+  - "node.cilium.io/agent-not-ready=true:NoExecute"
 EOF
 
 # Start server service
 sudo systemctl enable rke2-server.service
 sudo systemctl start rke2-server.service
 ```
+
+> Same taint, same rule: only for nodes joining an existing cluster, never the
+> first node in a new one.
 
 **Configure Chrony** (sync with first node):
 ```bash
@@ -466,6 +480,17 @@ kubectl get pods -A
 ```bash
 kubectl get pods -n longhorn
 ```
+
+**Verify Longhorn CSI Registration** (before deploying ClusterForge, on `large` clusters):
+```bash
+# Every node must list driver.longhorn.io
+kubectl get csinode -o custom-columns=NAME:.metadata.name,DRIVERS:.spec.drivers[*].name
+```
+A node missing `driver.longhorn.io` will make ClusterForge fail its
+`longhorn-csi-plugin` precondition check rather than a later, unrelated
+timeout — see
+[CSI precondition before ClusterForge](./rke2-deployment.md#csi-precondition-before-clusterforge)
+for troubleshooting.
 
 **Verify MetalLB**:
 ```bash

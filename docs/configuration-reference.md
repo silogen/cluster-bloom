@@ -353,6 +353,31 @@ verification behavior.
     node-label:
       - "workload-type=ml"
   ```
+- **Note on `node-taint`**: on joining nodes bloom normally adds
+  `node.cilium.io/agent-not-ready=true:NoExecute` so that no pod is placed before
+  the node's Cilium agent is ready (see
+  [RKE2 deployment → Cilium readiness gating](rke2-deployment.md#cilium-readiness-gating)).
+  Because two `node-taint` keys in one `config.yaml` would collide, bloom skips
+  its own block whenever `RKE2_EXTRA_CONFIG` contains `node-taint`. If you set
+  your own on a joining node, include the Cilium taint in it:
+  ```yaml
+  # bloom.yaml for a joining node (FIRST_NODE: false)
+  RKE2_EXTRA_CONFIG: |
+    node-taint:
+      - "CriticalAddonsOnly=true:NoExecute"
+      - "node.cilium.io/agent-not-ready=true:NoExecute"
+  ```
+  **Never put the Cilium taint on the first node.** Unlike bloom's own taint
+  block, `RKE2_EXTRA_CONFIG` is appended on *every* node regardless of
+  `FIRST_NODE`, so reusing one config across the whole cluster would taint the
+  bootstrap node — which deadlocks the Cilium install that is supposed to clear
+  the taint (see Trap 1 in the linked section). Keep the Cilium taint in the
+  joining nodes' `bloom.yaml` only.
+
+  Any node you taint must also still be able to run `longhorn-csi-plugin`, or it
+  cannot serve Longhorn volumes and ClusterForge deployment fails its CSI
+  precondition check. Longhorn's DaemonSets carry no tolerations, so a taint like
+  the `CriticalAddonsOnly` above keeps them off the node permanently.
 
 #### PRELOAD_IMAGES
 - **Type**: String (comma-separated image references)

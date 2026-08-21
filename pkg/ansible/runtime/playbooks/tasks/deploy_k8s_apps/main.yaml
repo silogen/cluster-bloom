@@ -4,13 +4,16 @@
 # Usage: Imported by main cluster-bloom.yaml playbook
 # Tags: [deploy_k8s_apps]
 
-- name: Wait for kubectl to be available
-  when: (FIRST_NODE | default(true) | bool) and not (NO_DISKS_FOR_CLUSTER | default(false) | bool)
-  wait_for:
-    path: /var/lib/rancher/rke2/bin/kubectl
-    state: present
-    timeout: 300
-  tags: [storage, deploy_k8s_apps]
+# Replaces a bare wait for the kubectl binary, which let node_annotator and the
+# storage provisioners create pods while Cilium was still initializing. Not
+# NO_DISKS_FOR_CLUSTER-gated as that wait was: node_annotator.yaml and
+# bloom_config.yaml shell out to kubectl unconditionally, and domain.yaml does
+# too whenever DOMAIN is set, so NO_DISKS_FOR_CLUSTER: true deployments would
+# otherwise get no readiness wait at all before those tasks run.
+- name: Wait for Cluster and Cilium Readiness
+  include_tasks: ../deploy_cluster/cluster_ready.yaml
+  when: FIRST_NODE | default(true) | bool
+  tags: [storage, cilium, deploy_k8s_apps]
 
 - name: Setup Node Annotator
   include_tasks: node_annotator.yaml
