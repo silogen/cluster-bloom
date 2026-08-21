@@ -28,8 +28,8 @@ changing an AMD repository or driver.
 
 The exact supported tuples are:
 
-| AMD driver | DKMS package/module
-|---|---|---|
+| AMD driver | DKMS package/module |
+|---|---|
 | `30.10.2` | `6.14.14.30100200-2226257` |
 | `30.20.1` | `6.16.6.30200100-2255209`  |
 | `30.30.3` | `6.16.13.30300300-2327507` |
