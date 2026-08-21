@@ -25,13 +25,16 @@ import (
 	"strings"
 )
 
+// DeviceID represents a PCI device ID as a hex string (e.g., "7410").
+type DeviceID string
+
 type amdGPUDevice struct {
 	Family string
 	Model  string
 }
 
 // Keep this taxonomy aligned with cluster-forge's amd-gpu NFD rules.
-var amdGPUDevicesByID = map[string]amdGPUDevice{
+var amdGPUDevicesByID = map[DeviceID]amdGPUDevice{
 	"7410": {FamilyInstinct, "MI210 VF"},
 	"74b5": {FamilyInstinct, "MI300X VF"},
 	"74bd": {FamilyInstinct, "MI300X HF VF"},
@@ -117,7 +120,7 @@ func ParseLspciAMDOutput(output string) DetectedGPUFamilies {
 			continue
 		}
 		deviceID := strings.ToLower(match[1])
-		device, ok := amdGPUDevicesByID[deviceID]
+		device, ok := amdGPUDevicesByID[DeviceID(deviceID)]
 		if !ok {
 			unmapped[deviceID] = true
 			continue
