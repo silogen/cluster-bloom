@@ -52,6 +52,18 @@
   changed_when: false
   when: bloom_reboot_required | bool
 
+# Read the list on the target instead of with lookup('file'). The playbook's
+# controller runs in its own mount namespace, where the host filesystem is under
+# /host, so a controller-side lookup of a host path fails with "File not found"
+# even though the stat above found the file on the target.
+- name: Read the packages that triggered the reboot-required flag
+  slurp:
+    src: /var/run/reboot-required.pkgs
+  register: bloom_reboot_pkgs_raw
+  when:
+    - bloom_reboot_required | bool
+    - bloom_reboot_pkgs_stat.stat.exists | default(false)
+
 - name: Check for a prior bloom reboot-required marker (loop guard)
   stat:
     path: /var/lib/bloom/reboot-required.json
@@ -107,8 +119,8 @@
         before the GPU is usable with the mapped driver.
       packages: >-
         {{
-          ((lookup('file', '/var/run/reboot-required.pkgs').split('\n') | select('truthy') | list)
-          if bloom_reboot_pkgs_stat.stat.exists | default(false)
+          (((bloom_reboot_pkgs_raw.content | b64decode).splitlines() | select('truthy') | list)
+          if bloom_reboot_pkgs_raw.content is defined
           else ['amdgpu-dkms'])
         }}
       attempted: false
