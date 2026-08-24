@@ -23,7 +23,7 @@ Initializes the primary cluster node with all necessary configurations:
 - Give the cluster in the generated `~/.kube/config` the name of `DOMAIN`, thus clusters from different installations do not have the same name
 - Disable default ingress controller (applications provide their own)
 - Configure TLS SANs for secure API access
-- Set up node labels for Longhorn storage integration
+- Set up node labels for Longhorn storage integration (see [Node Labels](#node-labels))
 - OIDC authentication provider integration
 
 ### OIDC Authentication Integration
@@ -66,6 +66,34 @@ token: <JOIN_TOKEN>
 write-kubeconfig-mode: "0644"
 tls-san:
   - <NODE_IP>
+```
+
+### Node Labels
+Bloom writes a `node-label:` block into `/etc/rancher/rke2/config.yaml` on every
+node. The kubelet applies the block when the node registers, and again each time
+the RKE2 service restarts. To change a label, edit the file and restart the
+service. A manual `kubectl label` does not stay.
+
+| Label | Value |
+|---|---|
+| `cluster-bloom/gpu-node` | `true` on a node with AMD GPUs, else `false` |
+| `cluster-bloom/first-node` | `true` on the node that initialized the cluster, else `false` |
+| `cluster-bloom/revision` | The revision of the bloom binary that built the node |
+| `node.longhorn.io/create-default-disk` | `config`. Not written when `NO_DISKS_FOR_CLUSTER` is true |
+| `node.longhorn.io/instance-manager` | `true`. Not written when `NO_DISKS_FOR_CLUSTER` is true |
+| `bloom.disk___mnt___disk<N>` | One label for each cluster disk. Holds the Longhorn disk name |
+
+The value of `cluster-bloom/revision` is the version that the binary reports:
+a release tag (`v2.3.0-rc5`), a branch, or a branch with a commit. Kubernetes
+refuses a label value that has a character other than an alphanumeric, `-`, `_`
+or `.`, that is longer than 63 characters, or that does not start and end with
+an alphanumeric. A refused label stops the node from registering, thus bloom
+first makes the value safe: it replaces each unaccepted character with `-`, cuts
+the value to 63 characters, and writes `unknown` if nothing is left.
+
+To find which bloom built each node:
+```bash
+kubectl get nodes -L cluster-bloom/revision
 ```
 
 ### Cilium CNI Integration
