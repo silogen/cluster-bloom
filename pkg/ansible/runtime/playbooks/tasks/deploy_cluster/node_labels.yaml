@@ -1,6 +1,7 @@
 ---
 # Purpose: Generate and configure node labels for Kubernetes cluster
-# Dependencies: NO_DISKS_FOR_CLUSTER, GPU_NODE, cluster_disks_list variables
+# Dependencies: NO_DISKS_FOR_CLUSTER, GPU_NODE, FIRST_NODE, BLOOM_VERSION,
+#               cluster_disks_list variables
 # Usage: Imported by deploy_cluster/main.yaml
 # Tags: [rke2, deploy_cluster]
 
@@ -25,6 +26,21 @@
   loop: "{{ cluster_premounted_list | default([]) }}"
   when: not (NO_DISKS_FOR_CLUSTER | default(false) | bool) and CLUSTER_PREMOUNTED_DISKS != "" and cluster_premounted_list is defined and cluster_premounted_list | length > 0
 
+- name: Make the bloom revision safe for a label value
+  set_fact:
+    # revision, not version: BLOOM_VERSION carries a tag (v2.3.0-rc5), a branch
+    # (EAI-8203-ubuntu-2604) or a branch with a commit
+    # (EAI-8203-ubuntu-2604-44893b4). ArgoCD calls that same set of values a
+    # targetRevision. pkg/ansible/runtime/playbook.go supplies it to every run.
+    #
+    # RKE2 registers node LABELS only: `rke2 server --help` gives --node-label
+    # and has no annotation equivalent. A label value accepts alphanumerics,
+    # '-', '_' and '.', is limited to 63 characters, and must start and end
+    # with an alphanumeric. A branch name with '/' or semver build metadata
+    # with '+' would be refused, and a refused label stops the node from
+    # registering, so the value is made safe rather than trusted.
+    bloom_revision_label: "{{ ((BLOOM_VERSION | default('') | regex_replace('[^A-Za-z0-9._-]', '-'))[:63] | regex_replace('^[^A-Za-z0-9]+', '') | regex_replace('[^A-Za-z0-9]+$', '')) or 'unknown' }}"
+
 - name: Write node labels to config
   blockinfile:
     path: /etc/rancher/rke2/config.yaml
@@ -36,6 +52,7 @@
       {% endif %}
         - cluster-bloom/gpu-node={{ GPU_NODE | lower }}
         - cluster-bloom/first-node={{ FIRST_NODE | lower }}
+        - cluster-bloom/revision={{ bloom_revision_label }}
       {% for label in disk_labels | default([]) %}
         - {{ label }}
       {% endfor %}
