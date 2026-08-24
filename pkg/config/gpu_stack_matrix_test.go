@@ -150,6 +150,7 @@ func TestSupportedGPUDriversIncludesValidatedTuples(t *testing.T) {
 		"30.30.4": "7.2.4",
 		"31.30.0": "7.13.0",
 		"31.40.0": "7.14.0",
+		"31.40.1": "7.14.0",
 	}
 	for _, driver := range supportedGPUDrivers {
 		if paired, ok := want[driver.DriverRelease]; !ok {
