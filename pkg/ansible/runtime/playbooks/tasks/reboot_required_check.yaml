@@ -45,10 +45,14 @@
         (gpu_driver_reboot_required | default(false) | bool)
       }}
 
-- name: Check for the packages that triggered the reboot-required flag
-  stat:
-    path: /var/run/reboot-required.pkgs
-  register: bloom_reboot_pkgs_stat
+# slurp, not lookup('file', ...): a lookup runs on the Ansible controller (for
+# bloom, inside the pivot_root container), which never has the target node's
+# /var/run/reboot-required.pkgs.
+- name: Read the packages that triggered the reboot-required flag
+  slurp:
+    src: /var/run/reboot-required.pkgs
+  register: bloom_reboot_pkgs
+  failed_when: false
   changed_when: false
   when: bloom_reboot_required | bool
 
@@ -107,8 +111,8 @@
         before the GPU is usable with the mapped driver.
       packages: >-
         {{
-          ((lookup('file', '/var/run/reboot-required.pkgs').split('\n') | select('truthy') | list)
-          if bloom_reboot_pkgs_stat.stat.exists | default(false)
+          (((bloom_reboot_pkgs.content | b64decode).split('\n') | select('truthy') | list)
+          if bloom_reboot_pkgs.content is defined
           else ['amdgpu-dkms'])
         }}
       attempted: false
