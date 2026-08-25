@@ -138,3 +138,22 @@ func TestPruneEmptyBloomFstabSectionKeepsMarkersForPremountedEntries(t *testing.
 		t.Fatalf("pruneEmptyBloomFstabSection() = %#v, want premounted entry to retain section", got)
 	}
 }
+
+func TestJoinFstabLinesEndsWithSingleNewline(t *testing.T) {
+	tests := []struct {
+		name  string
+		lines []string
+		want  string
+	}{
+		{"missing trailing newline", []string{"a", "b"}, "a\nb\n"},
+		{"trailing newline kept", []string{"a", "b", ""}, "a\nb\n"},
+		{"empty stays empty", nil, ""},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := joinFstabLines(test.lines); got != test.want {
+				t.Errorf("joinFstabLines(%q) = %q, want %q", test.lines, got, test.want)
+			}
+		})
+	}
+}
