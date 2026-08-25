@@ -435,6 +435,17 @@ func atomicWriteFile(path string, data []byte, mode os.FileMode) (err error) {
 	return nil
 }
 
+// joinFstabLines joins the retained lines and makes sure the result ends with
+// exactly one newline. A file that lost its final newline earlier would
+// otherwise keep the defect, and the next appended entry joins the last line.
+func joinFstabLines(lines []string) string {
+	content := strings.Join(lines, "\n")
+	if content == "" || strings.HasSuffix(content, "\n") {
+		return content
+	}
+	return content + "\n"
+}
+
 func backupAndWriteFstab(original string, retainedLines []string) error {
 	beforePrune := len(retainedLines)
 	retainedLines = pruneEmptyBloomFstabSection(retainedLines)
@@ -452,7 +463,7 @@ func backupAndWriteFstab(original string, retainedLines []string) error {
 	if err := atomicWriteFile(backupPath, []byte(original), 0644); err != nil {
 		return fmt.Errorf("back up fstab to %s: %w", backupPath, err)
 	}
-	if err := atomicWriteFile("/etc/fstab", []byte(strings.Join(retainedLines, "\n")), 0644); err != nil {
+	if err := atomicWriteFile("/etc/fstab", []byte(joinFstabLines(retainedLines)), 0644); err != nil {
 		return fmt.Errorf("update /etc/fstab (backup: %s): %w", backupPath, err)
 	}
 	if err := pruneFstabBackupsIn(fstabBackupDirectory, maxRetainedFstabBackups); err != nil {
