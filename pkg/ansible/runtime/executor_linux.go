@@ -233,6 +233,18 @@ func RunChild() {
 	cmd := exec.Command("ansible-playbook", ansibleArgs...)
 	cmd.Stdin = os.Stdin
 
+	// Must be set before Start; exec reads Env at Start time. Pinning the
+	// interpreter matters because ansible-core 2.21 auto-discovers python3.13
+	// where it exists, and python-apt is only built for the system 3.12 —
+	// modules then die on import and return a traceback instead of JSON.
+	cmd.Env = []string{
+		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		"HOME=/root",
+		"USER=" + username,
+		"ANSIBLE_LOCALHOST_WARNING=False",
+		"ANSIBLE_PYTHON_INTERPRETER=/usr/bin/python3",
+	}
+
 	// Use pipes to capture and process output
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
@@ -255,14 +267,6 @@ func RunChild() {
 	// Process output streams
 	go processor.ProcessStream(stdoutPipe, os.Stdout)
 	go processor.ProcessStream(stderrPipe, os.Stderr)
-
-	cmd.Env = []string{
-		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-		"HOME=/root",
-		"USER=" + username,
-		"ANSIBLE_LOCALHOST_WARNING=False",
-		"ANSIBLE_PYTHON_INTERPRETER=/usr/bin/python3",
-	}
 
 	// Wait for command to complete
 	if err := cmd.Wait(); err != nil {
