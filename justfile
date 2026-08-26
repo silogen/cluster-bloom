@@ -10,3 +10,6 @@ build version="dev-build":
     @mkdir -p dist
     CGO_ENABLED=0 go build -ldflags="-X 'github.com/silogen/cluster-bloom/cmd.Version={{version}}'" -o dist/bloom
     @echo "Built: dist/bloom"
+
+# Build the bloom binary with the current commit hash as version
+build-commit: (build `git rev-parse --short HEAD`)
