@@ -28,6 +28,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -43,6 +44,11 @@ type EphemeralSSHManager struct {
 	AuthorizedKeysPath   string // /home/{username}/.ssh/authorized_keys
 	AuthorizedKeysBackup string // {workdir}/ssh/authorized_keys.backup
 	isInstalled          bool   // Track installation state for cleanup
+
+	// Interrupt handling gives Cleanup several concurrent callers: the global
+	// signal handler, the host SSH signal handler, and the executor's deferred
+	// cleanup. Serialize them so the restore happens exactly once.
+	mu sync.Mutex
 }
 
 // NewEphemeralSSHManager creates a new ephemeral SSH key manager for single-node deployment
@@ -97,6 +103,9 @@ func (e *EphemeralSSHManager) Setup() error {
 
 // Cleanup removes the ephemeral public key and restores original authorized_keys
 func (e *EphemeralSSHManager) Cleanup() error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
 	// Remove public key from authorized_keys
 	if err := e.removePublicKey(); err != nil {
 		return fmt.Errorf("failed to remove SSH key for user %s: %w", e.Username, err)
@@ -330,12 +339,28 @@ func (e *EphemeralSSHManager) removePublicKey() error {
 	}
 
 	return e.runAsUser(func() error {
-		if e.verifyBackup() {
-			if copyErr := copyFile(e.AuthorizedKeysBackup, e.AuthorizedKeysPath); copyErr == nil {
-				e.isInstalled = false
-				return nil
-			}
+		if !e.verifyBackup() {
+			return fmt.Errorf("backup %s is missing or unreadable; authorized_keys left untouched", e.AuthorizedKeysBackup)
 		}
+
+		content, err := os.ReadFile(e.AuthorizedKeysBackup)
+		if err != nil {
+			return fmt.Errorf("failed to read backup %s: %w", e.AuthorizedKeysBackup, err)
+		}
+
+		mode := os.FileMode(0600)
+		uid, gid := -1, -1
+		if fileUID, fileGID, fileMode, statErr := getFileInfo(e.AuthorizedKeysPath); statErr == nil {
+			mode = fileMode
+			uid = fileUID
+			gid = fileGID
+		}
+
+		if err := writeFileAtomically(e.AuthorizedKeysPath, content, mode, uid, gid); err != nil {
+			return fmt.Errorf("failed to restore %s from backup: %w", e.AuthorizedKeysPath, err)
+		}
+
+		e.isInstalled = false
 		return nil
 	})
 }
@@ -426,25 +451,63 @@ func getFileInfo(filePath string) (uid int, gid int, mode os.FileMode, err error
 	return int(stat.Uid), int(stat.Gid), fileInfo.Mode(), nil
 }
 
+// writeFileAtomically writes content to path via a temporary file in the same
+// directory, then renames it into place. Truncating path and writing in-place
+// would leave it empty for the duration of the write; an interrupt landing in
+// that window makes the truncation permanent, and for authorized_keys that
+// locks the operator out of the node. Pass uid/gid as -1 to leave ownership to
+// the caller.
+func writeFileAtomically(path string, content []byte, mode os.FileMode, uid, gid int) error {
+	dir := filepath.Dir(path)
+
+	tmpFile, err := os.CreateTemp(dir, filepath.Base(path)+".tmp")
+	if err != nil {
+		return fmt.Errorf("failed to create temporary file in %s: %w", dir, err)
+	}
+	tmpPath := tmpFile.Name()
+	defer func() {
+		if tmpPath != "" {
+			os.Remove(tmpPath)
+		}
+	}()
+
+	if _, err := tmpFile.Write(content); err != nil {
+		tmpFile.Close()
+		return fmt.Errorf("failed to write temporary file: %w", err)
+	}
+	// Durability matters here: a crash between rename and writeback would
+	// otherwise leave the new name pointing at empty content.
+	if err := tmpFile.Sync(); err != nil {
+		tmpFile.Close()
+		return fmt.Errorf("failed to flush temporary file: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		return fmt.Errorf("failed to close temporary file: %w", err)
+	}
+
+	if err := os.Chmod(tmpPath, mode.Perm()); err != nil {
+		return fmt.Errorf("failed to set permissions on temporary file: %w", err)
+	}
+	if err := os.Chown(tmpPath, uid, gid); err != nil {
+		return fmt.Errorf("failed to set ownership on temporary file: %w", err)
+	}
+
+	if err := os.Rename(tmpPath, path); err != nil {
+		return fmt.Errorf("failed to move temporary file into place: %w", err)
+	}
+	tmpPath = ""
+
+	return nil
+}
+
 // safelyOverwriteFile overwrites dst with src while preserving ownership and permissions
 func safelyOverwriteFile(src, dst string, uid, gid int, mode os.FileMode) error {
-	// Read source file content
 	content, err := os.ReadFile(src)
 	if err != nil {
 		return fmt.Errorf("failed to read source file: %w", err)
 	}
 
-	// Write to destination with preserved permissions
-	if err := os.WriteFile(dst, content, mode.Perm()); err != nil {
-		return fmt.Errorf("failed to write destination file: %w", err)
-	}
-
-	// Set correct ownership
-	if err := os.Chown(dst, uid, gid); err != nil {
-		return fmt.Errorf("failed to set ownership: %w", err)
-	}
-
-	return nil
+	return writeFileAtomically(dst, content, mode, uid, gid)
 }
 
 // runAsUser executes a function and ensures proper file ownership
