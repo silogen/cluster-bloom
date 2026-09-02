@@ -41,8 +41,10 @@ func handleGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	prepared := config.PrepareGeneratedConfig(req.Config)
+
 	// Validate before generating
-	errors := config.Validate(req.Config)
+	errors := config.Validate(prepared)
 	if len(errors) > 0 {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(config.ValidateResponse{
@@ -52,7 +54,7 @@ func handleGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	yaml := config.GenerateYAML(req.Config)
+	yaml := config.GenerateYAML(prepared)
 
 	response := config.GenerateResponse{
 		YAML: yaml,
@@ -81,7 +83,8 @@ func handleSave(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate before saving
-	errors := config.Validate(req.Config)
+	prepared := config.PrepareGeneratedConfig(req.Config)
+	errors := config.Validate(prepared)
 	if len(errors) > 0 {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(config.ValidateResponse{
@@ -91,7 +94,7 @@ func handleSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	yaml := config.GenerateYAML(req.Config)
+	yaml := config.GenerateYAML(prepared)
 
 	// Write to specified filename in current working directory
 	if err := os.WriteFile(req.Filename, []byte(yaml), 0644); err != nil {

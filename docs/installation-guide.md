@@ -364,6 +364,46 @@ kubectl create secret tls cluster-tls \
   -n default
 ```
 
+### AIM Model Catalog (`AIM_HARDWARE_FAMILY`)
+
+ClusterBloom selects which AIM model sources ClusterForge installs. When the field is empty or omitted from `bloom.yaml`, Bloom auto-detects known AMD GPU families from PCI device IDs and AMD EPYC from `/proc/cpuinfo`, then falls back to `cpu` when none are detected. Host ROCm is not required for detection.
+
+**Important**: `AIM_HARDWARE_FAMILY` determines the cluster-wide model catalog deployed during the **first node** installation (when ClusterForge is installed). Subsequent worker nodes join the existing cluster and do not re-deploy the catalog, even if they have different `AIM_HARDWARE_FAMILY` values in their local `bloom.yaml`.
+
+#### Workflow 1: Auto-detect on First Node (Homogeneous Hardware)
+
+For clusters where the first node has representative hardware:
+
+```bash
+# First node: omit field to auto-detect
+grep -v '^AIM_HARDWARE_FAMILY:' bloom.yaml > bloom-detected.yaml
+sudo ./bloom --config bloom-detected.yaml
+
+# Worker nodes: auto-detect locally (validates compatibility but doesn't affect catalog)
+grep -v '^AIM_HARDWARE_FAMILY:' worker-bloom.yaml > worker-detected.yaml
+sudo ./bloom --config worker-detected.yaml
+```
+
+#### Workflow 2: Pre-configure Catalog (Heterogeneous Hardware)
+
+For clusters where GPU workers will be added after a CPU-only control plane:
+
+```bash
+# First node (CPU-only control plane): explicitly set catalog for future workers
+cat >> bloom.yaml <<'EOF'
+AIM_HARDWARE_FAMILY: "cpu,instinct"
+EOF
+sudo ./bloom --config bloom.yaml  # Confirms with [y/N] about missing instinct hardware
+
+# Worker nodes (with Instinct GPUs): use same catalog or auto-detect for validation
+cat >> worker-bloom.yaml <<'EOF'
+AIM_HARDWARE_FAMILY: "instinct"
+EOF
+sudo ./bloom --config worker-bloom.yaml  # Joins cluster, no catalog re-deployment
+```
+
+Explicit values that include optimized families not detected on this host require `[y/N]` confirmation before installation unless `--yes`/`-y` is set. The web UI shows the detected catalog while the field is empty and writes the resolved value into generated YAML.
+
 **Deploy ClusterForge** (Optional):
 ```bash
 # Download ClusterForge release

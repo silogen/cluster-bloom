@@ -68,6 +68,7 @@ func (s *Server) Start() error {
 
 	// Setup routes
 	http.HandleFunc("/api/schema", handleSchema)
+	http.HandleFunc("/api/detect-hardware", handleDetectHardware)
 	http.HandleFunc("/api/generate", handleGenerate)
 	http.HandleFunc("/api/save", handleSave)
 	http.Handle("/", fileServer)
