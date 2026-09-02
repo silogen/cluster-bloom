@@ -28,29 +28,59 @@
     gpu_driver_candidate_version: "{{ gpu_driver_detected_package }}"
   when: gpu_driver_policy_state == 'supported'
 
+# AMD publishes the 7.x installer train for jammy and noble only. The 31.x
+# train adds resolute (Ubuntu 26.04).
+- name: Resolve the Ubuntu releases the mapped installer publishes for
+  set_fact:
+    gpu_driver_codenames: >-
+      {{
+        ['jammy', 'noble']
+        + ([] if gpu_driver_target.InstallerVersion.startswith('7.') else ['resolute'])
+      }}
+  when: gpu_driver_needs_install | bool
+
 - name: Fail if production driver is unavailable for this Ubuntu release
   fail:
     msg: |
-      A fresh node requires AMD GPU Driver 31.40.0, but the mapped installer
-      repository supports Ubuntu 22.04 and 24.04 in this Bloom release.
+      A fresh node requires AMD GPU Driver {{ gpu_driver_target.DriverRelease }},
+      but its installer repository publishes only for these Ubuntu releases:
+      {{ gpu_driver_codenames | join(', ') }}.
       Detected codename: {{ ubuntu_codename.stdout | trim }}
-      Upgrade to a supported Ubuntu release or pre-provision one of the exact
-      supported DKMS drivers shown in the GPU host stack synopsis.
+      Select a driver that this Ubuntu release has packages for, upgrade to a
+      supported Ubuntu release, or pre-provision one of the exact supported
+      DKMS drivers shown in the GPU host stack synopsis.
   when:
     - gpu_driver_needs_install | bool
-    - ubuntu_codename.stdout | trim not in ['jammy', 'noble']
+    - ubuntu_codename.stdout | trim not in gpu_driver_codenames
 
 - name: Check for stale/unavailable kernel headers and upgrade+reboot if needed
   include_tasks: gpu_kernel_headers_check.yaml
   when: gpu_driver_needs_install | bool
 
+# Ubuntu 26.04 ships no linux-modules-extra package: those modules, amdgpu
+# included, moved into linux-modules. Ask apt instead of assuming the name.
+- name: Check for a separate modules-extra package for the running kernel
+  shell: "apt-cache policy linux-modules-extra-{{ kernel_version.stdout }} | awk '/Candidate:/ { print $2; exit }'"
+  register: gpu_driver_modules_extra_candidate
+  changed_when: false
+  when: gpu_driver_needs_install | bool
+
+- name: Resolve the DKMS build prerequisites
+  set_fact:
+    gpu_driver_kernel_packages: >-
+      {{
+        ['linux-headers-' ~ kernel_version.stdout]
+        + (
+          ['linux-modules-extra-' ~ kernel_version.stdout]
+          if (gpu_driver_modules_extra_candidate.stdout | default('') | trim) not in ['', '(none)']
+          else []
+        )
+      }}
+  when: gpu_driver_needs_install | bool
+
 - name: Install DKMS build prerequisites
   apt:
-    name:
-      - "linux-headers-{{ kernel_version.stdout }}"
-      - "linux-modules-extra-{{ kernel_version.stdout }}"
-      - python3-setuptools
-      - python3-wheel
+    name: "{{ gpu_driver_kernel_packages + ['python3-setuptools', 'python3-wheel'] }}"
     state: present
   when: gpu_driver_needs_install | bool
   environment:
@@ -165,7 +195,7 @@
         dest: /etc/apt/preferences.d/00_bloom_amdgpu_kernel
         mode: "0644"
         content: |
-          Package: linux-headers-{{ kernel_version.stdout }} linux-modules-extra-{{ kernel_version.stdout }}
+          Package: {{ gpu_driver_kernel_packages | join(' ') }}
           Pin: version *
           Pin-Priority: 1001
 
@@ -231,6 +261,9 @@
   register: gpu_driver_installed_version_after
   changed_when: false
 
+# dkms 3.2 (Ubuntu 26.04) appends a note to the state, for example
+# "installed (Original modules exist)", so the state cannot be anchored to the
+# end of the line.
 - name: Check effective DKMS module for the running kernel
   shell: |
     set -o pipefail
@@ -238,7 +271,7 @@
       | grep -F "{{ gpu_driver_effective.DKMSModuleVersion }}" \
       | grep -F "{{ gpu_driver_effective.DKMSBuild }}" \
       | grep -F ", {{ kernel_version.stdout }}," \
-      | grep -q ': installed$'
+      | grep -qE ': installed( |$)'
   args:
     executable: /bin/bash
   register: gpu_driver_dkms_for_kernel

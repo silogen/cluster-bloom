@@ -295,7 +295,7 @@ ClusterBloom validates system requirements before installation:
 
 - **Disk Space**: 20GB+ root, 10GB+ available, 5GB+ /var, 500GB+ /var/lib/rancher (optional check)
 - **System Resources**: 4GB+ RAM (8GB recommended), 2+ CPU cores (4 recommended)
-- **Ubuntu Version**: 20.04, 22.04, or 24.04
+- **Ubuntu Version**: 20.04, 22.04, 24.04, or 26.04
 - **Kernel Modules**: overlay, br_netfilter (amdgpu for GPU nodes)
 
 See the [Installation Guide](installation-guide.md) for deployment validation

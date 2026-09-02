@@ -106,12 +106,7 @@
         amdgpu-install_{{ gpu_driver_version_resolved }}.{{ gpu_driver_build_resolved }}_all.deb
 
       Select one exact validated tuple:
-        7.0.2.70002-1  -> driver 30.10.2 -> DKMS 6.14.14 -> paired ROCm 7.0.2
-        7.1.1.70101-1  -> driver 30.20.1 -> DKMS 6.16.6  -> paired ROCm 7.1.1
-        7.2.3.70203-1  -> driver 30.30.3 -> DKMS 6.16.13 -> paired ROCm 7.2.3
-        7.2.4.70204-1  -> driver 30.30.4 -> DKMS 6.16.13 -> paired ROCm 7.2.4
-        31.30.313000-1 -> driver 31.30.0 -> DKMS 6.19.4  -> paired ROCm 7.13.0
-        31.40.314000-1 -> driver 31.40.0 -> DKMS 6.19.14 -> paired ROCm 7.14.0
+        {% set tuples = [] %}{% for driver in gpu_driver_supported %}{{ tuples.append('%s.%s -> driver %s -> DKMS %s -> paired ROCm %s' | format(driver.InstallerVersion, driver.InstallerBuild, driver.DriverRelease, driver.DKMSModuleVersion, driver.PairedROCm)) or '' }}{% endfor %}{{ tuples | to_nice_yaml | trim | indent(8) }}
   when: (gpu_driver_target_matches | length) != 1
 
 - name: Resolve target GPU driver tuple
@@ -127,12 +122,7 @@
       Host ROCm: not required, not installed by this flow, and any existing userspace is left untouched when its driver is validated.
 
       Supported existing DKMS drivers (host ROCm is not required):
-        ROCm 7.0.2 -> installer 7.0.2.70002-1  -> driver 30.10.2 -> DKMS 6.14.14.30100200-2226257
-        ROCm 7.1.1 -> installer 7.1.1.70101-1  -> driver 30.20.1 -> DKMS 6.16.6.30200100-2255209
-        ROCm 7.2.3 -> installer 7.2.3.70203-1  -> driver 30.30.3 -> DKMS 6.16.13.30300300-2327507
-        ROCm 7.2.4 -> installer 7.2.4.70204-1  -> driver 30.30.4 -> DKMS 6.16.13.30300400-2341068
-        ROCm 7.13.0 -> installer 31.30.313000-1 -> driver 31.30.0 -> DKMS 6.19.4.31300000-2337710
-        ROCm 7.14.0 -> installer 31.40.314000-1 -> driver 31.40.0 -> DKMS 6.19.14.31400000-2364437
+        {% set drivers = [] %}{% for driver in gpu_driver_supported %}{{ drivers.append('ROCm %s -> installer %s.%s -> driver %s -> DKMS %s.%s-%s' | format(driver.PairedROCm, driver.InstallerVersion, driver.InstallerBuild, driver.DriverRelease, driver.DKMSModuleVersion, driver.DKMSPackageCode, driver.DKMSBuild)) or '' }}{% endfor %}{{ drivers | to_nice_yaml | trim | indent(8) }}
 
       Detected amdgpu-dkms package: {{ gpu_driver_detected_package.stdout | trim | default('none', true) }}
       Existing DKMS registrations: {{ gpu_driver_detected_dkms.stdout | trim | default('none', true) }}
@@ -150,7 +140,7 @@
       Detected DKMS registrations:
         {{ gpu_driver_detected_dkms.stdout | trim | default('none', true) }}
 
-      Supported releases are 30.10.2, 30.20.1, 30.30.3, 30.30.4, 31.30.0 and 31.40.0.
+      Supported releases are {{ gpu_driver_supported | map(attribute='DriverRelease') | join(', ') }}.
 
       Choose one remediation, then rerun Bloom:
         1. Preserve host ROCm: use AMD's instructions for that ROCm release to
@@ -161,8 +151,8 @@
            the way they were installed. Verify:
              dpkg-query -W amdgpu-dkms  # should report no package
              dkms status -m amdgpu      # should report no registrations
-           Then rerun Bloom; it installs driver 31.40.0 through
-           amdgpu-install_31.40.314000-1_all.deb.
+           Then rerun Bloom; it installs driver {{ gpu_driver_target.DriverRelease }} through
+           amdgpu-install_{{ gpu_driver_target.InstallerVersion }}.{{ gpu_driver_target.InstallerBuild }}_all.deb.
 
       Bloom will not silently replace an unrecognized driver because doing so
       can break an existing host ROCm installation.
@@ -182,7 +172,7 @@
         2. Remove host ROCm and its GPU stack using AMD's documented uninstall
            procedure, verify the ROCm runtime packages and amdgpu DKMS
            registrations are gone, then rerun Bloom. Bloom will install driver
-           31.40.0 without host ROCm.
+           {{ gpu_driver_target.DriverRelease }} without host ROCm.
   when: gpu_driver_policy_state == 'unvalidated-rocm'
 
 - name: Mark GPU driver policy as checked

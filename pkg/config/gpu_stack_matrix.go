@@ -73,6 +73,11 @@ var supportedGPUDrivers = []DriverCompatibility{
 		DKMSModuleVersion: "6.19.14", DKMSBuild: "2364437", DKMSPackageCode: "31400000", PairedROCm: "7.14.0",
 		HostToolsChannel: "core-multiarch", HostToolsPackage: "amdrocm-amdsmi7.14",
 	},
+	{
+		DriverRelease: "31.40.1", InstallerVersion: "31.40.1", InstallerBuild: "314001-1",
+		DKMSModuleVersion: "6.19.14", DKMSBuild: "2377056", DKMSPackageCode: "31400100", PairedROCm: "7.14.0",
+		HostToolsChannel: "core-multiarch", HostToolsPackage: "amdrocm-amdsmi7.14",
+	},
 }
 
 // minRadeonRocmMajor / minRadeonRocmMinor express the unsupported-combination

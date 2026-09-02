@@ -15,7 +15,7 @@ This guide documents the manual steps that ClusterBloom automates. Use this for:
 **Verify Ubuntu Version**:
 ```bash
 lsb_release -a
-# Must be Ubuntu 20.04, 22.04, or 24.04
+# Must be Ubuntu 20.04, 22.04, 24.04, or 26.04
 ```
 
 **Check Disk Space**:
