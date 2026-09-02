@@ -104,14 +104,22 @@ Pre-configured with Cilium for advanced networking capabilities:
 - **Service Load Balancing**: eBPF-based load balancing
 - **Network Visibility**: Optional Hubble for observability
 
-For `CLUSTER_SIZE: small` or `medium`, bloom writes `/var/lib/rancher/rke2/server/manifests/rke2-cilium-config.yaml` on the **first node** before RKE2 starts, setting `operator.replicas: 1`. `CLUSTER_SIZE: large` uses the RKE2 chart default (2 replicas). Bloom does not auto-scale the operator when you add nodes later.
+Bloom writes `/var/lib/rancher/rke2/server/manifests/rke2-cilium-config.yaml` on the **first node** before RKE2 starts. Its contents are bloom's own defaults merged with whatever you put in [`CILIUM_HELM_VALUES`](configuration-reference.md#cilium_helm_values), yours winning on conflict.
+
+Bloom's only default is `operator.replicas: 1`, and only for `CLUSTER_SIZE: small` or `medium`; `CLUSTER_SIZE: large` uses the RKE2 chart default (2 replicas). So a `large` cluster with no `CILIUM_HELM_VALUES` gets no manifest at all. Bloom does not auto-scale the operator when you add nodes later.
 
 #### Scaling cilium-operator after install (multi-node / HA)
 
 When a cluster that was deployed with `CLUSTER_SIZE: small` or `medium` grows beyond one node and you want the default HA operator count (2), run the following on the **bootstrap (first) node** after all nodes have joined:
 
+If you also set [`CILIUM_HELM_VALUES`](configuration-reference.md#cilium_helm_values),
+those values live in the same file, so step 1 discards them too. Set
+`CILIUM_HELM_VALUES: {operator: {replicas: 2}}` and rerun bloom on the first node
+instead — that keeps the rest of your values and is not undone by the next run.
+
 ```bash
-# 1. Remove the single-replica HelmChartConfig bloom applied at install
+# 1. Remove the single-replica HelmChartConfig bloom applied at install.
+#    This also removes any CILIUM_HELM_VALUES you set - see above.
 sudo rm -f /var/lib/rancher/rke2/server/manifests/rke2-cilium-config.yaml
 
 # 2. Remove the in-cluster HelmChartConfig (if present)
@@ -163,8 +171,10 @@ powered off would fail every first-node run — including a `--tags
 deploy_k8s_apps` rerun months later — for a reason unrelated to the request.
 
 **Trap 2 — one Pending cilium-operator is normal on single-node `large`.**
-`CLUSTER_SIZE: large` gets no `rke2-cilium-config.yaml`, so it runs the chart
-default of 2 operator replicas with hard pod anti-affinity. During first-node
+`CLUSTER_SIZE: large` gets no `operator.replicas` override from bloom, so it runs
+the chart default of 2 operator replicas with hard pod anti-affinity. (It may
+still have an `rke2-cilium-config.yaml` — `CILIUM_HELM_VALUES` writes one for any
+cluster size — but bloom never puts a `replicas` value in it for `large`.) During first-node
 bloom there is exactly one node, so one replica is `Pending` by design. The gate
 therefore checks for *at least one* Ready operator; writing it as
 `kubectl wait --for=condition=Ready pod -l name=cilium-operator` or

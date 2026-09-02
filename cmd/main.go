@@ -528,7 +528,12 @@ func runPlaybookDirect(playbookPath string) {
 			fmt.Fprintf(os.Stderr, "Error parsing config: %v\n", err)
 			os.Exit(1)
 		}
-		allVars = append(allVars, runtime.ConfigToAnsibleVars(cfg)...)
+		cfgVars, err := runtime.ConfigToAnsibleVars(cfg)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error encoding config: %v\n", err)
+			os.Exit(1)
+		}
+		allVars = append(allVars, cfgVars...)
 	}
 
 	allVars = append(allVars, extraVars...)

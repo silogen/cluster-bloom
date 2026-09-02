@@ -22,6 +22,11 @@ type playbookTask struct {
 	Fail struct {
 		Msg string `yaml:"msg"`
 	} `yaml:"fail"`
+	Copy struct {
+		Content string `yaml:"content"`
+		Dest    string `yaml:"dest"`
+	} `yaml:"copy"`
+	SetFact map[string]string `yaml:"set_fact"`
 }
 
 func (t playbookTask) whenText() string {
@@ -211,5 +216,133 @@ func TestOperatorGateToleratesAPendingReplica(t *testing.T) {
 	// are created into the race the gate was added to prevent.
 	if operator.FailedWhen != nil {
 		t.Errorf("the operator gate must be fatal, got failed_when: %v", operator.FailedWhen)
+	}
+}
+
+// setFact returns the expression a task assigns to name, or "".
+func setFact(tasks []playbookTask, name string) string {
+	for _, task := range tasks {
+		if expr, ok := task.SetFact[name]; ok {
+			return expr
+		}
+	}
+	return ""
+}
+
+// cilium_config.yaml used to be gated to CLUSTER_SIZE in [small, medium], so a
+// large cluster could not receive Cilium tuning at all. Operators worked around
+// it by hand-applying a HelmChartConfig of the same name, which silently
+// replaced bloom's own values. The include must gate on FIRST_NODE only: a
+// HelmChartConfig is cluster-scoped, so writing it from several joining control
+// -plane nodes would race, but every size must be able to reach it.
+func TestCiliumConfigReachesEveryClusterSize(t *testing.T) {
+	tasks := loadTasks(t, "tasks/deploy_cluster/main.yaml")
+
+	i := indexOfInclude(tasks, "cilium_config.yaml")
+	if i < 0 {
+		t.Fatal("deploy_cluster/main.yaml no longer includes cilium_config.yaml")
+	}
+
+	when := tasks[i].whenText()
+	if !strings.Contains(when, "FIRST_NODE") {
+		t.Errorf("cilium_config.yaml must be gated to the first node, got when: %s", when)
+	}
+	if strings.Contains(when, "CLUSTER_SIZE") {
+		t.Errorf("cilium_config.yaml must not be gated on CLUSTER_SIZE - large clusters need Cilium tuning too, got when: %s", when)
+	}
+}
+
+// cluster_ready.yaml waits for "at least one cilium-operator Ready" precisely
+// because large runs 2 replicas with hard anti-affinity and one is Pending by
+// design on a single node (see TestOperatorGateToleratesAPendingReplica).
+// Giving large a replicas value here is the one way to break that gate.
+func TestCiliumConfigNeverSetsOperatorReplicasOnLarge(t *testing.T) {
+	tasks := loadTasks(t, "tasks/deploy_cluster/cilium_config.yaml")
+
+	expr := setFact(tasks, "cilium_default_values")
+	if expr == "" {
+		t.Fatal("cilium_config.yaml no longer sets cilium_default_values")
+	}
+	if !strings.Contains(expr, "'large'") && !strings.Contains(expr, `"large"`) {
+		t.Errorf("cilium_default_values must special-case large, got: %s", expr)
+	}
+	// The empty branch has to be the large one. `{} if X != 'large' else {...}`
+	// parses fine and inverts the whole thing.
+	if !strings.Contains(expr, "{} if") {
+		t.Errorf("large must be the branch that contributes no default values, got: %s", expr)
+	}
+}
+
+// combine() lets the right-hand operand win. Reversed, bloom's own default
+// silently beats the operator's override and CILIUM_HELM_VALUES looks like it
+// does nothing for any key bloom also sets.
+func TestCiliumUserValuesWinOverBloomDefaults(t *testing.T) {
+	tasks := loadTasks(t, "tasks/deploy_cluster/cilium_config.yaml")
+
+	expr := setFact(tasks, "cilium_helm_values")
+	if expr == "" {
+		t.Fatal("cilium_config.yaml no longer sets cilium_helm_values")
+	}
+	if !strings.Contains(expr, "cilium_default_values | combine(cilium_user_values") {
+		t.Errorf("user values must be the right-hand combine() operand, got: %s", expr)
+	}
+	// Without recursive=True, {'hubble': ...} replaces the whole default dict
+	// rather than merging into it, dropping operator.replicas.
+	if !strings.Contains(expr, "recursive=True") {
+		t.Errorf("the merge must be recursive, got: %s", expr)
+	}
+}
+
+// Both filter arguments are load-bearing, not style. to_nice_yaml defaults to
+// indent=4, which is not byte-identical to the manifest every existing
+// small/medium cluster already has on disk: `copy` would report changed,
+// helm-controller would run a Cilium upgrade, and every agent would restart for
+// a whitespace diff. indent() defaults to first=False, which leaves the first
+// line at column 0 inside the block scalar - not valid YAML at all.
+func TestCiliumValuesContentIndentationIsPinned(t *testing.T) {
+	tasks := loadTasks(t, "tasks/deploy_cluster/cilium_config.yaml")
+
+	var manifest *playbookTask
+	for i := range tasks {
+		if strings.Contains(tasks[i].Copy.Content, "kind: HelmChartConfig") {
+			manifest = &tasks[i]
+			break
+		}
+	}
+	if manifest == nil {
+		t.Fatal("cilium_config.yaml no longer writes a HelmChartConfig")
+	}
+
+	if got := manifest.Copy.Dest; got != "/var/lib/rancher/rke2/server/manifests/rke2-cilium-config.yaml" {
+		t.Errorf("the manifest must land where RKE2 auto-deploys it, got %q", got)
+	}
+
+	content := manifest.Copy.Content
+	for _, want := range []string{
+		"to_nice_yaml(indent=2)",
+		"indent(4, first=True)",
+		"| trim |",
+	} {
+		if !strings.Contains(content, want) {
+			t.Errorf("rendering must use %s, got:\n%s", want, content)
+		}
+	}
+
+	// The template expression has to sit at the block scalar's own indent so
+	// that it starts at column 0 once dedented; indent(4) then supplies the
+	// four spaces valuesContent needs. Any other column shifts every line.
+	for _, line := range strings.Split(content, "\n") {
+		if !strings.Contains(line, "to_nice_yaml") {
+			continue
+		}
+		if strings.HasPrefix(line, " ") {
+			t.Errorf("the values expression must start at column 0 of the dedented block, got %q", line)
+		}
+	}
+
+	// Deleting a hand-placed HelmChartConfig on a rerun is far worse than
+	// leaving a stale one; operators hand-apply this exact file today.
+	if strings.Contains(fmt.Sprint(manifest.When), "absent") {
+		t.Error("cilium_config.yaml must never remove an existing HelmChartConfig")
 	}
 }

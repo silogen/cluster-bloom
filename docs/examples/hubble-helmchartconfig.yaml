@@ -1,0 +1,43 @@
+# Enable Hubble (Cilium's observability layer: relay + web UI).
+#
+# Prefer setting CILIUM_HELM_VALUES in bloom.yaml and rerunning bloom on the
+# first node - see docs/configuration-reference.md#cilium_helm_values. Bloom
+# merges those values over its own, so operator.replicas survives:
+#
+#   CILIUM_HELM_VALUES:
+#     hubble:
+#       enabled: true
+#       relay:
+#         enabled: true
+#       ui:
+#         enabled: true
+#
+# Use this manifest only to apply Hubble to a cluster that is already running,
+# without a bloom rerun. It targets the same resource name bloom writes, so it
+# REPLACES the whole valuesContent - including operator.replicas: 1 on small and
+# medium clusters. Add that key back below if you are on one of those sizes.
+#
+# Applying it triggers `helm upgrade rke2-cilium`, which rolls the Cilium
+# DaemonSet across every node. Needs a maintenance window; watch it with:
+#
+#   kubectl -n kube-system rollout status ds/cilium
+#
+# Apply on the first node:
+#
+#   sudo cp hubble-helmchartconfig.yaml \
+#     /var/lib/rancher/rke2/server/manifests/rke2-cilium-config.yaml
+#
+# Note that a later bloom run overwrites that path.
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: rke2-cilium
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    hubble:
+      enabled: true
+      relay:
+        enabled: true
+      ui:
+        enabled: true

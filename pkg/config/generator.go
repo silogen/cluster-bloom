@@ -1,8 +1,11 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 // GenerateYAML generates a bloom.yaml file from the configuration
@@ -69,6 +72,15 @@ func isDefaultValue(arg Argument, value any) bool {
 		if strVal, ok := value.(string); ok {
 			return strVal == ""
 		}
+	case map[string]any:
+		// An untouched `{}` (or a web UI textarea left blank) is the default
+		// and must not be written to the generated file.
+		if mapVal, ok := value.(map[string]any); ok {
+			return len(mapVal) == 0 && len(defaultVal) == 0
+		}
+		if strVal, ok := value.(string); ok {
+			return strings.TrimSpace(strVal) == ""
+		}
 	}
 	return false
 }
@@ -77,7 +89,24 @@ func formatYAMLLine(key string, value any) string {
 	switch v := value.(type) {
 	case bool:
 		return fmt.Sprintf("%s: %t", key, v)
+	case map[string]any:
+		// Nested maps go to the YAML encoder, not to fmt: the default branch
+		// below renders a Go map as `map[operator:map[replicas:1]]`, which is
+		// not YAML, and any hand-rolled replacement has to re-solve quoting and
+		// key ordering. yaml.v3 sorts map keys, so regenerating an unchanged
+		// config is a byte-for-byte no-op.
+		if len(v) == 0 {
+			return fmt.Sprintf("%s: {}", key)
+		}
+		return marshalYAMLField(key, v)
 	case string:
+		// A multi-line value cannot be a double-quoted scalar containing
+		// literal newlines. escapeString only escapes `"`, so RKE2_EXTRA_CONFIG
+		// round-tripped through the web UI came back corrupt. Let the encoder
+		// pick a block scalar.
+		if strings.Contains(v, "\n") {
+			return marshalYAMLField(key, v)
+		}
 		// Always quote CLUSTER_LISTEN_IP for consistency
 		if key == "CLUSTER_LISTEN_IP" {
 			return fmt.Sprintf("%s: \"%s\"", key, escapeString(v))
@@ -182,4 +211,20 @@ func needsQuotes(s string) bool {
 func escapeString(s string) string {
 	// Escape quotes in strings
 	return strings.ReplaceAll(s, "\"", "\\\"")
+}
+
+// marshalYAMLField renders one top-level `key: value` field with the YAML
+// encoder, at the 2-space indent the rest of the generated file uses (yaml.v3
+// defaults to 4). Key order is deterministic: yaml.v3 sorts map keys.
+func marshalYAMLField(key string, value any) string {
+	var buf bytes.Buffer
+	enc := yaml.NewEncoder(&buf)
+	enc.SetIndent(2)
+	if err := enc.Encode(map[string]any{key: value}); err != nil {
+		return ""
+	}
+	if err := enc.Close(); err != nil {
+		return ""
+	}
+	return strings.TrimRight(buf.String(), "\n")
 }

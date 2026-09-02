@@ -28,6 +28,9 @@
     ADDITIONAL_TLS_SAN_URLS: []
     RKE2_VERSION: ""
     RKE2_EXTRA_CONFIG: ""
+    # Extra Cilium helm values, merged over bloom's own defaults.
+    # See tasks/deploy_cluster/cilium_config.yaml.
+    CILIUM_HELM_VALUES: {}
     
     # DNS Configuration (opt-in for safety)
     # FIX_DNS: Set to true to allow automatic DNS fixes if DNS is broken

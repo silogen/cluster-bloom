@@ -378,6 +378,64 @@ verification behavior.
   precondition check. Longhorn's DaemonSets carry no tolerations, so a taint like
   the `CriticalAddonsOnly` above keeps them off the node permanently.
 
+#### CILIUM_HELM_VALUES
+- **Type**: Map (nested YAML)
+- **Default**: `{}` (none)
+- **Applies to**: the **first node only**, before RKE2 starts
+- **Description**: Extra [Cilium helm values](https://docs.cilium.io/en/stable/helm-reference/)
+  rendered into `spec.valuesContent` of the `rke2-cilium` `HelmChartConfig` at
+  `/var/lib/rancher/rke2/server/manifests/rke2-cilium-config.yaml`. Use this for
+  networking needs bloom does not have a dedicated setting for.
+- **Example** (enable Hubble observability):
+  ```yaml
+  CILIUM_HELM_VALUES:
+    hubble:
+      enabled: true
+      relay:
+        enabled: true
+      ui:
+        enabled: true
+  ```
+  A complete manifest for the same thing, for hand-applying to a cluster that is
+  already up, is in [`docs/examples/hubble-helmchartconfig.yaml`](examples/hubble-helmchartconfig.yaml).
+
+**Merge semantics.** Your values are merged *recursively* over bloom's own, and
+yours win on conflict. Bloom's only value is `operator.replicas: 1`, and only for
+`CLUSTER_SIZE: small` and `medium` — so `{operator: {rollOutPods: true}}` gives
+you both keys, while `{operator: {replicas: 3}}` replaces bloom's. Lists are
+replaced wholesale, not appended.
+
+RKE2 itself keeps its Cilium settings regardless: helm-controller merges
+`HelmChartConfig.spec.valuesContent` over the `HelmChart`'s own, so setting this
+key does not reset anything RKE2 configured.
+
+**`CLUSTER_SIZE: large` gets no `operator.replicas` from bloom** and keeps the
+chart default of 2 replicas. If you set no values at all on a `large` cluster, no
+manifest is written — same as before this setting existed. See
+[Trap 2](rke2-deployment.md#cilium-readiness-gating) for why that matters.
+
+> **⚠️ Changing this on a running cluster needs a maintenance window.** Writing
+> the manifest triggers `helm upgrade rke2-cilium`, which rolls the Cilium
+> DaemonSet across every node. On a cluster that never had a `HelmChartConfig`
+> (any `large` cluster) this is its *first*, so the upgrade fires even for
+> values that look inert. Bloom waits for the first node's own agent, but
+> **nothing waits for the other nodes** — watch it yourself:
+> ```bash
+> sudo kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+>   -n kube-system rollout status ds/cilium
+> ```
+
+Because a `HelmChartConfig` is cluster-scoped, bloom only writes it on the first
+node — writing it from several joining control-plane nodes would race. **Changing
+`CILIUM_HELM_VALUES` means rerunning bloom on the first node**, e.g.
+`bloom --config bloom.yaml --tags cilium`.
+
+Bloom never *removes* this manifest: clearing the key leaves the last file in
+place, because deleting a HelmChartConfig an operator applied by hand would be
+worse than leaving a stale one. To undo, delete both the file and the in-cluster
+resource — see [Scaling cilium-operator after install](rke2-deployment.md#scaling-cilium-operator-after-install-multi-node--ha)
+for the exact commands.
+
 #### PRELOAD_IMAGES
 - **Type**: String (comma-separated image references)
 - **Default**: None

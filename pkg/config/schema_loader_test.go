@@ -14,11 +14,12 @@ func TestLoadSchema(t *testing.T) {
 		t.Fatal("LoadSchema() returned no arguments")
 	}
 
-	// Check that we have expected number of fields (39 fields in schema including
+	// Check that we have expected number of fields (40 fields in schema including
 	// CLUSTER_SIZE, AIM_HARDWARE_FAMILY, GPU_STACK_FAMILY, GPU_DRIVER_SKIP_INSTALL,
-	// GPU_INSTALL_HOST_TOOLS, GPU_DRIVER_VERSION and GPU_DRIVER_BUILD)
-	if len(args) != 39 {
-		t.Errorf("Expected 39 arguments, got %d", len(args))
+	// GPU_INSTALL_HOST_TOOLS, GPU_DRIVER_VERSION, GPU_DRIVER_BUILD and
+	// CILIUM_HELM_VALUES)
+	if len(args) != 40 {
+		t.Errorf("Expected 40 arguments, got %d", len(args))
 	}
 
 	// Verify critical fields are present
@@ -200,4 +201,45 @@ func TestSchemaSorting(t *testing.T) {
 			currentSectionIdx = sectionIdx
 		}
 	}
+}
+
+// A section string that is not a sectionOrder key sorts to index 0 and silently
+// jumps to the top of the web form and --help. The emoji prefixes carry U+FE0F
+// variation selectors, so a near-miss is invisible in review - assert against
+// the real map rather than a copy.
+func TestEverySchemaSectionIsSortable(t *testing.T) {
+	args, err := LoadSchema()
+	if err != nil {
+		t.Fatalf("LoadSchema() failed: %v", err)
+	}
+
+	for _, arg := range args {
+		if arg.Section == "" {
+			continue
+		}
+		if _, ok := sectionOrder[arg.Section]; !ok {
+			t.Errorf("%s: section %q is not a key in sortArguments' sectionOrder", arg.Key, arg.Section)
+		}
+	}
+}
+
+func TestCiliumHelmValuesIsAMap(t *testing.T) {
+	args, err := LoadSchema()
+	if err != nil {
+		t.Fatalf("LoadSchema() failed: %v", err)
+	}
+
+	for _, arg := range args {
+		if arg.Key != "CILIUM_HELM_VALUES" {
+			continue
+		}
+		if arg.Type != "map" {
+			t.Errorf("CILIUM_HELM_VALUES type should be 'map', got %q", arg.Type)
+		}
+		if arg.Section != "⚙️ Advanced Configuration" {
+			t.Errorf("CILIUM_HELM_VALUES section should be '⚙️ Advanced Configuration', got %q", arg.Section)
+		}
+		return
+	}
+	t.Error("CILIUM_HELM_VALUES not found in schema")
 }
