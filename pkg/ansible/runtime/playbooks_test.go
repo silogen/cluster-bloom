@@ -8,10 +8,36 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// includeTasks accepts both the plain-scalar form (`include_tasks: foo.yaml`)
+// and the mapping form needed to attach `apply:` (`include_tasks: {file:
+// foo.yaml, apply: {tags: [...]}}`) - only the target file matters to these
+// tests, so both decode down to that.
+type includeTasks struct {
+	File string
+}
+
+func (v *includeTasks) UnmarshalYAML(value *yaml.Node) error {
+	switch value.Kind {
+	case yaml.ScalarNode:
+		return value.Decode(&v.File)
+	case yaml.MappingNode:
+		var m struct {
+			File string `yaml:"file"`
+		}
+		if err := value.Decode(&m); err != nil {
+			return err
+		}
+		v.File = m.File
+		return nil
+	default:
+		return fmt.Errorf("include_tasks: unsupported node kind %v", value.Kind)
+	}
+}
+
 type playbookTask struct {
-	Name         string `yaml:"name"`
-	IncludeTasks string `yaml:"include_tasks"`
-	When         any    `yaml:"when"`
+	Name         string       `yaml:"name"`
+	IncludeTasks includeTasks `yaml:"include_tasks"`
+	When         any          `yaml:"when"`
 	Shell        string `yaml:"shell"`
 	Command      string `yaml:"command"`
 	FailedWhen   any    `yaml:"failed_when"`
@@ -50,7 +76,7 @@ func loadTasks(t *testing.T, path string) []playbookTask {
 
 func indexOfInclude(tasks []playbookTask, include string) int {
 	for i, task := range tasks {
-		if task.IncludeTasks == include {
+		if task.IncludeTasks.File == include {
 			return i
 		}
 	}

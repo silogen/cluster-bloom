@@ -428,11 +428,23 @@ manifest is written — same as before this setting existed. See
 Because a `HelmChartConfig` is cluster-scoped, bloom only writes it on the first
 node — writing it from several joining control-plane nodes would race. **Changing
 `CILIUM_HELM_VALUES` means rerunning bloom on the first node**, e.g.
-`bloom --config bloom.yaml --tags cilium`.
+`bloom cli bloom.yaml --tags cilium`.
 
-Bloom never *removes* this manifest: clearing the key leaves the last file in
-place, because deleting a HelmChartConfig an operator applied by hand would be
-worse than leaving a stale one. To undo, delete both the file and the in-cluster
+**Every rerun fully replaces `valuesContent`, it does not merge with the
+manifest already on disk.** The merge described above is only between bloom's
+own defaults and *this run's* `CILIUM_HELM_VALUES` — the previously written
+file is never read. So removing a key from `CILIUM_HELM_VALUES` and rerunning
+removes it from the manifest too, along with anything else no longer present;
+there is no accumulation across runs.
+
+The one case bloom leaves alone is when there is nothing to render at all: if
+bloom's own defaults are empty (any `large` cluster) *and* `CILIUM_HELM_VALUES`
+is unset or `{}`, the write is skipped and whatever file already exists — from
+a previous run, or hand-applied by an operator — is left untouched, because
+deleting a HelmChartConfig an operator applied by hand would be worse than
+leaving a stale one. To undo a value you no longer want, either set
+`CILIUM_HELM_VALUES` back to `{}` on a cluster where that combination has no
+bloom defaults (see above), or delete both the file and the in-cluster
 resource — see [Scaling cilium-operator after install](rke2-deployment.md#scaling-cilium-operator-after-install-multi-node--ha)
 for the exact commands.
 
