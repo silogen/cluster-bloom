@@ -82,6 +82,24 @@ func parseEnvironmentValue(arg Argument, value string) (any, error) {
 			}
 		}
 		return parsed, nil
+	case "map":
+		// No comma-separated fallback here, unlike "array": a nested mapping has
+		// no natural shorthand, so the value has to be YAML (or JSON, which YAML
+		// is a superset of). Parsing it here rather than letting the raw string
+		// through means a typo is reported against the environment variable
+		// instead of surfacing later from the validator.
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			return map[string]any{}, nil
+		}
+		var parsed map[string]any
+		if err := yaml.Unmarshal([]byte(trimmed), &parsed); err != nil {
+			return nil, fmt.Errorf("must be a YAML mapping: %w", err)
+		}
+		if parsed == nil {
+			return nil, fmt.Errorf("must be a YAML mapping, got %q", value)
+		}
+		return parsed, nil
 	default:
 		return value, nil
 	}

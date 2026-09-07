@@ -15,7 +15,10 @@ import (
 func generateAndParse(t *testing.T, cfg Config) map[string]any {
 	t.Helper()
 
-	out := GenerateYAML(cfg)
+	out, err := GenerateYAML(cfg)
+	if err != nil {
+		t.Fatalf("GenerateYAML: %v", err)
+	}
 	var got map[string]any
 	if err := yaml.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("GenerateYAML produced invalid YAML: %v\n---\n%s", err, out)
@@ -62,9 +65,16 @@ func TestGenerateYAMLIsDeterministic(t *testing.T) {
 		},
 	}
 
-	first := GenerateYAML(cfg)
+	first, err := GenerateYAML(cfg)
+	if err != nil {
+		t.Fatalf("GenerateYAML: %v", err)
+	}
 	for i := 0; i < 20; i++ {
-		if out := GenerateYAML(cfg); out != first {
+		out, err := GenerateYAML(cfg)
+		if err != nil {
+			t.Fatalf("GenerateYAML: %v", err)
+		}
+		if out != first {
 			t.Fatalf("GenerateYAML is not deterministic (run %d)\n--- first ---\n%s\n--- run %d ---\n%s",
 				i, first, i, out)
 		}
@@ -100,15 +110,42 @@ func TestGenerateYAMLOmitsAnEmptyMap(t *testing.T) {
 		"blank string": "   \n",
 	} {
 		t.Run(name, func(t *testing.T) {
-			out := GenerateYAML(Config{
+			out, err := GenerateYAML(Config{
 				"FIRST_NODE":         true,
 				"GPU_NODE":           true,
 				"DOMAIN":             "cluster.example.com",
 				"CILIUM_HELM_VALUES": value,
 			})
+			if err != nil {
+				t.Fatalf("GenerateYAML: %v", err)
+			}
 			if strings.Contains(out, "CILIUM_HELM_VALUES") {
 				t.Errorf("default CILIUM_HELM_VALUES was written to bloom.yaml:\n%s", out)
 			}
 		})
+	}
+}
+
+// A value the YAML encoder cannot render must abort the whole file rather than
+// silently vanish from it. GenerateYAML used to skip any field that came back
+// empty, so an encode failure would drop the key with no error anywhere: the
+// operator exports a bloom.yaml, reads it, and their setting is simply gone.
+// Config values are normally plain decoded data, so this is a dormant branch -
+// which is exactly why the failure mode matters.
+//
+// A chan reaches yaml.v3's panic path rather than its error return, so this
+// also pins the recover in marshalYAMLField.
+func TestGenerateYAMLFailsLoudlyOnAnUnrenderableValue(t *testing.T) {
+	out, err := GenerateYAML(Config{
+		"FIRST_NODE":         true,
+		"GPU_NODE":           true,
+		"DOMAIN":             "cluster.example.com",
+		"CILIUM_HELM_VALUES": map[string]any{"operator": make(chan int)},
+	})
+	if err == nil {
+		t.Fatalf("expected an error for an unrenderable value, got:\n%s", out)
+	}
+	if !strings.Contains(err.Error(), "CILIUM_HELM_VALUES") {
+		t.Errorf("error should name the offending key, got: %v", err)
 	}
 }

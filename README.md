@@ -186,7 +186,7 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | AIM_HARDWARE_FAMILY | Comma-separated AIM hardware families to install (cpu,epyc,instinct,radeon). Empty installs the full legacy model catalog. Example: "epyc,instinct" | "" |
 | CERT_OPTION | Certificate option when USE_CERT_MANAGER is false. Choose 'existing' or 'generate'. Only required for cluster deployment; not needed with `--tags deploy_clusterforge`. | "" |
 | CF_VALUES | Path to ClusterForge values file (optional). Example: "values_cf.yaml" | "" |
-| CILIUM_HELM_VALUES | Extra Cilium helm values, merged recursively over bloom's own (yours win). Rendered into the `rke2-cilium` HelmChartConfig on the first node. See [configuration reference](docs/configuration-reference.md#cilium_helm_values) | {} |
+| CILIUM_HELM_VALUES | Extra Cilium helm values, merged recursively over bloom's own (yours win). Rendered into the `rke2-cilium` HelmChartConfig on the first node. Clearing the key does not remove the manifest already on disk — delete it manually. See [configuration reference](docs/configuration-reference.md#cilium_helm_values) | {} |
 | CLUSTER_DISKS | Comma-separated list of disk devices. Example "/dev/sdb,/dev/sdc". Also skips NVME drive checks. | "" |
 | CLUSTER_LISTEN_IP | Network IP specification for cluster binding. Supports exact IP ("192.168.1.100") or subnet CIDR ("192.168.1.0/24"). Overrides auto-detection for multi-homed systems. | "" |
 | CLUSTER_SIZE | Size category for cluster deployment planning. Options: small, medium, large | medium |
