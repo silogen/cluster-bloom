@@ -32,7 +32,10 @@
 # as non-empty" in a file that cannot see the normalization inside the task.
 # The task itself decides whether there is anything to write.
 - name: Configure Cilium helm values
-  include_tasks: cilium_config.yaml
+  include_tasks:
+    file: cilium_config.yaml
+    apply:
+      tags: [deploy_cluster, cilium]
   when: FIRST_NODE | default(true) | bool
   tags: [deploy_cluster, cilium]
 
