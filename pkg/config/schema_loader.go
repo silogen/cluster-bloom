@@ -109,6 +109,8 @@ func mapType(yamlType string) string {
 		return "array"
 	case "enum":
 		return "enum"
+	case "map":
+		return "map"
 	default:
 		// Keep custom types (domain, ipv4, url, etc.) for pattern validation
 		return yamlType
@@ -153,17 +155,21 @@ func mapDependencies(required, applicable string) string {
 }
 
 // sortArguments sorts arguments by section order and then by key
-func sortArguments(args []Argument) {
-	sectionOrder := map[string]int{
-		"📋 Basic Configuration":            0,
-		"🔗 Additional Node Configuration":  1,
-		"💾 Storage Configuration":          2,
-		"🐳 Container Registry Configuration": 3,
-		"🔒 SSL/TLS Configuration":          4,
-		"⚙️ Advanced Configuration":         5,
-		"💻 Command Line Options":           6,
-	}
+// sectionOrder fixes the display order of schema sections in --help and the web
+// form. A section string that is not a key here silently sorts to index 0 and
+// jumps to the top of the form; the emoji prefixes carry variation selectors, so
+// a near-miss is invisible in review. TestEverySchemaSectionIsSortable guards it.
+var sectionOrder = map[string]int{
+	"📋 Basic Configuration":              0,
+	"🔗 Additional Node Configuration":    1,
+	"💾 Storage Configuration":            2,
+	"🐳 Container Registry Configuration": 3,
+	"🔒 SSL/TLS Configuration":            4,
+	"⚙️ Advanced Configuration":           5,
+	"💻 Command Line Options":             6,
+}
 
+func sortArguments(args []Argument) {
 	// Simple bubble sort (good enough for ~26 items)
 	for i := 0; i < len(args); i++ {
 		for j := i + 1; j < len(args); j++ {

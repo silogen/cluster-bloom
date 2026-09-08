@@ -52,7 +52,11 @@ func handleGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	yaml := config.GenerateYAML(req.Config)
+	yaml, err := config.GenerateYAML(req.Config)
+	if err != nil {
+		http.Error(w, "Failed to generate configuration: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	response := config.GenerateResponse{
 		YAML: yaml,
@@ -91,7 +95,11 @@ func handleSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	yaml := config.GenerateYAML(req.Config)
+	yaml, err := config.GenerateYAML(req.Config)
+	if err != nil {
+		http.Error(w, "Failed to generate configuration: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	// Write to specified filename in current working directory
 	if err := os.WriteFile(req.Filename, []byte(yaml), 0644); err != nil {

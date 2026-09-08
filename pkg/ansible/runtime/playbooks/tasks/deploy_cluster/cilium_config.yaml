@@ -1,17 +1,76 @@
 ---
-# Purpose: Set Cilium operator replicas to 1 for small/medium clusters (before RKE2 starts)
-# Dependencies: CLUSTER_SIZE
-# Usage: Included by deploy_cluster/main.yaml when FIRST_NODE and CLUSTER_SIZE is small or medium
+# Purpose: Render the rke2-cilium HelmChartConfig (before RKE2 starts) from bloom's
+#          own defaults merged with the operator's CILIUM_HELM_VALUES
+# Dependencies: CLUSTER_SIZE, CILIUM_HELM_VALUES
+# Usage: Included by deploy_cluster/main.yaml on the first node only. A
+#        HelmChartConfig is cluster-scoped, so writing it from several joining
+#        control-plane nodes would race. Changing CILIUM_HELM_VALUES means
+#        rerunning bloom on the first node.
 # Tags: [deploy_cluster, cilium]
+
+- name: Resolve bloom's own Cilium helm values
+  set_fact:
+    # `large` deliberately gets nothing here, which leaves the chart default of
+    # 2 operator replicas with hard anti-affinity - one of them is Pending by
+    # design until a second node joins. cluster_ready.yaml is written to wait
+    # for "at least one operator Ready" precisely because of that, so do not
+    # add a replicas value for `large` without revisiting that gate.
+    cilium_default_values: "{{ {} if CLUSTER_SIZE | default('medium') == 'large' else {'operator': {'replicas': 1}} }}"
+
+- name: Normalize operator-supplied Cilium helm values
+  set_fact:
+    # CILIUM_HELM_VALUES arrives as a real mapping from bloom.yaml, but as a
+    # raw YAML string from the web UI textarea and from environment overrides -
+    # neither can express a nested map natively. Accept both.
+    #
+    # `default({}, true)` in the test folds an empty string (and an unset key)
+    # to {} before the string check, so from_yaml is never handed an empty
+    # document, which would come back as None rather than a mapping.
+    cilium_user_values: >-
+      {{
+        (CILIUM_HELM_VALUES | from_yaml)
+          if (CILIUM_HELM_VALUES | default({}, true)) is string
+          else (CILIUM_HELM_VALUES | default({}, true))
+      }}
+
+- name: Fail when CILIUM_HELM_VALUES is not a mapping
+  fail:
+    msg: |-
+      CILIUM_HELM_VALUES must be a mapping of Cilium helm values, got
+      {{ cilium_user_values | type_debug }}. Example:
+
+        CILIUM_HELM_VALUES:
+          hubble:
+            enabled: true
+  # `bloom --playbook` hands the playbook straight to ansible-playbook and skips
+  # schema validation entirely, so this is the only check on that path.
+  when: cilium_user_values is not mapping
+
+- name: Merge Cilium helm values
+  set_fact:
+    # Operand order is load-bearing: combine() lets the right-hand side win, so
+    # reversing these would silently make bloom's default beat the operator's
+    # override.
+    cilium_helm_values: "{{ cilium_default_values | combine(cilium_user_values, recursive=True) }}"
 
 - name: Ensure RKE2 auto-deploy manifests directory exists
   file:
     path: /var/lib/rancher/rke2/server/manifests
     state: directory
     mode: "0755"
+  when: cilium_helm_values | length > 0
 
-- name: Deploy Cilium HelmChartConfig for small/medium clusters
+# Never add `state: absent` for the empty case. Operators hand-apply this exact
+# file today (see docs/examples/hubble-helmchartconfig.yaml); a bloom rerun
+# silently deleting a hand-placed HelmChartConfig is far worse than a stale one.
+- name: Deploy Cilium HelmChartConfig
   copy:
+    # to_nice_yaml defaults to indent=4 and indent() defaults to first=False.
+    # Both defaults are wrong here: indent=4 makes the rendered manifest differ
+    # from what every existing small/medium cluster already has on disk, so
+    # `copy` reports changed, helm-controller runs a Cilium upgrade, and every
+    # agent restarts for a whitespace diff. first=False leaves the first line at
+    # column 0 inside the block scalar, which is not valid YAML at all.
     content: |
       apiVersion: helm.cattle.io/v1
       kind: HelmChartConfig
@@ -20,7 +79,7 @@
         namespace: kube-system
       spec:
         valuesContent: |-
-          operator:
-            replicas: 1
+      {{ cilium_helm_values | to_nice_yaml(indent=2) | trim | indent(4, first=True) }}
     dest: /var/lib/rancher/rke2/server/manifests/rke2-cilium-config.yaml
     mode: "0644"
+  when: cilium_helm_values | length > 0

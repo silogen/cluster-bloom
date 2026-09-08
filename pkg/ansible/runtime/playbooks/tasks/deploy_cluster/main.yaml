@@ -28,9 +28,15 @@
   include_tasks: node_labels.yaml
   tags: [rke2, deploy_cluster]
 
-- name: Configure Cilium operator replicas for small/medium clusters
-  include_tasks: cilium_config.yaml
-  when: (FIRST_NODE | default(true) | bool) and CLUSTER_SIZE in ["small", "medium"]
+# No CILIUM_HELM_VALUES clause here on purpose: it would duplicate "what counts
+# as non-empty" in a file that cannot see the normalization inside the task.
+# The task itself decides whether there is anything to write.
+- name: Configure Cilium helm values
+  include_tasks:
+    file: cilium_config.yaml
+    apply:
+      tags: [deploy_cluster, cilium]
+  when: FIRST_NODE | default(true) | bool
   tags: [deploy_cluster, cilium]
 
 - name: Setup RKE2 (First Node)

@@ -278,6 +278,12 @@ schema:
       desc: Additional RKE2 configuration in YAML format
       section: "⚙️ Advanced Configuration"
 
+    CILIUM_HELM_VALUES:
+      type: map
+      default: {}
+      desc: "Extra Cilium helm values, merged recursively over bloom's own (yours win on conflict) and rendered into spec.valuesContent of the rke2-cilium HelmChartConfig. Applied on the first node only."
+      section: "⚙️ Advanced Configuration"
+
     # 💻 Command Line Options
     DISABLED_STEPS:
       type: str

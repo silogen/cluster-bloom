@@ -1,12 +1,14 @@
 package runtime
 
 import (
+	"bytes"
 	"embed"
 	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -61,7 +63,10 @@ func RunPlaybook(config map[string]any, playbookName string, dryRun bool, tags s
 		return 1, fmt.Errorf("extract manifests: %w", err)
 	}
 
-	extraVars := ConfigToAnsibleVars(config)
+	extraVars, err := ConfigToAnsibleVars(config)
+	if err != nil {
+		return 1, err
+	}
 	playbookPath := filepath.Join(playbookDir, playbookName)
 
 	return RunPlaybookDirect(playbookPath, dryRun, tags, extraVars, outputMode, version)
@@ -151,29 +156,28 @@ func ExtractEmbeddedPlaybooksToDir(destDir string) error {
 	return extractEmbeddedPlaybooks(destDir)
 }
 
-func ConfigToAnsibleVars(config map[string]any) []string {
-	var vars []string
+// ConfigToAnsibleVars renders each config key as its own `-e '{"KEY": value}'`
+// argument.
+//
+// Everything goes through the JSON encoder, strings included. Formatting a
+// string with fmt produced a broken argument for any value containing a quote,
+// a backslash or a newline - RKE2_EXTRA_CONFIG and CILIUM_HELM_VALUES are
+// multi-line by design, and ansible-playbook parses a -e value that starts with
+// `{` using a YAML loader, which either folds the newlines into spaces or
+// rejects the run outright. These are argv entries, not shell words, so JSON
+// escaping is the only escaping needed.
+func ConfigToAnsibleVars(config map[string]any) ([]string, error) {
+	vars := make([]string, 0, len(config))
 	for key, value := range config {
-		switch v := value.(type) {
-		case bool:
-			if v {
-				vars = append(vars, fmt.Sprintf(`{"%s": true}`, key))
-			} else {
-				vars = append(vars, fmt.Sprintf(`{"%s": false}`, key))
-			}
-		case string:
-			vars = append(vars, fmt.Sprintf(`{"%s": "%s"}`, key, v))
-		default:
-			// Handle complex types (arrays, maps) with proper JSON marshaling
-			var valueStr string
-			if jsonBytes, err := json.Marshal(v); err == nil {
-				valueStr = string(jsonBytes)
-			} else {
-				// Fallback to string representation for simple types
-				valueStr = fmt.Sprintf("%v", v)
-			}
-			vars = append(vars, fmt.Sprintf(`{"%s": %s}`, key, valueStr))
+		var buf bytes.Buffer
+		enc := json.NewEncoder(&buf)
+		// Keep URLs and shell-ish values readable in logs and in bloom.log;
+		// & is valid JSON but makes every diff harder to read.
+		enc.SetEscapeHTML(false)
+		if err := enc.Encode(map[string]any{key: value}); err != nil {
+			return nil, fmt.Errorf("encode ansible var %s: %w", key, err)
 		}
+		vars = append(vars, strings.TrimRight(buf.String(), "\n"))
 	}
-	return vars
+	return vars, nil
 }

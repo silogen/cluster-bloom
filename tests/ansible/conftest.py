@@ -145,6 +145,40 @@ server: https://127.0.0.1:9345
 
 
 @pytest.fixture
+def fake_rke2_manifests():
+    """Setup /var/lib/rancher/rke2/server/manifests for testing
+
+    Yields the manifests directory path. It does NOT pre-create the directory:
+    cilium_config.yaml is expected to skip creating it entirely when there is
+    nothing to write, and a pre-created directory would hide that.
+
+    Safety: mirrors fake_rke2_root - only runs in Docker containers, because
+    this path is a live RKE2 auto-deploy directory on a real node.
+    """
+    import shutil
+
+    manifests_dir = Path("/var/lib/rancher/rke2/server/manifests")
+
+    if not is_running_in_docker():
+        pytest.fail(
+            "SAFETY CHECK FAILED: \n"
+            "These tests write to /var/lib/rancher/rke2/server/manifests and should "
+            "only run in containers.\n"
+            "Run tests using: ./run_tests_docker.sh"
+        )
+
+    # A file left behind by an earlier test would make an idempotency or
+    # "writes nothing" assertion pass for the wrong reason.
+    if manifests_dir.exists():
+        shutil.rmtree(manifests_dir)
+
+    yield manifests_dir
+
+    if manifests_dir.exists():
+        shutil.rmtree(manifests_dir)
+
+
+@pytest.fixture
 def cilium_operator_not_ready():
     """Make the mocked cilium-operator readiness check fail N times first
 
