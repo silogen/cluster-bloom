@@ -239,6 +239,12 @@ schema:
       desc: Path to ClusterForge values file
       section: "⚙️ Advanced Configuration"
 
+    DISABLED_APPS:
+      type: str
+      default: ""
+      desc: Comma-separated list of ClusterForge app names to disable (supports glob wildcards, e.g. "seaweedfs-operator,seaweedfs-config,airm-infra-*")
+      section: "⚙️ Advanced Configuration"
+
     ADDITIONAL_OIDC_PROVIDERS:
       type: seq
       default: []
