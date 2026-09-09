@@ -133,6 +133,45 @@ spec:
     - podSelector: {}
 ```
 
+### Tuning Cilium
+
+Bloom deploys Cilium as the CNI via RKE2's bundled `rke2-cilium` chart. Anything
+that chart exposes as a helm value can be set from `bloom.yaml` through
+[`CILIUM_HELM_VALUES`](configuration-reference.md#cilium_helm_values), which is
+rendered into a `HelmChartConfig` on the first node before RKE2 starts:
+
+```yaml
+# bloom.yaml - enable Hubble observability
+CILIUM_HELM_VALUES:
+  hubble:
+    enabled: true
+    relay:
+      enabled: true
+    ui:
+      enabled: true
+```
+
+Your values are merged recursively over bloom's own (`operator.replicas: 1` on
+`small`/`medium` clusters only), and yours win on conflict. See the
+[configuration reference](configuration-reference.md#cilium_helm_values) for the
+full merge rules, the `CLUSTER_SIZE: large` exception, and the maintenance-window
+warning that applies when changing this on a running cluster.
+
+The full value reference is Cilium's own:
+<https://docs.cilium.io/en/stable/helm-reference/>. Check it against the Cilium
+version your RKE2 release bundles rather than the latest stable:
+
+```bash
+sudo kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+  -n kube-system get ds cilium -o jsonpath='{.spec.template.spec.containers[0].image}'
+```
+
+To apply Cilium values to a cluster that is already running without a bloom
+rerun, hand-apply a `HelmChartConfig` — see
+[`docs/examples/hubble-helmchartconfig.yaml`](examples/hubble-helmchartconfig.yaml).
+Note that it replaces the whole `valuesContent`, including bloom's
+`operator.replicas`, because it targets the same resource name.
+
 ### Time Synchronization
 Chrony NTP configuration for cluster time sync:
 - **Service**: chrony

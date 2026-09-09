@@ -104,6 +104,23 @@ func Validate(cfg Config) []string {
 				}
 			case "str":
 				// Plain string, no pattern validation
+			case "map":
+				// Accept a real mapping, or a YAML string that parses to one.
+				// The string form is what the web UI textarea and environment
+				// variable overrides produce - neither can express a nested map
+				// natively.
+				if isString {
+					if strings.TrimSpace(strVal) != "" {
+						var parsed any
+						if err := yaml.Unmarshal([]byte(strVal), &parsed); err != nil {
+							errors = append(errors, fmt.Sprintf("%s must be valid YAML: %v", arg.Key, err))
+						} else if _, ok := parsed.(map[string]any); !ok && parsed != nil {
+							errors = append(errors, fmt.Sprintf("%s must be a mapping of values, got %T", arg.Key, parsed))
+						}
+					}
+				} else if _, ok := value.(map[string]any); !ok {
+					errors = append(errors, fmt.Sprintf("%s must be a mapping of values, got %T", arg.Key, value))
+				}
 			case "array":
 				// Validate sequence/array fields
 				if sequence, ok := value.([]interface{}); ok {

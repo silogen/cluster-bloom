@@ -16,10 +16,16 @@ func LoadConfig(filepath string) (Config, error) {
 		return nil, fmt.Errorf("read config file: %w", err)
 	}
 
-	var config Config
-	if err := yaml.Unmarshal(data, &config); err != nil {
+	// Decode into a plain map[string]any rather than Config directly: yaml.v3
+	// recursively decodes nested mappings using the destination's named map
+	// type, so unmarshaling straight into Config would turn nested maps (e.g.
+	// CILIUM_HELM_VALUES) into config.Config instead of map[string]any,
+	// breaking every map[string]any type assertion downstream.
+	var raw map[string]any
+	if err := yaml.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("parse config file: %w", err)
 	}
+	config := Config(raw)
 
 	// Apply defaults from schema
 	if err := applyDefaults(&config); err != nil {
@@ -80,6 +86,24 @@ func parseEnvironmentValue(arg Argument, value string) (any, error) {
 			if trimmed := strings.TrimSpace(item); trimmed != "" {
 				parsed = append(parsed, trimmed)
 			}
+		}
+		return parsed, nil
+	case "map":
+		// No comma-separated fallback here, unlike "array": a nested mapping has
+		// no natural shorthand, so the value has to be YAML (or JSON, which YAML
+		// is a superset of). Parsing it here rather than letting the raw string
+		// through means a typo is reported against the environment variable
+		// instead of surfacing later from the validator.
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			return map[string]any{}, nil
+		}
+		var parsed map[string]any
+		if err := yaml.Unmarshal([]byte(trimmed), &parsed); err != nil {
+			return nil, fmt.Errorf("must be a YAML mapping: %w", err)
+		}
+		if parsed == nil {
+			return nil, fmt.Errorf("must be a YAML mapping, got %q", value)
 		}
 		return parsed, nil
 	default:
