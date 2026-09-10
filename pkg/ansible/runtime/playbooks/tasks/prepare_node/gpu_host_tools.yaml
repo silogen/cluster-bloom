@@ -61,7 +61,50 @@
       {{ '/etc/apt/keyrings/bloom-rocm.gpg'
          if gpu_driver_effective.HostToolsChannel == 'legacy'
          else '/etc/apt/keyrings/bloom-amdrocm.gpg' }}
-  when: gpu_amd_smi_before.rc != 0
+    gpu_amd_smi_repo_suite: >-
+      {{ ansible_distribution_release
+         if gpu_driver_effective.HostToolsChannel == 'legacy'
+         else 'stable' }}
+
+- name: Locate another matching AMD-SMI repository
+  shell: |
+    for source in /etc/apt/sources.list /etc/apt/sources.list.d/*.list; do
+      [ -f "$source" ] || continue
+      [ "$source" != /etc/apt/sources.list.d/bloom-amd-smi.list ] || continue
+      if awk \
+        -v url="{{ gpu_amd_smi_repo_url }}" \
+        -v suite="{{ gpu_amd_smi_repo_suite }}" '
+          /^[[:space:]]*deb[[:space:]]/ {
+            field = 2
+            if ($field ~ /^\[/) {
+              while (field <= NF && $field !~ /\]$/) {
+                field++
+              }
+              field++
+            }
+            if ($field == url && $(field + 1) == suite) {
+              for (component = field + 2; component <= NF; component++) {
+                if ($component == "main") {
+                  found = 1
+                }
+              }
+            }
+          }
+          END { exit !found }
+        ' "$source"; then
+        printf '%s\n' "$source"
+        exit 0
+      fi
+    done
+    exit 0
+  register: gpu_amd_smi_existing_repo
+  changed_when: false
+
+- name: Remove duplicate Bloom-owned AMD-SMI repository
+  file:
+    path: /etc/apt/sources.list.d/bloom-amd-smi.list
+    state: absent
+  when: (gpu_amd_smi_existing_repo.stdout | trim) != ''
 
 - name: Ensure apt keyring directory exists
   file:
@@ -92,8 +135,10 @@
     dest: /etc/apt/sources.list.d/bloom-amd-smi.list
     mode: "0644"
     content: |
-      deb [arch=amd64 signed-by={{ gpu_amd_smi_keyring }}] {{ gpu_amd_smi_repo_url }} {{ (ansible_distribution_release ~ ' main') if gpu_driver_effective.HostToolsChannel == 'legacy' else 'stable main' }}
-  when: gpu_amd_smi_before.rc != 0
+      deb [arch=amd64 signed-by={{ gpu_amd_smi_keyring }}] {{ gpu_amd_smi_repo_url }} {{ gpu_amd_smi_repo_suite }} main
+  when:
+    - gpu_amd_smi_before.rc != 0
+    - (gpu_amd_smi_existing_repo.stdout | trim) == ''
 
 - name: Refresh standalone AMD-SMI repository metadata
   apt:
