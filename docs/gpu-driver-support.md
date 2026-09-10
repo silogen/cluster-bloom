@@ -12,10 +12,21 @@ By default Bloom also installs AMD-SMI as a standalone host diagnostic. That
 small optional userspace component does not turn the host into a full ROCm
 runtime installation.
 
+## Scope
+
+This document describes behavior on **GPU nodes** only. Bloom runs driver
+detection, installation, standalone AMD-SMI, and related validation when
+`GPU_NODE` is `true` and `GPU_DRIVER_SKIP_INSTALL` is `false`. Set
+`GPU_NODE: false` on CPU-only nodes to skip the entire flow and leave the host
+GPU stack untouched. See
+[GPU_NODE in the Configuration Reference](configuration-reference.md#gpu_node).
+
 ## Table of contents
 
+- [Scope](#scope)
 - [Supported version matrix](#supported-version-matrix)
 - [Installation behavior](#installation-behavior)
+- [Fresh-node install details](#fresh-node-install-details)
 - [Standalone AMD-SMI](#standalone-amd-smi)
 - [Configuration](#configuration)
 - [Blacklisting](#blacklisting)
@@ -75,6 +86,26 @@ Bloom applies this policy:
 Existing host ROCm userspace is left untouched. Driver compatibility, not the
 presence or absence of `/opt/rocm`, controls whether installation continues.
 
+### Fresh-node install details
+
+When policy state is `none`, Bloom additionally:
+
+1. **Kernel headers recovery** — If apt has no installation candidate for
+   `linux-headers-$(uname -r)` (observed on cloud mirrors that no longer serve
+   the running kernel's point release), Bloom upgrades to the newest available
+   kernel for the host's flavor, writes `/var/lib/bloom/reboot-required.json`,
+   and ends the play. Rerun Bloom after reboot so DKMS can build against
+   headers the mirror still serves.
+2. **ROCm repository cleanup** — Removes `/etc/apt/sources.list.d/rocm.list`
+   before the driver-only install so `amdgpu-install` does not enable a host
+   ROCm runtime repository.
+3. **Running-kernel apt pin (OCI images)** — Writes a temporary preference file
+   at `/etc/apt/preferences.d/00_bloom_amdgpu_kernel` so `amdgpu-install`'s
+   internal apt calls can install `linux-headers` and, when present,
+   `linux-modules-extra` for the running kernel on images that otherwise pin
+   kernel packages to a lower priority. Bloom removes the file when the install
+   finishes.
+
 ## Standalone AMD-SMI
 
 `GPU_INSTALL_HOST_TOOLS` defaults to `true`.
@@ -88,8 +119,8 @@ package matched to the effective driver:
   or `7.2.4`.
 - Driver `31.30.0`: install `amdrocm-amdsmi7.13` from the versioned Core SDK
   package repository.
-- Driver `31.40.0`: install `amdrocm-amdsmi7.14` from the Core SDK multi-arch
-  package repository.
+- Drivers `31.40.0` and `31.40.1`: install `amdrocm-amdsmi7.14` from the Core
+  SDK multi-arch package repository.
 
 Bloom writes a dedicated `bloom-amd-smi.list` apt source, installs only AMD-SMI
 and the package's minimal system dependencies, and exposes the resolved binary

@@ -162,9 +162,16 @@ EOF
 
 ### Phase 3: GPU Setup (GPU Nodes Only)
 
+This phase runs only when `GPU_NODE` is `true` and
+`GPU_DRIVER_SKIP_INSTALL` is `false`.
+
 Bloom retains an exact supported AMD DKMS driver or installs production driver
 `31.40.0` with `amdgpu-install --usecase=dkms`. It does not install host ROCm,
 HIP, SDK, or workload libraries. Standalone AMD-SMI is enabled by default.
+On a fresh node Bloom may upgrade the kernel when headers for the running
+release are unavailable, remove a stale `rocm.list` apt source, and apply a
+temporary apt pin so OCI images can install kernel headers for DKMS; see
+[GPU Driver Support — fresh-node install details](gpu-driver-support.md#fresh-node-install-details).
 
 For the full GPU driver compatibility table, see
 [GPU Driver Support](gpu-driver-support.md#supported-version-matrix).

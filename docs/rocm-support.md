@@ -64,7 +64,7 @@ binary or installs the package associated with the effective driver:
 - Drivers `30.10.2` through `30.30.4`: exact `amd-smi-lib` build from the
   corresponding ROCm repository.
 - Driver `31.30.0`: `amdrocm-amdsmi7.13`.
-- Driver `31.40.0`: `amdrocm-amdsmi7.14`.
+- Drivers `31.40.0` and `31.40.1`: `amdrocm-amdsmi7.14`.
 
 Bloom verifies both `amd-smi version` and `amd-smi list`.
 
