@@ -110,6 +110,22 @@
     - rke2.conf
     - rke2
 
+# The cron file this task wrote before it was renamed to logrotate-bloom.
+# Without this the old file stays, and it still carries the -f flag and the
+# minute 0 schedule that the commits above removed, pointed at the config
+# paths in /etc/logrotate.d that the task above has just deleted. So a node
+# that bloom reinstalls keeps a cron job running logrotate against files that
+# are no longer there, on the minute the distribution logrotate.service takes
+# the state file lock.
+#
+# Measured on int_test on 2026-09-11: useocpm2m-silogen-int-test-001 and -002
+# had the corrected layout in every other respect and still carried
+# /etc/cron.d/logrotate, which is the only reason they were not clean.
+- name: Remove the cron file written by earlier bloom versions
+  file:
+    path: /etc/cron.d/logrotate
+    state: absent
+
 # Neither job runs on minute 0, and no two of them share a minute. Both use
 # logrotate's default state file /var/lib/logrotate/status, and logrotate
 # takes an exclusive lock on it: a second logrotate that starts while the
