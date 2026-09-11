@@ -60,7 +60,34 @@
           delaycompress
           missingok
           notifempty
-          create 0640 root root
+          # copytruncate, because containerd never reopens this file. rke2
+          # starts containerd and redirects its stdout here; there is no
+          # --log-file flag and no reopen signal. "create" renames
+          # containerd.log and makes a new empty one, but containerd holds the
+          # descriptor of the file it opened and goes on writing into the
+          # renamed archive. The new containerd.log then stays at 0 bytes, so
+          # it never passes "size 100M" and never rotates again, while the
+          # archive grows with no config watching it.
+          #
+          # A fleet survey on 2026-09-11 found this on 20 of the 30 nodes that
+          # run rke2, holding 365 MB, the oldest frozen since 2026-08-14. The
+          # largest single archive was 52 MB and still being appended to.
+          #
+          # copytruncate copies the file and truncates the original in place,
+          # so the descriptor stays valid. The cost is the lines written
+          # between the copy and the truncate, and a second copy of the file
+          # on disk while it runs. Neither matters for a runtime debug log; a
+          # descriptor that never reopens does.
+          #
+          # The iSCSI config above does NOT need this: rsyslog reopens on the
+          # HUP that /usr/lib/rsyslog/rsyslog-rotate sends in its postrotate.
+          # Nothing equivalent exists for containerd, and restarting it to
+          # reopen a log file would restart every container on the node.
+          #
+          # No "create" here. copytruncate keeps the original file and its
+          # mode, so the two together make logrotate create a file it has just
+          # truncated.
+          copytruncate
           # No dateext, for the reason given on the iSCSI config above.
       }
     dest: /etc/logrotate-bloom.d/rke2.conf
@@ -82,6 +109,22 @@
     - iscsi-aggressive.bak
     - rke2.conf
     - rke2
+
+# The cron file this task wrote before it was renamed to logrotate-bloom.
+# Without this the old file stays, and it still carries the -f flag and the
+# minute 0 schedule that the commits above removed, pointed at the config
+# paths in /etc/logrotate.d that the task above has just deleted. So a node
+# that bloom reinstalls keeps a cron job running logrotate against files that
+# are no longer there, on the minute the distribution logrotate.service takes
+# the state file lock.
+#
+# Measured on int_test on 2026-09-11: useocpm2m-silogen-int-test-001 and -002
+# had the corrected layout in every other respect and still carried
+# /etc/cron.d/logrotate, which is the only reason they were not clean.
+- name: Remove the cron file written by earlier bloom versions
+  file:
+    path: /etc/cron.d/logrotate
+    state: absent
 
 # Neither job runs on minute 0, and no two of them share a minute. Both use
 # logrotate's default state file /var/lib/logrotate/status, and logrotate
