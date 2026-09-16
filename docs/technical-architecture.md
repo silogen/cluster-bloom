@@ -203,76 +203,6 @@ Steps may execute conditionally based on:
 - **Disk Configuration**: NO_DISKS_FOR_CLUSTER flag
 - **Feature Flags**: USE_CERT_MANAGER, CLUSTERFORGE_RELEASE, etc.
 
-## Web UI Architecture
-
-### Application Modes
-
-#### Configuration Mode
-Active when no installation is running:
-
-- Displays configuration wizard form
-- Validates user input
-- Generates bloom.yaml
-- Triggers installation
-
-#### Monitoring Mode
-Active during installation execution:
-
-- Real-time progress display
-- Step status tracking
-- Log streaming
-- Error reporting
-- Reconfiguration option
-
-### WebHandlerService Structure
-
-```go
-type WebHandlerService struct {
-    configFile        string                     // bloom.yaml path
-    prefilledConfig   map[string]interface{}    // Loaded from bloom.log
-    steps             []Step                     // Installation step definitions
-    startInstallation func() error               // Installation trigger callback
-}
-```
-
-### HTTP Endpoints
-
-#### Dashboard Routes
-- `/`: Main entry point (mode-based redirect)
-- `/config`: Configuration wizard interface
-- `/monitor`: Installation monitoring dashboard
-- `/reconfigure`: Switch to configuration mode
-
-#### API Routes
-- `/api/config`: Configuration submission endpoint
-- `/api/prefilled-config`: Pre-filled configuration data
-- `/api/steps`: Real-time step status
-- `/api/variables`: Current configuration variables
-
-### Form Validation System
-
-#### Client-Side Validation
-- HTML5 pattern attributes
-- JavaScript validation
-- Required field enforcement
-- Type checking (URL, IP, domain)
-
-#### Server-Side Validation
-- Configuration structure validation
-- Value format verification
-- Conflict detection
-- Resource requirement checks
-
-### Configuration Flow
-
-1. **Startup Detection**: Check for existing bloom.log
-2. **Mode Selection**: Configuration vs Monitoring
-3. **Form Rendering**: Pre-fill from bloom.log if available
-4. **Submission**: Validate and save configuration
-5. **Installation Trigger**: Execute installation pipeline
-6. **Monitoring**: Real-time progress tracking
-7. **Error Recovery**: Reconfigure option on failure
-
 ## Integration Architecture
 
 ### External System Integration
@@ -403,8 +333,6 @@ jwt:
 - Semantic versioning support
 
 #### Testing Infrastructure
-- Chromedp-based UI testing
-- Mock system integration
 - Automated test execution
 - YAML-based test definitions
 
@@ -521,12 +449,6 @@ Recovery mechanisms:
 ## Testing Architecture
 
 ### Test Types
-
-#### UI Tests
-- Browser-based automation (chromedp)
-- Form validation testing
-- Configuration workflow testing
-- Mock system integration
 
 #### Integration Tests
 - Mock-based command execution

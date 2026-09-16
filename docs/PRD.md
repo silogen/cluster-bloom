@@ -137,11 +137,6 @@ All certificates are stored as Kubernetes secrets in the `envoy-gateway-system` 
 
 **[📄 Certificate Management Details](./certificate-management.md)**
 
-### Web UI and Monitoring Interface
-Browser-based configuration wizard with real-time monitoring dashboard, error recovery interface, and responsive design for remote cluster management from any device.
-
-**[📄 Technical Architecture](./technical-architecture.md)**
-
 ### Comprehensive Configuration Validation
 Pre-flight validation system checks all configuration, resources, and system requirements before making any changes, providing clear error messages with actionable fixes.
 
@@ -186,7 +181,7 @@ Automatic display of access credentials for deployed ClusterForge components inc
 
 ## Technical Architecture
 
-ClusterBloom uses a modular architecture with command-based interfaces, sequential installation pipelines, and multiple interaction modes (CLI, TUI, Web UI). The system executes in three phases: pre-Kubernetes system preparation, Kubernetes cluster setup, and post-Kubernetes add-on deployment.
+ClusterBloom uses a modular architecture with command-based interfaces and sequential installation pipelines. The system executes in three phases: pre-Kubernetes system preparation, Kubernetes cluster setup, and post-Kubernetes add-on deployment.
 
 **[📄 Technical Architecture Documentation](./technical-architecture.md)**
 
@@ -195,12 +190,6 @@ ClusterBloom uses a modular architecture with command-based interfaces, sequenti
 ## User Experience
 
 ### Installation Workflows
-
-#### Configuration Wizard
-```bash
-./bloom wizard
-```
-Interactive wizard for generating bloom.yaml configuration files with input validation and optional automatic launch.
 
 #### Node Validation (Proof Command)
 ```bash
@@ -244,18 +233,6 @@ less bloom-playbook/cluster-bloom.yaml
 sudo ./bloom run bloom-playbook/cluster-bloom.yaml
 ```
 
-#### Demo Mode
-```bash
-sudo ./bloom demo-ui
-```
-Demonstrates UI capabilities without system modifications for testing and familiarization.
-
-#### Test Mode
-```bash
-./bloom test [config-file...]
-```
-Runs multiple configuration files in sequence for integration testing with mocked commands and structured YAML results.
-
 ### Post-Deployment Credential Information
 
 After successful cluster deployment, ClusterBloom automatically displays credential information for ClusterForge components when `CLUSTERFORGE_RELEASE` is configured (not set to "none"). This eliminates the need to manually search for credentials and provides immediate access to deployed applications.
@@ -272,15 +249,6 @@ After successful cluster deployment, ClusterBloom automatically displays credent
   - Password retrieval: `kubectl -n keycloak get secret keycloak-credentials -o jsonpath='{.data.KEYCLOAK_INITIAL_ADMIN_PASSWORD}' | base64 --decode`
 
 This information appears at the end of the deployment summary when using clean output mode (default), providing operators with immediate access to critical system credentials.
-
-### Web UI Installation Workflow
-
-1. **Access Web Interface**: Navigate to `http://localhost:62078`
-2. **Configuration Wizard**: Fill out cluster configuration form
-3. **Form Validation**: Real-time validation ensures correct input formats
-4. **Installation Trigger**: Submit form to generate bloom.yaml and start installation
-5. **Automatic Redirect**: Browser redirects to monitoring dashboard
-6. **Error Recovery**: Reconfigure option available for failed installations
 
 ### System Requirements Validation
 
@@ -332,17 +300,6 @@ and verification procedures.
 4. Build workflow automatically triggers, builds binaries, and uploads artifacts
 5. Release is ready with downloadable binaries within minutes
 
-## Testing and Quality Assurance
-
-### UI Testing Framework
-Browser-based testing with chromedp and comprehensive mock system:
-- 22 test cases covering valid/invalid configurations
-- Disk auto-detection and virtual disk filtering tests
-- End-to-end integration tests
-- Form validation and dynamic behavior tests
-
-**[📄 Technical Architecture](./technical-architecture.md)**
-
 ## Current Limitations and Known Issues
 
 ### Missing Components
@@ -360,7 +317,7 @@ Browser-based testing with chromedp and comprehensive mock system:
 5. **Scaling Automation**: Manual process for cluster scaling operations
 
 ### Technical Debt
-1. **Testing Coverage**: Comprehensive UI testing complete (22 test cases). Additional backend unit tests needed.
+1. **Testing Coverage**: Additional backend unit tests needed.
 2. **Documentation**: Missing detailed operational procedures
 3. **Configuration Validation**: Basic validation without comprehensive checks
 4. **Log Management**: Basic logging without centralized log aggregation

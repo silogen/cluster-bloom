@@ -12,14 +12,12 @@ import (
 
 	"github.com/silogen/cluster-bloom/pkg/ansible/runtime"
 	"github.com/silogen/cluster-bloom/pkg/config"
-	"github.com/silogen/cluster-bloom/pkg/webui"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
 
 var (
 	Version              string // Set via ldflags during build
-	port                 int
 	playbookName         string
 	dryRun               bool
 	tags                 string
@@ -53,11 +51,6 @@ type rebootRequiredMarker struct {
 	Attempted  bool     `json:"attempted"`
 	DetectedAt string   `json:"detected_at"`
 	RunID      string   `json:"run_id"`
-}
-
-func init() {
-	// Set the embedded filesystem for webui package
-	webui.StaticFS = WebFS
 }
 
 func Execute() {
@@ -151,17 +144,8 @@ Certificate Updates:
 				}
 				return
 			}
-			// Default action: start webui
-			runWebUI(cmd)
-		},
-	}
-
-	webuiCmd := &cobra.Command{
-		Use:   "webui",
-		Short: "Start the web UI configuration generator",
-		Long:  `Launch a web-based interface for generating bloom.yaml configuration files.`,
-		Run: func(cmd *cobra.Command, args []string) {
-			runWebUI(cmd)
+			// Default action: print usage
+			cmd.Help()
 		},
 	}
 
@@ -334,7 +318,6 @@ imports (roles, tasks, vars) within that directory tree work as expected.`,
 	}
 
 	// Add flags
-	rootCmd.PersistentFlags().IntVarP(&port, "port", "p", 62078, "Port for web UI (fails if in use)")
 	rootCmd.Flags().BoolVarP(&showVersion, "version", "v", false, "Show version information")
 	rootCmd.PersistentFlags().BoolVarP(&autoConfirm, "yes", "y", false, "Automatically confirm all interactive prompts (--destroy-data, cleanup, reboot-required). Same as --auto-confirm-prompts. USE WITH CAUTION")
 	rootCmd.PersistentFlags().BoolVar(&autoConfirm, "auto-confirm-prompts", false, "Alias for --yes/-y")
@@ -363,7 +346,6 @@ imports (roles, tasks, vars) within that directory tree work as expected.`,
 	cleanupCmd.Flags().BoolVar(&cleanupPreflightOnly, "preflight-only", false, "Validate bloom.yaml, fstab, live mounts, and protected devices without making changes")
 
 	// Add subcommands
-	rootCmd.AddCommand(webuiCmd)
 	rootCmd.AddCommand(cliCmd)
 	rootCmd.AddCommand(runCmd)
 	rootCmd.AddCommand(versionCmd)
@@ -386,16 +368,6 @@ imports (roles, tasks, vars) within that directory tree work as expected.`,
 	})
 
 	return rootCmd
-}
-
-func runWebUI(cmd *cobra.Command) {
-	portSpecified := cmd.Flags().Changed("port")
-
-	server := &webui.Server{Port: port, PortSpecified: portSpecified}
-	if err := server.Start(); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to start web UI: %v\n", err)
-		os.Exit(1)
-	}
 }
 
 func runAnsible(configFile string) {

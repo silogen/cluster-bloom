@@ -16,7 +16,6 @@ func TestConfigurationFieldsHelpVisibility(t *testing.T) {
 		{name: "root", args: []string{"--help"}, wantFields: true},
 		{name: "cli", args: []string{"cli", "-h"}, wantReference: true},
 		{name: "cleanup", args: []string{"cleanup", "--help"}, wantReference: true},
-		{name: "webui", args: []string{"webui", "--help"}, wantReference: true},
 		{name: "run", args: []string{"run", "--help"}, wantReference: true},
 		{name: "update", args: []string{"update", "--help"}, wantReference: true},
 		{name: "version", args: []string{"version", "--help"}, wantReference: true},

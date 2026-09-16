@@ -60,15 +60,15 @@ chmod +x bloom
 
 ## Usage
 
-### Configuration Generation
+### Configuration
 
-Launch the web UI to generate your bloom.yaml configuration:
+Write a `bloom.yaml` config file, then run:
 
 ```sh
-./bloom
+sudo ./bloom cli bloom.yaml
 ```
 
-Access the configuration wizard at http://127.0.0.1:62078
+See `./bloom --help` for the full configuration field reference, or `docs/configuration-reference.md`.
 
 ### Additional Node Setup
 

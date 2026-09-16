@@ -15,7 +15,7 @@ type SchemaDefinition struct {
 		Mapping map[string]SchemaField `yaml:"mapping"`
 	} `yaml:"schema"`
 	Types       map[string]TypeDefinition `yaml:"types"`
-	Constraints []ConstraintDef           `yaml:"constraints"`
+	Constraints []constraintDef           `yaml:"constraints"`
 }
 
 // SchemaField represents a field in the schema mapping
