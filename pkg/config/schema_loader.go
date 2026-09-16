@@ -98,7 +98,7 @@ func LoadSchema() ([]Argument, error) {
 	return arguments, nil
 }
 
-// mapType converts YAML schema types to webui types
+// mapType converts YAML schema types to argument types
 func mapType(yamlType string) string {
 	switch yamlType {
 	case "bool":

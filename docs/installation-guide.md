@@ -604,15 +604,14 @@ sudo systemctl enable --now systemd-resolved
 
 ClusterBloom automates all of the above steps and provides:
 
-1. **Interactive UI**: TUI and Web UI for configuration and monitoring
-2. **Validation**: Pre-flight checks before any system modifications
-3. **Error Recovery**: Automatic retry and reconfiguration on failures
-4. **State Management**: Tracks progress and resumes on interruption
-5. **Configuration Management**: YAML-based configuration with validation
-6. **Disk Auto-detection**: Intelligent disk selection and formatting
-7. **Integration**: Seamless ClusterForge and 1Password Connect integration
-8. **Monitoring**: Real-time progress tracking and detailed logging
-9. **Multi-node Coordination**: Automatic generation of join commands
+1. **Validation**: Pre-flight checks before any system modifications
+2. **Error Recovery**: Automatic retry and reconfiguration on failures
+3. **State Management**: Tracks progress and resumes on interruption
+4. **Configuration Management**: YAML-based configuration with validation
+5. **Disk Auto-detection**: Intelligent disk selection and formatting
+6. **Integration**: Seamless ClusterForge and 1Password Connect integration
+7. **Monitoring**: Real-time progress tracking and detailed logging
+8. **Multi-node Coordination**: Automatic generation of join commands
 10. **Best Practices**: Built-in configurations following Kubernetes best practices
 
 See the [PRD](PRD.md) for product requirements and

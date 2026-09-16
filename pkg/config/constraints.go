@@ -90,15 +90,12 @@ func checkOneOfFields(cfg Config, fields []string, errorMsg string) error {
 	return nil
 }
 
-// ConstraintDef represents a constraint from the schema
-type ConstraintDef struct {
-	MutuallyExclusive []string `yaml:"mutually_exclusive" json:"mutually_exclusive,omitempty"`
-	OneOf             []string `yaml:"one_of" json:"one_of,omitempty"`
-	Error             string   `yaml:"error" json:"error,omitempty"`
+// constraintDef represents a constraint from the schema
+type constraintDef struct {
+	MutuallyExclusive []string `yaml:"mutually_exclusive"`
+	OneOf             []string `yaml:"one_of"`
+	Error             string   `yaml:"error"`
 }
-
-// Alias for backward compatibility
-type constraintDef = ConstraintDef
 
 // isFieldSet checks if a field has a truthy value
 func isFieldSet(cfg Config, field string) bool {
@@ -126,11 +123,6 @@ type schemaConstraints struct {
 }
 
 var cachedConstraints []constraintDef
-
-// LoadConstraints loads constraints from the schema file (exported for API)
-func LoadConstraints() ([]ConstraintDef, error) {
-	return loadSchemaConstraints()
-}
 
 // loadSchemaConstraints loads constraints from the schema file
 func loadSchemaConstraints() ([]constraintDef, error) {
