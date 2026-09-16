@@ -22,16 +22,18 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
-	"io"
 	"os"
 	"os/user"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	"golang.org/x/crypto/ssh"
+
+	"github.com/silogen/cluster-bloom/pkg/fileutil"
 )
 
 // EphemeralSSHManager manages temporary SSH keys for single-node Ansible deployments
@@ -43,6 +45,12 @@ type EphemeralSSHManager struct {
 	AuthorizedKeysPath   string // /home/{username}/.ssh/authorized_keys
 	AuthorizedKeysBackup string // {workdir}/ssh/authorized_keys.backup
 	isInstalled          bool   // Track installation state for cleanup
+
+	// Cleanup can be invoked twice in close succession: once from the
+	// executor's deferred cleanup on normal return, and once from
+	// setupHostSSHSignalHandling's signal handler if a signal lands right as
+	// the run finishes. Serialize them so the restore happens exactly once.
+	mu sync.Mutex
 }
 
 // NewEphemeralSSHManager creates a new ephemeral SSH key manager for single-node deployment
@@ -82,6 +90,9 @@ func getUserSSHDir(username string) (string, error) {
 
 // Setup generates ephemeral SSH keys and installs the public key for localhost access
 func (e *EphemeralSSHManager) Setup() error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
 	// Generate ephemeral key pair
 	if err := e.generateKey(); err != nil {
 		return fmt.Errorf("failed to generate ephemeral key: %w", err)
@@ -97,29 +108,20 @@ func (e *EphemeralSSHManager) Setup() error {
 
 // Cleanup removes the ephemeral public key and restores original authorized_keys
 func (e *EphemeralSSHManager) Cleanup() error {
-	// Remove public key from authorized_keys
-	if err := e.removePublicKey(); err != nil {
-		return fmt.Errorf("failed to remove SSH key for user %s: %w", e.Username, err)
-	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
 
-	// Remove ephemeral key files
-	if err := e.removeKeyFiles(); err != nil {
-		// Don't fail on key file cleanup, just continue
+	// Remove public key from authorized_keys. Key files are removed below
+	// even if this fails, so a failed restore doesn't also leak the keypair.
+	restoreErr := e.removePublicKey()
+
+	e.removeKeyFiles() // always returns nil; errors are just printed as warnings
+
+	if restoreErr != nil {
+		return fmt.Errorf("failed to remove SSH key for user %s: %w", e.Username, restoreErr)
 	}
 
 	return nil
-}
-
-// verifyBackup checks if the backup file exists and is readable
-func (e *EphemeralSSHManager) verifyBackup() bool {
-	if stat, err := os.Stat(e.AuthorizedKeysBackup); err != nil {
-		return false
-	} else if stat.Size() == 0 {
-		// Empty backup might be valid (no existing keys), but log it
-		fmt.Printf("      ⚠️ Backup file is empty (may be valid if no keys existed)\n")
-		return true
-	}
-	return true
 }
 
 // generateKey creates an ED25519 key pair for ephemeral use
@@ -251,7 +253,7 @@ func (e *EphemeralSSHManager) validateAuthorizedKeys() error {
 }
 
 // installPublicKey backs up original authorized_keys and adds ephemeral public key
-// Process: 1) validate prerequisites, 2) backup, 3) temp copy, 4) add key, 5) fix ownership, 6) overwrite original
+// Process: 1) validate prerequisites, 2) backup, 3) append key and overwrite original in one atomic, owned write
 func (e *EphemeralSSHManager) installPublicKey() error {
 	return e.runAsUser(func() error {
 		// Validate .ssh directory and authorized_keys file exist with correct permissions
@@ -259,63 +261,37 @@ func (e *EphemeralSSHManager) installPublicKey() error {
 			return err
 		}
 
-		// Step 1: Get original file info and create backup
+		// Step 1: Get original file info and read its content once.
 		// (we know the file exists because validateAuthorizedKeys() passed)
-		uid, gid, mode, err := getFileInfo(e.AuthorizedKeysPath)
+		originalUID, originalGID, originalMode, err := getFileInfo(e.AuthorizedKeysPath)
 		if err != nil {
 			return fmt.Errorf("failed to get original file info: %w", err)
 		}
-		originalUID, originalGID, originalMode := uid, gid, mode
+
+		content, err := os.ReadFile(e.AuthorizedKeysPath)
+		if err != nil {
+			return fmt.Errorf("failed to read authorized_keys: %w", err)
+		}
 
 		// Create backup
-		if err := copyFile(e.AuthorizedKeysPath, e.AuthorizedKeysBackup); err != nil {
+		if err := fileutil.WriteAtomically(e.AuthorizedKeysBackup, content, originalMode); err != nil {
 			return fmt.Errorf("failed to backup authorized_keys: %w", err)
 		}
 
-		// Step 2: Make a temporary copy of authorized_keys
-		tmpPath := e.AuthorizedKeysPath + ".tmp"
-		if err := copyFile(e.AuthorizedKeysPath, tmpPath); err != nil {
-			return fmt.Errorf("failed to copy existing file: %w", err)
-		}
-
-		// Step 3: Add ephemeral key to temporary copy
+		// Step 2: Append the ephemeral key and write the result straight to
+		// authorized_keys, preserving the original owner and mode.
 		pubKeyContent, err := os.ReadFile(e.PublicKeyPath)
 		if err != nil {
-			os.Remove(tmpPath) // Clean up temp file
 			return fmt.Errorf("failed to read public key: %w", err)
 		}
 
 		comment := "# bloom-ephemeral-key"
 		keyEntry := fmt.Sprintf("\n%s %s\n", strings.TrimSpace(string(pubKeyContent)), comment)
+		newContent := append(append([]byte{}, content...), []byte(keyEntry)...)
 
-		// Append to temporary file
-		tmpFile, err := os.OpenFile(tmpPath, os.O_APPEND|os.O_WRONLY, 0600)
-		if err != nil {
-			os.Remove(tmpPath)
-			return fmt.Errorf("failed to open temporary file: %w", err)
-		}
-
-		if _, err := tmpFile.WriteString(keyEntry); err != nil {
-			tmpFile.Close()
-			os.Remove(tmpPath)
-			return fmt.Errorf("failed to write to temporary file: %w", err)
-		}
-		tmpFile.Close()
-
-		// Step 4: Change ownership of temp file to match original
-		if err := os.Chown(tmpPath, originalUID, originalGID); err != nil {
-			os.Remove(tmpPath)
-			return fmt.Errorf("failed to set ownership on temporary file: %w", err)
-		}
-
-		// Step 5: Overwrite original with temp file while preserving permissions
-		if err := safelyOverwriteFile(tmpPath, e.AuthorizedKeysPath, originalUID, originalGID, originalMode); err != nil {
-			os.Remove(tmpPath)
+		if err := fileutil.WriteAtomicallyOwned(e.AuthorizedKeysPath, newContent, originalMode, originalUID, originalGID); err != nil {
 			return fmt.Errorf("failed to overwrite original file: %w", err)
 		}
-
-		// Clean up temporary file
-		os.Remove(tmpPath)
 
 		e.isInstalled = true
 		return nil
@@ -329,15 +305,43 @@ func (e *EphemeralSSHManager) removePublicKey() error {
 		return nil // Nothing to remove
 	}
 
-	return e.runAsUser(func() error {
-		if e.verifyBackup() {
-			if copyErr := copyFile(e.AuthorizedKeysBackup, e.AuthorizedKeysPath); copyErr == nil {
-				e.isInstalled = false
-				return nil
-			}
-		}
-		return nil
-	})
+	return e.runAsUser(e.restoreAuthorizedKeysFromBackup)
+}
+
+// restoreAuthorizedKeysFromBackup overwrites AuthorizedKeysPath with the
+// backed-up content, preserving whatever mode and owner the live file
+// currently has. If the live file can't be statted (e.g. it was removed out
+// from under us), it falls back to the target user rather than -1,-1: leaving
+// ownership unset would publish the freshly-renamed file owned by whoever
+// bloom is running as (root, under sudo) for the window before
+// runAsUser's later chown fixup runs, and a signal landing in that window
+// would leave it that way.
+func (e *EphemeralSSHManager) restoreAuthorizedKeysFromBackup() error {
+	content, err := os.ReadFile(e.AuthorizedKeysBackup)
+	if err != nil {
+		return fmt.Errorf("backup %s is missing or unreadable; authorized_keys left untouched: %w", e.AuthorizedKeysBackup, err)
+	}
+	if len(content) == 0 {
+		// Empty backup might be valid (no existing keys), but log it
+		fmt.Printf("      ⚠️ Backup file is empty (may be valid if no keys existed)\n")
+	}
+
+	mode := os.FileMode(0600)
+	var uid, gid int
+	if fileUID, fileGID, fileMode, statErr := getFileInfo(e.AuthorizedKeysPath); statErr == nil {
+		mode, uid, gid = fileMode, fileUID, fileGID
+	} else if targetUID, targetGID, userErr := getUserInfo(e.Username); userErr == nil {
+		uid, gid = int(targetUID), int(targetGID)
+	} else {
+		return fmt.Errorf("failed to resolve owner for %s: %w", e.AuthorizedKeysPath, userErr)
+	}
+
+	if err := fileutil.WriteAtomicallyOwned(e.AuthorizedKeysPath, content, mode, uid, gid); err != nil {
+		return fmt.Errorf("failed to restore %s from backup: %w", e.AuthorizedKeysPath, err)
+	}
+
+	e.isInstalled = false
+	return nil
 }
 
 // removeKeyFiles deletes the ephemeral key files (preserves backup)
@@ -359,29 +363,6 @@ func (e *EphemeralSSHManager) removeKeyFiles() error {
 	os.Remove(sshDir) // Ignore error - directory might not be empty
 
 	return nil
-}
-
-// copyFile copies a file from src to dst, preserving permissions
-func copyFile(src, dst string) error {
-	srcFile, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer srcFile.Close()
-
-	srcInfo, err := srcFile.Stat()
-	if err != nil {
-		return err
-	}
-
-	dstFile, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, srcInfo.Mode())
-	if err != nil {
-		return err
-	}
-	defer dstFile.Close()
-
-	_, err = io.Copy(dstFile, srcFile)
-	return err
 }
 
 // getUserInfo gets the target user's uid and gid for context switching
@@ -424,27 +405,6 @@ func getFileInfo(filePath string) (uid int, gid int, mode os.FileMode, err error
 	}
 
 	return int(stat.Uid), int(stat.Gid), fileInfo.Mode(), nil
-}
-
-// safelyOverwriteFile overwrites dst with src while preserving ownership and permissions
-func safelyOverwriteFile(src, dst string, uid, gid int, mode os.FileMode) error {
-	// Read source file content
-	content, err := os.ReadFile(src)
-	if err != nil {
-		return fmt.Errorf("failed to read source file: %w", err)
-	}
-
-	// Write to destination with preserved permissions
-	if err := os.WriteFile(dst, content, mode.Perm()); err != nil {
-		return fmt.Errorf("failed to write destination file: %w", err)
-	}
-
-	// Set correct ownership
-	if err := os.Chown(dst, uid, gid); err != nil {
-		return fmt.Errorf("failed to set ownership: %w", err)
-	}
-
-	return nil
 }
 
 // runAsUser executes a function and ensures proper file ownership
