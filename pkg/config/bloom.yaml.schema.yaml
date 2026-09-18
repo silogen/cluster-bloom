@@ -201,6 +201,13 @@ schema:
       applicable: when(GPU_NODE == true)
       section: "⚙️ Advanced Configuration"
 
+    GPU_WORKER_SKIP_OS_REBOOT:
+      type: bool
+      default: true
+      desc: "On an add-worker join (FIRST_NODE=false), skip a reboot triggered only by an unrelated OS /var/run/reboot-required flag when the amdgpu DKMS driver is already active and matching for the running kernel. Set false to always reboot on any OS flag."
+      applicable: when(GPU_NODE == true)
+      section: "⚙️ Advanced Configuration"
+
     GPU_DRIVER_VERSION:
       type: str
       default: ""

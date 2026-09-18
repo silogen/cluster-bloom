@@ -24,6 +24,17 @@
 # rebooted once for a given unresolved condition, this task fails hard with a
 # manual-intervention message instead of writing a fresh marker and letting
 # bloom's CLI offer to reboot forever.
+#
+# Case-1 bypass on an add-worker join: /var/run/reboot-required is routinely
+# left by unrelated OS packages (libc6, dbus, kernel security updates). When we
+# ADD a worker (FIRST_NODE == false) whose amdgpu DKMS driver is already active
+# AND matching for the running kernel (gpu_driver_reboot_required is false) AND
+# the GPU device nodes are present (gpu_driver_verify_devices.rc == 0), a bare
+# OS flag should not force a reboot. In that case we rename (not delete) the OS
+# markers to *.backup and let the join proceed. Fresh installs (FIRST_NODE ==
+# true) and any real driver mismatch (Case 2) still reboot. Set
+# GPU_WORKER_SKIP_OS_REBOOT=false to disable this bypass and always reboot on
+# any OS flag.
 
 - name: Ensure /var/lib/bloom exists for reboot-required state tracking
   file:
@@ -37,11 +48,40 @@
   register: bloom_reboot_required_stat
   changed_when: false
 
+- name: Decide whether a bare OS reboot flag can be bypassed on an add-worker join
+  set_fact:
+    bloom_os_reboot_bypassable: >-
+      {{ (not (FIRST_NODE | default(false) | bool))
+         and (GPU_WORKER_SKIP_OS_REBOOT | default(true) | bool)
+         and (not (gpu_driver_reboot_required | default(false) | bool))
+         and ((gpu_driver_verify_devices.rc | default(1)) == 0) }}
+
+- name: Back up (rename) OS reboot-required markers when bypassing on a good GPU worker
+  command: mv {{ item }} {{ item }}.backup
+  loop:
+    - /var/run/reboot-required
+    - /var/run/reboot-required.pkgs
+  failed_when: false
+  when:
+    - bloom_reboot_required_stat.stat.exists
+    - bloom_os_reboot_bypassable | bool
+
+- name: Report the OS-reboot bypass
+  debug:
+    msg: >-
+      {{ inventory_hostname }}: add-worker join, amdgpu active & matching for
+      {{ ansible_kernel }}; renamed OS reboot-required marker(s) to *.backup,
+      proceeding without a reboot.
+  when:
+    - bloom_reboot_required_stat.stat.exists
+    - bloom_os_reboot_bypassable | bool
+
 - name: Resolve effective reboot requirement
   set_fact:
     bloom_reboot_required: >-
       {{
-        bloom_reboot_required_stat.stat.exists or
+        (bloom_reboot_required_stat.stat.exists
+         and not (bloom_os_reboot_bypassable | default(false) | bool)) or
         (gpu_driver_reboot_required | default(false) | bool)
       }}
 
