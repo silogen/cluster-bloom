@@ -12,14 +12,56 @@ import (
 	"syscall"
 )
 
+var (
+	exitFunc      = os.Exit
+	preExitHookMu sync.Mutex
+	preExitHook   func() error
+	preExitOnce   sync.Once
+)
+
+// SetPreExitHook registers a function to run exactly once before this
+// package's signal handler terminates the process. Intended for cleanup that
+// must complete even when interrupted mid-run (e.g. restoring authorized_keys).
+// A non-nil return value causes the process to exit with status 1 instead of
+// the signal-derived exit code, matching the old exit-on-cleanup-failure behavior.
+func SetPreExitHook(hook func() error) {
+	preExitHookMu.Lock()
+	defer preExitHookMu.Unlock()
+	preExitHook = hook
+}
+
+// runPreExitHook runs the registered pre-exit hook exactly once and reports
+// whether it failed.
+func runPreExitHook() (failed bool) {
+	preExitOnce.Do(func() {
+		preExitHookMu.Lock()
+		hook := preExitHook
+		preExitHookMu.Unlock()
+		if hook != nil {
+			failed = hook() != nil
+		}
+	})
+	return failed
+}
+
+// exitCodeAfterHook returns 1 if the pre-exit hook failed, else the
+// signal-derived exit code.
+func exitCodeAfterHook(hookFailed bool, code int) int {
+	if hookFailed {
+		return 1
+	}
+	return code
+}
+
 // CriticalSection tracks whether we're in a critical operation that shouldn't be interrupted
 type CriticalSection struct {
-	mu           sync.Mutex
-	inCritical   bool
-	description  string
-	signalChan   chan os.Signal
-	pendingExit  bool
-	exitCode     int
+	mu          sync.Mutex
+	inCritical  bool
+	description string
+	signalChan  chan os.Signal
+	pendingExit bool
+	exitCode    int
+	exiting     bool
 }
 
 var globalCriticalSection = &CriticalSection{
@@ -40,7 +82,15 @@ func InitSignalHandling() {
 // handleSignal processes received signals
 func handleSignal(sig os.Signal) {
 	globalCriticalSection.mu.Lock()
-	defer globalCriticalSection.mu.Unlock()
+
+	if globalCriticalSection.exiting {
+		// Signal received while pre-exit cleanup is running - force exit
+		fmt.Fprintf(os.Stderr, "\n🔥 FORCE EXIT - Interrupted during exit cleanup!\n")
+		code := getSignalExitCode(sig)
+		globalCriticalSection.mu.Unlock()
+		exitFunc(code)
+		return
+	}
 
 	if globalCriticalSection.inCritical {
 		// We're in a critical section - mark for exit but don't exit yet
@@ -50,15 +100,22 @@ func handleSignal(sig os.Signal) {
 			fmt.Fprintf(os.Stderr, "💡 Press Ctrl+C again to force exit (may leave system in inconsistent state)\n")
 			globalCriticalSection.pendingExit = true
 			globalCriticalSection.exitCode = getSignalExitCode(sig)
+			globalCriticalSection.mu.Unlock()
 		} else {
 			// Second signal - force exit
 			fmt.Fprintf(os.Stderr, "\n🔥 FORCE EXIT - System may be in inconsistent state!\n")
-			os.Exit(getSignalExitCode(sig))
+			code := getSignalExitCode(sig)
+			globalCriticalSection.mu.Unlock()
+			exitFunc(code)
 		}
 	} else {
 		// Not in critical section - exit immediately
 		fmt.Fprintf(os.Stderr, "\n✋ Interrupted - exiting...\n")
-		os.Exit(getSignalExitCode(sig))
+		code := getSignalExitCode(sig)
+		globalCriticalSection.exiting = true
+		globalCriticalSection.mu.Unlock()
+		hookFailed := runPreExitHook()
+		exitFunc(exitCodeAfterHook(hookFailed, code))
 	}
 }
 
@@ -76,7 +133,6 @@ func EnterCriticalSection(description string) {
 // Returns true if we should exit (signal was received during critical section)
 func ExitCriticalSection() bool {
 	globalCriticalSection.mu.Lock()
-	defer globalCriticalSection.mu.Unlock()
 
 	globalCriticalSection.inCritical = false
 	globalCriticalSection.description = ""
@@ -84,10 +140,15 @@ func ExitCriticalSection() bool {
 	if globalCriticalSection.pendingExit {
 		fmt.Fprintf(os.Stderr, "✅ Critical operation completed safely\n")
 		fmt.Fprintf(os.Stderr, "👋 Exiting as requested...\n")
-		os.Exit(globalCriticalSection.exitCode)
+		code := globalCriticalSection.exitCode
+		globalCriticalSection.exiting = true
+		globalCriticalSection.mu.Unlock()
+		hookFailed := runPreExitHook()
+		exitFunc(exitCodeAfterHook(hookFailed, code))
 		return true
 	}
 
+	globalCriticalSection.mu.Unlock()
 	return false
 }
 
@@ -113,6 +174,7 @@ func CheckPendingExit() bool {
 func runProtectedCommand(name string, args ...string) ([]byte, error) {
 	cmd := exec.Command(name, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Env = append(os.Environ(), "LC_ALL=C", "LANGUAGE=")
 	return cmd.CombinedOutput()
 }
 
