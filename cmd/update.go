@@ -85,6 +85,8 @@ Examples:
     --cert-option generate \
     --skip-dns-check`,
 		PreRunE: func(cmd *cobra.Command, args []string) error {
+			checkRootPrivileges("update")
+
 			// cert-option is always required
 			if certOption == "" {
 				return fmt.Errorf("--cert-option is required (generate|provide|cert-manager)")
