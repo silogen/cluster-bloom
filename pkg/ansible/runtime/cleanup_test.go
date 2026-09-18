@@ -3,10 +3,18 @@
 package runtime
 
 import (
+	"errors"
+	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
+	"slices"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 )
 
 func TestParseLonghornISCSISessions(t *testing.T) {
@@ -373,5 +381,468 @@ func TestDeployClusterDisksFallsBackWhenListsDisagree(t *testing.T) {
 	}
 	if got, want := storage.DeployClusterDisks(), "/dev/sdb"; got != want {
 		t.Errorf("DeployClusterDisks() = %q, want %q", got, want)
+	}
+}
+
+func stubWipeRunners(t *testing.T, wipefs, mkfs func(string, ...string) ([]byte, error)) {
+	origWipefs := wipefsRunner
+	origMkfs := mkfsRunner
+	origAttempts := wipeMaxAttempts
+	origDelay := wipeRetryDelay
+	origChecker := deviceTreeUnmountedChecker
+	t.Cleanup(func() {
+		wipefsRunner = origWipefs
+		mkfsRunner = origMkfs
+		wipeMaxAttempts = origAttempts
+		wipeRetryDelay = origDelay
+		deviceTreeUnmountedChecker = origChecker
+	})
+	wipefsRunner = wipefs
+	mkfsRunner = mkfs
+	deviceTreeUnmountedChecker = func(string) error { return nil }
+	wipeRetryDelay = time.Millisecond
+	wipeMaxAttempts = 5
+}
+
+func TestWipeAndFormatDeviceSuccessFirstAttempt(t *testing.T) {
+	wipefsCalls := 0
+	mkfsCalls := 0
+	stubWipeRunners(t,
+		func(name string, args ...string) ([]byte, error) {
+			wipefsCalls++
+			if name != "wipefs" || !slices.Equal(args, []string{"-a", "/dev/mock"}) {
+				t.Errorf("wipefs invoked as %q %v", name, args)
+			}
+			return []byte("/dev/mock: 2 bytes erased"), nil
+		},
+		func(name string, args ...string) ([]byte, error) {
+			mkfsCalls++
+			if name != "mkfs.ext4" || !slices.Equal(args, []string{"-F", "/dev/mock"}) {
+				t.Errorf("mkfs invoked as %q %v", name, args)
+			}
+			return []byte("done"), nil
+		},
+	)
+
+	if err := wipeAndFormatDevice("/dev/mock"); err != nil {
+		t.Fatalf("wipeAndFormatDevice() error = %v, want nil", err)
+	}
+	if wipefsCalls != 1 {
+		t.Errorf("wipefsCalls = %d, want 1", wipefsCalls)
+	}
+	if mkfsCalls != 1 {
+		t.Errorf("mkfsCalls = %d, want 1", mkfsCalls)
+	}
+}
+
+func TestWipeAndFormatDeviceRetriesOnBusy(t *testing.T) {
+	wipefsCalls := 0
+	stubWipeRunners(t,
+		func(name string, args ...string) ([]byte, error) {
+			wipefsCalls++
+			if wipefsCalls < 3 {
+				return []byte("wipefs: error: /dev/mock: probing initialization failed: Device or resource busy"), errors.New("exit status 1")
+			}
+			return []byte("/dev/mock: 2 bytes erased"), nil
+		},
+		func(name string, args ...string) ([]byte, error) {
+			return []byte("done"), nil
+		},
+	)
+
+	if err := wipeAndFormatDevice("/dev/mock"); err != nil {
+		t.Fatalf("wipeAndFormatDevice() error = %v, want nil", err)
+	}
+	if wipefsCalls != 3 {
+		t.Errorf("wipefsCalls = %d, want 3 attempts before success", wipefsCalls)
+	}
+}
+
+func TestWipeAndFormatDeviceFailsFastOnNonBusyError(t *testing.T) {
+	wipefsCalls := 0
+	mkfsCalls := 0
+	stubWipeRunners(t,
+		func(name string, args ...string) ([]byte, error) {
+			wipefsCalls++
+			return []byte("wipefs: error: /dev/mock: permission denied"), errors.New("exit status 1")
+		},
+		func(name string, args ...string) ([]byte, error) {
+			mkfsCalls++
+			return []byte("done"), nil
+		},
+	)
+
+	err := wipeAndFormatDevice("/dev/mock")
+	if err == nil {
+		t.Fatal("wipeAndFormatDevice() succeeded, want error")
+	}
+	if wipefsCalls != 1 {
+		t.Errorf("wipefsCalls = %d, want 1 (fast fail on non-busy error)", wipefsCalls)
+	}
+	if mkfsCalls != 0 {
+		t.Errorf("mkfsCalls = %d, want 0 when wipefs fails", mkfsCalls)
+	}
+	if !strings.Contains(err.Error(), "permission denied") {
+		t.Errorf("error = %v, want to mention permission denied", err)
+	}
+}
+
+func TestWipeAndFormatDeviceExceedsMaxAttempts(t *testing.T) {
+	wipefsCalls := 0
+	stubWipeRunners(t,
+		func(name string, args ...string) ([]byte, error) {
+			wipefsCalls++
+			return []byte("wipefs: error: /dev/mock: probing initialization failed: Device or resource busy"), errors.New("exit status 1")
+		},
+		func(name string, args ...string) ([]byte, error) {
+			return []byte("done"), nil
+		},
+	)
+
+	err := wipeAndFormatDevice("/dev/mock")
+	if err == nil {
+		t.Fatal("wipeAndFormatDevice() succeeded, want error after exhausting retries")
+	}
+	if wipefsCalls != wipeMaxAttempts {
+		t.Errorf("wipefsCalls = %d, want %d attempts", wipefsCalls, wipeMaxAttempts)
+	}
+	if !strings.Contains(err.Error(), "busy") {
+		t.Errorf("error = %v, want to mention busy", err)
+	}
+}
+
+func TestWipeAndFormatDeviceMkfsFailure(t *testing.T) {
+	stubWipeRunners(t,
+		func(name string, args ...string) ([]byte, error) {
+			return []byte("/dev/mock: 2 bytes erased"), nil
+		},
+		func(name string, args ...string) ([]byte, error) {
+			return []byte("mkfs.ext4: permission denied"), errors.New("exit status 1")
+		},
+	)
+
+	err := wipeAndFormatDevice("/dev/mock")
+	if err == nil {
+		t.Fatal("wipeAndFormatDevice() succeeded, want mkfs failure error")
+	}
+	if !strings.Contains(err.Error(), "mkfs.ext4 failed") || !strings.Contains(err.Error(), "permission denied") {
+		t.Errorf("error = %v, want mkfs.ext4 failed with permission denied", err)
+	}
+}
+
+func TestWipeAndFormatDeviceMkfsRetriesOnBusy(t *testing.T) {
+	mkfsCalls := 0
+	stubWipeRunners(t,
+		func(name string, args ...string) ([]byte, error) {
+			return []byte("/dev/mock: 2 bytes erased"), nil
+		},
+		func(name string, args ...string) ([]byte, error) {
+			mkfsCalls++
+			if mkfsCalls < 2 {
+				return []byte("/dev/mock is apparently in use by the system; will not make a filesystem here!"), errors.New("exit status 1")
+			}
+			return []byte("done"), nil
+		},
+	)
+
+	if err := wipeAndFormatDevice("/dev/mock"); err != nil {
+		t.Fatalf("wipeAndFormatDevice() error = %v, want nil", err)
+	}
+	if mkfsCalls != 2 {
+		t.Errorf("mkfsCalls = %d, want 2 attempts", mkfsCalls)
+	}
+}
+
+func TestWipeAndFormatDeviceRejectsMountedTree(t *testing.T) {
+	wipefsCalls := 0
+	stubWipeRunners(t,
+		func(name string, args ...string) ([]byte, error) {
+			wipefsCalls++
+			return []byte("done"), nil
+		},
+		func(name string, args ...string) ([]byte, error) {
+			return []byte("done"), nil
+		},
+	)
+	deviceTreeUnmountedChecker = func(string) error {
+		return errors.New("device tree still mounted")
+	}
+
+	err := wipeAndFormatDevice("/dev/mock")
+	if err == nil {
+		t.Fatal("wipeAndFormatDevice() succeeded, want error when device tree is mounted")
+	}
+	if wipefsCalls != 0 {
+		t.Errorf("wipefsCalls = %d, want 0 when device tree is mounted", wipefsCalls)
+	}
+	if !strings.Contains(err.Error(), "device tree still mounted") {
+		t.Errorf("error = %v, want device tree still mounted", err)
+	}
+}
+
+func TestGetAncestorPids(t *testing.T) {
+	ancestors := getAncestorPids()
+	if !ancestors[os.Getpid()] {
+		t.Errorf("ancestors missing self pid %d", os.Getpid())
+	}
+	if ppid := os.Getppid(); ppid > 1 && !ancestors[ppid] {
+		t.Errorf("ancestors missing parent pid %d", ppid)
+	}
+}
+
+func TestTerminateMountProcessesSignalsAndTrimsFlags(t *testing.T) {
+	origFuser := fuserRunner
+	origKiller := processKiller
+	t.Cleanup(func() {
+		fuserRunner = origFuser
+		processKiller = origKiller
+	})
+
+	var killedPids []int
+	var killedSignals []syscall.Signal
+	fuserRunner = func(mountPoint string) ([]byte, error) {
+		// Output with various flags including uppercase F (file open for write) and m (mmap)
+		return []byte("  99999F 88888m "), nil
+	}
+	processKiller = func(pid int, sig syscall.Signal) error {
+		killedPids = append(killedPids, pid)
+		killedSignals = append(killedSignals, sig)
+		return nil
+	}
+
+	if err := terminateMountProcesses("/mock/mount"); err != nil {
+		t.Fatalf("terminateMountProcesses() error = %v, want nil", err)
+	}
+	// First pass sends SIGTERM to 99999 and 88888, second pass sends SIGKILL
+	if len(killedPids) != 4 {
+		t.Errorf("killedPids count = %d, want 4 (2 terms, 2 kills)", len(killedPids))
+	}
+	if killedPids[0] != 99999 || killedPids[1] != 88888 {
+		t.Errorf("killedPids = %v, want 99999 and 88888", killedPids)
+	}
+	if killedSignals[0] != syscall.SIGTERM || killedSignals[2] != syscall.SIGKILL {
+		t.Errorf("killedSignals = %v, want TERM then KILL", killedSignals)
+	}
+}
+
+func TestTerminateMountProcessesRejectsAncestor(t *testing.T) {
+	origFuser := fuserRunner
+	origKiller := processKiller
+	t.Cleanup(func() {
+		fuserRunner = origFuser
+		processKiller = origKiller
+	})
+
+	parentPid := os.Getppid()
+	fuserRunner = func(mountPoint string) ([]byte, error) {
+		return []byte(fmt.Sprintf("  %d  ", parentPid)), nil
+	}
+	processKiller = func(pid int, sig syscall.Signal) error {
+		t.Errorf("processKiller called on ancestor pid %d", pid)
+		return nil
+	}
+
+	err := terminateMountProcesses("/mock/mount")
+	if err == nil {
+		t.Fatal("terminateMountProcesses() succeeded, want error when ancestor is holding mount")
+	}
+	if !strings.Contains(err.Error(), "ancestor process") || !strings.Contains(err.Error(), strconv.Itoa(parentPid)) {
+		t.Errorf("error = %v, want to mention ancestor process %d", err, parentPid)
+	}
+}
+
+func TestFuserFoundNoProcessesDistinguishesExitCodes(t *testing.T) {
+	exitErr := func(code int) error {
+		err := exec.Command("sh", "-c", fmt.Sprintf("exit %d", code)).Run()
+		if err == nil {
+			t.Fatalf("expected sh -c 'exit %d' to fail", code)
+		}
+		return err
+	}
+
+	if !fuserFoundNoProcesses(exitErr(1)) {
+		t.Error("fuserFoundNoProcesses(exit 1) = false, want true (fuser's normal no-match status)")
+	}
+	if fuserFoundNoProcesses(exitErr(2)) {
+		t.Error("fuserFoundNoProcesses(exit 2) = true, want false (real failure)")
+	}
+	if fuserFoundNoProcesses(errors.New("exec: \"fuser\": executable file not found in $PATH")) {
+		t.Error("fuserFoundNoProcesses(non-ExitError) = true, want false")
+	}
+}
+
+func TestTerminateMountProcessesPropagatesRealFuserFailure(t *testing.T) {
+	origFuser := fuserRunner
+	t.Cleanup(func() { fuserRunner = origFuser })
+
+	fuserRunner = func(mountPoint string) ([]byte, error) {
+		return nil, errors.New("exec: \"fuser\": executable file not found in $PATH")
+	}
+
+	err := terminateMountProcesses("/mock/mount")
+	if err == nil {
+		t.Fatal("terminateMountProcesses() succeeded, want error when fuser cannot run")
+	}
+}
+
+func TestTerminateMountProcessesTreatsExitCodeOneAsNoHolders(t *testing.T) {
+	origFuser := fuserRunner
+	origKiller := processKiller
+	t.Cleanup(func() {
+		fuserRunner = origFuser
+		processKiller = origKiller
+	})
+
+	fuserRunner = func(mountPoint string) ([]byte, error) {
+		return nil, exec.Command("sh", "-c", "exit 1").Run()
+	}
+	processKiller = func(pid int, sig syscall.Signal) error {
+		t.Errorf("processKiller called with no holders present")
+		return nil
+	}
+
+	if err := terminateMountProcesses("/mock/mount"); err != nil {
+		t.Fatalf("terminateMountProcesses() error = %v, want nil when fuser reports no holders", err)
+	}
+}
+
+func TestTerminateMountProcessesRestoresWorkingDirectory(t *testing.T) {
+	origFuser := fuserRunner
+	t.Cleanup(func() { fuserRunner = origFuser })
+	fuserRunner = func(mountPoint string) ([]byte, error) { return nil, nil }
+
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("os.Getwd() error = %v", err)
+	}
+	tmpDir := t.TempDir()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("os.Chdir(%q) error = %v", tmpDir, err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldWd) })
+
+	if err := terminateMountProcesses("/mock/mount"); err != nil {
+		t.Fatalf("terminateMountProcesses() error = %v, want nil", err)
+	}
+
+	gotWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("os.Getwd() error = %v", err)
+	}
+	wantWd, err := filepath.EvalSymlinks(tmpDir)
+	if err != nil {
+		t.Fatalf("filepath.EvalSymlinks(%q) error = %v", tmpDir, err)
+	}
+	if gotWd != wantWd {
+		t.Errorf("working directory after terminateMountProcesses = %q, want restored to %q", gotWd, wantWd)
+	}
+}
+
+func TestTerminateMountProcessesSendsSigtermToNewSecondScanHolder(t *testing.T) {
+	origFuser := fuserRunner
+	origKiller := processKiller
+	t.Cleanup(func() {
+		fuserRunner = origFuser
+		processKiller = origKiller
+	})
+
+	call := 0
+	fuserRunner = func(mountPoint string) ([]byte, error) {
+		call++
+		if call == 1 {
+			return []byte(" 11111 "), nil
+		}
+		return []byte(" 11111 22222 "), nil
+	}
+	signalsByPid := map[int][]syscall.Signal{}
+	processKiller = func(pid int, sig syscall.Signal) error {
+		signalsByPid[pid] = append(signalsByPid[pid], sig)
+		return nil
+	}
+
+	if err := terminateMountProcesses("/mock/mount"); err != nil {
+		t.Fatalf("terminateMountProcesses() error = %v, want nil", err)
+	}
+
+	if got := signalsByPid[11111]; len(got) != 2 || got[0] != syscall.SIGTERM || got[1] != syscall.SIGKILL {
+		t.Errorf("signals to survivor pid 11111 = %v, want [SIGTERM SIGKILL]", got)
+	}
+	if got := signalsByPid[22222]; len(got) != 1 || got[0] != syscall.SIGTERM {
+		t.Errorf("signals to newly-seen pid 22222 = %v, want [SIGTERM] only (no immediate SIGKILL)", got)
+	}
+}
+
+func TestWipeAndFormatDeviceMkfsRechecksMountBetweenAttempts(t *testing.T) {
+	mkfsCalls := 0
+	checkerCalls := 0
+	stubWipeRunners(t,
+		func(name string, args ...string) ([]byte, error) {
+			return []byte("/dev/mock: 2 bytes erased"), nil
+		},
+		func(name string, args ...string) ([]byte, error) {
+			mkfsCalls++
+			return []byte("/dev/mock is apparently in use by the system; will not make a filesystem here!"), errors.New("exit status 1")
+		},
+	)
+	deviceTreeUnmountedChecker = func(string) error {
+		checkerCalls++
+		if checkerCalls == 3 {
+			return errors.New("device was remounted")
+		}
+		return nil
+	}
+
+	err := wipeAndFormatDevice("/dev/mock")
+	if err == nil {
+		t.Fatal("wipeAndFormatDevice() succeeded, want error when device is remounted mid-retry")
+	}
+	if !errors.Is(err, errMkfsPhaseFailed) {
+		t.Errorf("error = %v, want errMkfsPhaseFailed", err)
+	}
+	if !strings.Contains(err.Error(), "device was remounted") {
+		t.Errorf("error = %v, want to mention remount", err)
+	}
+	// checkerCalls: 1 for the wipe loop, 1 for the first mkfs attempt (busy), 1 for
+	// the second mkfs attempt (fails here) - mkfs itself is only invoked once.
+	if mkfsCalls != 1 {
+		t.Errorf("mkfsCalls = %d, want 1 (stop retrying once remount detected)", mkfsCalls)
+	}
+}
+
+func TestWipeAndFormatDeviceMkfsFailurePhaseMarker(t *testing.T) {
+	stubWipeRunners(t,
+		func(name string, args ...string) ([]byte, error) {
+			return []byte("/dev/mock: 2 bytes erased"), nil
+		},
+		func(name string, args ...string) ([]byte, error) {
+			return []byte("mkfs.ext4: permission denied"), errors.New("exit status 1")
+		},
+	)
+
+	err := wipeAndFormatDevice("/dev/mock")
+	if err == nil {
+		t.Fatal("wipeAndFormatDevice() succeeded, want mkfs failure error")
+	}
+	if !errors.Is(err, errMkfsPhaseFailed) {
+		t.Errorf("error = %v, want errMkfsPhaseFailed for a post-wipe failure", err)
+	}
+}
+
+func TestWipeAndFormatDeviceWipeFailureHasNoPhaseMarker(t *testing.T) {
+	stubWipeRunners(t,
+		func(name string, args ...string) ([]byte, error) {
+			return []byte("wipefs: error: /dev/mock: permission denied"), errors.New("exit status 1")
+		},
+		func(name string, args ...string) ([]byte, error) {
+			return []byte("done"), nil
+		},
+	)
+
+	err := wipeAndFormatDevice("/dev/mock")
+	if err == nil {
+		t.Fatal("wipeAndFormatDevice() succeeded, want wipefs failure error")
+	}
+	if errors.Is(err, errMkfsPhaseFailed) {
+		t.Errorf("error = %v, want no errMkfsPhaseFailed marker for a wipe-phase failure (disk still intact)", err)
 	}
 }
