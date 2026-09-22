@@ -10,10 +10,14 @@ import (
 
 // includeTasks accepts both the plain-scalar form (`include_tasks: foo.yaml`)
 // and the mapping form needed to attach `apply:` (`include_tasks: {file:
-// foo.yaml, apply: {tags: [...]}}`) - only the target file matters to these
-// tests, so both decode down to that.
+// foo.yaml, apply: {tags: [...]}}`).
 type includeTasks struct {
-	File string
+	File  string
+	Apply includeApply
+}
+
+type includeApply struct {
+	Tags []string `yaml:"tags"`
 }
 
 func (v *includeTasks) UnmarshalYAML(value *yaml.Node) error {
@@ -22,12 +26,14 @@ func (v *includeTasks) UnmarshalYAML(value *yaml.Node) error {
 		return value.Decode(&v.File)
 	case yaml.MappingNode:
 		var m struct {
-			File string `yaml:"file"`
+			File  string       `yaml:"file"`
+			Apply includeApply `yaml:"apply"`
 		}
 		if err := value.Decode(&m); err != nil {
 			return err
 		}
 		v.File = m.File
+		v.Apply = m.Apply
 		return nil
 	default:
 		return fmt.Errorf("include_tasks: unsupported node kind %v", value.Kind)
@@ -38,9 +44,9 @@ type playbookTask struct {
 	Name         string       `yaml:"name"`
 	IncludeTasks includeTasks `yaml:"include_tasks"`
 	When         any          `yaml:"when"`
-	Shell        string `yaml:"shell"`
-	Command      string `yaml:"command"`
-	FailedWhen   any    `yaml:"failed_when"`
+	Shell        string       `yaml:"shell"`
+	Command      string       `yaml:"command"`
+	FailedWhen   any          `yaml:"failed_when"`
 	Blockinfile  struct {
 		Path  string `yaml:"path"`
 		Block string `yaml:"block"`
@@ -81,6 +87,27 @@ func indexOfInclude(tasks []playbookTask, include string) int {
 		}
 	}
 	return -1
+}
+
+type includeOnlyTask struct {
+	Name         string       `yaml:"name"`
+	IncludeTasks includeTasks `yaml:"include_tasks"`
+	Tags         []string     `yaml:"tags"`
+}
+
+func loadIncludes(t *testing.T, path string) []includeOnlyTask {
+	t.Helper()
+
+	raw, err := embeddedPlaybooks.ReadFile("playbooks/" + path)
+	if err != nil {
+		t.Fatalf("read embedded %s: %v", path, err)
+	}
+
+	var tasks []includeOnlyTask
+	if err := yaml.Unmarshal(raw, &tasks); err != nil {
+		t.Fatalf("parse includes from %s: %v", path, err)
+	}
+	return tasks
 }
 
 // The gate is what keeps node_annotator's Job and the storage provisioners from
@@ -371,4 +398,49 @@ func TestCiliumValuesContentIndentationIsPinned(t *testing.T) {
 	if strings.Contains(fmt.Sprint(manifest.When), "absent") {
 		t.Error("cilium_config.yaml must never remove an existing HelmChartConfig")
 	}
+}
+
+func tagList(tags []string) string {
+	return strings.Join(tags, ",")
+}
+
+// include_tasks is dynamic. Tags on the include statement do not reach the
+// inner file unless apply: repeats them, so `bloom cli --tags gpu` used to
+// select the driver includes and then run none of their tasks (EAI-8233).
+// apply is transitive: nested includes inside an applied file need no apply
+// of their own.
+func TestPrepareNodeIncludesApplyTheirTags(t *testing.T) {
+	// system_config.yaml is the one file whose inner blocks carry their own
+	// tags. An apply of the union would make --tags gpu open firewall ports.
+	const exempt = "system_config.yaml"
+
+	for _, task := range loadIncludes(t, "tasks/prepare_node/main.yaml") {
+		include := task.IncludeTasks.File
+		if include == "" {
+			continue
+		}
+		got := task.IncludeTasks.Apply.Tags
+		if include == exempt {
+			if len(got) != 0 {
+				t.Errorf("%s must not use apply: its inner blocks carry their own tags", include)
+			}
+			continue
+		}
+		if tagList(got) != tagList(task.Tags) {
+			t.Errorf("%s has tags %v but apply tags %v; --tags would skip its inner tasks (EAI-8233)", include, task.Tags, got)
+		}
+	}
+}
+
+func TestValidateNodeGPUIncludeAppliesItsTags(t *testing.T) {
+	for _, task := range loadIncludes(t, "tasks/validate_node/main.yaml") {
+		if task.IncludeTasks.File != "../gpu_driver_detect.yaml" {
+			continue
+		}
+		if got := task.IncludeTasks.Apply.Tags; tagList(got) != tagList(task.Tags) {
+			t.Errorf("gpu_driver_detect.yaml has tags %v but apply tags %v; --tags gpu would skip it (EAI-8233)", task.Tags, got)
+		}
+		return
+	}
+	t.Error("validate_node/main.yaml does not include ../gpu_driver_detect.yaml")
 }
