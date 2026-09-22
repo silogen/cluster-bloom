@@ -860,5 +860,4 @@ cd bloom-playbook && ansible-playbook cluster-bloom.yaml
 ## See Also
 
 - [PRD](PRD.md) - Product overview and requirements
-- [Technical Architecture](technical-architecture.md) - Technical architecture
 - [Installation Guide](installation-guide.md) - Installation procedures

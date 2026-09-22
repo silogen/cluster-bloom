@@ -73,26 +73,6 @@ can cause.
 `executor_other.go` stub), and so does the disk-safety code. Builds for other
 systems compile but refuse to deploy.
 
-## Conventions
-
-Write all documentation, commit messages and plan files using
-ASD-STE100 Simplified Technical English.
-
-Use conventional commits: feat, docs, fix, chore. After the type, start the
-description with a capitalized verb in present tense, for example
-"feat: Remove something from somewhere" or "fix: Prevent X from doing Y".
-Keep the title at 72 characters or less, and each body line at 80 or less.
-A commit that changes only tests is a chore. For a breaking change, append
-"!" to the type, such as "feat!" or "fix!", and start the body with the
-paragraph "BREAKING CHANGE: <what breaks and why>".
-
-Title each pull request "EAI-NNNN Verb ...".
-EAI-NNNN is the Jira ticket number, and the word after it is a verb with a
-capital first letter. Ask me for the ticket number if you do not have it.
-
-Ensure when adding or removing features that the docs/PRD.md and the
-docs/installation-guide.md are aligned and updated to match implementation.
-
 ### Config is schema-driven
 
 `pkg/config/bloom.yaml.schema.yaml` is the single source of truth for every
@@ -115,6 +95,12 @@ field in `docs/configuration-reference.md`.
 The validator rejects unknown keys in `bloom.yaml`, so the Go layer injects the
 internal Ansible vars (`bloom_run_id`, `RKE2_PRESERVE_EXISTING`, `PAUSE_K3S`,
 `bloom_config_file`) after validation.
+
+`DISABLED_STEPS` and `ENABLED_STEPS` are in the schema, with a mutual-exclusion
+constraint. The playbooks and the Go code never read them. A user can set one,
+`bloom --help` lists it, validation accepts it, and nothing happens. Wire them
+up or remove them from the schema and from `README.md`, but do not assume they
+work.
 
 ### Playbook tags are the public interface
 
@@ -157,13 +143,46 @@ wipes anything. Preflight canonicalizes the device aliases (`UUID=`,
 original spelling, so a stable reference still works if the kernel renumbers
 the devices. `bloom cleanup --preflight-only` validates and changes nothing.
 
-## Stale documentation
+### Secrets
 
-`CODE_STYLE.md` and `docs/technical-architecture.md` describe the architecture
-before the Ansible refactor, with viper, logrus, a Bubble Tea TUI, a
-`pkg/steps.go` and a web wizard. Those files, packages and dependencies are
-gone. Trust the code and `README.md` instead. Treat those two documents as
-history unless you are updating them.
+`JOIN_TOKEN`, `DOCKERHUB_TOKEN` and the TLS key paths travel from `bloom.yaml`
+through `ConfigToAnsibleVars` into the `ansible-playbook` argv. The Go layer
+prints neither the argv nor the config, so nothing leaks from it. Keep it that
+way.
 
-One rule from `CODE_STYLE.md` still holds. Every new Go file gets the Apache
-2.0 AMD copyright header.
+On the Ansible side, put `no_log: true` on any task that reads or writes a
+secret. The playbooks already do this in 17 places, for example in
+`tasks/deploy_clusterforge/bootstrap_openbao.yaml`. Write a file that holds
+credentials with mode `0600`, as `/etc/rancher/rke2/registries.yaml` does.
+
+## Conventions
+
+Write all documentation, commit messages and plan files using
+ASD-STE100 Simplified Technical English.
+
+Use conventional commits: feat, docs, fix, chore. After the type, start the
+description with a capitalized verb in present tense, for example
+"feat: Remove something from somewhere" or "fix: Prevent X from doing Y".
+Keep the title at 72 characters or less, and each body line at 80 or less.
+A commit that changes only tests is a chore. For a breaking change, append
+"!" to the type, such as "feat!" or "fix!", and start the body with the
+paragraph "BREAKING CHANGE: <what breaks and why>".
+
+Title each pull request "EAI-NNNN Verb ...".
+EAI-NNNN is the Jira ticket number, and the word after it is a verb with a
+capital first letter. Ask me for the ticket number if you do not have it.
+
+Ensure when adding or removing features that the docs/PRD.md and the
+docs/installation-guide.md are aligned and updated to match implementation.
+
+## Go conventions
+
+Every new Go file gets the Apache 2.0 AMD copyright header. Copy it from any
+existing file, for example `main.go`.
+
+Group the imports in three blocks: the standard library, then third-party
+packages, then `github.com/silogen/cluster-bloom/...`. `gofmt` does not enforce
+this order.
+
+Wrap an error with context and `%w` when you return it, for example
+`fmt.Errorf("extract playbooks: %w", err)`.

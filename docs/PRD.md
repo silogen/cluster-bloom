@@ -183,8 +183,6 @@ Automatic display of access credentials for deployed ClusterForge components inc
 
 ClusterBloom uses a modular architecture with command-based interfaces and sequential installation pipelines. The system executes in three phases: pre-Kubernetes system preparation, Kubernetes cluster setup, and post-Kubernetes add-on deployment.
 
-**[📄 Technical Architecture Documentation](./technical-architecture.md)**
-
 **[📄 Configuration Reference](./configuration-reference.md)**
 
 ## User Experience
@@ -365,9 +363,6 @@ Complete manual installation procedures for understanding automation or performi
 
 **[📄 Configuration Reference](./configuration-reference.md)**  
 Comprehensive configuration variable reference with examples and validation rules.
-
-**[📄 Technical Architecture](./technical-architecture.md)**  
-Detailed technical architecture, component organization, and implementation patterns.
 
 ## Conclusion
 

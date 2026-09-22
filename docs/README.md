@@ -25,7 +25,6 @@ This documentation provides complete guidance for deploying, configuring, and ma
 - [**Certificate Management**](certificate-management.md) - TLS/SSL certificate handling and automation
 - [**TLS SAN Configuration**](tls-san-configuration.md) - Additional domain names for API server certificates
 - [**Terminal UI**](terminal-ui.md) - Interactive command-line interface and user experience
-- [**Technical Architecture**](technical-architecture.md) - System design, component interactions, and architectural decisions
 
 ### Operations and Maintenance
 - [**Installation Guide**](installation-guide.md) - Complete step-by-step installation procedures
@@ -41,7 +40,6 @@ This documentation provides complete guidance for deploying, configuring, and ma
 3. Reference the [Configuration Reference](configuration-reference.md) for supported options
 
 ### For System Administrators
-- [Technical Architecture](technical-architecture.md) - Understand system design
 - [Storage Management](storage-management.md) + [Longhorn Drive Setup and Recovery](longhorn-drive-setup-and-recovery.md) - Complete storage configuration
 - [Configuration Reference](configuration-reference.md) - Detailed parameter documentation
 
@@ -74,7 +72,6 @@ This documentation is maintained as part of the Cluster-Bloom project. For updat
 
 For questions about the documentation or Cluster-Bloom platform:
 - Reference the [Configuration Reference](configuration-reference.md) for parameter details
-- Check [Technical Architecture](technical-architecture.md) for design questions
 - Use the [Installation Guide](installation-guide.md) for operational procedures
 
 ---

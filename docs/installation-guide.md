@@ -614,5 +614,4 @@ ClusterBloom automates all of the above steps and provides:
 8. **Multi-node Coordination**: Automatic generation of join commands
 10. **Best Practices**: Built-in configurations following Kubernetes best practices
 
-See the [PRD](PRD.md) for product requirements and
-[Technical Architecture](technical-architecture.md) for implementation details.
+See the [PRD](PRD.md) for product requirements.
