@@ -754,6 +754,9 @@ sudo ./bloom cli bloom.yaml --dry-run
 # Run specific tags only
 sudo ./bloom cli bloom.yaml --tags "validate_node,prep_node"
 
+# Install or reconcile the AMD DKMS driver only (no cluster deploy)
+sudo ./bloom cli bloom.yaml --tags gpu
+
 # Two-part deployment — deploy infrastructure first, then ClusterForge
 # Part 1: set CLUSTERFORGE_RELEASE: none in bloom.yaml and run the full deployment
 sudo ./bloom cli bloom.yaml
