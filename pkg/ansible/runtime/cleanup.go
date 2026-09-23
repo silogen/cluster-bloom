@@ -779,11 +779,16 @@ var (
 // explicitly excluding the current process (bloom) and all its ancestors to avoid self-termination.
 // Returns an error if an ancestor process is holding the mount point, preventing partial cleanup.
 func terminateMountProcesses(mountPoint string) error {
-	// Ensure our own working directory is not on the mount point being cleaned,
-	// restoring it afterward so we don't permanently relocate the process cwd.
-	if oldWd, err := os.Getwd(); err == nil {
-		_ = os.Chdir("/")
-		defer func() { _ = os.Chdir(oldWd) }()
+	workingDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("read working directory before cleaning %s: %w", mountPoint, err)
+	}
+	if pathUnder(workingDir, mountPoint) {
+		// Stay outside the mount. Restoring this directory before the caller
+		// unmounts would keep the detached filesystem busy.
+		if err := os.Chdir("/"); err != nil {
+			return fmt.Errorf("change working directory before cleaning %s: %w", mountPoint, err)
+		}
 	}
 
 	out, err := fuserRunner(mountPoint)
@@ -853,6 +858,8 @@ var (
 	wipeRetryDelay             = 500 * time.Millisecond
 	wipefsRunner               = runProtectedCommand
 	mkfsRunner                 = runProtectedCommand
+	wipeDeviceResolver         = resolveBlockDevice
+	safeToWipeChecker          = assertSafeToWipe
 	deviceTreeUnmountedChecker = assertDeviceTreeUnmounted
 )
 
@@ -865,33 +872,49 @@ var errMkfsPhaseFailed = errors.New("mkfs phase")
 // wipeAndFormatDevice wipes filesystem signatures using wipefs (retrying if the device is busy)
 // and creates a fresh ext4 filesystem.
 func wipeAndFormatDevice(devicePath string) error {
+	canonical, deviceID, err := wipeDeviceResolver(devicePath)
+	if err != nil {
+		return err
+	}
+	verifyTarget := func() error {
+		currentCanonical, currentID, err := wipeDeviceResolver(canonical)
+		if err != nil {
+			return err
+		}
+		if currentID != deviceID {
+			return fmt.Errorf("refusing to wipe %s: block device identity changed", canonical)
+		}
+		if err := safeToWipeChecker(currentCanonical); err != nil {
+			return err
+		}
+		return deviceTreeUnmountedChecker(currentCanonical)
+	}
+
 	var wipeErr error
 	var wipeOut []byte
-
 	for attempt := 1; attempt <= wipeMaxAttempts; attempt++ {
-		// Re-verify the device is not mounted before destructive wipe attempt
-		if err := deviceTreeUnmountedChecker(devicePath); err != nil {
+		if err := verifyTarget(); err != nil {
 			return err
 		}
 
-		wipeOut, wipeErr = wipefsRunner("wipefs", "-a", devicePath)
+		wipeOut, wipeErr = wipefsRunner("wipefs", "-a", canonical)
 		if wipeErr == nil {
 			break
 		}
 		outStr := strings.TrimSpace(string(wipeOut))
 		isBusy := strings.Contains(strings.ToLower(outStr), "busy") || strings.Contains(strings.ToLower(wipeErr.Error()), "busy")
 		if !isBusy {
-			return fmt.Errorf("wipefs failed on %s: %w (%s)", devicePath, wipeErr, outStr)
+			return fmt.Errorf("wipefs failed on %s: %w (%s)", canonical, wipeErr, outStr)
 		}
 		if attempt == 1 {
-			fmt.Printf("      ⏳ Device %s is busy, waiting for kernel release...\n", devicePath)
+			fmt.Printf("      ⏳ Device %s is busy, waiting for kernel release...\n", canonical)
 		}
 		if attempt < wipeMaxAttempts {
 			time.Sleep(wipeRetryDelay)
 		}
 	}
 	if wipeErr != nil {
-		return fmt.Errorf("wipefs failed on %s: %w (%s)", devicePath, wipeErr, strings.TrimSpace(string(wipeOut)))
+		return fmt.Errorf("wipefs failed on %s: %w (%s)", canonical, wipeErr, strings.TrimSpace(string(wipeOut)))
 	}
 
 	// Settle udev events triggered by wipefs before formatting
@@ -900,12 +923,11 @@ func wipeAndFormatDevice(devicePath string) error {
 	var mkfsErr error
 	var mkfsOut []byte
 	for attempt := 1; attempt <= wipeMaxAttempts; attempt++ {
-		// Re-verify the device is not mounted before destructive format attempt
-		if err := deviceTreeUnmountedChecker(devicePath); err != nil {
+		if err := verifyTarget(); err != nil {
 			return fmt.Errorf("%w: %w", errMkfsPhaseFailed, err)
 		}
 
-		mkfsOut, mkfsErr = mkfsRunner("mkfs.ext4", "-F", devicePath)
+		mkfsOut, mkfsErr = mkfsRunner("mkfs.ext4", "-F", canonical)
 		if mkfsErr == nil {
 			break
 		}
@@ -913,14 +935,14 @@ func wipeAndFormatDevice(devicePath string) error {
 		lower := strings.ToLower(outStr)
 		isBusy := strings.Contains(lower, "busy") || strings.Contains(lower, "in use") || strings.Contains(strings.ToLower(mkfsErr.Error()), "busy")
 		if !isBusy {
-			return fmt.Errorf("mkfs.ext4 failed on %s: %w (%s): %w", devicePath, mkfsErr, outStr, errMkfsPhaseFailed)
+			return fmt.Errorf("mkfs.ext4 failed on %s: %w (%s): %w", canonical, mkfsErr, outStr, errMkfsPhaseFailed)
 		}
 		if attempt < wipeMaxAttempts {
 			time.Sleep(wipeRetryDelay)
 		}
 	}
 	if mkfsErr != nil {
-		return fmt.Errorf("mkfs.ext4 failed on %s: %w (%s): %w", devicePath, mkfsErr, strings.TrimSpace(string(mkfsOut)), errMkfsPhaseFailed)
+		return fmt.Errorf("mkfs.ext4 failed on %s: %w (%s): %w", canonical, mkfsErr, strings.TrimSpace(string(mkfsOut)), errMkfsPhaseFailed)
 	}
 	return nil
 }

@@ -389,16 +389,24 @@ func stubWipeRunners(t *testing.T, wipefs, mkfs func(string, ...string) ([]byte,
 	origMkfs := mkfsRunner
 	origAttempts := wipeMaxAttempts
 	origDelay := wipeRetryDelay
-	origChecker := deviceTreeUnmountedChecker
+	origResolver := wipeDeviceResolver
+	origSafeChecker := safeToWipeChecker
+	origUnmountedChecker := deviceTreeUnmountedChecker
 	t.Cleanup(func() {
 		wipefsRunner = origWipefs
 		mkfsRunner = origMkfs
 		wipeMaxAttempts = origAttempts
 		wipeRetryDelay = origDelay
-		deviceTreeUnmountedChecker = origChecker
+		wipeDeviceResolver = origResolver
+		safeToWipeChecker = origSafeChecker
+		deviceTreeUnmountedChecker = origUnmountedChecker
 	})
 	wipefsRunner = wipefs
 	mkfsRunner = mkfs
+	wipeDeviceResolver = func(path string) (string, blockDeviceID, error) {
+		return path, blockDeviceID(1), nil
+	}
+	safeToWipeChecker = func(string) error { return nil }
 	deviceTreeUnmountedChecker = func(string) error { return nil }
 	wipeRetryDelay = time.Millisecond
 	wipeMaxAttempts = 5
@@ -706,7 +714,7 @@ func TestTerminateMountProcessesTreatsExitCodeOneAsNoHolders(t *testing.T) {
 	}
 }
 
-func TestTerminateMountProcessesRestoresWorkingDirectory(t *testing.T) {
+func TestTerminateMountProcessesLeavesUnrelatedWorkingDirectory(t *testing.T) {
 	origFuser := fuserRunner
 	t.Cleanup(func() { fuserRunner = origFuser })
 	fuserRunner = func(mountPoint string) ([]byte, error) { return nil, nil }
@@ -734,7 +742,38 @@ func TestTerminateMountProcessesRestoresWorkingDirectory(t *testing.T) {
 		t.Fatalf("filepath.EvalSymlinks(%q) error = %v", tmpDir, err)
 	}
 	if gotWd != wantWd {
-		t.Errorf("working directory after terminateMountProcesses = %q, want restored to %q", gotWd, wantWd)
+		t.Errorf("working directory after terminateMountProcesses = %q, want %q", gotWd, wantWd)
+	}
+}
+
+func TestTerminateMountProcessesMovesWorkingDirectoryOutsideMount(t *testing.T) {
+	origFuser := fuserRunner
+	t.Cleanup(func() { fuserRunner = origFuser })
+	fuserRunner = func(mountPoint string) ([]byte, error) { return nil, nil }
+
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("os.Getwd() error = %v", err)
+	}
+	mountPoint := t.TempDir()
+	workingDir := filepath.Join(mountPoint, "nested")
+	if err := os.Mkdir(workingDir, 0755); err != nil {
+		t.Fatalf("os.Mkdir(%q) error = %v", workingDir, err)
+	}
+	if err := os.Chdir(workingDir); err != nil {
+		t.Fatalf("os.Chdir(%q) error = %v", workingDir, err)
+	}
+	defer func() { _ = os.Chdir(oldWd) }()
+
+	if err := terminateMountProcesses(mountPoint); err != nil {
+		t.Fatalf("terminateMountProcesses() error = %v, want nil", err)
+	}
+	gotWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("os.Getwd() error = %v", err)
+	}
+	if gotWd != "/" {
+		t.Errorf("working directory after terminateMountProcesses = %q, want /", gotWd)
 	}
 }
 
@@ -844,5 +883,124 @@ func TestWipeAndFormatDeviceWipeFailureHasNoPhaseMarker(t *testing.T) {
 	}
 	if errors.Is(err, errMkfsPhaseFailed) {
 		t.Errorf("error = %v, want no errMkfsPhaseFailed marker for a wipe-phase failure (disk still intact)", err)
+	}
+}
+
+func TestWipeAndFormatDeviceUsesCanonicalPath(t *testing.T) {
+	var commands []string
+	stubWipeRunners(t,
+		func(name string, args ...string) ([]byte, error) {
+			commands = append(commands, name+" "+strings.Join(args, " "))
+			return nil, nil
+		},
+		func(name string, args ...string) ([]byte, error) {
+			commands = append(commands, name+" "+strings.Join(args, " "))
+			return nil, nil
+		},
+	)
+	wipeDeviceResolver = func(string) (string, blockDeviceID, error) {
+		return "/dev/sdb", blockDeviceID(2), nil
+	}
+
+	if err := wipeAndFormatDevice("/dev/disk/by-id/mock"); err != nil {
+		t.Fatalf("wipeAndFormatDevice() error = %v, want nil", err)
+	}
+	want := []string{"wipefs -a /dev/sdb", "mkfs.ext4 -F /dev/sdb"}
+	if !slices.Equal(commands, want) {
+		t.Errorf("commands = %v, want %v", commands, want)
+	}
+}
+
+func TestWipeAndFormatDeviceRejectsIdentityChangeBeforeWipeRetry(t *testing.T) {
+	wipefsCalls := 0
+	resolveCalls := 0
+	stubWipeRunners(t,
+		func(name string, args ...string) ([]byte, error) {
+			wipefsCalls++
+			return []byte("Device or resource busy"), errors.New("exit status 1")
+		},
+		func(name string, args ...string) ([]byte, error) {
+			t.Fatal("mkfs called after device identity changed")
+			return nil, nil
+		},
+	)
+	wipeDeviceResolver = func(path string) (string, blockDeviceID, error) {
+		resolveCalls++
+		if resolveCalls >= 3 {
+			return "/dev/sdb", blockDeviceID(3), nil
+		}
+		return "/dev/sdb", blockDeviceID(2), nil
+	}
+
+	err := wipeAndFormatDevice("/dev/disk/by-id/mock")
+	if err == nil || !strings.Contains(err.Error(), "block device identity changed") {
+		t.Fatalf("wipeAndFormatDevice() error = %v, want identity change error", err)
+	}
+	if errors.Is(err, errMkfsPhaseFailed) {
+		t.Errorf("error = %v, want no errMkfsPhaseFailed before wipe succeeds", err)
+	}
+	if wipefsCalls != 1 {
+		t.Errorf("wipefsCalls = %d, want 1", wipefsCalls)
+	}
+}
+
+func TestWipeAndFormatDeviceRejectsIdentityChangeBeforeMkfs(t *testing.T) {
+	mkfsCalls := 0
+	resolveCalls := 0
+	stubWipeRunners(t,
+		func(name string, args ...string) ([]byte, error) {
+			return nil, nil
+		},
+		func(name string, args ...string) ([]byte, error) {
+			mkfsCalls++
+			return nil, nil
+		},
+	)
+	wipeDeviceResolver = func(path string) (string, blockDeviceID, error) {
+		resolveCalls++
+		if resolveCalls >= 3 {
+			return "/dev/sdb", blockDeviceID(3), nil
+		}
+		return "/dev/sdb", blockDeviceID(2), nil
+	}
+
+	err := wipeAndFormatDevice("/dev/disk/by-id/mock")
+	if err == nil || !strings.Contains(err.Error(), "block device identity changed") {
+		t.Fatalf("wipeAndFormatDevice() error = %v, want identity change error", err)
+	}
+	if !errors.Is(err, errMkfsPhaseFailed) {
+		t.Errorf("error = %v, want errMkfsPhaseFailed after wipe succeeds", err)
+	}
+	if mkfsCalls != 0 {
+		t.Errorf("mkfsCalls = %d, want 0", mkfsCalls)
+	}
+}
+
+func TestWipeAndFormatDeviceRechecksSafetyBeforeRetry(t *testing.T) {
+	wipefsCalls := 0
+	safetyCalls := 0
+	stubWipeRunners(t,
+		func(name string, args ...string) ([]byte, error) {
+			wipefsCalls++
+			return []byte("Device or resource busy"), errors.New("exit status 1")
+		},
+		func(name string, args ...string) ([]byte, error) {
+			return nil, nil
+		},
+	)
+	safeToWipeChecker = func(string) error {
+		safetyCalls++
+		if safetyCalls == 2 {
+			return errors.New("device became protected")
+		}
+		return nil
+	}
+
+	err := wipeAndFormatDevice("/dev/mock")
+	if err == nil || !strings.Contains(err.Error(), "device became protected") {
+		t.Fatalf("wipeAndFormatDevice() error = %v, want protected device error", err)
+	}
+	if wipefsCalls != 1 {
+		t.Errorf("wipefsCalls = %d, want 1", wipefsCalls)
 	}
 }
