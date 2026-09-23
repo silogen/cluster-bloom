@@ -182,7 +182,7 @@
         gitea_init_helm_args: "{{ gitea_init_helm_args + ['--values', gpu_stack_family_file.path] }}"
 
 - name: Create disabled apps values file if needed
-  when: DISABLED_APPS | default('') | length > 0
+  when: RESOLVED_DISABLED_APPS | default('') | length > 0
   block:
     - name: Create temp file for disabled apps
       ansible.builtin.tempfile:
@@ -193,7 +193,7 @@
     - name: Write disabled apps to file
       ansible.builtin.copy:
         content: |
-          disabledApps: "{{ DISABLED_APPS }}"
+          disabledApps: "{{ RESOLVED_DISABLED_APPS }}"
         dest: "{{ disabled_apps_file.path }}"
 
     - name: Add disabled apps file to helm args
