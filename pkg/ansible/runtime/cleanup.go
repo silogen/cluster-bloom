@@ -11,8 +11,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"time"
+	"unicode"
 )
 
 // longhornIQNPrefix is the iSCSI target prefix for Longhorn v1 volumes attached via
@@ -460,14 +463,10 @@ func CleanupBloomDisks(clusterDisks string) error {
 			return err
 		}
 
-		if out, err := runProtectedCommand("wipefs", "-a", device); err != nil {
-			return fmt.Errorf("wipefs failed on %s: %w (%s)", device, err, strings.TrimSpace(string(out)))
+		if err := wipeAndFormatDevice(device); err != nil {
+			return err
 		}
-		fmt.Printf("      ✓ Wiped %s\n", device)
-		if out, err := runProtectedCommand("mkfs.ext4", "-F", device); err != nil {
-			return fmt.Errorf("mkfs.ext4 failed on %s: %w (%s)", device, err, strings.TrimSpace(string(out)))
-		}
-		fmt.Printf("      ✓ Formatted %s as ext4\n", device)
+		fmt.Printf("      ✓ Wiped and formatted %s as ext4\n", device)
 	}
 
 	// Remove longhorn plugins directory
@@ -671,6 +670,13 @@ func CleanupRancherDisk(rancherDisk string, explicitlyConfigured bool) error {
 			len(strings.TrimSpace(string(lsofOutput))) > 0 {
 			fmt.Printf("      👀 Processes using /var/lib/rancher:\n%s\n", string(lsofOutput))
 		}
+		// Safely terminate lingering processes holding open files on /var/lib/rancher
+		// before unmounting, preventing detached open file handles from locking the device.
+		// Explicitly excludes bloom itself and its parent process to prevent self-termination.
+		if err := terminateMountProcesses("/var/lib/rancher"); err != nil {
+			return err
+		}
+
 		umountOutput, err := exec.Command("sudo", "umount", "-lf", "/var/lib/rancher").CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("unmount /var/lib/rancher: %w (%s)", err, strings.TrimSpace(string(umountOutput)))
@@ -679,6 +685,9 @@ func CleanupRancherDisk(rancherDisk string, explicitlyConfigured bool) error {
 			return fmt.Errorf("/var/lib/rancher is still mounted after unmount")
 		}
 		fmt.Println("      ✓ Unmounted /var/lib/rancher")
+
+		// Allow kernel to flush pending I/O and udev to settle
+		_ = exec.Command("udevadm", "settle", "--timeout=5").Run()
 	}
 
 	// Re-evaluate system topology immediately before destructive operations.
@@ -710,11 +719,11 @@ func CleanupRancherDisk(rancherDisk string, explicitlyConfigured bool) error {
 	}
 
 	fmt.Printf("      🗑️  Wiping filesystem signatures on %s\n", devicePath)
-	if output, err := runProtectedCommand("wipefs", "-a", devicePath); err != nil {
-		return fmt.Errorf("wipe %s: %w (%s)", devicePath, err, strings.TrimSpace(string(output)))
-	}
-	if output, err := runProtectedCommand("mkfs.ext4", "-F", devicePath); err != nil {
-		return fmt.Errorf("format %s: %w (%s)", devicePath, err, strings.TrimSpace(string(output)))
+	if err := wipeAndFormatDevice(devicePath); err != nil {
+		if errors.Is(err, errMkfsPhaseFailed) {
+			return fmt.Errorf("%w (note: /var/lib/rancher fstab entry was already removed; disk was wiped but reformat failed - filesystem signatures removed, no valid filesystem present)", err)
+		}
+		return fmt.Errorf("%w (note: /var/lib/rancher fstab entry was already removed; disk is intact but no longer mounted at boot)", err)
 	}
 	fmt.Printf("      ✓ Wiped and formatted %s as ext4\n", devicePath)
 
@@ -728,6 +737,213 @@ func CleanupRancherDisk(rancherDisk string, explicitlyConfigured bool) error {
 	}
 
 	fmt.Println("   ✅ RANCHER_DISK cleanup completed")
+	return nil
+}
+
+// getAncestorPids returns process IDs for the current process and all its ancestors up to PID 1.
+func getAncestorPids() map[int]bool {
+	ancestors := map[int]bool{os.Getpid(): true}
+	pid := os.Getppid()
+	for pid > 1 {
+		ancestors[pid] = true
+		data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+		if err != nil {
+			break
+		}
+		statStr := string(data)
+		idx := strings.LastIndexByte(statStr, ')')
+		if idx < 0 || idx+2 >= len(statStr) {
+			break
+		}
+		fields := strings.Fields(statStr[idx+2:])
+		if len(fields) < 2 {
+			break
+		}
+		ppid, err := strconv.Atoi(fields[1])
+		if err != nil || ppid <= 0 || ppid == pid {
+			break
+		}
+		pid = ppid
+	}
+	return ancestors
+}
+
+var (
+	fuserRunner = func(mountPoint string) ([]byte, error) {
+		return exec.Command("fuser", "-m", "-M", mountPoint).Output()
+	}
+	processKiller = syscall.Kill
+)
+
+// terminateMountProcesses safely terminates processes holding open files on mountPoint,
+// explicitly excluding the current process (bloom) and all its ancestors to avoid self-termination.
+// Returns an error if an ancestor process is holding the mount point, preventing partial cleanup.
+func terminateMountProcesses(mountPoint string) error {
+	workingDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("read working directory before cleaning %s: %w", mountPoint, err)
+	}
+	if pathUnder(workingDir, mountPoint) {
+		// Stay outside the mount. Restoring this directory before the caller
+		// unmounts would keep the detached filesystem busy.
+		if err := os.Chdir("/"); err != nil {
+			return fmt.Errorf("change working directory before cleaning %s: %w", mountPoint, err)
+		}
+	}
+
+	out, err := fuserRunner(mountPoint)
+	if err != nil && !fuserFoundNoProcesses(err) {
+		return fmt.Errorf("fuser %s: %w", mountPoint, err)
+	}
+	ancestors := getAncestorPids()
+
+	pids := make([]int, 0)
+	for _, f := range strings.Fields(string(out)) {
+		f = strings.TrimRightFunc(f, func(r rune) bool { return !unicode.IsDigit(r) })
+		pid, err := strconv.Atoi(f)
+		if err != nil || pid <= 1 {
+			continue
+		}
+		if ancestors[pid] {
+			if pid != os.Getpid() {
+				return fmt.Errorf("cannot clean %s: ancestor process %d (your shell or parent) is using %s; please cd out of %s and retry",
+					mountPoint, pid, mountPoint, mountPoint)
+			}
+			continue
+		}
+		pids = append(pids, pid)
+	}
+	if len(pids) == 0 {
+		return nil
+	}
+	termed := make(map[int]bool, len(pids))
+	for _, pid := range pids {
+		termed[pid] = true
+		_ = processKiller(pid, syscall.SIGTERM)
+	}
+	time.Sleep(200 * time.Millisecond)
+
+	// Second pass: SIGKILL survivors that were already SIGTERM'd; any new
+	// holder that showed up only in this scan gets SIGTERM first instead.
+	outKill, err := fuserRunner(mountPoint)
+	if err != nil && !fuserFoundNoProcesses(err) {
+		return fmt.Errorf("fuser %s: %w", mountPoint, err)
+	}
+	for _, f := range strings.Fields(string(outKill)) {
+		f = strings.TrimRightFunc(f, func(r rune) bool { return !unicode.IsDigit(r) })
+		pid, err := strconv.Atoi(f)
+		if err != nil || pid <= 1 || ancestors[pid] {
+			continue
+		}
+		if termed[pid] {
+			_ = processKiller(pid, syscall.SIGKILL)
+		} else {
+			_ = processKiller(pid, syscall.SIGTERM)
+		}
+	}
+	time.Sleep(200 * time.Millisecond)
+	return nil
+}
+
+// fuserFoundNoProcesses reports whether err is fuser's normal "no matching
+// processes" exit status (exit code 1), as opposed to a real failure
+// (missing binary, permission denied, etc.).
+func fuserFoundNoProcesses(err error) bool {
+	var exitErr *exec.ExitError
+	return errors.As(err, &exitErr) && exitErr.ExitCode() == 1
+}
+
+var (
+	wipeMaxAttempts            = 20
+	wipeRetryDelay             = 500 * time.Millisecond
+	wipefsRunner               = runProtectedCommand
+	mkfsRunner                 = runProtectedCommand
+	wipeDeviceResolver         = resolveBlockDevice
+	safeToWipeChecker          = assertSafeToWipe
+	deviceTreeUnmountedChecker = assertDeviceTreeUnmounted
+)
+
+// errMkfsPhaseFailed marks a wipeAndFormatDevice failure that happened after
+// wipefs already succeeded, i.e. the device's filesystem signatures are gone
+// even though the error came back non-nil. Callers use this to avoid telling
+// the operator the disk is still "intact" when it has in fact been wiped.
+var errMkfsPhaseFailed = errors.New("mkfs phase")
+
+// wipeAndFormatDevice wipes filesystem signatures using wipefs (retrying if the device is busy)
+// and creates a fresh ext4 filesystem.
+func wipeAndFormatDevice(devicePath string) error {
+	canonical, deviceID, err := wipeDeviceResolver(devicePath)
+	if err != nil {
+		return err
+	}
+	verifyTarget := func() error {
+		currentCanonical, currentID, err := wipeDeviceResolver(canonical)
+		if err != nil {
+			return err
+		}
+		if currentID != deviceID {
+			return fmt.Errorf("refusing to wipe %s: block device identity changed", canonical)
+		}
+		if err := safeToWipeChecker(currentCanonical); err != nil {
+			return err
+		}
+		return deviceTreeUnmountedChecker(currentCanonical)
+	}
+
+	var wipeErr error
+	var wipeOut []byte
+	for attempt := 1; attempt <= wipeMaxAttempts; attempt++ {
+		if err := verifyTarget(); err != nil {
+			return err
+		}
+
+		wipeOut, wipeErr = wipefsRunner("wipefs", "-a", canonical)
+		if wipeErr == nil {
+			break
+		}
+		outStr := strings.TrimSpace(string(wipeOut))
+		isBusy := strings.Contains(strings.ToLower(outStr), "busy") || strings.Contains(strings.ToLower(wipeErr.Error()), "busy")
+		if !isBusy {
+			return fmt.Errorf("wipefs failed on %s: %w (%s)", canonical, wipeErr, outStr)
+		}
+		if attempt == 1 {
+			fmt.Printf("      ⏳ Device %s is busy, waiting for kernel release...\n", canonical)
+		}
+		if attempt < wipeMaxAttempts {
+			time.Sleep(wipeRetryDelay)
+		}
+	}
+	if wipeErr != nil {
+		return fmt.Errorf("wipefs failed on %s: %w (%s)", canonical, wipeErr, strings.TrimSpace(string(wipeOut)))
+	}
+
+	// Settle udev events triggered by wipefs before formatting
+	_ = exec.Command("udevadm", "settle", "--timeout=5").Run()
+
+	var mkfsErr error
+	var mkfsOut []byte
+	for attempt := 1; attempt <= wipeMaxAttempts; attempt++ {
+		if err := verifyTarget(); err != nil {
+			return fmt.Errorf("%w: %w", errMkfsPhaseFailed, err)
+		}
+
+		mkfsOut, mkfsErr = mkfsRunner("mkfs.ext4", "-F", canonical)
+		if mkfsErr == nil {
+			break
+		}
+		outStr := strings.TrimSpace(string(mkfsOut))
+		lower := strings.ToLower(outStr)
+		isBusy := strings.Contains(lower, "busy") || strings.Contains(lower, "in use") || strings.Contains(strings.ToLower(mkfsErr.Error()), "busy")
+		if !isBusy {
+			return fmt.Errorf("mkfs.ext4 failed on %s: %w (%s): %w", canonical, mkfsErr, outStr, errMkfsPhaseFailed)
+		}
+		if attempt < wipeMaxAttempts {
+			time.Sleep(wipeRetryDelay)
+		}
+	}
+	if mkfsErr != nil {
+		return fmt.Errorf("mkfs.ext4 failed on %s: %w (%s): %w", canonical, mkfsErr, strings.TrimSpace(string(mkfsOut)), errMkfsPhaseFailed)
+	}
 	return nil
 }
 
@@ -1278,6 +1494,9 @@ func unmountPriorLonghornDisks(clusterDisks string) error {
 		}
 		if liveSource != "" {
 			fmt.Printf("      ⏏️  Unmounting bloom-managed mount: %s\n", entry.mountPoint)
+			if err := terminateMountProcesses(entry.mountPoint); err != nil {
+				return err
+			}
 			if output, err := exec.Command("sudo", "umount", "-lf", entry.mountPoint).CombinedOutput(); err != nil {
 				return fmt.Errorf("unmount %s before fstab update: %w (%s)",
 					entry.mountPoint, err, strings.TrimSpace(string(output)))
