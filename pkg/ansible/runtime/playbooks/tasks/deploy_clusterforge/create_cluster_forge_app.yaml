@@ -10,8 +10,8 @@
     helm template cluster-forge "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root" \
       --show-only templates/cluster-forge.yaml \
       --values "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/values.yaml" \
-      {% if size_values_stat.stat.exists %}--values "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/values_{{ CLUSTER_SIZE }}.yaml" {% endif %}\
-      --set global.clusterSize="values_{{ CLUSTER_SIZE }}.yaml" \
+      {% if size_values_stat.stat.exists %}--values "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/{{ cf_values_file }}" {% endif %}\
+      --set global.clusterSize="{{ cf_values_file }}" \
       --set global.domain="{{ DOMAIN }}" \
       --set clusterForge.targetRevision="{{ clusterforge_version }}" \
       --set clusterForge.repoUrl="{{ cf_repo_url }}" \

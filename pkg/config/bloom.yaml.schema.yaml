@@ -49,6 +49,12 @@ schema:
       desc: Size category for cluster deployment planning
       section: "📋 Basic Configuration"
 
+    CLUSTERFORGE_VALUES_FILE:
+      type: valuesFileName
+      default: ""
+      desc: Release-relative ClusterForge values filename. Empty selects the file for CLUSTER_SIZE.
+      section: "⚙️ Advanced Configuration"
+
     AIM_HARDWARE_FAMILY:
       type: hardwareFamilyList
       default: ""
@@ -395,6 +401,24 @@ types:
         - "epyc"                # CPU family, not a GPU stack family
         - "radeon,instinct"     # single-select only, no list
         - "instinct "           # trailing space
+
+  valuesFileName:
+    type: str
+    pattern: ^$|^[A-Za-z0-9_][A-Za-z0-9._-]*\.ya?ml$
+    desc: Plain YAML filename relative to the selected ClusterForge release
+    errorMessage: Enter a plain .yaml or .yml filename without paths or shell characters
+    examples:
+      valid:
+        - ""
+        - "values_core.yaml"
+        - "custom-values.yml"
+      invalid:
+        - ".yaml"
+        - "../values_core.yaml"
+        - "folder/values.yaml"
+        - "/tmp/values.yaml"
+        - "values core.yaml"
+        - "values;touch.yaml"
 
   ipv4:
     type: str

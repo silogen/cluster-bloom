@@ -432,6 +432,30 @@ func TestPrepareNodeIncludesApplyTheirTags(t *testing.T) {
 	}
 }
 
+func TestClusterForgeUsesOneResolvedValuesFilename(t *testing.T) {
+	files := []string{
+		"tasks/deploy_clusterforge/clusterforge_setup.yaml",
+		"tasks/deploy_clusterforge/bootstrap_argocd.yaml",
+		"tasks/deploy_clusterforge/bootstrap_openbao.yaml",
+		"tasks/deploy_clusterforge/bootstrap_gitea.yaml",
+		"tasks/deploy_clusterforge/create_cluster_forge_app.yaml",
+	}
+
+	for _, file := range files {
+		raw, err := embeddedPlaybooks.ReadFile("playbooks/" + file)
+		if err != nil {
+			t.Fatalf("read %s: %v", file, err)
+		}
+		text := string(raw)
+		if strings.Contains(text, "values_{{ CLUSTER_SIZE") {
+			t.Errorf("%s rebuilds a size-specific filename instead of using cf_values_file", file)
+		}
+		if !strings.Contains(text, "cf_values_file") {
+			t.Errorf("%s does not consume cf_values_file", file)
+		}
+	}
+}
+
 func TestValidateNodeGPUIncludeAppliesItsTags(t *testing.T) {
 	for _, task := range loadIncludes(t, "tasks/validate_node/main.yaml") {
 		if task.IncludeTasks.File != "../gpu_driver_detect.yaml" {

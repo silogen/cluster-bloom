@@ -61,10 +61,19 @@
       - "BLOOM_DIR: {{ BLOOM_DIR }}"
       - "clusterforge_version: {{ clusterforge_version }}"
 
-- name: Check if size-specific values file exists
+- name: Resolve ClusterForge values filename
+  ansible.builtin.set_fact:
+    cf_values_file: "{{ CLUSTERFORGE_VALUES_FILE | default('', true) or 'values_' ~ (CLUSTER_SIZE | default('medium')) ~ '.yaml' }}"
+
+- name: Check if ClusterForge values file exists
   ansible.builtin.stat:
-    path: "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/values_{{ CLUSTER_SIZE | default('medium') }}.yaml"
+    path: "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/{{ cf_values_file }}"
   register: size_values_stat
+
+- name: Fail when CLUSTERFORGE_VALUES_FILE is missing from the release
+  ansible.builtin.fail:
+    msg: "{{ cf_values_file }} does not exist in the ClusterForge release root/ directory"
+  when: CLUSTERFORGE_VALUES_FILE | default('') | length > 0 and not size_values_stat.stat.exists
 
 - name: Create namespaces
   ansible.builtin.shell: kubectl create namespace {{ item }} --dry-run=client -o yaml | kubectl apply -f -

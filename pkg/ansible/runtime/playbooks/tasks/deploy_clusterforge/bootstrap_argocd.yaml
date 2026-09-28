@@ -28,14 +28,14 @@
   block:
     - name: Check if ArgoCD section exists in size values
       ansible.builtin.shell: |
-        yq eval '.apps.argocd.valuesObject // ""' "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/values_{{ CLUSTER_SIZE }}.yaml" | grep -q .
+        yq eval '.apps.argocd.valuesObject // ""' "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/{{ cf_values_file }}" | grep -q .
       register: argocd_size_check
       failed_when: false
       changed_when: false
 
     - name: Merge ArgoCD size values
       ansible.builtin.shell: |
-        yq eval '.apps.argocd.valuesObject' "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/values_{{ CLUSTER_SIZE }}.yaml" | \
+        yq eval '.apps.argocd.valuesObject' "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/{{ cf_values_file }}" | \
         yq eval-all 'select(fileIndex == 0) * select(fileIndex == 1)' \
           "{{ argocd_temp_dir.path }}/argocd_bootstrap_values.yaml" - > \
           "{{ argocd_temp_dir.path }}/argocd_bootstrap_values_merged.yaml"

@@ -376,6 +376,14 @@ kubectl create secret tls cluster-tls \
 ```
 
 **Deploy ClusterForge** (Optional):
+
+Set `CLUSTERFORGE_VALUES_FILE` to a plain YAML filename under selected release's
+`root/` directory to choose Forge applications independently of Bloom's
+`CLUSTER_SIZE`. For example, use `CLUSTER_SIZE: large` with
+`CLUSTERFORGE_VALUES_FILE: values_core.yaml` to keep large-cluster infrastructure
+and deploy Forge's core app list. Empty setting selects
+`values_<CLUSTER_SIZE>.yaml`.
+
 ```bash
 # Download ClusterForge release
 wget https://github.com/silogen/cluster-forge/releases/download/deploy/deploy-release.tar.gz

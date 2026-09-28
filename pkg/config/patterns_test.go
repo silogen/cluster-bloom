@@ -97,6 +97,10 @@ func TestGpuStackFamilyPattern(t *testing.T) {
 	testPatternWithExamples(t, "gpuStackFamily")
 }
 
+func TestValuesFileNamePattern(t *testing.T) {
+	testPatternWithExamples(t, "valuesFileName")
+}
+
 func TestIPv4Pattern(t *testing.T) {
 	testPatternWithExamples(t, "ipv4")
 }

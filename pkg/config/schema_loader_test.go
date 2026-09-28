@@ -19,8 +19,8 @@ func TestLoadSchema(t *testing.T) {
 	// GPU_INSTALL_HOST_TOOLS, GPU_DRIVER_VERSION, GPU_DRIVER_BUILD, DISABLED_APPS and
 	// CILIUM_HELM_VALUES)
 
-	if len(args) != 41 {
-		t.Errorf("Expected 41 arguments, got %d", len(args))
+	if len(args) != 42 {
+		t.Errorf("Expected 42 arguments, got %d", len(args))
 	}
 
 	// Verify critical fields are present

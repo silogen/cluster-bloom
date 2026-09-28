@@ -21,14 +21,14 @@
   block:
     - name: Check if OpenBao section exists in size values
       ansible.builtin.shell: |
-        yq eval 'has("apps") and .apps.openbao' "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/values_{{ CLUSTER_SIZE }}.yaml" | grep -q true
+        yq eval 'has("apps") and .apps.openbao' "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/{{ cf_values_file }}" | grep -q true
       register: openbao_size_check
       failed_when: false
       changed_when: false
 
     - name: Extract OpenBao size values
       ansible.builtin.shell: |
-        yq eval '.apps.openbao.valuesObject' "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/values_{{ CLUSTER_SIZE }}.yaml" > "{{ openbao_temp_dir.path }}/openbao_size_values.yaml"
+        yq eval '.apps.openbao.valuesObject' "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/{{ cf_values_file }}" > "{{ openbao_temp_dir.path }}/openbao_size_values.yaml"
       when: openbao_size_check.rc == 0
       changed_when: false
 
@@ -71,7 +71,7 @@
 - name: Extract openbao-config valuesObject from size-specific root values
   ansible.builtin.shell: |
     yq eval '.apps["openbao-config"].valuesObject // {}' \
-      "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/values_{{ CLUSTER_SIZE | default('medium') }}.yaml" > \
+      "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/{{ cf_values_file }}" > \
       "{{ openbao_temp_dir.path }}/openbao_config_size_values.yaml"
   when: size_values_stat.stat.exists
   changed_when: false
