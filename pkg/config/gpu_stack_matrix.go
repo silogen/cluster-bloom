@@ -10,15 +10,15 @@ import "fmt"
 // ROCm itself is neither required nor installed by the driver flow.
 //
 // The OperatorPath pins are unrelated to the host driver: instinct uses the
-// qualified v1.4.1 chart and radeon uses the v1.5.1-beta.0 tech-preview chart,
+// qualified v1.5.1 chart and radeon uses the v1.5.1-beta.0 tech-preview chart,
 // both vendored under cluster-forge sources/amd-gpu-operator. These still
 // drive the (unchanged) GPU Operator + DeviceConfig deploy in cluster-forge.
 const (
 	defaultDriverPackageVersion = "31.40"
 	defaultDriverPackageBuild   = "314000-1"
 
-	instinctOperatorPath       = "amd-gpu-operator/v1.4.1"
-	instinctOperatorConfigPath = "amd-gpu-operator-config/v1.4.1"
+	instinctOperatorPath       = "amd-gpu-operator/v1.5.1"
+	instinctOperatorConfigPath = "amd-gpu-operator-config/v1.5.1"
 	instinctDriverVersion      = "7.0"
 
 	radeonOperatorPath       = "amd-gpu-operator/v1.5.1-beta.0"
