@@ -9,21 +9,16 @@ import "fmt"
 // versions in DriverCompatibility document the release paired with each driver;
 // ROCm itself is neither required nor installed by the driver flow.
 //
-// The OperatorPath pins are unrelated to the host driver: instinct uses the
-// qualified v1.5.1 chart and radeon uses the v1.5.1-beta.0 tech-preview chart,
-// both vendored under cluster-forge sources/amd-gpu-operator. These still
-// drive the (unchanged) GPU Operator + DeviceConfig deploy in cluster-forge.
+// Chart paths for amd-gpu-operator and amd-gpu-operator-config come from the
+// ClusterForge release. root/values.yaml sets the path. root/values_<size>.yaml
+// replaces that path when it sets one. Bloom does not write those paths into
+// cluster-values. GPU_STACK_FAMILY still selects the DeviceConfig driver train.
 const (
 	defaultDriverPackageVersion = "31.40"
 	defaultDriverPackageBuild   = "314000-1"
 
-	instinctOperatorPath       = "amd-gpu-operator/v1.5.1"
-	instinctOperatorConfigPath = "amd-gpu-operator-config/v1.5.1"
-	instinctDriverVersion      = "7.0"
-
-	radeonOperatorPath       = "amd-gpu-operator/v1.5.1-beta.0"
-	radeonOperatorConfigPath = "amd-gpu-operator-config/v1.5.1-beta.0"
-	radeonDriverVersion      = "7.13"
+	instinctDriverVersion = "7.0"
+	radeonDriverVersion   = "7.13"
 )
 
 // DriverCompatibility is an exact, validated driver tuple. Do not replace this
@@ -83,23 +78,21 @@ var supportedGPUDrivers = []DriverCompatibility{
 // minRadeonRocmMajor / minRadeonRocmMinor express the unsupported-combination
 // rule from EAI-6030: Radeon requires the ROCm 7.13 tech-preview
 // GPU-Operator/DeviceConfig train; anything older is too old and must block.
-// This still applies here even though this branch installs no host ROCm,
-// because DeviceConfigDriverVersion still selects the GPU Operator chart.
+// This still applies here even though this branch installs no host ROCm.
+// DeviceConfigDriverVersion is the DeviceConfig driver train, not the chart path.
 const (
 	minRadeonRocmMajor = 7
 	minRadeonRocmMinor = 13
 )
 
 // StackProfile is the resolved per-family GPU stack. DriverPackage* drives the
-// ansible amdgpu-install (driver-only) task; OperatorPath + OperatorConfigPath
-// + DeviceConfigDriverVersion pass through to cluster-forge so the GPU
-// Operator and its DeviceConfig match the same family.
+// ansible amdgpu-install (driver-only) task. DeviceConfigDriverVersion passes
+// through to cluster-forge as the DeviceConfig driver train. The GPU Operator
+// chart path stays in the ClusterForge root values files.
 type StackProfile struct {
 	Family                    string
 	DriverPackageVersion      string
 	DriverPackageBuild        string
-	OperatorPath              string
-	OperatorConfigPath        string
 	DeviceConfigDriverVersion string
 	TechPreview               bool
 }
@@ -115,8 +108,6 @@ func ResolveStackProfile(family string) (StackProfile, error) {
 			Family:                    "instinct",
 			DriverPackageVersion:      defaultDriverPackageVersion,
 			DriverPackageBuild:        defaultDriverPackageBuild,
-			OperatorPath:              instinctOperatorPath,
-			OperatorConfigPath:        instinctOperatorConfigPath,
 			DeviceConfigDriverVersion: instinctDriverVersion,
 			TechPreview:               false,
 		}, nil
@@ -125,8 +116,6 @@ func ResolveStackProfile(family string) (StackProfile, error) {
 			Family:                    "radeon",
 			DriverPackageVersion:      defaultDriverPackageVersion,
 			DriverPackageBuild:        defaultDriverPackageBuild,
-			OperatorPath:              radeonOperatorPath,
-			OperatorConfigPath:        radeonOperatorConfigPath,
 			DeviceConfigDriverVersion: radeonDriverVersion,
 			TechPreview:               true,
 		}
@@ -164,9 +153,8 @@ func ApplyGPUStackVars(cfg Config) error {
 	cfg["gpu_driver_default_version"] = profile.DriverPackageVersion
 	cfg["gpu_driver_default_build"] = profile.DriverPackageBuild
 	cfg["gpu_driver_supported"] = supportedGPUDrivers
-	// Forge-bound selections consumed by the deploy_clusterforge tasks.
-	cfg["gpu_operator_path"] = profile.OperatorPath
-	cfg["gpu_operator_config_path"] = profile.OperatorConfigPath
+	// DeviceConfig driver train only. Chart paths stay in the ClusterForge
+	// root values files, so this layer does not set gpu_operator_path.
 	cfg["gpu_deviceconfig_driver_version"] = profile.DeviceConfigDriverVersion
 	cfg["gpu_stack_family_resolved"] = profile.Family
 	cfg["gpu_stack_tech_preview"] = profile.TechPreview

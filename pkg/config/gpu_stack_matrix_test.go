@@ -40,7 +40,7 @@ func TestResolveStackProfile(t *testing.T) {
 			if profile.TechPreview != tt.wantTP {
 				t.Errorf("techPreview: got %v, want %v", profile.TechPreview, tt.wantTP)
 			}
-			if profile.DriverPackageVersion == "" || profile.OperatorPath == "" || profile.DeviceConfigDriverVersion == "" {
+			if profile.DriverPackageVersion == "" || profile.DeviceConfigDriverVersion == "" {
 				t.Errorf("profile has empty pins: %+v", profile)
 			}
 		})
@@ -58,29 +58,20 @@ func TestInstinctUsesProductionDriverDefault(t *testing.T) {
 	if profile.DriverPackageBuild != "314000-1" {
 		t.Errorf("instinct driver package build: got %q, want 314000-1", profile.DriverPackageBuild)
 	}
-	if profile.OperatorPath != "amd-gpu-operator/v1.5.1" {
-		t.Errorf("instinct operator path: got %q, want amd-gpu-operator/v1.5.1", profile.OperatorPath)
-	}
-	if profile.OperatorConfigPath != "amd-gpu-operator-config/v1.5.1" {
-		t.Errorf("instinct operator config path: got %q, want amd-gpu-operator-config/v1.5.1", profile.OperatorConfigPath)
-	}
 	if profile.DeviceConfigDriverVersion != "7.0" {
 		t.Errorf("instinct DeviceConfig driver: got %q, want 7.0", profile.DeviceConfigDriverVersion)
 	}
 }
 
-func TestRadeonSelectsBetaOperator(t *testing.T) {
-	// Radeon must select the v1.5.1-beta.0 tech-preview chart, while the
-	// instinct default stays on the qualified v1.5.1 chart.
+func TestRadeonSelectsDeviceConfigDriver(t *testing.T) {
+	// Radeon selects the 7.13 DeviceConfig driver train. The chart path stays
+	// in the ClusterForge root values files.
 	profile, err := ResolveStackProfile("radeon")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if profile.OperatorPath != "amd-gpu-operator/v1.5.1-beta.0" {
-		t.Errorf("radeon operator path: got %q, want amd-gpu-operator/v1.5.1-beta.0", profile.OperatorPath)
-	}
-	if profile.OperatorConfigPath != "amd-gpu-operator-config/v1.5.1-beta.0" {
-		t.Errorf("radeon operator config path: got %q, want amd-gpu-operator-config/v1.5.1-beta.0", profile.OperatorConfigPath)
+	if profile.DeviceConfigDriverVersion != "7.13" {
+		t.Errorf("radeon DeviceConfig driver: got %q, want 7.13", profile.DeviceConfigDriverVersion)
 	}
 	if profile.DriverPackageVersion != "31.40" {
 		t.Errorf("radeon driver package version: got %q, want 31.40", profile.DriverPackageVersion)
@@ -118,11 +109,11 @@ func TestApplyGPUStackVars(t *testing.T) {
 	if cfg["gpu_driver_default_build"] != "314000-1" {
 		t.Errorf("gpu_driver_default_build: got %v, want 314000-1", cfg["gpu_driver_default_build"])
 	}
-	if cfg["gpu_operator_path"] != "amd-gpu-operator/v1.5.1" {
-		t.Errorf("gpu_operator_path: got %v", cfg["gpu_operator_path"])
+	if _, ok := cfg["gpu_operator_path"]; ok {
+		t.Errorf("gpu_operator_path must stay unset, got %v", cfg["gpu_operator_path"])
 	}
-	if cfg["gpu_operator_config_path"] != "amd-gpu-operator-config/v1.5.1" {
-		t.Errorf("gpu_operator_config_path: got %v", cfg["gpu_operator_config_path"])
+	if _, ok := cfg["gpu_operator_config_path"]; ok {
+		t.Errorf("gpu_operator_config_path must stay unset, got %v", cfg["gpu_operator_config_path"])
 	}
 	if cfg["gpu_stack_family_resolved"] != "instinct" {
 		t.Errorf("gpu_stack_family_resolved: got %v", cfg["gpu_stack_family_resolved"])
