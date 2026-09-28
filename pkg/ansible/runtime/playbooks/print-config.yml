@@ -73,8 +73,7 @@
             GPU_DRIVER_SKIP_INSTALL: {{ GPU_DRIVER_SKIP_INSTALL | default(false) }}
             GPU_INSTALL_HOST_TOOLS: {{ GPU_INSTALL_HOST_TOOLS | default(true) }}
             amdgpu driver package (no ROCm): {{ GPU_DRIVER_VERSION | default(gpu_driver_default_version) | default('NOT SET') }}.{{ GPU_DRIVER_BUILD | default(gpu_driver_default_build) | default('NOT SET') }}
-            GPU Operator: {{ gpu_operator_path | default('NOT SET') }}
-            GPU Operator config: {{ gpu_operator_config_path | default('NOT SET') }}
+            GPU Operator chart: ClusterForge root/values.yaml, then root/values_<size>.yaml
             DeviceConfig ROCm driver: {{ gpu_deviceconfig_driver_version | default('NOT SET') }}
           {% if gpu_stack_tech_preview | default(false) | bool %}
             ⚠️  TECH PREVIEW: the {{ gpu_stack_family_resolved | default('radeon') }} Enterprise AI stack

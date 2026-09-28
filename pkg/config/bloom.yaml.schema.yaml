@@ -58,7 +58,7 @@ schema:
     GPU_STACK_FAMILY:
       type: gpuStackFamily
       default: ""
-      desc: "GPU family that selects the GPU Operator defaults (radeon | instinct). Host driver policy is shared: retain an exact supported DKMS driver or install production driver 31.40.0. Host ROCm is not required."
+      desc: "GPU family that selects the DeviceConfig driver train (radeon | instinct). The GPU Operator chart path comes from ClusterForge root/values.yaml, then root/values_<size>.yaml. Host driver policy is shared: retain an exact supported DKMS driver or install production driver 31.40.0. Host ROCm is not required."
       section: "📋 Basic Configuration"
 
     # 🔗 Additional Node Configuration
@@ -382,7 +382,7 @@ types:
   gpuStackFamily:
     type: str
     pattern: ^$|^(radeon|instinct)$
-    desc: Single GPU family that drives ROCm + GPU Operator defaults (radeon or instinct)
+    desc: Single GPU family that selects the DeviceConfig driver train (radeon or instinct)
     errorMessage: Enter a single GPU family, either radeon or instinct (lowercase). Empty defaults to instinct.
     examples:
       valid:

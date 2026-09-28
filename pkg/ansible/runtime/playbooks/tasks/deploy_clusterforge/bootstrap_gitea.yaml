@@ -160,6 +160,9 @@
       ansible.builtin.set_fact:
         gitea_init_helm_args: "{{ gitea_init_helm_args + ['--values', aim_hardware_family_file.path] }}"
 
+# Chart paths stay in ClusterForge root/values.yaml and root/values_<size>.yaml.
+# Do not pass gpuOperatorPath or gpuOperatorConfigPath. The gitea-init job
+# writes those keys into cluster-values, and that file is merged last.
 - name: Create GPU stack family values file
   block:
     - name: Create temp file for GPU stack family
@@ -172,8 +175,6 @@
       ansible.builtin.copy:
         content: |
           gpuStackFamily: "{{ gpu_stack_family_resolved }}"
-          gpuOperatorPath: "{{ gpu_operator_path }}"
-          gpuOperatorConfigPath: "{{ gpu_operator_config_path }}"
           gpuDeviceConfigDriverVersion: "{{ gpu_deviceconfig_driver_version }}"
         dest: "{{ gpu_stack_family_file.path }}"
 
