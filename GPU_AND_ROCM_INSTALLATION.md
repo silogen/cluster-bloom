@@ -63,9 +63,10 @@ Both values must be set together and match an installer pair in the
 
 ### `GPU_STACK_FAMILY`
 
-Selects the ClusterForge AMD GPU Operator and DeviceConfig profile. It does not
-select or install host ROCm. Empty resolves to `instinct`; `radeon` selects the
-tech-preview operator profile.
+Selects the DeviceConfig driver train. The GPU Operator chart path comes from
+ClusterForge `root/values.yaml`, then `root/values_<size>.yaml` when that file
+sets a path. It does not install host ROCm. Empty resolves to `instinct`.
+`radeon` selects DeviceConfig driver train `7.13`.
 
 ## Verification
 

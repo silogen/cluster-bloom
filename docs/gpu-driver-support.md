@@ -183,9 +183,9 @@ validation of the driver actually installed on the host remain in Ansible
 because they require access to package, DKMS, kernel-module, and ROCm state on
 the target node.
 
-`GPU_STACK_FAMILY` selects the ClusterForge GPU Operator and DeviceConfig
-profile only. Both families share this host-driver policy and default to driver
-`31.40.0` on fresh nodes.
+`GPU_STACK_FAMILY` selects the DeviceConfig driver train. The GPU Operator
+chart path comes from the ClusterForge root values files. Both families share
+this host-driver policy and default to driver `31.40.0` on fresh nodes.
 
 See the [Configuration Reference](configuration-reference.md) for all GPU
 configuration fields.
