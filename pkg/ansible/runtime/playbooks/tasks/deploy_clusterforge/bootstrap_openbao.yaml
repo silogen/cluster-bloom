@@ -21,14 +21,14 @@
   block:
     - name: Check if OpenBao section exists in size values
       ansible.builtin.shell: |
-        yq eval 'has("apps") and .apps.openbao' "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/{{ cf_values_file }}" | grep -q true
+        yq eval 'has("apps") and .apps.openbao' "{{ cf_values_path }}" | grep -q true
       register: openbao_size_check
       failed_when: false
       changed_when: false
 
     - name: Extract OpenBao size values
       ansible.builtin.shell: |
-        yq eval '.apps.openbao.valuesObject' "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/{{ cf_values_file }}" > "{{ openbao_temp_dir.path }}/openbao_size_values.yaml"
+        yq eval '.apps.openbao.valuesObject' "{{ cf_values_path }}" > "{{ openbao_temp_dir.path }}/openbao_size_values.yaml"
       when: openbao_size_check.rc == 0
       changed_when: false
 
@@ -71,7 +71,7 @@
 - name: Extract openbao-config valuesObject from size-specific root values
   ansible.builtin.shell: |
     yq eval '.apps["openbao-config"].valuesObject // {}' \
-      "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/{{ cf_values_file }}" > \
+      "{{ cf_values_path }}" > \
       "{{ openbao_temp_dir.path }}/openbao_config_size_values.yaml"
   when: size_values_stat.stat.exists
   changed_when: false
@@ -120,67 +120,69 @@
     kubectl wait --for=condition=complete --timeout=300s job/openbao-init-job -n cf-openbao
   changed_when: false
 
-- name: Pre-seed CNPG user secrets from OpenBao
-  # CNPG's managed-roles reconciler runs once at instance-manager startup.
-  # If the ExternalSecret hasn't synced yet the role gets no password and CNPG
-  # won't retry. Pre-creating these secrets here (after the OpenBao init job)
-  # ensures they exist before ArgoCD ever applies the CNPG Cluster resource.
-  when: not (AIWB_ONLY | default(false) | bool)
-  block:
-    - name: Get OpenBao root token
-      ansible.builtin.shell: |
-        kubectl get secret openbao-keys -n cf-openbao -o jsonpath='{.data.root_token}' | base64 -d
-      register: openbao_root_token
-      changed_when: false
-      no_log: true
+- name: Get OpenBao root token for selected CNPG apps
+  ansible.builtin.shell: |
+    kubectl get secret openbao-keys -n cf-openbao -o jsonpath='{.data.root_token}' | base64 -d
+  register: openbao_root_token
+  changed_when: false
+  no_log: true
+  when: >-
+    'airm-infra-cnpg' in cf_enabled_apps.stdout_lines or
+    'aiwb-infra-cnpg' in cf_enabled_apps.stdout_lines
 
-    - name: Read airm CNPG user password from OpenBao
-      ansible.builtin.shell: |
-        kubectl exec openbao-0 -n cf-openbao -- \
-          env BAO_TOKEN={{ openbao_root_token.stdout | quote }} \
-          bao kv get -field=value secrets/airm-cnpg-user-password
-      register: airm_cnpg_password
-      changed_when: false
-      no_log: true
+- name: Read airm CNPG user password from OpenBao
+  ansible.builtin.shell: |
+    kubectl exec openbao-0 -n cf-openbao -- \
+      env BAO_TOKEN={{ openbao_root_token.stdout | quote }} \
+      bao kv get -field=value secrets/airm-cnpg-user-password
+  register: airm_cnpg_password
+  changed_when: false
+  no_log: true
+  when: "'airm-infra-cnpg' in cf_enabled_apps.stdout_lines"
 
-    - name: Read aiwb CNPG user password from OpenBao
-      ansible.builtin.shell: |
-        kubectl exec openbao-0 -n cf-openbao -- \
-          env BAO_TOKEN={{ openbao_root_token.stdout | quote }} \
-          bao kv get -field=value secrets/aiwb-cnpg-user-password
-      register: aiwb_cnpg_password
-      changed_when: false
-      no_log: true
+- name: Read aiwb CNPG user password from OpenBao
+  ansible.builtin.shell: |
+    kubectl exec openbao-0 -n cf-openbao -- \
+      env BAO_TOKEN={{ openbao_root_token.stdout | quote }} \
+      bao kv get -field=value secrets/aiwb-cnpg-user-password
+  register: aiwb_cnpg_password
+  changed_when: false
+  no_log: true
+  when: "'aiwb-infra-cnpg' in cf_enabled_apps.stdout_lines"
 
-    - name: Create airm namespace for secret pre-seeding
-      ansible.builtin.shell: |
-        kubectl create namespace airm --dry-run=client -o yaml | kubectl apply -f -
-      changed_when: true
+- name: Create airm namespace for secret pre-seeding
+  ansible.builtin.shell: |
+    kubectl create namespace airm --dry-run=client -o yaml | kubectl apply -f -
+  changed_when: true
+  when: "'airm-infra-cnpg' in cf_enabled_apps.stdout_lines"
 
-    - name: Create aiwb namespace for secret pre-seeding
-      ansible.builtin.shell: |
-        kubectl create namespace aiwb --dry-run=client -o yaml | kubectl apply -f -
-      changed_when: true
+- name: Create aiwb namespace for secret pre-seeding
+  ansible.builtin.shell: |
+    kubectl create namespace aiwb --dry-run=client -o yaml | kubectl apply -f -
+  changed_when: true
+  when: "'aiwb-infra-cnpg' in cf_enabled_apps.stdout_lines"
 
-    - name: Pre-create airm-cnpg-user secret
-      ansible.builtin.shell: |
-        kubectl create secret generic airm-cnpg-user \
-          --from-literal=username=airm_user \
-          --from-literal=password={{ airm_cnpg_password.stdout | quote }} \
-          --namespace airm \
-          --dry-run=client -o yaml | kubectl apply -f -
-      changed_when: true
-      no_log: true
+- name: Pre-create airm-cnpg-user secret
+  ansible.builtin.shell: |
+    kubectl create secret generic airm-cnpg-user \
+      --from-literal=username=airm_user \
+      --from-literal=password={{ airm_cnpg_password.stdout | quote }} \
+      --namespace airm \
+      --dry-run=client -o yaml | kubectl apply -f -
+  changed_when: true
+  no_log: true
+  when: "'airm-infra-cnpg' in cf_enabled_apps.stdout_lines"
 
-    - name: Pre-create aiwb-cnpg-user secret
-      ansible.builtin.shell: |
-        kubectl create secret generic aiwb-cnpg-user \
-          --from-literal=username=aiwb_user \
-          --from-literal=password={{ aiwb_cnpg_password.stdout | quote }} \
-          --namespace aiwb \
-          --dry-run=client -o yaml | kubectl apply -f -
-      changed_when: true
-      no_log: true
+- name: Pre-create aiwb-cnpg-user secret
+  ansible.builtin.shell: |
+    kubectl create secret generic aiwb-cnpg-user \
+      --from-literal=username=aiwb_user \
+      --from-literal=password={{ aiwb_cnpg_password.stdout | quote }} \
+      --namespace aiwb \
+      --dry-run=client -o yaml | kubectl apply -f -
+  changed_when: true
+  no_log: true
+  when: "'aiwb-infra-cnpg' in cf_enabled_apps.stdout_lines"
 
 - name: Clean up OpenBao temporary directory
   ansible.builtin.file:

@@ -11,11 +11,13 @@
       --show-only templates/cluster-forge.yaml \
       --values "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/values.yaml" \
       {% if size_values_stat.stat.exists %}--values "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/{{ cf_values_file }}" {% endif %}\
+      {% if cf_apps_values_file | length > 0 %}--values "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/{{ cf_apps_values_file }}" {% endif %}\
       --set global.clusterSize="{{ cf_values_file }}" \
+      --set global.appsValuesFile="{{ cf_apps_values_file }}" \
       --set global.domain="{{ DOMAIN }}" \
       --set clusterForge.targetRevision="{{ clusterforge_version }}" \
       --set clusterForge.repoUrl="{{ cf_repo_url }}" \
-      {% if DISABLED_APPS | default('') | length > 0 %}--set-string disabledApps="{{ DISABLED_APPS | replace(',', '\\,') }}" \
+      {% if _effective_disabled_apps | default('') | length > 0 %}--set-string disabledApps="{{ _effective_disabled_apps | replace(',', '\\,') }}" \
       {% endif %}--set externalValues.enabled={{ enable_external_values }} \
       --set bootstrap.renderSelfReference=true \
       {% if CLUSTER_SIZE != 'small' %}--set externalValues.repoUrl="{{ cf_values_repo_url }}" \

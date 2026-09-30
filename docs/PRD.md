@@ -107,7 +107,7 @@ Rich terminal interface with real-time progress tracking, live log streaming, in
 **[📄 Detailed Documentation](./terminal-ui.md)**
 
 ### Configuration Management
-Flexible configuration system supporting YAML files, environment variables, and CLI flags with comprehensive validation and an interactive wizard for guided setup. `CLUSTERFORGE_VALUES_FILE` selects the ClusterForge values file independently of `CLUSTER_SIZE`.
+Flexible configuration system supporting YAML files, environment variables, and CLI flags with comprehensive validation and an interactive wizard for guided setup. `CLUSTERFORGE_VALUES_FILE` selects an optional ClusterForge app-values overlay independently of `CLUSTER_SIZE`.
 
 **[📄 Configuration Reference](./configuration-reference.md)**
 

@@ -378,11 +378,11 @@ kubectl create secret tls cluster-tls \
 **Deploy ClusterForge** (Optional):
 
 Set `CLUSTERFORGE_VALUES_FILE` to a plain YAML filename under selected release's
-`root/` directory to choose Forge applications independently of Bloom's
-`CLUSTER_SIZE`. For example, use `CLUSTER_SIZE: large` with
-`CLUSTERFORGE_VALUES_FILE: values_core.yaml` to keep large-cluster infrastructure
-and deploy Forge's core app list. Empty setting selects
-`values_<CLUSTER_SIZE>.yaml`.
+`root/` directory to overlay Forge app values independently of Bloom's
+`CLUSTER_SIZE`. Bloom loads `values_<CLUSTER_SIZE>.yaml` first. For example, use
+`CLUSTER_SIZE: large` with `CLUSTERFORGE_VALUES_FILE: values_core.yaml` to keep
+large-cluster infrastructure settings and deploy Forge's core app list. Empty
+setting keeps existing size-file behavior.
 
 ```bash
 # Download ClusterForge release

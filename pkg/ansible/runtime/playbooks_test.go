@@ -45,6 +45,7 @@ type playbookTask struct {
 	IncludeTasks includeTasks `yaml:"include_tasks"`
 	When         any          `yaml:"when"`
 	Shell        string       `yaml:"shell"`
+	AnsibleShell string       `yaml:"ansible.builtin.shell"`
 	Command      string       `yaml:"command"`
 	FailedWhen   any          `yaml:"failed_when"`
 	Blockinfile  struct {
@@ -58,7 +59,8 @@ type playbookTask struct {
 		Content string `yaml:"content"`
 		Dest    string `yaml:"dest"`
 	} `yaml:"copy"`
-	SetFact map[string]string `yaml:"set_fact"`
+	SetFact        map[string]string `yaml:"set_fact"`
+	AnsibleSetFact map[string]string `yaml:"ansible.builtin.set_fact"`
 }
 
 func (t playbookTask) whenText() string {
@@ -432,28 +434,96 @@ func TestPrepareNodeIncludesApplyTheirTags(t *testing.T) {
 	}
 }
 
-func TestClusterForgeUsesOneResolvedValuesFilename(t *testing.T) {
-	files := []string{
-		"tasks/deploy_clusterforge/clusterforge_setup.yaml",
+func TestClusterForgeKeepsSizeAndAppValuesSeparate(t *testing.T) {
+	setup := loadTasks(t, "tasks/deploy_clusterforge/clusterforge_setup.yaml")
+	var resolved bool
+	for _, task := range setup {
+		if task.Name == "Resolve ClusterForge size and app values files" {
+			facts := task.SetFact
+			if len(facts) == 0 {
+				facts = task.AnsibleSetFact
+			}
+			resolved = strings.Contains(facts["cf_values_file"], "CLUSTER_SIZE") &&
+				strings.Contains(facts["cf_apps_values_file"], "CLUSTERFORGE_VALUES_FILE")
+		}
+	}
+	if !resolved {
+		t.Fatal("clusterforge_setup.yaml must resolve size and app values files separately")
+	}
+
+	for _, file := range []string{
 		"tasks/deploy_clusterforge/bootstrap_argocd.yaml",
 		"tasks/deploy_clusterforge/bootstrap_openbao.yaml",
 		"tasks/deploy_clusterforge/bootstrap_gitea.yaml",
-		"tasks/deploy_clusterforge/create_cluster_forge_app.yaml",
+	} {
+		text := string(mustReadEmbedded(t, "playbooks/"+file))
+		if !strings.Contains(text, "cf_values_path") {
+			t.Errorf("%s does not consume merged size and app values", file)
+		}
 	}
 
-	for _, file := range files {
-		raw, err := embeddedPlaybooks.ReadFile("playbooks/" + file)
-		if err != nil {
-			t.Fatalf("read %s: %v", file, err)
-		}
-		text := string(raw)
-		if strings.Contains(text, "values_{{ CLUSTER_SIZE") {
-			t.Errorf("%s rebuilds a size-specific filename instead of using cf_values_file", file)
-		}
-		if !strings.Contains(text, "cf_values_file") {
-			t.Errorf("%s does not consume cf_values_file", file)
+	createApp := string(mustReadEmbedded(t, "playbooks/tasks/deploy_clusterforge/create_cluster_forge_app.yaml"))
+	if !strings.Contains(createApp, `--set global.clusterSize="{{ cf_values_file }}"`) {
+		t.Error("root Application must retain size-derived global.clusterSize")
+	}
+	if !strings.Contains(createApp, `--set global.appsValuesFile="{{ cf_apps_values_file }}"`) {
+		t.Error("root Application must receive separate app overlay selector")
+	}
+}
+
+func mustReadEmbedded(t *testing.T, path string) []byte {
+	t.Helper()
+	raw, err := embeddedPlaybooks.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read embedded %s: %v", path, err)
+	}
+	return raw
+}
+
+func TestOpenBaoPreseedsSecretsOnlyForSelectedApps(t *testing.T) {
+	setup := loadTasks(t, "tasks/deploy_clusterforge/clusterforge_setup.yaml")
+	var resolveApps *playbookTask
+	for i := range setup {
+		if setup[i].Name == "Resolve effective ClusterForge apps" {
+			resolveApps = &setup[i]
+			break
 		}
 	}
+	if resolveApps == nil {
+		t.Fatal("clusterforge_setup.yaml does not resolve effective ClusterForge apps")
+	}
+	appResolutionShell := resolveApps.Shell + resolveApps.AnsibleShell
+	for _, fragment := range []string{"cf_values_path", "_effective_disabled_apps", "case \"$app\" in"} {
+		if !strings.Contains(appResolutionShell, fragment) {
+			t.Errorf("effective app resolution does not account for %q", fragment)
+		}
+	}
+
+	openbao := loadTasks(t, "tasks/deploy_clusterforge/bootstrap_openbao.yaml")
+	for _, app := range []string{"airm-infra-cnpg", "aiwb-infra-cnpg"} {
+		found := 0
+		for _, task := range openbao {
+			if strings.Contains(task.whenText(), app) {
+				found++
+			}
+		}
+		if found < 3 {
+			t.Errorf("%s must gate password read, namespace creation, and secret creation; found %d gated tasks", app, found)
+		}
+	}
+}
+
+func TestAIWBOnlyUsesEffectiveDisabledApps(t *testing.T) {
+	main := loadTasks(t, "tasks/deploy_clusterforge/main.yaml")
+	for _, task := range main {
+		if task.Name == "Build effective disabled apps from AIWB_ONLY flag" {
+			if _, ok := task.SetFact["_effective_disabled_apps"]; !ok {
+				t.Fatal("AIWB_ONLY must derive _effective_disabled_apps, not overwrite DISABLED_APPS extra-var")
+			}
+			return
+		}
+	}
+	t.Fatal("main.yaml does not build effective disabled apps")
 }
 
 func TestValidateNodeGPUIncludeAppliesItsTags(t *testing.T) {

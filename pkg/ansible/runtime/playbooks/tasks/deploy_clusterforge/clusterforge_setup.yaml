@@ -61,19 +61,84 @@
       - "BLOOM_DIR: {{ BLOOM_DIR }}"
       - "clusterforge_version: {{ clusterforge_version }}"
 
-- name: Resolve ClusterForge values filename
+- name: Resolve ClusterForge size and app values files
   ansible.builtin.set_fact:
-    cf_values_file: "{{ CLUSTERFORGE_VALUES_FILE | default('', true) or 'values_' ~ (CLUSTER_SIZE | default('medium')) ~ '.yaml' }}"
+    cf_values_file: "values_{{ CLUSTER_SIZE | default('medium') }}.yaml"
+    cf_apps_values_file: "{{ CLUSTERFORGE_VALUES_FILE | default('', true) }}"
+    cf_values_path: "{{ BLOOM_DIR }}/clusterforge/selected-values.yaml"
 
-- name: Check if ClusterForge values file exists
+- name: Use empty app overlay when it matches size values file
+  ansible.builtin.set_fact:
+    cf_apps_values_file: ""
+  when: cf_apps_values_file == cf_values_file
+
+- name: Check if ClusterForge size values file exists
   ansible.builtin.stat:
     path: "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/{{ cf_values_file }}"
   register: size_values_stat
 
+- name: Check if ClusterForge app values file exists
+  ansible.builtin.stat:
+    path: "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/{{ cf_apps_values_file }}"
+  register: apps_values_stat
+  when: cf_apps_values_file | length > 0
+
 - name: Fail when CLUSTERFORGE_VALUES_FILE is missing from the release
   ansible.builtin.fail:
-    msg: "{{ cf_values_file }} does not exist in the ClusterForge release root/ directory"
-  when: CLUSTERFORGE_VALUES_FILE | default('') | length > 0 and not size_values_stat.stat.exists
+    msg: "{{ cf_apps_values_file }} does not exist in the ClusterForge release root/ directory"
+  when: cf_apps_values_file | length > 0 and not apps_values_stat.stat.exists
+
+- name: Copy base ClusterForge values for bootstrap
+  ansible.builtin.copy:
+    src: "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/values.yaml"
+    dest: "{{ cf_values_path }}"
+    remote_src: true
+
+- name: Merge ClusterForge size values for bootstrap
+  ansible.builtin.shell: |
+    yq eval-all 'select(fileIndex == 0) * select(fileIndex == 1)' \
+      "{{ cf_values_path }}" \
+      "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/{{ cf_values_file }}" > \
+      "{{ cf_values_path }}.tmp"
+    mv "{{ cf_values_path }}.tmp" "{{ cf_values_path }}"
+  when: size_values_stat.stat.exists
+  changed_when: false
+
+- name: Merge ClusterForge app values for bootstrap
+  ansible.builtin.shell: |
+    yq eval-all 'select(fileIndex == 0) * select(fileIndex == 1)' \
+      "{{ cf_values_path }}" \
+      "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/{{ cf_apps_values_file }}" > \
+      "{{ cf_values_path }}.tmp"
+    if yq eval 'has("enabledApps")' \
+      "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/{{ cf_apps_values_file }}" | grep -q true; then
+      yq eval '.enabledApps = load("{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/{{ cf_apps_values_file }}").enabledApps' \
+        -i "{{ cf_values_path }}.tmp"
+    fi
+    mv "{{ cf_values_path }}.tmp" "{{ cf_values_path }}"
+  when: cf_apps_values_file | length > 0
+  changed_when: false
+
+- name: Resolve effective ClusterForge apps
+  ansible.builtin.shell: |
+    set -euo pipefail
+    disabled_apps={{ _effective_disabled_apps | default('') | quote }}
+    IFS=',' read -r -a disabled_patterns <<< "$disabled_apps"
+    enabled_apps=$(yq eval '.enabledApps // [] | .[]' "{{ cf_values_path }}")
+    while IFS= read -r app; do
+      disabled=false
+      for pattern in "${disabled_patterns[@]}"; do
+        [ -z "$pattern" ] && continue
+        case "$app" in
+          $pattern) disabled=true; break ;;
+        esac
+      done
+      [ "$disabled" = false ] && printf '%s\n' "$app"
+    done <<< "$enabled_apps"
+  args:
+    executable: /bin/bash
+  register: cf_enabled_apps
+  changed_when: false
 
 - name: Create namespaces
   ansible.builtin.shell: kubectl create namespace {{ item }} --dry-run=client -o yaml | kubectl apply -f -

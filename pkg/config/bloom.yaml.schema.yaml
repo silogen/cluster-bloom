@@ -52,7 +52,7 @@ schema:
     CLUSTERFORGE_VALUES_FILE:
       type: valuesFileName
       default: ""
-      desc: Release-relative ClusterForge values filename. Empty selects the file for CLUSTER_SIZE.
+      desc: Optional release-relative ClusterForge app-values overlay. Empty selects app values from CLUSTER_SIZE file.
       section: "⚙️ Advanced Configuration"
 
     AIM_HARDWARE_FAMILY:

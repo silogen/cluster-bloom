@@ -278,7 +278,7 @@ verification behavior.
 #### CLUSTERFORGE_VALUES_FILE
 - **Type**: String (YAML filename)
 - **Default**: `""` (empty)
-- **Description**: Selects one plain `.yaml` or `.yml` filename relative to the selected ClusterForge release's `root/` directory. Empty selects `values_<CLUSTER_SIZE>.yaml`. This setting does not change Bloom infrastructure choices.
+- **Description**: Selects an optional plain `.yaml` or `.yml` app-values overlay under the selected ClusterForge release's `root/` directory. Bloom loads `values_<CLUSTER_SIZE>.yaml` first, then this overlay. Empty keeps existing size-file behavior. This setting does not change Bloom infrastructure choices.
 - **Example**: `CLUSTERFORGE_VALUES_FILE: "values_core.yaml"`
 - **Validation**: Paths, traversal, spaces, and shell characters are rejected. An explicit filename must exist in the selected release.
 
