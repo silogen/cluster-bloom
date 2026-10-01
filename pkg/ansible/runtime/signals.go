@@ -71,12 +71,17 @@ var globalCriticalSection = &CriticalSection{
 // InitSignalHandling sets up global signal handling for graceful shutdown
 func InitSignalHandling() {
 	signal.Notify(globalCriticalSection.signalChan, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT)
+	go dispatchSignals(globalCriticalSection.signalChan)
+}
 
-	go func() {
-		for sig := range globalCriticalSection.signalChan {
-			handleSignal(sig)
-		}
-	}()
+// dispatchSignals handles each signal in its own goroutine. The pre-exit hook
+// can block (e.g. on a hung filesystem), and handling signals inline would
+// leave a second Ctrl+C sitting in the channel instead of forcing exit.
+// handleSignal's state is guarded by globalCriticalSection.mu.
+func dispatchSignals(ch <-chan os.Signal) {
+	for sig := range ch {
+		go handleSignal(sig)
+	}
 }
 
 // handleSignal processes received signals

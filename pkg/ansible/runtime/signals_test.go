@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"syscall"
 	"testing"
+	"time"
 )
 
 func resetSignalState(t *testing.T) {
@@ -249,45 +250,31 @@ func TestSecondSignalDuringExitCleanupForcesImmediateExit(t *testing.T) {
 		return nil
 	})
 
-	var (
-		exitCodes []int
-		testMu    sync.Mutex
-		wg        sync.WaitGroup
-	)
-	exitFunc = func(code int) {
-		testMu.Lock()
-		defer testMu.Unlock()
-		exitCodes = append(exitCodes, code)
-	}
+	exitCodes := make(chan int, 2)
+	exitFunc = func(code int) { exitCodes <- code }
+
+	// Deliver signals through a channel, the same way the OS does.
+	sigs := make(chan os.Signal, 1)
+	defer close(sigs)
+	go dispatchSignals(sigs)
 
 	// First signal triggers non-critical exit and runs hook
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		handleSignal(os.Interrupt)
-	}()
-
+	sigs <- os.Interrupt
 	<-hookStarted
 
 	// Second signal lands while hook is blocked
-	handleSignal(syscall.SIGTERM)
+	sigs <- syscall.SIGTERM
 
-	testMu.Lock()
-	count := len(exitCodes)
-	var secondExitCode int
-	if count > 0 {
-		secondExitCode = exitCodes[0]
-	}
-	testMu.Unlock()
-
-	// Release hook to clean up goroutine
-	close(hookBlock)
-	wg.Wait()
-
-	if count == 0 {
+	select {
+	case code := <-exitCodes:
+		if code != 143 {
+			t.Fatalf("force exit code = %d, want 143", code)
+		}
+	case <-time.After(5 * time.Second):
 		t.Fatal("second signal during exit cleanup did not force immediate exit")
 	}
-	if secondExitCode != 143 {
-		t.Fatalf("force exit code = %d, want 143", secondExitCode)
-	}
+
+	// Release hook so the first handler finishes before state is reset
+	close(hookBlock)
+	<-exitCodes
 }
