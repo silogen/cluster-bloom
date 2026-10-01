@@ -2,9 +2,11 @@ package runtime
 
 import (
 	"fmt"
+	"io/fs"
 	"strings"
 	"testing"
 
+	"github.com/silogen/cluster-bloom/pkg/config"
 	"gopkg.in/yaml.v3"
 )
 
@@ -38,9 +40,9 @@ type playbookTask struct {
 	Name         string       `yaml:"name"`
 	IncludeTasks includeTasks `yaml:"include_tasks"`
 	When         any          `yaml:"when"`
-	Shell        string `yaml:"shell"`
-	Command      string `yaml:"command"`
-	FailedWhen   any    `yaml:"failed_when"`
+	Shell        string       `yaml:"shell"`
+	Command      string       `yaml:"command"`
+	FailedWhen   any          `yaml:"failed_when"`
 	Blockinfile  struct {
 		Path  string `yaml:"path"`
 		Block string `yaml:"block"`
@@ -242,6 +244,55 @@ func TestOperatorGateToleratesAPendingReplica(t *testing.T) {
 	// are created into the race the gate was added to prevent.
 	if operator.FailedWhen != nil {
 		t.Errorf("the operator gate must be fatal, got failed_when: %v", operator.FailedWhen)
+	}
+}
+
+// Schema keys are passed to Ansible as extra-vars, which take precedence over set_fact.
+func TestSetFactsDoNotShadowConfig(t *testing.T) {
+	fields, err := config.LoadSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys := make(map[string]bool, len(fields))
+	for _, field := range fields {
+		keys[field.Key] = true
+	}
+
+	err = fs.WalkDir(embeddedPlaybooks, "playbooks", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() || !strings.HasSuffix(path, ".yaml") {
+			return err
+		}
+		raw, err := embeddedPlaybooks.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		var root yaml.Node
+		if err := yaml.Unmarshal(raw, &root); err != nil {
+			return fmt.Errorf("%s: %w", path, err)
+		}
+		var walk func(*yaml.Node)
+		walk = func(node *yaml.Node) {
+			if node.Kind == yaml.MappingNode {
+				for i := 0; i < len(node.Content); i += 2 {
+					if node.Content[i].Value == "set_fact" || node.Content[i].Value == "ansible.builtin.set_fact" {
+						for j := 0; j+1 < len(node.Content[i+1].Content); j += 2 {
+							fact := node.Content[i+1].Content[j]
+							if keys[fact.Value] {
+								t.Errorf("%s:%d: set_fact %s is overridden by config extra-var", path, fact.Line, fact.Value)
+							}
+						}
+					}
+				}
+			}
+			for _, child := range node.Content {
+				walk(child)
+			}
+		}
+		walk(&root)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 
