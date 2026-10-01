@@ -88,16 +88,19 @@
     - longhorn_csinode_check.rc != 0
   tags: [clusterforge, longhorn, deploy_clusterforge]
 
-- name: Build DISABLED_APPS from AIWB_ONLY flag
+- name: Build effective disabled apps list from AIWB_ONLY flag and DISABLED_APPS
   set_fact:
-    DISABLED_APPS: >-
+    RESOLVED_DISABLED_APPS: >-
       {%- set aiwb_disabled = 'airm,airm-infra-cnpg,airm-infra-external-secrets,airm-infra-rabbitmq,kaiwo*,rabbitmq' -%}
-      {%- if DISABLED_APPS | default('') | length > 0 -%}
-        {{ aiwb_disabled }},{{ DISABLED_APPS }}
+      {%- if AIWB_ONLY | default(false) | bool -%}
+        {%- if DISABLED_APPS | default('') | length > 0 -%}
+          {{ aiwb_disabled }},{{ DISABLED_APPS }}
+        {%- else -%}
+          {{ aiwb_disabled }}
+        {%- endif -%}
       {%- else -%}
-        {{ aiwb_disabled }}
+        {{ DISABLED_APPS | default('') }}
       {%- endif -%}
-  when: AIWB_ONLY | default(false) | bool
   tags: [clusterforge, argocd, deploy_clusterforge, deploy_k8s_apps]
 
 - name: Parse ClusterForge Version
