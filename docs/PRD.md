@@ -50,9 +50,7 @@ permission configuration, and Kubernetes GPU resource integration for AI/ML
 workloads. ClusterBloom installs the driver with
 `amdgpu-install --usecase=dkms`; it does not install host ROCm runtime, HIP,
 SDK, or workload libraries. Standalone AMD-SMI diagnostics are installed by
-default and may be disabled independently. ClusterForge deploys AMD GPU
-Operator `v1.5.1` for every hardware family. `GPU_STACK_FAMILY` selects only the DeviceConfig driver
-train.
+default and may be disabled independently.
 
 #### Supported version matrix
 

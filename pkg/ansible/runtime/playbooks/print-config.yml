@@ -79,7 +79,6 @@
           {% if gpu_stack_tech_preview | default(false) | bool %}
             ⚠️  TECH PREVIEW: the {{ gpu_stack_family_resolved | default('radeon') }} DeviceConfig profile
                 for this release is a tech preview, not production qualified.
-                AMD GPU Operator v1.5.1 is used for every hardware family.
           {% endif %}
             Driver policy synopsis:
               Supported existing driver table:

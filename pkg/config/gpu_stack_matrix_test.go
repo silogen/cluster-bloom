@@ -70,8 +70,6 @@ func TestInstinctUsesProductionDriverDefault(t *testing.T) {
 }
 
 func TestRadeonUsesSameOperatorAsInstinct(t *testing.T) {
-	// Every family uses AMD GPU Operator v1.5.1. The family still selects
-	// the DeviceConfig driver train.
 	profile, err := ResolveStackProfile("radeon")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

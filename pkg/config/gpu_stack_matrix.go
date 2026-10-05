@@ -87,10 +87,8 @@ const (
 )
 
 // StackProfile is the resolved per-family GPU stack. DriverPackage* drives the
-// ansible amdgpu-install (driver-only) task. OperatorPath and
-// OperatorConfigPath are amd-gpu-operator v1.5.1 and appear in the install
-// summary. DeviceConfigDriverVersion is passed to Gitea so the DeviceConfig
-// train matches the family.
+// ansible amdgpu-install (driver-only) task. DeviceConfigDriverVersion selects
+// the family train.
 type StackProfile struct {
 	Family                    string
 	DriverPackageVersion      string
@@ -161,9 +159,6 @@ func ApplyGPUStackVars(cfg Config) error {
 	cfg["gpu_driver_default_version"] = profile.DriverPackageVersion
 	cfg["gpu_driver_default_build"] = profile.DriverPackageBuild
 	cfg["gpu_driver_supported"] = supportedGPUDrivers
-	// Operator paths appear in the install summary. ClusterForge pins
-	// amd-gpu-operator v1.5.1. The family and DeviceConfig driver version
-	// go to Gitea so the DeviceConfig train matches the family.
 	cfg["gpu_operator_path"] = profile.OperatorPath
 	cfg["gpu_operator_config_path"] = profile.OperatorConfigPath
 	cfg["gpu_deviceconfig_driver_version"] = profile.DeviceConfigDriverVersion
