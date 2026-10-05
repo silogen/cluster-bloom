@@ -155,7 +155,7 @@ func clusterForgeEndpoints(aiwbOnly bool) []clusterForgeEndpoint {
 // printReadinessScript prints a single copy-pasteable chain of `kubectl wait`
 // commands covering every namespace that needs to be up before the endpoints
 // below are reachable. The airm wait is only included on a full install,
-// since AIWB_ONLY disables the airm app entirely (see DISABLED_APPS in
+// since AIWB_ONLY disables the airm app entirely (see RESOLVED_DISABLED_APPS in
 // deploy_clusterforge/main.yaml).
 func printReadinessScript(aiwbOnly bool) {
 	fmt.Println("  # Wait for envoy-gateway pods to be ready")

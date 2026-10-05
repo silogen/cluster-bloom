@@ -22,7 +22,10 @@
   tags: [validate_node, iptables]
 
 - name: Validate existing AMD GPU driver compatibility
-  include_tasks: ../gpu_driver_detect.yaml
+  include_tasks:
+    file: ../gpu_driver_detect.yaml
+    apply:
+      tags: [validate_node, gpu]
   when:
     - GPU_NODE | default(false) | bool
     - not (GPU_DRIVER_SKIP_INSTALL | default(false) | bool)

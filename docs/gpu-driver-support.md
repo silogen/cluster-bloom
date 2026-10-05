@@ -139,6 +139,17 @@ GPU_INSTALL_HOST_TOOLS: false
 compatibility validation, driver installation, and standalone AMD-SMI, leaving
 the node's GPU stack untouched.
 
+To repair the host driver after a manual ROCm uninstall, or to install DKMS
+alone on an already-deployed GPU node, run:
+
+```bash
+sudo ./bloom cli bloom.yaml --tags gpu
+```
+
+`GPU_NODE` must be `true` and `GPU_DRIVER_SKIP_INSTALL` must be `false`. That
+tag filter does not deploy RKE2 or ClusterForge. Bloom may end the play and
+offer a reboot; rerun the same command afterward.
+
 The fresh-node production default is:
 
 ```yaml

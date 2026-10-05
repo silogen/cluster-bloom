@@ -3,29 +3,53 @@
 # Dependencies: Various - GPU_NODE, NO_DISKS_FOR_CLUSTER, CLUSTER_PREMOUNTED_DISKS, FIX_DNS
 # Usage: Imported by main cluster-bloom.yaml playbook
 # Tags: [prep_node]
+#
+# include_tasks is dynamic: a tags: list on the include statement tags only
+# that statement. Inner tasks are untagged unless apply: is set, so --tags gpu
+# / --tags prep_node would select the include and then skip everything inside
+# (EAI-8233). apply: copies the tags onto every task in the included file,
+# and it is transitive, so nested includes need no apply of their own.
+# system_config.yaml is the exception: its inner tasks already carry distinct
+# system / firewall / gpu tags, and apply of the union would make --tags gpu
+# open firewall ports.
 
 - name: Install Dependent Packages
-  include_tasks: packages.yaml
+  include_tasks:
+    file: packages.yaml
+    apply:
+      tags: [packages, prep_node]
   tags: [packages, prep_node]
 
 - name: Setup Multipath
-  include_tasks: multipath.yaml
+  include_tasks:
+    file: multipath.yaml
+    apply:
+      tags: [storage, prep_node]
   tags: [storage, prep_node]
 
 # EAI-5657: retain an allowlisted amdgpu DKMS driver or install the production
 # driver on a fresh node. Host ROCm is neither required nor installed.
 - name: Reconcile supported GPU driver (no ROCm install)
-  include_tasks: gpu_driver_only.yaml
+  include_tasks:
+    file: gpu_driver_only.yaml
+    apply:
+      tags: [gpu, prep_node]
   when: (GPU_NODE | default(false) | bool) and not (GPU_DRIVER_SKIP_INSTALL | default(false) | bool)
   tags: [gpu, prep_node]
 
 - name: Check for pending reboot after GPU driver install
-  include_tasks: ../reboot_required_check.yaml
+  include_tasks:
+    file: ../reboot_required_check.yaml
+    apply:
+      tags: [gpu, prep_node]
   when: (GPU_NODE | default(false) | bool) and not (GPU_DRIVER_SKIP_INSTALL | default(false) | bool)
   tags: [gpu, prep_node]
 
 - name: Ensure standalone AMD-SMI host diagnostics
-  include_tasks: gpu_host_tools.yaml
+  include_tasks:
+    file: gpu_host_tools.yaml
+    apply:
+      tags: [gpu, prep_node]
   when:
     - GPU_NODE | default(false) | bool
     - not (GPU_DRIVER_SKIP_INSTALL | default(false) | bool)
@@ -33,14 +57,20 @@
   tags: [gpu, prep_node]
 
 - name: Update Modprobe (GPU nodes)
-  include_tasks: gpu_modprobe.yaml
+  include_tasks:
+    file: gpu_modprobe.yaml
+    apply:
+      tags: [gpu, prep_node]
   when:
     - GPU_NODE | default(false) | bool
     - not (GPU_DRIVER_SKIP_INSTALL | default(false) | bool)
   tags: [gpu, prep_node]
 
 - name: Prepare bloom fstab section markers
-  include_tasks: fstab_markers.yaml
+  include_tasks:
+    file: fstab_markers.yaml
+    apply:
+      tags: [storage, prep_node]
   when: >
     not (NO_DISKS_FOR_CLUSTER | default(false) | bool) and
     (
@@ -51,17 +81,26 @@
   tags: [storage, prep_node]
 
 - name: Setup custom rancher storage path
-  include_tasks: rancher_storage.yaml
+  include_tasks:
+    file: rancher_storage.yaml
+    apply:
+      tags: [storage, rancher, prep_node]
   when: RANCHER_DISK is defined and RANCHER_DISK != ""
   tags: [storage, rancher, prep_node]
 
 - name: Prepare Longhorn Disks
-  include_tasks: storage.yaml
+  include_tasks:
+    file: storage.yaml
+    apply:
+      tags: [storage, prep_node]
   when: not (NO_DISKS_FOR_CLUSTER | default(false) | bool)
   tags: [storage, prep_node]
 
 - name: Prepare Premounted Disks Fstab
-  include_tasks: premounted_storage.yaml
+  include_tasks:
+    file: premounted_storage.yaml
+    apply:
+      tags: [storage, prep_node]
   when: not (NO_DISKS_FOR_CLUSTER | default(false) | bool) and (CLUSTER_PREMOUNTED_DISKS | default('') | length) > 0
   tags: [storage, prep_node]
 
@@ -70,15 +109,24 @@
   tags: [system, firewall, gpu, prep_node]
 
 - name: Disable NUMA Balancing
-  include_tasks: disable_numa_balancing.yaml
+  include_tasks:
+    file: disable_numa_balancing.yaml
+    apply:
+      tags: [system, performance, prep_node]
   tags: [system, performance, prep_node]
 
 - name: Configure NTP (Chrony)
-  include_tasks: ntp.yaml
+  include_tasks:
+    file: ntp.yaml
+    apply:
+      tags: [ntp, prep_node]
   tags: [ntp, prep_node]
 
 # Must stay last: it re-arms the apt timers packages.yaml stopped, so anything
 # added after this point would race the timer for the dpkg lock.
 - name: Restore apt timers
-  include_tasks: restore_apt_timers.yaml
+  include_tasks:
+    file: restore_apt_timers.yaml
+    apply:
+      tags: [packages, prep_node]
   tags: [packages, prep_node]

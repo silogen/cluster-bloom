@@ -63,11 +63,13 @@ validation.
 For the full GPU driver compatibility table, see
 [GPU Driver Support](gpu-driver-support.md#supported-version-matrix).
 
-On a fresh node, the production default is AMD driver `31.40.0` from
+On a fresh node, the production default AMD driver is `31.40.0` from
 `amdgpu-install_31.40.314000-1_all.deb`. Driver preparation runs only when
 `GPU_NODE` is `true` and `GPU_DRIVER_SKIP_INSTALL` is `false`; CPU-only nodes
-skip the flow. Existing drivers are retained only when package metadata and
-DKMS registration identify one exact supported tuple.
+skip the flow. `bloom cli <config> --tags gpu` installs or reconciles the
+driver alone, without a cluster deploy. Existing drivers are retained only
+when package metadata and DKMS registration identify one exact supported
+tuple.
 Unknown, mixed, or ambiguous out-of-tree drivers stop deployment before
 repository or package changes. Bloom also verifies the DKMS module built for
 the running kernel and requires a reboot when the selected module is not yet
@@ -182,8 +184,6 @@ Automatic display of access credentials for deployed ClusterForge components inc
 ## Technical Architecture
 
 ClusterBloom uses a modular architecture with command-based interfaces and sequential installation pipelines. The system executes in three phases: pre-Kubernetes system preparation, Kubernetes cluster setup, and post-Kubernetes add-on deployment.
-
-**[📄 Technical Architecture Documentation](./technical-architecture.md)**
 
 **[📄 Configuration Reference](./configuration-reference.md)**
 
@@ -365,9 +365,6 @@ Complete manual installation procedures for understanding automation or performi
 
 **[📄 Configuration Reference](./configuration-reference.md)**  
 Comprehensive configuration variable reference with examples and validation rules.
-
-**[📄 Technical Architecture](./technical-architecture.md)**  
-Detailed technical architecture, component organization, and implementation patterns.
 
 ## Conclusion
 

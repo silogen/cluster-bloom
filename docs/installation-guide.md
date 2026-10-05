@@ -187,6 +187,10 @@ reading `bloom.yaml`. This fails before Ansible connects to the node. Ansible
 then verifies the installed package, DKMS registration, and active kernel
 module on the target host.
 
+To install or reconcile the host DKMS driver without deploying the cluster,
+run `sudo ./bloom cli bloom.yaml --tags gpu` with `GPU_NODE: true` and
+`GPU_DRIVER_SKIP_INSTALL: false`. Bloom may end the play and offer a reboot.
+
 See [GPU Driver Support](gpu-driver-support.md) for detailed
 installation and recovery behavior, and [AMD GPU Driver and Container ROCm
 Support](rocm-support.md) for Kubernetes integration.
@@ -614,5 +618,4 @@ ClusterBloom automates all of the above steps and provides:
 8. **Multi-node Coordination**: Automatic generation of join commands
 10. **Best Practices**: Built-in configurations following Kubernetes best practices
 
-See the [PRD](PRD.md) for product requirements and
-[Technical Architecture](technical-architecture.md) for implementation details.
+See the [PRD](PRD.md) for product requirements.

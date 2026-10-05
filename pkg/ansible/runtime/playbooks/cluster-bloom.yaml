@@ -182,6 +182,7 @@
                 echo "$USER ALL=(ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/cluster-bloom-nopasswd
 
     - name: Gather facts
+      tags: [always]
       ansible.builtin.setup:
         gather_subset:
           - min
