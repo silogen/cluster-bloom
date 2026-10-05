@@ -57,7 +57,7 @@ Configuration sources in priority order (highest to lowest):
 #### GPU_STACK_FAMILY
 - **Type**: String (single value)
 - **Default**: `""` (empty, resolves to `instinct`)
-- **Description**: Selects the ClusterForge AMD GPU Operator and DeviceConfig profile. This is independent of both the host driver allowlist and `AIM_HARDWARE_FAMILY`. Empty or `instinct` selects GPU Operator `v1.4.1` with DeviceConfig driver train `7.0`; `radeon` selects GPU Operator `v1.5.1-beta.0` with DeviceConfig driver train `7.13`.
+- **Description**: Selects the DeviceConfig driver train for the AMD GPU Operator. The operator chart path comes from the ClusterForge release: `root/values.yaml`, then `root/values_<size>.yaml` when that file sets a path. This setting is independent of the host driver allowlist and `AIM_HARDWARE_FAMILY`. Empty or `instinct` selects DeviceConfig driver train `7.0`. `radeon` selects DeviceConfig driver train `7.13`.
 - **Values**: `radeon` | `instinct` (lowercase, single value)
 - **Example**: `GPU_STACK_FAMILY: "radeon"`
 - **Notes**:
