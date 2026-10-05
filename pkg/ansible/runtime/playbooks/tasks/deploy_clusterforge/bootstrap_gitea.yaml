@@ -161,6 +161,7 @@
         gitea_init_helm_args: "{{ gitea_init_helm_args + ['--values', aim_hardware_family_file.path] }}"
 
 - name: Create GPU stack family values file
+  # ClusterForge pins amd-gpu-operator v1.5.1 for every hardware family.
   block:
     - name: Create temp file for GPU stack family
       ansible.builtin.tempfile:
@@ -172,8 +173,6 @@
       ansible.builtin.copy:
         content: |
           gpuStackFamily: "{{ gpu_stack_family_resolved }}"
-          gpuOperatorPath: "{{ gpu_operator_path }}"
-          gpuOperatorConfigPath: "{{ gpu_operator_config_path }}"
           gpuDeviceConfigDriverVersion: "{{ gpu_deviceconfig_driver_version }}"
         dest: "{{ gpu_stack_family_file.path }}"
 

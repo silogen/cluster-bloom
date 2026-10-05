@@ -191,6 +191,9 @@ To install or reconcile the host DKMS driver without deploying the cluster,
 run `sudo ./bloom cli bloom.yaml --tags gpu` with `GPU_NODE: true` and
 `GPU_DRIVER_SKIP_INSTALL: false`. Bloom may end the play and offer a reboot.
 
+ClusterForge installs AMD GPU Operator `v1.5.1` for every hardware family.
+`GPU_STACK_FAMILY` selects the DeviceConfig driver train.
+
 See [GPU Driver Support](gpu-driver-support.md) for detailed
 installation and recovery behavior, and [AMD GPU Driver and Container ROCm
 Support](rocm-support.md) for Kubernetes integration.
