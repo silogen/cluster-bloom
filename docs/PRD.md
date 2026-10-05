@@ -162,6 +162,8 @@ Advanced debugging and transparency features allow users to export generated Ans
   - Best-effort node drain with ~30s timeout (reduced from 60s)
   - Internally passes `--force` and `--disable-eviction` to kubectl drain to bypass stuck pods with finalizers or PodDisruptionBudgets
   - Automatically skips Longhorn volume detach wait when no volumes are detected
+  - Before it unmounts `/var/lib/rancher` or a `CLUSTER_DISKS` mount, sends `SIGTERM`, then `SIGKILL`, to the processes that `fuser` finds on the mount point, and prints the PID and command name before each signal; never stops bloom or its ancestors; prints a warning and continues if `fuser` is not installed
+  - Retries `wipefs` and `mkfs.ext4` while the kernel reports the device as busy
   - Clear progress messages during potentially long-running operations
   - Note: `--force` flag on `bloom cleanup` skips confirmation prompt (not related to kubectl drain)
 - **Premounted Disk Safety**: `CLUSTER_PREMOUNTED_DISKS` filesystems are preserved during cleanup; only bloom artifacts (pvc-*, replicas, longhorn-disk.cfg) are removed
