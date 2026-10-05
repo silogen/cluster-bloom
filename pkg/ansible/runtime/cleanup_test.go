@@ -389,7 +389,6 @@ func stubWipeRunners(t *testing.T, wipefs, mkfs func(string, ...string) ([]byte,
 	origMkfs := mkfsRunner
 	origAttempts := wipeMaxAttempts
 	origDelay := wipeRetryDelay
-	origResolver := wipeDeviceResolver
 	origSafeChecker := safeToWipeChecker
 	origUnmountedChecker := deviceTreeUnmountedChecker
 	t.Cleanup(func() {
@@ -397,15 +396,11 @@ func stubWipeRunners(t *testing.T, wipefs, mkfs func(string, ...string) ([]byte,
 		mkfsRunner = origMkfs
 		wipeMaxAttempts = origAttempts
 		wipeRetryDelay = origDelay
-		wipeDeviceResolver = origResolver
 		safeToWipeChecker = origSafeChecker
 		deviceTreeUnmountedChecker = origUnmountedChecker
 	})
 	wipefsRunner = wipefs
 	mkfsRunner = mkfs
-	wipeDeviceResolver = func(path string) (string, blockDeviceID, error) {
-		return path, blockDeviceID(1), nil
-	}
 	safeToWipeChecker = func(string) error { return nil }
 	deviceTreeUnmountedChecker = func(string) error { return nil }
 	wipeRetryDelay = time.Millisecond
@@ -598,7 +593,7 @@ func TestGetAncestorPids(t *testing.T) {
 	}
 }
 
-func TestTerminateMountProcessesSignalsAndTrimsFlags(t *testing.T) {
+func TestTerminateMountProcessesSignalsHolders(t *testing.T) {
 	origFuser := fuserRunner
 	origKiller := processKiller
 	t.Cleanup(func() {
@@ -609,8 +604,8 @@ func TestTerminateMountProcessesSignalsAndTrimsFlags(t *testing.T) {
 	var killedPids []int
 	var killedSignals []syscall.Signal
 	fuserRunner = func(mountPoint string) ([]byte, error) {
-		// Output with various flags including uppercase F (file open for write) and m (mmap)
-		return []byte("  99999F 88888m "), nil
+		// fuser prints only PIDs on stdout; access letters go to stderr.
+		return []byte("  99999 88888 "), nil
 	}
 	processKiller = func(pid int, sig syscall.Signal) error {
 		killedPids = append(killedPids, pid)
@@ -676,6 +671,23 @@ func TestFuserFoundNoProcessesDistinguishesExitCodes(t *testing.T) {
 	}
 	if fuserFoundNoProcesses(errors.New("exec: \"fuser\": executable file not found in $PATH")) {
 		t.Error("fuserFoundNoProcesses(non-ExitError) = true, want false")
+	}
+	_, notMountPoint := exec.Command("sh", "-c", "echo 'Specified filename /x is not a mountpoint.' >&2; exit 1").Output()
+	if fuserFoundNoProcesses(notMountPoint) {
+		t.Error("fuserFoundNoProcesses(exit 1 with stderr) = true, want false (not a mount point)")
+	}
+}
+
+func TestTerminateMountProcessesWarnsWhenFuserMissing(t *testing.T) {
+	origFuser := fuserRunner
+	t.Cleanup(func() { fuserRunner = origFuser })
+
+	fuserRunner = func(mountPoint string) ([]byte, error) {
+		return nil, &exec.Error{Name: "fuser", Err: exec.ErrNotFound}
+	}
+
+	if err := terminateMountProcesses("/mock/mount"); err != nil {
+		t.Fatalf("terminateMountProcesses() error = %v, want nil when fuser is not installed", err)
 	}
 }
 
@@ -886,67 +898,9 @@ func TestWipeAndFormatDeviceWipeFailureHasNoPhaseMarker(t *testing.T) {
 	}
 }
 
-func TestWipeAndFormatDeviceUsesCanonicalPath(t *testing.T) {
-	var commands []string
-	stubWipeRunners(t,
-		func(name string, args ...string) ([]byte, error) {
-			commands = append(commands, name+" "+strings.Join(args, " "))
-			return nil, nil
-		},
-		func(name string, args ...string) ([]byte, error) {
-			commands = append(commands, name+" "+strings.Join(args, " "))
-			return nil, nil
-		},
-	)
-	wipeDeviceResolver = func(string) (string, blockDeviceID, error) {
-		return "/dev/sdb", blockDeviceID(2), nil
-	}
-
-	if err := wipeAndFormatDevice("/dev/disk/by-id/mock"); err != nil {
-		t.Fatalf("wipeAndFormatDevice() error = %v, want nil", err)
-	}
-	want := []string{"wipefs -a /dev/sdb", "mkfs.ext4 -F /dev/sdb"}
-	if !slices.Equal(commands, want) {
-		t.Errorf("commands = %v, want %v", commands, want)
-	}
-}
-
-func TestWipeAndFormatDeviceRejectsIdentityChangeBeforeWipeRetry(t *testing.T) {
-	wipefsCalls := 0
-	resolveCalls := 0
-	stubWipeRunners(t,
-		func(name string, args ...string) ([]byte, error) {
-			wipefsCalls++
-			return []byte("Device or resource busy"), errors.New("exit status 1")
-		},
-		func(name string, args ...string) ([]byte, error) {
-			t.Fatal("mkfs called after device identity changed")
-			return nil, nil
-		},
-	)
-	wipeDeviceResolver = func(path string) (string, blockDeviceID, error) {
-		resolveCalls++
-		if resolveCalls >= 3 {
-			return "/dev/sdb", blockDeviceID(3), nil
-		}
-		return "/dev/sdb", blockDeviceID(2), nil
-	}
-
-	err := wipeAndFormatDevice("/dev/disk/by-id/mock")
-	if err == nil || !strings.Contains(err.Error(), "block device identity changed") {
-		t.Fatalf("wipeAndFormatDevice() error = %v, want identity change error", err)
-	}
-	if errors.Is(err, errMkfsPhaseFailed) {
-		t.Errorf("error = %v, want no errMkfsPhaseFailed before wipe succeeds", err)
-	}
-	if wipefsCalls != 1 {
-		t.Errorf("wipefsCalls = %d, want 1", wipefsCalls)
-	}
-}
-
-func TestWipeAndFormatDeviceRejectsIdentityChangeBeforeMkfs(t *testing.T) {
+func TestWipeAndFormatDeviceMarksRecheckFailureBeforeMkfs(t *testing.T) {
 	mkfsCalls := 0
-	resolveCalls := 0
+	safetyCalls := 0
 	stubWipeRunners(t,
 		func(name string, args ...string) ([]byte, error) {
 			return nil, nil
@@ -956,17 +910,17 @@ func TestWipeAndFormatDeviceRejectsIdentityChangeBeforeMkfs(t *testing.T) {
 			return nil, nil
 		},
 	)
-	wipeDeviceResolver = func(path string) (string, blockDeviceID, error) {
-		resolveCalls++
-		if resolveCalls >= 3 {
-			return "/dev/sdb", blockDeviceID(3), nil
+	safeToWipeChecker = func(string) error {
+		safetyCalls++
+		if safetyCalls == 2 {
+			return errors.New("device became protected")
 		}
-		return "/dev/sdb", blockDeviceID(2), nil
+		return nil
 	}
 
-	err := wipeAndFormatDevice("/dev/disk/by-id/mock")
-	if err == nil || !strings.Contains(err.Error(), "block device identity changed") {
-		t.Fatalf("wipeAndFormatDevice() error = %v, want identity change error", err)
+	err := wipeAndFormatDevice("/dev/mock")
+	if err == nil || !strings.Contains(err.Error(), "device became protected") {
+		t.Fatalf("wipeAndFormatDevice() error = %v, want protected device error", err)
 	}
 	if !errors.Is(err, errMkfsPhaseFailed) {
 		t.Errorf("error = %v, want errMkfsPhaseFailed after wipe succeeds", err)

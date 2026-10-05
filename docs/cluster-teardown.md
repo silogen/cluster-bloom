@@ -119,7 +119,10 @@ Every `bloom cleanup` executes the same per-node sequence (also described in `bl
 3. RKE2 uninstall and removal of RKE2 directories.
 4. Pre-clean bloom artifacts from the future mount range.
 5. Clean premounted disks (preserve filesystem and fstab).
-6. Remove bloom-managed fstab entries and wipe `CLUSTER_DISKS`.
+6. Unmount `RANCHER_DISK` from `/var/lib/rancher`, remove its fstab entry, and wipe it.
+7. Remove bloom-managed fstab entries and wipe `CLUSTER_DISKS`.
+
+Before steps 6 and 7 unmount a disk, bloom uses `fuser` to find the processes that still use the mount point. Bloom sends `SIGTERM` to each process, then `SIGKILL` to each process that does not stop. Bloom prints the PID and the command name before each signal. Bloom never stops itself or its ancestors. If your shell is in the mount point, cleanup stops and tells you to `cd` out. If `fuser` (package `psmisc`) is not installed, bloom prints a warning and does not stop the processes.
 
 `bloom cli bloom.yaml --destroy-data` runs the same cleanup logic on that node, then redeploys. It cannot be combined with `--export`.
 
