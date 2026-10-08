@@ -115,6 +115,7 @@
             OIDC_CLIENT_ID: {{ OIDC_CLIENT_ID | default('NOT SET') }}
             OIDC_CLIENT_SECRET: {{ OIDC_CLIENT_SECRET | default('NOT SET') }}
             ADDITIONAL_OIDC_PROVIDERS: {{ ADDITIONAL_OIDC_PROVIDERS | default('NOT SET') }}
+            OIDC_ISSUER_IP: {{ OIDC_ISSUER_IP | default('NOT SET') }}
 
     - name: Print Command Line Options
       debug:

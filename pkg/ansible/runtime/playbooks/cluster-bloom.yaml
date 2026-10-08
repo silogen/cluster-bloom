@@ -49,6 +49,17 @@
     #              If set, these nameservers will be written to /etc/rancher/rke2/resolv.conf
     #              instead of copying host DNS. Format as YAML list (e.g., ["8.8.8.8", "1.1.1.1"])
     DNS_SERVERS: []
+
+    # OIDC_ISSUER_IP: Pin kc.<DOMAIN> to this address in /etc/hosts on server
+    #                 nodes, written before RKE2 starts so kube-apiserver picks
+    #                 it up when its pod is first created. Set it on clusters
+    #                 whose public ingress address is not reachable from the
+    #                 nodes themselves (OCI does not hairpin), where the
+    #                 apiserver would otherwise fail OIDC discovery and reject
+    #                 every token. Use the cluster's ingress address - today
+    #                 that is the MetalLB pool address. Empty (the default)
+    #                 leaves /etc/hosts untouched.
+    OIDC_ISSUER_IP: ""
     
     CLUSTERFORGE_REPO: "https://github.com/silogen/cluster-forge.git"
     BLOOM_DIR: "/tmp/bloom"

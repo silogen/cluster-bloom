@@ -75,6 +75,43 @@
         chmod 644 /etc/rancher/rke2/resolv.conf
       when: DNS_SERVERS | length == 0
 
+# kc.<DOMAIN> resolves, via public DNS, to the cluster's public ingress address.
+# Some providers will not route that address back to the node that owns it (OCI
+# does not hairpin a public load-balancer address to an instance behind it), so
+# kube-apiserver cannot fetch the OIDC discovery document or the JWKS, and then
+# rejects every token with "the server has asked for the client to provide
+# credentials". The token itself is fine; the apiserver simply has no signing
+# key to verify it against.
+#
+# Pinning the name to the cluster's own ingress address fixes only that one
+# lookup: the resolver file, the upstream nameservers and CoreDNS all keep
+# behaving exactly as they did, and the apiserver gains no dependency on cluster
+# DNS being up.
+#
+# This has to happen HERE, before RKE2 starts. kubelet generates the apiserver's
+# hosts file from this one when it first creates the pod, and containerd does the
+# same with the resolver file when it creates the sandbox. Neither is re-read
+# afterwards, so editing them on a running node is a silent no-op and
+# `systemctl restart rke2-server` does not help - that restarts the container
+# inside the existing sandbox. Writing it before first start avoids the problem
+# instead of having to replace sandboxes to correct it.
+#
+# Opt-in: unset (the default) leaves /etc/hosts untouched.
+- name: Pin the OIDC issuer to the cluster ingress address
+  when:
+    - (FIRST_NODE | bool) or (CONTROL_PLANE | bool)
+    - DOMAIN is defined
+    - DOMAIN != ""
+    - (OIDC_ISSUER_IP | default('')) | length > 0
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: "^\\S+\\s+kc\\.{{ DOMAIN | regex_escape }}\\s*$"
+    line: "{{ OIDC_ISSUER_IP }} kc.{{ DOMAIN }}"
+    state: present
+    owner: root
+    group: root
+    mode: "0644"
+
 - name: Create audit policy
   copy:
     content: |
