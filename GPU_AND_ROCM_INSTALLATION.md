@@ -63,9 +63,9 @@ Both values must be set together and match an installer pair in the
 
 ### `GPU_STACK_FAMILY`
 
-Selects the ClusterForge AMD GPU Operator and DeviceConfig profile. It does not
-select or install host ROCm. Empty resolves to `instinct`; `radeon` selects the
-tech-preview operator profile.
+Selects the DeviceConfig driver train. It does not select or install host
+ROCm. Every family uses AMD GPU Operator `v1.5.1`. Empty resolves to
+`instinct`. `radeon` selects the tech-preview DeviceConfig profile.
 
 ## Verification
 
