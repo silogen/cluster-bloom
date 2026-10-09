@@ -351,6 +351,57 @@
             - {{ san }}
           {% endfor %}
 
+    # kc.<DOMAIN> resolves, via public DNS, to the cluster's public ingress
+    # address. Some providers will not route that address back to the node that
+    # owns it - OCI does not hairpin a public address to the instance behind it -
+    # so kube-apiserver cannot fetch the OIDC discovery document or the JWKS, and
+    # then rejects every token with "the server has asked for the client to
+    # provide credentials". The token itself is fine; the apiserver simply has no
+    # signing key to verify it against.
+    #
+    # The address to pin is not configuration: bloom creates the cluster's
+    # ingress itself, as a MetalLB /32 pool on the first node (see
+    # deploy_k8s_apps/metallb.yaml). So the value is already known here.
+    #   first node - the address MetalLB will claim, resolved from the default
+    #                route. Recorded as a fact that metallb.yaml then consumes,
+    #                so the pin and the pool cannot drift apart.
+    #   joined CP  - SERVER_IP, which join_command.yaml fills in with the first
+    #                node's address.
+    #
+    # This has to happen before RKE2 starts. kubelet generates the apiserver's
+    # hosts file from this one when it first creates the pod, and never re-reads
+    # it, so editing it on a running node is a silent no-op and
+    # `systemctl restart rke2-server` does not help - that restarts the container
+    # inside the existing sandbox. Writing it before first start avoids the
+    # problem instead of having to replace sandboxes to correct it.
+    #
+    # Pinning fixes only this one name: the resolver file, the upstream
+    # nameservers and CoreDNS all keep behaving as they did, and the apiserver
+    # gains no dependency on cluster DNS being up.
+    - name: Resolve the cluster ingress address (first node)
+      shell: ip route get 1 | awk '{print $7; exit}'
+      register: cluster_ingress_ip_cmd
+      changed_when: false
+      when: FIRST_NODE | bool
+
+    - name: Record the cluster ingress address
+      set_fact:
+        cluster_ingress_ip: >-
+          {{ (cluster_ingress_ip_cmd.stdout | trim)
+             if (FIRST_NODE | bool)
+             else (SERVER_IP | default('') | trim) }}
+
+    - name: Pin the OIDC issuer to the cluster ingress address
+      when: cluster_ingress_ip is match('^[0-9]{1,3}(\\.[0-9]{1,3}){3}$')
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        regexp: "^\\S+\\s+kc\\.{{ DOMAIN | regex_escape }}\\s*$"
+        line: "{{ cluster_ingress_ip }} kc.{{ DOMAIN }}"
+        state: present
+        owner: root
+        group: root
+        mode: "0644"
+
     - name: Build OIDC provider list (default kc.<DOMAIN> + ADDITIONAL_OIDC_PROVIDERS)
       set_fact:
         oidc_providers: >-
