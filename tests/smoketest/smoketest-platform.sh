@@ -1370,7 +1370,7 @@ cert_info() {
     CERT_FP=$(printf '%s' "$pem"     | openssl x509 -noout -fingerprint -sha256 2>/dev/null | cut -d= -f2)
 
     [ -z "$CERT_END" ] && return 0
-    end_ts=$(date -d "$CERT_END" +%s 2>/dev/null) || return 0
+    end_ts=$(date_to_epoch "$CERT_END") || return 0
     now_ts=$(date +%s)
     CERT_DAYS=$(( (end_ts - now_ts) / 86400 ))
     return 0

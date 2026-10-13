@@ -83,7 +83,28 @@ FINDINGS=()
 # Timing — total runtime plus a per-section breakdown, so a slow run can be
 # attributed rather than guessed at. The ticket budgets 10 minutes.
 # ---------------------------------------------------------------------------
-now_ms() { date +%s%3N; }
+# Milliseconds since epoch. GNU date understands %3N; BSD date (macOS) does
+# not — it prints a literal N, which then blows up bash arithmetic. Fall back
+# to whole seconds so the stopwatch still works on both.
+now_ms() {
+    local t
+    t=$(date +%s%3N 2>/dev/null)
+    case "$t" in
+        ''|*[!0-9]*) printf '%s000' "$(date +%s)" ;;
+        *)           printf '%s' "$t" ;;
+    esac
+}
+
+# Epoch seconds from a human date. openssl -enddate prints
+# "Sep 23 12:00:00 2026 GMT"; GNU date parses that with -d, BSD date (macOS)
+# with -j -f. Squeeze repeated spaces so a single-digit day still matches %d.
+date_to_epoch() {
+    local s="$1" t
+    t=$(date -d "$s" +%s 2>/dev/null) && { printf '%s' "$t"; return 0; }
+    s=$(printf '%s' "$s" | tr -s ' ')
+    t=$(date -j -f "%b %d %T %Y %Z" "$s" +%s 2>/dev/null) && { printf '%s' "$t"; return 0; }
+    return 1
+}
 RUN_START=$(now_ms)
 SECTION_NAME=""
 SECTION_START=0
