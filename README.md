@@ -202,7 +202,7 @@ Cluster-Bloom can be configured through environment variables, command-line flag
 | FIX_DNS | **Opt-in** to allow automatic DNS fixes. Only modifies DNS if broken and external DNS works. Creates backups and auto-rolls back on failure. | false |
 | FIRST_NODE | Set to true if this is the first node in the cluster | true |
 | GPU_NODE | Set to true if this node has GPUs | true |
-| GPU_STACK_FAMILY | GPU family that selects the ClusterForge GPU Operator and DeviceConfig profile (`radeon` \| `instinct`). It does not install host ROCm. | "" |
+| GPU_STACK_FAMILY | GPU family that selects the DeviceConfig driver train (`radeon` \| `instinct`). Every family uses AMD GPU Operator v1.5.1. It does not install host ROCm. | "" |
 | GPU_DRIVER_SKIP_INSTALL | Leave the host GPU stack untouched by skipping driver validation, installation, and standalone AMD-SMI. | false |
 | GPU_INSTALL_HOST_TOOLS | Install standalone AMD-SMI matched to the effective driver. | true |
 | GPU_DRIVER_VERSION | Advanced exact `amdgpu-install` version override; must be paired with `GPU_DRIVER_BUILD`. | "" |

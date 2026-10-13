@@ -45,13 +45,14 @@ including compatibility validation and standalone AMD-SMI installation.
 
 ## GPU family and operator selection
 
-`GPU_STACK_FAMILY` selects ClusterForge's vendored AMD GPU Operator and
-DeviceConfig profile. It does not select or install host ROCm.
+`GPU_STACK_FAMILY` selects the DeviceConfig driver train. It does not select
+or install host ROCm. Every family uses AMD GPU Operator `v1.5.1`. ClusterForge supplies that
+chart.
 
 | Family | GPU Operator path | DeviceConfig driver train | Status |
 |---|---|---|---|
-| `instinct` (default) | `amd-gpu-operator/v1.4.1` | `7.0` | qualified |
-| `radeon` | `amd-gpu-operator/v1.5.1-beta.0` | `7.13` | tech preview |
+| `instinct` (default) | `amd-gpu-operator/v1.5.1` | `7.0` | qualified |
+| `radeon` | `amd-gpu-operator/v1.5.1` | `7.13` | tech preview |
 
 The host driver default remains `31.40.0` for both families. The family setting
 is independent of `AIM_HARDWARE_FAMILY`, which selects the AIM model catalog.
