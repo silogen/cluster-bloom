@@ -16,7 +16,7 @@ schema:
 
     CLUSTERFORGE_RELEASE:
       type: str
-      default: "v2.2.2"
+      default: "v2.5.0"
       desc: ClusterForge version (URL, version tag, 'latest', 'none', or '' to skip). Examples - 'latest', 'v2.2.2', 'https://github.com/silogen/cluster-forge/releases/download/v2.2.2/release.tar.gz', 'none', ''
       section: "⚙️ Advanced Configuration"
 
@@ -58,7 +58,7 @@ schema:
     GPU_STACK_FAMILY:
       type: gpuStackFamily
       default: ""
-      desc: "GPU family that selects the GPU Operator defaults (radeon | instinct). Host driver policy is shared: retain an exact supported DKMS driver or install production driver 31.40.0. Host ROCm is not required."
+      desc: "GPU family that selects the DeviceConfig driver train (radeon | instinct). Every family uses AMD GPU Operator v1.5.1. Host driver policy is shared: retain an exact supported DKMS driver or install production driver 31.40.0. Host ROCm is not required."
       section: "📋 Basic Configuration"
 
     # 🔗 Additional Node Configuration

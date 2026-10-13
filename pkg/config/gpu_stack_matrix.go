@@ -9,21 +9,17 @@ import "fmt"
 // versions in DriverCompatibility document the release paired with each driver;
 // ROCm itself is neither required nor installed by the driver flow.
 //
-// The OperatorPath pins are unrelated to the host driver: instinct uses the
-// qualified v1.4.1 chart and radeon uses the v1.5.1-beta.0 tech-preview chart,
-// both vendored under cluster-forge sources/amd-gpu-operator. These still
-// drive the (unchanged) GPU Operator + DeviceConfig deploy in cluster-forge.
+// Every hardware family uses AMD GPU Operator v1.5.1. ClusterForge pins that
+// chart in root values. GPU_STACK_FAMILY selects the DeviceConfig driver train.
 const (
 	defaultDriverPackageVersion = "31.40"
 	defaultDriverPackageBuild   = "314000-1"
 
-	instinctOperatorPath       = "amd-gpu-operator/v1.4.1"
-	instinctOperatorConfigPath = "amd-gpu-operator-config/v1.4.1"
-	instinctDriverVersion      = "7.0"
+	operatorPath       = "amd-gpu-operator/v1.5.1"
+	operatorConfigPath = "amd-gpu-operator-config/v1.5.1"
 
-	radeonOperatorPath       = "amd-gpu-operator/v1.5.1-beta.0"
-	radeonOperatorConfigPath = "amd-gpu-operator-config/v1.5.1-beta.0"
-	radeonDriverVersion      = "7.13"
+	instinctDriverVersion = "7.0"
+	radeonDriverVersion   = "7.13"
 )
 
 // DriverCompatibility is an exact, validated driver tuple. Do not replace this
@@ -84,16 +80,15 @@ var supportedGPUDrivers = []DriverCompatibility{
 // rule from EAI-6030: Radeon requires the ROCm 7.13 tech-preview
 // GPU-Operator/DeviceConfig train; anything older is too old and must block.
 // This still applies here even though this branch installs no host ROCm,
-// because DeviceConfigDriverVersion still selects the GPU Operator chart.
+// because DeviceConfigDriverVersion still selects the DeviceConfig train.
 const (
 	minRadeonRocmMajor = 7
 	minRadeonRocmMinor = 13
 )
 
 // StackProfile is the resolved per-family GPU stack. DriverPackage* drives the
-// ansible amdgpu-install (driver-only) task; OperatorPath + OperatorConfigPath
-// + DeviceConfigDriverVersion pass through to cluster-forge so the GPU
-// Operator and its DeviceConfig match the same family.
+// ansible amdgpu-install (driver-only) task. DeviceConfigDriverVersion selects
+// the family train.
 type StackProfile struct {
 	Family                    string
 	DriverPackageVersion      string
@@ -115,8 +110,8 @@ func ResolveStackProfile(family string) (StackProfile, error) {
 			Family:                    "instinct",
 			DriverPackageVersion:      defaultDriverPackageVersion,
 			DriverPackageBuild:        defaultDriverPackageBuild,
-			OperatorPath:              instinctOperatorPath,
-			OperatorConfigPath:        instinctOperatorConfigPath,
+			OperatorPath:              operatorPath,
+			OperatorConfigPath:        operatorConfigPath,
 			DeviceConfigDriverVersion: instinctDriverVersion,
 			TechPreview:               false,
 		}, nil
@@ -125,8 +120,8 @@ func ResolveStackProfile(family string) (StackProfile, error) {
 			Family:                    "radeon",
 			DriverPackageVersion:      defaultDriverPackageVersion,
 			DriverPackageBuild:        defaultDriverPackageBuild,
-			OperatorPath:              radeonOperatorPath,
-			OperatorConfigPath:        radeonOperatorConfigPath,
+			OperatorPath:              operatorPath,
+			OperatorConfigPath:        operatorConfigPath,
 			DeviceConfigDriverVersion: radeonDriverVersion,
 			TechPreview:               true,
 		}
@@ -164,7 +159,6 @@ func ApplyGPUStackVars(cfg Config) error {
 	cfg["gpu_driver_default_version"] = profile.DriverPackageVersion
 	cfg["gpu_driver_default_build"] = profile.DriverPackageBuild
 	cfg["gpu_driver_supported"] = supportedGPUDrivers
-	// Forge-bound selections consumed by the deploy_clusterforge tasks.
 	cfg["gpu_operator_path"] = profile.OperatorPath
 	cfg["gpu_operator_config_path"] = profile.OperatorConfigPath
 	cfg["gpu_deviceconfig_driver_version"] = profile.DeviceConfigDriverVersion
