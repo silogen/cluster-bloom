@@ -235,15 +235,18 @@ func (table mountTable) blockSourcesForMountPoint(mountPoint string) []string {
 	return sources
 }
 
+func pathUnder(path, dir string) bool {
+	path = filepath.Clean(path)
+	dir = filepath.Clean(dir)
+	return dir == "/" || path == dir || strings.HasPrefix(path, dir+"/")
+}
+
 // blockSourcesContainingPath returns the block-device sources of the mount that
 // holds path, which for a swapfile is the filesystem it was allocated on.
 func (table mountTable) blockSourcesContainingPath(path string) []string {
 	holder := ""
 	for _, entry := range table {
-		underMount := entry.mountPoint == "/" ||
-			path == entry.mountPoint ||
-			strings.HasPrefix(path, strings.TrimSuffix(entry.mountPoint, "/")+"/")
-		if underMount && len(entry.mountPoint) >= len(holder) {
+		if pathUnder(path, entry.mountPoint) && len(entry.mountPoint) >= len(holder) {
 			holder = entry.mountPoint
 		}
 	}
