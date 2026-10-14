@@ -4,10 +4,20 @@
 # Usage: Imported by deploy_k8s_apps/main.yaml (conditional on FIRST_NODE)
 # Tags: [metallb, deploy_k8s_apps]
 
+# prepare_rke2 already resolved this address and pinned kc.<DOMAIN> to it, so the
+# apiserver reaches the OIDC issuer on providers that will not hairpin their own
+# ingress address. Consume that fact rather than resolving it a second time: if
+# the two ever disagreed, the pin would point somewhere envoy does not answer.
+# The fallback keeps this task standalone when it is run on its own via --tags.
 - name: Get default IP for MetalLB
   shell: ip route get 1 | awk '{print $7; exit}'
-  register: metallb_ip
+  register: metallb_ip_cmd
   changed_when: false
+  when: cluster_ingress_ip is not defined
+
+- name: Resolve the MetalLB pool address
+  set_fact:
+    metallb_ip: "{{ cluster_ingress_ip | default(metallb_ip_cmd.stdout | trim) }}"
 
 - name: Create MetalLB address pool config
   copy:
@@ -19,7 +29,7 @@
         namespace: metallb-system
       spec:
         addresses:
-        - {{ metallb_ip.stdout }}/32
+        - {{ metallb_ip }}/32
       ---
       apiVersion: metallb.io/v1beta1
       kind: L2Advertisement
