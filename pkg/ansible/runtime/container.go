@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	ImageRef = "willhallonline/ansible:latest"
+	ImageRef = "willhallonline/ansible:2.19.14-alpine-3.24"
 )
 
 func PullAndExtractImage(imageRef, destPath string, verbose bool) error {
