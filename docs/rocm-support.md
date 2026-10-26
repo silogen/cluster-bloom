@@ -66,6 +66,8 @@ binary or installs the package associated with the effective driver:
   corresponding ROCm repository.
 - Driver `31.30.0`: `amdrocm-amdsmi7.13`.
 - Drivers `31.40.0` and `31.40.1`: `amdrocm-amdsmi7.14`.
+- Driver `31.50.0`: `amdrocm-amdsmi10.0`.
+- Driver `31.60.0`: `amdrocm-amdsmi10.1`.
 
 Bloom verifies both `amd-smi version` and `amd-smi list`.
 

@@ -48,6 +48,8 @@ The exact supported tuples are:
 | `31.30.0` | `6.19.4.31300000-2337710`  |
 | `31.40.0` | `6.19.14.31400000-2364437` |
 | `31.40.1` | `6.19.14.31400100-2377056` |
+| `31.50.0` | `7.1.3.31500000-2390945`    |
+| `31.60.0` | `7.1.9.31600000-2407772`    |
 
 AMD publishes every driver in this table for Ubuntu 22.04 (`jammy`) and 24.04
 (`noble`). Driver `31.30.0` and newer are also published for Ubuntu 26.04
@@ -121,6 +123,10 @@ package matched to the effective driver:
   package repository.
 - Drivers `31.40.0` and `31.40.1`: install `amdrocm-amdsmi7.14` from the Core
   SDK multi-arch package repository.
+- Driver `31.50.0`: install `amdrocm-amdsmi10.0` from
+  `stable.repo.amd.com/rocm/core/packages`.
+- Driver `31.60.0`: install `amdrocm-amdsmi10.1` from the same Core SDK
+  repository.
 
 Bloom writes a dedicated `bloom-amd-smi.list` apt source, installs only AMD-SMI
 and the package's minimal system dependencies, and exposes the resolved binary
@@ -170,6 +176,8 @@ the `amdgpu-install` package, not the resulting AMD driver:
 | `31.30` | `313000-1` | `31.30.0` |
 | `31.40` | `314000-1` | `31.40.0` |
 | `31.40.1` | `314001-1` | `31.40.1` |
+| `31.50` | `315000-1` | `31.50.0` |
+| `31.60` | `316000-1` | `31.60.0` |
 
 The jump from `7.2.4` to `31.30` is intentional. AMD's older
 `amdgpu-install` packages in this allowlist use ROCm-aligned `7.x` package
