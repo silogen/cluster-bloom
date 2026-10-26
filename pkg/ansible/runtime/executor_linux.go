@@ -230,7 +230,7 @@ func RunChild() {
 	// Create output processor
 	processor := NewOutputProcessor(outputMode, logFile, configMap)
 
-	cmd := exec.Command("ansible-playbook", ansibleArgs...)
+	cmd := exec.Command(ansiblePlaybookPath(), ansibleArgs...)
 	cmd.Stdin = os.Stdin
 
 	// Must be set before Start; exec reads Env at Start time. Pinning the

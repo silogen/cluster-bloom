@@ -123,12 +123,24 @@ func RunPlaybookDirect(playbookPath string, dryRun bool, tags string, extraVars 
 	rootfs := filepath.Join(workDir, "rootfs")
 
 	if !ImageCached(rootfs) {
-		fmt.Println("Downloading Ansible runtime image (this may take a few minutes)...")
+		if _, err := os.Stat(rootfs); err == nil {
+			fmt.Println("Replacing cached Ansible runtime image...")
+		} else {
+			fmt.Println("Downloading Ansible runtime image (this may take a few minutes)...")
+		}
+		if err := DiscardRootfs(rootfs); err != nil {
+			return 1, err
+		}
 		if err := os.MkdirAll(rootfs, 0755); err != nil {
 			return 1, fmt.Errorf("create rootfs dir: %w", err)
 		}
 		if err := PullAndExtractImage(ImageRef, rootfs, true); err != nil {
+			_ = DiscardRootfs(rootfs)
 			return 1, fmt.Errorf("pull image: %w", err)
+		}
+		if err := MarkImageCached(rootfs); err != nil {
+			_ = DiscardRootfs(rootfs)
+			return 1, err
 		}
 		fmt.Println("Image ready.")
 	} else {
