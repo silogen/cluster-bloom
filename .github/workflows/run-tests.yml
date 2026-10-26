@@ -34,9 +34,8 @@ jobs:
             just \
             mkisofs \
             ovmf \
-            qemu-system-x86-64 \
-            qemu-utils \
-            qemu-kvm
+            qemu-system-x86 \
+            qemu-utils
 
       - name: Build
         run: just build
