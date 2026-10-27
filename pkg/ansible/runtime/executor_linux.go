@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"os/signal"
 	"path/filepath"
 	"syscall"
 
@@ -44,11 +43,20 @@ func RunContainer(rootfs, playbookDir, playbook string, extraArgs []string, dryR
 		return 1
 	}
 
+	// Register pre-exit hook so SSH cleanup happens before signal termination.
+	// Must be registered before InitSignalHandling so a signal arriving during
+	// the window between the two calls cannot fire a nil hook.
+	SetPreExitHook(func() error {
+		if err := sshManager.Cleanup(); err != nil {
+			fmt.Fprintf(os.Stderr, "🔥 CRITICAL: Host SSH cleanup failed: %v\n", err)
+			return err
+		}
+		fmt.Printf("✅ Host SSH cleanup completed successfully - original authorized_keys restored!\n")
+		return nil
+	})
+
 	// Initialize global signal handling for graceful shutdown
 	InitSignalHandling()
-
-	// Setup host-based signal handling for SSH cleanup
-	setupHostSSHSignalHandling(sshManager)
 
 	// Ensure SSH cleanup happens when function exits
 	defer func() {
@@ -307,39 +315,6 @@ func pivotRoot(newRoot string) error {
 	}
 
 	return os.RemoveAll(putOld)
-}
-
-// setupHostSSHSignalHandling sets up signal handlers for host-based SSH cleanup
-// This ensures that SSH cleanup happens on the host when signals are received
-func setupHostSSHSignalHandling(sshManager *ssh.EphemeralSSHManager) {
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT)
-
-	go func() {
-		sig := <-c
-
-		// Perform SSH cleanup directly on host
-		if err := sshManager.Cleanup(); err != nil {
-			fmt.Fprintf(os.Stderr, "🔥 CRITICAL: Host SSH cleanup failed: %v\n", err)
-			os.Exit(1) // Exit with error as requested
-		} else {
-			fmt.Printf("✅ Host SSH cleanup completed successfully - original authorized_keys restored!\n")
-		}
-
-		// Exit with appropriate signal-based exit code
-		switch sig {
-		case os.Interrupt:
-			os.Exit(130) // 128 + SIGINT
-		case syscall.SIGTERM:
-			os.Exit(143) // 128 + SIGTERM
-		case syscall.SIGHUP:
-			os.Exit(129) // 128 + SIGHUP
-		case syscall.SIGQUIT:
-			os.Exit(131) // 128 + SIGQUIT
-		default:
-			os.Exit(1)
-		}
-	}()
 }
 
 // parseConfigFromExtraArgs extracts configuration values from Ansible extra vars
