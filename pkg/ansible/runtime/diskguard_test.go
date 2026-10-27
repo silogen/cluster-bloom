@@ -115,6 +115,25 @@ func TestBlockSourcesContainingPathPicksLongestMatch(t *testing.T) {
 	}
 }
 
+func TestPathUnderHonorsDirectoryBoundaries(t *testing.T) {
+	tests := []struct {
+		path string
+		dir  string
+		want bool
+	}{
+		{path: "/var/lib/rancher", dir: "/var/lib/rancher", want: true},
+		{path: "/var/lib/rancher/data", dir: "/var/lib/rancher", want: true},
+		{path: "/var/lib/rancher-other", dir: "/var/lib/rancher", want: false},
+		{path: "/var/lib", dir: "/var/lib/rancher", want: false},
+		{path: "/var/lib/rancher", dir: "/", want: true},
+	}
+	for _, test := range tests {
+		if got := pathUnder(test.path, test.dir); got != test.want {
+			t.Errorf("pathUnder(%q, %q) = %t, want %t", test.path, test.dir, got, test.want)
+		}
+	}
+}
+
 func TestMountPointsForDeviceIDsReportsEveryMountOfADevice(t *testing.T) {
 	installMountTable(t, `21 1 8:2 / / rw,relatime shared:1 - ext4 /dev/sda2 rw
 22 21 8:16 / /mnt/disk0 rw,relatime shared:2 - ext4 /dev/sdb rw
