@@ -46,6 +46,8 @@
       https://repo.radeon.com/rocm/apt/{{ gpu_driver_effective.PairedROCm }}
       {%- elif gpu_driver_effective.HostToolsChannel == 'core-multiarch' -%}
       https://repo.amd.com/rocm/packages-multi-arch/ubuntu{{ ansible_distribution_version | replace('.', '') }}
+      {%- elif gpu_driver_effective.HostToolsChannel == 'core-stable' -%}
+      https://stable.repo.amd.com/rocm/core/packages/ubuntu{{ ansible_distribution_version | replace('.', '') }}
       {%- else -%}
       https://repo.amd.com/rocm/packages/ubuntu{{ ansible_distribution_version | replace('.', '') }}
       {%- endif %}
@@ -54,6 +56,8 @@
       https://repo.radeon.com/rocm/rocm.gpg.key
       {%- elif gpu_driver_effective.HostToolsChannel == 'core-multiarch' -%}
       https://repo.amd.com/rocm/packages-multi-arch/gpg/rocm.gpg
+      {%- elif gpu_driver_effective.HostToolsChannel == 'core-stable' -%}
+      https://stable.repo.amd.com/rocm/gpg/packages.gpg
       {%- else -%}
       https://repo.amd.com/rocm/packages/gpg/rocm.gpg
       {%- endif %}

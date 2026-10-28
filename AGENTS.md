@@ -61,8 +61,11 @@ Execution path for `bloom cli bloom.yaml`:
    writes `bloom.log`, which it rotates to `bloom-<timestamp>.log` on each run.
 
 Bloom needs no Docker. `container.go` pulls the runtime image
-(`willhallonline/ansible:latest`) with `crane`, untars it into a rootfs, and
-runs it in namespaces bloom creates itself. Ansible connects over SSH to
+(`willhallonline/ansible:2.19.14-alpine-3.24`) with `crane`, untars it into a
+rootfs, and runs it in namespaces bloom creates itself. The pull uses HTTP/1.1
+only, because Docker Hub's CDN can stall an HTTP/2 blob stream without end. A
+pull that receives no data for 60 seconds stops, and bloom tries it again up
+to three times. Ansible connects over SSH to
 localhost with an ephemeral ed25519 key. `pkg/ssh` adds that key to the
 invoking user's `authorized_keys` and removes it when the run ends, including
 on a signal (`signals.go`). If you change the executor, keep that cleanup path.
