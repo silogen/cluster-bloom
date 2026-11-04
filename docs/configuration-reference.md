@@ -57,12 +57,12 @@ Configuration sources in priority order (highest to lowest):
 #### GPU_STACK_FAMILY
 - **Type**: String (single value)
 - **Default**: `""` (empty, resolves to `instinct`)
-- **Description**: Selects the DeviceConfig driver train for the AMD GPU Operator. The operator chart path comes from the ClusterForge release: `root/values.yaml`, then `root/values_<size>.yaml` when that file sets a path. This setting is independent of the host driver allowlist and `AIM_HARDWARE_FAMILY`. Empty or `instinct` selects DeviceConfig driver train `7.0`. `radeon` selects DeviceConfig driver train `7.13`.
+- **Description**: Selects the DeviceConfig driver train for the AMD GPU Operator. Every family uses AMD GPU Operator `v1.5.1`. The operator chart path comes from the ClusterForge release: `root/values.yaml`, then `root/values_<size>.yaml` when that file sets a path. This setting is independent of the host driver allowlist and `AIM_HARDWARE_FAMILY`. Empty or `instinct` selects DeviceConfig driver train `7.0`. `radeon` selects DeviceConfig driver train `7.13`.
 - **Values**: `radeon` | `instinct` (lowercase, single value)
 - **Example**: `GPU_STACK_FAMILY: "radeon"`
 - **Notes**:
   - This setting does not install host ROCm. The production-default host driver remains `31.40.0` for both families.
-  - The `radeon` GPU Operator and DeviceConfig profile is tech preview; Bloom prints a notice at install time.
+  - The `radeon` DeviceConfig profile is tech preview. Bloom prints a notice at install time. The operator chart is `v1.5.1` for every family.
   - Unsupported combinations (for example a Radeon stack resolving to ROCm 7.2) fail validation before install with an error naming the incompatible component.
 
 #### GPU_DRIVER_SKIP_INSTALL

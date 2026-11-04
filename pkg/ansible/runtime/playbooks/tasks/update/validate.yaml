@@ -54,11 +54,11 @@
 
 - name: Set cert-manager status fact
   set_fact:
-    USE_CERT_MANAGER: "{{ use_cert_manager_result.stdout == 'true' }}"
+    current_use_cert_manager: "{{ use_cert_manager_result.stdout == 'true' }}"
 
 - name: Display cert-manager status
   debug:
-    msg: "  ✓ Checking certificate manager configuration... ✅ ({{ 'cert-manager enabled' if USE_CERT_MANAGER else 'static certificates' }})"
+    msg: "  ✓ Checking certificate manager configuration... ✅ ({{ 'cert-manager enabled' if current_use_cert_manager else 'static certificates' }})"
 
 - name: Verify ArgoCD installation
   command: /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get application cluster-forge -n argocd -o jsonpath='{.metadata.name}'

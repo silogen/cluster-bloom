@@ -46,11 +46,10 @@ including compatibility validation and standalone AMD-SMI installation.
 ## GPU family and operator selection
 
 `GPU_STACK_FAMILY` selects the DeviceConfig driver train. It does not select
-the AMD GPU Operator chart, and it does not install host ROCm.
-
-The chart path for `amd-gpu-operator` and `amd-gpu-operator-config` comes from
-the ClusterForge release. `root/values.yaml` sets the path.
-`root/values_<size>.yaml` replaces that path when it sets one.
+the AMD GPU Operator chart, and it does not install host ROCm. Every family
+uses AMD GPU Operator `v1.5.1`. ClusterForge supplies that chart:
+`root/values.yaml` sets the path, and `root/values_<size>.yaml` replaces it
+when that file sets one.
 
 | Family | DeviceConfig driver train | Status |
 |---|---|---|
@@ -69,6 +68,8 @@ binary or installs the package associated with the effective driver:
   corresponding ROCm repository.
 - Driver `31.30.0`: `amdrocm-amdsmi7.13`.
 - Drivers `31.40.0` and `31.40.1`: `amdrocm-amdsmi7.14`.
+- Driver `31.50.0`: `amdrocm-amdsmi10.0`.
+- Driver `31.60.0`: `amdrocm-amdsmi10.1`.
 
 Bloom verifies both `amd-smi version` and `amd-smi list`.
 

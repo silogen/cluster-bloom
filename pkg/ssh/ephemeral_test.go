@@ -230,8 +230,8 @@ func TestRestoreFallsBackToTargetUserWhenLiveFileIsGone(t *testing.T) {
 	}
 }
 
-// Two separate paths call Cleanup on interrupt (setupHostSSHSignalHandling's
-// signal handler and the deferred cleanup in the executor), so concurrent
+// Two separate paths call Cleanup on interrupt (the runtime package's pre-exit
+// hook and the deferred cleanup in the executor), so concurrent
 // invocation is the real-world case, not a synthetic one.
 func TestConcurrentCleanupRestoresAuthorizedKeysExactlyOnce(t *testing.T) {
 	m := newTestManager(t)

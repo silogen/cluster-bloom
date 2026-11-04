@@ -137,21 +137,11 @@ jobs:
           echo "new_version=${NEW_VERSION}" >> $GITHUB_OUTPUT
           echo "extra_args=${EXTRA_ARGS}" >> $GITHUB_OUTPUT
 
-      - name: Create GitHub Release
-        if: github.event_name != 'pull_request'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ steps.version.outputs.new_version }}
-          EXTRA_ARGS: ${{ steps.version.outputs.extra_args }}
-        run: |
-          gh release create "$VERSION" $EXTRA_ARGS \
-              --title="ClusterBloom Release $VERSION" \
-              --repo="$GITHUB_REPOSITORY" \
-              --generate-notes || true # Ignore if release already exists
-
   build:
     needs: [version]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -167,13 +157,20 @@ jobs:
           devbox run build -ldflags="-X 'github.com/silogen/cluster-bloom/cmd.Version=$VERSION'"
           cp dist/bloom dist/bloom-"$VERSION"
 
-      - name: Upload Release Asset
+      - name: Publish GitHub Release
         if: github.event_name != 'pull_request'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.version.outputs.new_version }}
+          EXTRA_ARGS: ${{ needs.version.outputs.extra_args }}
         run: |
-          # Upload asset to the release
-          gh release upload "$VERSION" \
-              "dist/*" \
-              --clobber
+          # gh creates a draft, uploads every asset, then publishes.
+          # Immutable releases reject an asset added after publication.
+          gh release create "$VERSION" \
+              "dist/bloom" \
+              "dist/bloom-${VERSION}" \
+              $EXTRA_ARGS \
+              --title="ClusterBloom Release $VERSION" \
+              --repo="$GITHUB_REPOSITORY" \
+              --target "${GITHUB_SHA}" \
+              --generate-notes

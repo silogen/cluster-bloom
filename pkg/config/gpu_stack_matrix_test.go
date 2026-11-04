@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -131,6 +132,12 @@ func TestApplyGPUStackVarsRadeon(t *testing.T) {
 	if cfg["gpu_driver_default_build"] != "314000-1" {
 		t.Errorf("gpu_driver_default_build: got %v, want 314000-1", cfg["gpu_driver_default_build"])
 	}
+	if _, ok := cfg["gpu_operator_path"]; ok {
+		t.Errorf("gpu_operator_path must stay unset, got %v", cfg["gpu_operator_path"])
+	}
+	if _, ok := cfg["gpu_operator_config_path"]; ok {
+		t.Errorf("gpu_operator_config_path must stay unset, got %v", cfg["gpu_operator_config_path"])
+	}
 }
 
 func TestSupportedGPUDriversIncludesValidatedTuples(t *testing.T) {
@@ -142,6 +149,12 @@ func TestSupportedGPUDriversIncludesValidatedTuples(t *testing.T) {
 		"31.30.0": "7.13.0",
 		"31.40.0": "7.14.0",
 		"31.40.1": "7.14.0",
+		"31.50.0": "10.0.0",
+		"31.60.0": "10.1.0",
+	}
+	wantIdentity := map[string]string{
+		"31.50.0": "31.50.315000-1 7.1.3.31500000-2390945 amdrocm-amdsmi10.0",
+		"31.60.0": "31.60.316000-1 7.1.9.31600000-2407772 amdrocm-amdsmi10.1",
 	}
 	for _, driver := range supportedGPUDrivers {
 		if paired, ok := want[driver.DriverRelease]; !ok {
@@ -151,6 +164,16 @@ func TestSupportedGPUDriversIncludesValidatedTuples(t *testing.T) {
 		}
 		if driver.DKMSModuleVersion == "" || driver.DKMSPackageCode == "" || driver.HostToolsPackage == "" {
 			t.Errorf("incomplete support tuple: %+v", driver)
+		}
+		if identity, ok := wantIdentity[driver.DriverRelease]; ok {
+			got := fmt.Sprintf("%s.%s %s.%s-%s %s",
+				driver.InstallerVersion, driver.InstallerBuild,
+				driver.DKMSModuleVersion, driver.DKMSPackageCode, driver.DKMSBuild,
+				driver.HostToolsPackage)
+			if got != identity || driver.HostToolsChannel != "core-stable" {
+				t.Errorf("%s identity: got %q channel %q, want %q channel core-stable",
+					driver.DriverRelease, got, driver.HostToolsChannel, identity)
+			}
 		}
 		delete(want, driver.DriverRelease)
 	}

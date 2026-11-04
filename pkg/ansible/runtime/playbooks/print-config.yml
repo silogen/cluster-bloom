@@ -76,8 +76,8 @@
             GPU Operator chart: ClusterForge root/values.yaml, then root/values_<size>.yaml
             DeviceConfig ROCm driver: {{ gpu_deviceconfig_driver_version | default('NOT SET') }}
           {% if gpu_stack_tech_preview | default(false) | bool %}
-            ⚠️  TECH PREVIEW: the {{ gpu_stack_family_resolved | default('radeon') }} Enterprise AI stack
-                (GPU Operator) for this release is a tech preview, not production qualified.
+            ⚠️  TECH PREVIEW: the {{ gpu_stack_family_resolved | default('radeon') }} DeviceConfig profile
+                for this release is a tech preview, not production qualified.
           {% endif %}
             Driver policy synopsis:
               Supported existing driver table:
@@ -87,6 +87,9 @@
                 ROCm 7.2.4 -> driver 30.30.4 -> DKMS 6.16.13.30300400-2341068
                 ROCm 7.13.0 -> driver 31.30.0 -> DKMS 6.19.4.31300000-2337710
                 ROCm 7.14.0 -> driver 31.40.0 -> DKMS 6.19.14.31400000-2364437
+                ROCm 7.14.0 -> driver 31.40.1 -> DKMS 6.19.14.31400100-2377056
+                ROCm 10.0.0 -> driver 31.50.0 -> DKMS 7.1.3.31500000-2390945
+                ROCm 10.1.0 -> driver 31.60.0 -> DKMS 7.1.9.31600000-2407772
               - Any exact tuple above: retain and continue.
               - Existing unrecognized amdgpu DKMS driver: halt with remediation instructions.
               - Existing host ROCm without an identifiable supported DKMS driver:

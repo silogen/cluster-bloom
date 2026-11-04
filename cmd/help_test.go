@@ -66,9 +66,9 @@ func TestCLIHelpShowsCommonWorkflows(t *testing.T) {
 		"sudo bloom cli bloom.yaml --tags validate_node",
 		"sudo bloom cli bloom.yaml --tags deploy_clusterforge",
 		"sudo bloom cli bloom.yaml --tags gpu",
-		"sudo bloom cli cert-update.yaml --tags update_cert",
+		"sudo bloom update --cert-option provide --cert-path <cert> --key-path <key>",
 		"./bloom cli bloom.yaml --export",
-		"Run only Ansible tasks matching tags (e.g. gpu, validate_node, deploy_clusterforge, update_cert)",
+		"Run only Ansible tasks matching tags (e.g. gpu, validate_node, deploy_clusterforge)",
 	} {
 		if !strings.Contains(help, want) {
 			t.Errorf("CLI help missing %q\n%s", want, help)
@@ -78,9 +78,32 @@ func TestCLIHelpShowsCommonWorkflows(t *testing.T) {
 	for _, unwanted := range []string{
 		"ClusterForge Bootstrap (deferred install only):",
 		"cleanup, storage",
+		"sudo bloom cli cert-update.yaml --tags update_cert",
+		"update_cert",
 	} {
 		if strings.Contains(help, unwanted) {
 			t.Errorf("CLI help unexpectedly contains %q\n%s", unwanted, help)
 		}
+	}
+}
+
+func TestRootHelpShowsCertificateUpdate(t *testing.T) {
+	rootCmd := newRootCmd()
+	output := new(bytes.Buffer)
+	rootCmd.SetOut(output)
+	rootCmd.SetErr(output)
+	rootCmd.SetArgs([]string{"--help"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("help command failed: %v", err)
+	}
+
+	help := output.String()
+	const want = "sudo bloom update --cert-option provide --cert-path <cert> --key-path <key>"
+	if !strings.Contains(help, want) {
+		t.Errorf("root help missing %q\n%s", want, help)
+	}
+	if strings.Contains(help, "cert-update-config.yaml") || strings.Contains(help, "--tags update_cert") {
+		t.Errorf("root help still describes the old certificate update path\n%s", help)
 	}
 }

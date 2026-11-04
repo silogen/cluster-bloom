@@ -9,10 +9,10 @@ import "fmt"
 // versions in DriverCompatibility document the release paired with each driver;
 // ROCm itself is neither required nor installed by the driver flow.
 //
-// Chart paths for amd-gpu-operator and amd-gpu-operator-config come from the
-// ClusterForge release. root/values.yaml sets the path. root/values_<size>.yaml
-// replaces that path when it sets one. Bloom does not write those paths into
-// cluster-values. GPU_STACK_FAMILY still selects the DeviceConfig driver train.
+// Every hardware family uses AMD GPU Operator v1.5.1. ClusterForge pins that
+// chart in root/values.yaml. root/values_<size>.yaml replaces that path when
+// it sets one. Bloom does not write those paths into cluster-values.
+// GPU_STACK_FAMILY selects the DeviceConfig driver train.
 const (
 	defaultDriverPackageVersion = "31.40"
 	defaultDriverPackageBuild   = "314000-1"
@@ -72,6 +72,16 @@ var supportedGPUDrivers = []DriverCompatibility{
 		DriverRelease: "31.40.1", InstallerVersion: "31.40.1", InstallerBuild: "314001-1",
 		DKMSModuleVersion: "6.19.14", DKMSBuild: "2377056", DKMSPackageCode: "31400100", PairedROCm: "7.14.0",
 		HostToolsChannel: "core-multiarch", HostToolsPackage: "amdrocm-amdsmi7.14",
+	},
+	{
+		DriverRelease: "31.50.0", InstallerVersion: "31.50", InstallerBuild: "315000-1",
+		DKMSModuleVersion: "7.1.3", DKMSBuild: "2390945", DKMSPackageCode: "31500000", PairedROCm: "10.0.0",
+		HostToolsChannel: "core-stable", HostToolsPackage: "amdrocm-amdsmi10.0",
+	},
+	{
+		DriverRelease: "31.60.0", InstallerVersion: "31.60", InstallerBuild: "316000-1",
+		DKMSModuleVersion: "7.1.9", DKMSBuild: "2407772", DKMSPackageCode: "31600000", PairedROCm: "10.1.0",
+		HostToolsChannel: "core-stable", HostToolsPackage: "amdrocm-amdsmi10.1",
 	},
 }
 
