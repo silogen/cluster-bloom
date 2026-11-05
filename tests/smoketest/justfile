@@ -1,0 +1,139 @@
+#: EAI / AIRM cluster smoke tests, split by layer.
+#:
+#: THREE LAYERS. They are independent and can be run separately.
+#:
+#:   cluster      the substrate — nodes, control plane, CoreDNS, Cilium (incl.
+#:                overlay MTU), storage provisioner and StorageClasses. Today
+#:                produced by cluster-bloom on RKE2.
+#:   platform     what cluster-forge deploys — Resource Manager kubeconfig,
+#:                ArgoCD, Envoy Gateway, MetalLB, SeaweedFS, PVCs, Keycloak,
+#:                OpenBao, AIRM/AIWB, logins and TLS. Read-only.
+#:   application  the AIWB user paths — workspace, dataset upload, model
+#:                deployment and fine-tuning. Creates and deletes real
+#:                resources, uses accelerators, and is slow.
+#:
+#: A layer does NOT check the one underneath it. If the cluster is sick, the
+#: platform checks fail in ways that look like platform faults — run
+#: `just cluster` first when in doubt.
+#:
+#: FORM. Variables come BEFORE the recipe name: `just DOMAIN=x.silogen.ai all`.
+#:
+#:   just                       the recipe list
+#:   just help                  this text
+#:   just cluster               substrate only
+#:   just platform              cluster-forge only
+#:   just application           the AIWB flows. Slow, uses GPUs
+#:   just all                   all three, one merged verdict
+#:
+#: `application` runs the platform layer's read-only sections first — it needs
+#: their authentication, domain and project before it can reach the AIWB API.
+#: That is about a minute of a ten-minute run, not a separate choice.
+#:
+#: VARIABLES.
+#:
+#:   KUBECONFIG=<path>     admin kubeconfig. Both forms work:
+#:                         `just KUBECONFIG=... all` and `KUBECONFIG=... just all`.
+#:                         Unset uses ~/.kube/config
+#:   DOMAIN=<domain>       override the auto-detected cluster domain
+#:   VERBOSE=1             per-section timings and extra detail
+#:   INSECURE=1            skip TLS verification (self-signed cluster certs)
+#:   PROJECT=<name>        AIWB project for the application layer
+#:   HF_TOKEN_FILE=<path>  Hugging Face token. Without one the gated base
+#:                         models are unavailable and the open ones are far
+#:                         larger, so expect a much longer run
+#:   FLAGS="..."           extra flags passed straight through
+#:
+#: EXIT CODES. 0 clean · 1 warnings · 2 something in scope could not run.
+#: `just all` exits with the worst of the layers it ran.
+#:
+#: SKIP vs BLOCKED. SKIP means the check did not apply or was not asked for —
+#: a small cluster has no Longhorn. BLOCKED means it was in scope and could
+#: not run: no credentials, no domain, forbidden. A skip never fails a run;
+#: a blocked one always does, because a run that could not test something
+#: must not report that it passed.
+
+set positional-arguments
+
+# Exported so recipes (and the scripts they call) see it. Declaring it here is
+# what makes `just KUBECONFIG=... all` work in addition to the shell-prefix
+# form `KUBECONFIG=... just all`; without the declaration just rejects the
+# first form outright. Empty is safe: kubectl treats an empty KUBECONFIG the
+# same as an unset one and falls back to ~/.kube/config.
+export KUBECONFIG := env_var_or_default("KUBECONFIG", "")
+
+DOMAIN        := env_var_or_default("DOMAIN", "")
+VERBOSE       := env_var_or_default("VERBOSE", "")
+INSECURE      := env_var_or_default("INSECURE", "")
+PROJECT       := env_var_or_default("PROJECT", "")
+HF_TOKEN_FILE := env_var_or_default("HF_TOKEN_FILE", "")
+FLAGS         := env_var_or_default("FLAGS", "")
+
+_here := justfile_directory()
+
+# Flags common to both scripts.
+_common := (if VERBOSE  != "" { "--verbose " }  else { "" }) + \
+           (if INSECURE != "" { "--insecure " } else { "" })
+
+# Flags only the platform script understands.
+_platform_only := (if DOMAIN        != "" { "--domain " + DOMAIN + " " }               else { "" }) + \
+                  (if HF_TOKEN_FILE != "" { "--hf-token-file " + HF_TOKEN_FILE + " " } else { "" })
+
+# What turns the platform script's four opt-in sections on. This is the only
+# difference between `just platform` and `just application`.
+_optin := "--with-workspace --with-dataset --with-model --with-finetune"
+
+_default:
+    @just --list --unsorted
+
+# this text
+help:
+    @sed -n 's/^#: \?//p' {{justfile()}}
+
+# substrate only — nodes, control plane, CNI, DNS, storage
+cluster:
+    @{{_here}}/smoketest-cluster.sh {{ if VERBOSE != "" { "--verbose" } else { "" } }}
+
+# cluster-forge only — read-only, creates nothing
+platform:
+    @SMOKETEST_PROJECT={{PROJECT}} {{_here}}/smoketest-platform.sh {{_common}} {{_platform_only}} {{FLAGS}}
+
+# the AIWB flows — slow, creates real resources, uses GPUs
+application:
+    @SMOKETEST_PROJECT={{PROJECT}} {{_here}}/smoketest-platform.sh {{_common}} {{_platform_only}} {{_optin}} {{FLAGS}}
+
+# all three layers, one merged verdict
+all:
+    #!/usr/bin/env bash
+    # Self-contained on purpose. Delegating with `just ... platform` would nest
+    # a second just process, and each one reports a non-zero exit of its own —
+    # so a run ending in WARN printed two `error: recipe failed` lines beneath
+    # a summary that had already said WARN.
+    #
+    # No `set -e`: a failing layer must not stop the other one from running.
+    out=$(mktemp -d); trap 'rm -rf "$out"' EXIT
+
+    {{_here}}/smoketest-cluster.sh {{ if VERBOSE != "" { "--verbose" } else { "" } }} 2>&1 | tee "$out/cluster.log"
+    cluster_rc=${PIPESTATUS[0]}
+
+    SMOKETEST_PROJECT={{PROJECT}} {{_here}}/smoketest-platform.sh {{_common}} {{_platform_only}} {{_optin}} {{FLAGS}} 2>&1 | tee "$out/platform.log"
+    platform_rc=${PIPESTATUS[0]}
+
+    echo
+    echo "══ Combined ═══════════════════════════════════════════════════"
+    grep -h '^SMOKETEST_RESULT' "$out"/*.log | while read -r _ layer rest; do
+        printf '  %-9s %s\n' "$layer" "$rest"
+    done
+    echo
+    rc=$(( cluster_rc > platform_rc ? cluster_rc : platform_rc ))
+    case "$rc" in
+        0) echo "  PASS — every layer clean" ;;
+        1) echo "  WARN — see the warnings above" ;;
+        *) echo "  FAIL — checks were in scope and could not run (cluster=${cluster_rc} platform=${platform_rc})" ;;
+    esac
+    exit $rc
+
+# syntax-check all three scripts
+check:
+    @for f in {{_here}}/lib-smoketest.sh {{_here}}/smoketest-cluster.sh {{_here}}/smoketest-platform.sh; do \
+        bash -n "$f" && echo "ok   $(basename $f)" || echo "FAIL $(basename $f)"; \
+     done
