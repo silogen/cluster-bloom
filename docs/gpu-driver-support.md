@@ -192,8 +192,9 @@ because they require access to package, DKMS, kernel-module, and ROCm state on
 the target node.
 
 `GPU_STACK_FAMILY` selects the DeviceConfig driver train only. Every family
-uses AMD GPU Operator `v1.5.1`. Both families share this host-driver policy and default to driver
-`31.40.0` on fresh nodes.
+uses AMD GPU Operator `v1.5.1`, pinned by the ClusterForge root values files.
+Both families share this host-driver policy and default to driver `31.40.0`
+on fresh nodes.
 
 See the [Configuration Reference](configuration-reference.md) for all GPU
 configuration fields.
