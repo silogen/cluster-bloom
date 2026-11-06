@@ -53,18 +53,46 @@
     git clone --branch {{ clusterforge_version }} --depth 1 {{ CLUSTERFORGE_REPO }} {{ BLOOM_DIR }}/clusterforge/cluster-forge
   when: not (is_release_url | bool)
 
+# CLUSTER_SIZE is the infrastructure tier. CLUSTERFORGE_VALUES names the
+# configuration in ClusterForge, root/values_<name>.yaml, and defaults to the
+# tier. The file comes with the ClusterForge release, so bloom can check it
+# only here, after the download.
+- name: Resolve the ClusterForge values file
+  set_fact:
+    cf_values_name: "{{ CLUSTERFORGE_VALUES | default('', true) or (CLUSTER_SIZE | default('medium')) }}"
+
+- name: Set the ClusterForge values file path
+  set_fact:
+    cf_values_file: "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/values_{{ cf_values_name }}.yaml"
+
 - name: Debug ClusterForge bootstrap variables
   debug:
     msg:
       - "DOMAIN: {{ DOMAIN }}"
       - "CLUSTER_SIZE: {{ CLUSTER_SIZE | default('medium') }}"
+      - "CLUSTERFORGE_VALUES: {{ cf_values_name }}"
       - "BLOOM_DIR: {{ BLOOM_DIR }}"
       - "clusterforge_version: {{ clusterforge_version }}"
 
-- name: Check if size-specific values file exists
+- name: Check that the ClusterForge values file exists
   ansible.builtin.stat:
-    path: "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root/values_{{ CLUSTER_SIZE | default('medium') }}.yaml"
+    path: "{{ cf_values_file }}"
   register: size_values_stat
+
+- name: Find the values files of this ClusterForge release
+  ansible.builtin.find:
+    paths: "{{ BLOOM_DIR }}/clusterforge/cluster-forge/root"
+    patterns: "values_*.yaml"
+  register: cf_values_files
+  when: not size_values_stat.stat.exists
+
+- name: Fail when the ClusterForge values file does not exist
+  fail:
+    msg: |
+      ClusterForge {{ clusterforge_version }} has no root/values_{{ cf_values_name }}.yaml.
+      Set CLUSTERFORGE_VALUES (or CLUSTER_SIZE) to one of:
+      {{ cf_values_files.files | map(attribute='path') | map('basename') | map('regex_replace', '^values_', '') | map('regex_replace', '[.]yaml$', '') | sort | join(', ') }}
+  when: not size_values_stat.stat.exists
 
 - name: Create namespaces
   ansible.builtin.shell: kubectl create namespace {{ item }} --dry-run=client -o yaml | kubectl apply -f -
