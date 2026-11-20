@@ -45,6 +45,14 @@ Configuration sources in priority order (highest to lowest):
 - **Values**: `small` | `medium` | `large`
 - **Example**: `CLUSTER_SIZE: medium`
 - **Cilium**: `small` and `medium` set `operator.replicas: 1` via RKE2 `HelmChartConfig` on the first node at bootstrap; `large` uses the RKE2 default (2). To scale the operator after adding nodes, see [RKE2 deployment — Scaling cilium-operator](rke2-deployment.md#scaling-cilium-operator-after-install-multi-node--ha)
+- **ClusterForge**: the infrastructure tier only. To use a ClusterForge configuration with a different name, set `CLUSTERFORGE_VALUES`.
+
+#### CLUSTERFORGE_VALUES
+- **Type**: String
+- **Default**: `""` (empty, uses `CLUSTER_SIZE`)
+- **Description**: Name of the ClusterForge configuration. Bloom uses `root/values_<name>.yaml` of the ClusterForge release, so a new configuration in ClusterForge needs no change in bloom. `CLUSTER_SIZE` still sets the infrastructure (storage, Cilium, Gitea). Bloom checks the name format when it validates the configuration. It checks that the file exists after it gets the ClusterForge release, and if the file does not exist, it stops and lists the names that the release has.
+- **Values**: lowercase letters, digits, `-` and `_`
+- **Example**: `CLUSTER_SIZE: medium` with `CLUSTERFORGE_VALUES: medium_dex`
 
 #### AIM_HARDWARE_FAMILY
 - **Type**: String (comma-separated list)

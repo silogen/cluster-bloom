@@ -49,6 +49,12 @@ schema:
       desc: Size category for cluster deployment planning
       section: "📋 Basic Configuration"
 
+    CLUSTERFORGE_VALUES:
+      type: clusterforgeValues
+      default: ""
+      desc: "Name of the ClusterForge configuration: bloom uses root/values_<name>.yaml of the ClusterForge release. Empty = CLUSTER_SIZE. Bloom checks that the file exists after it gets the release. Example - medium_dex"
+      section: "📋 Basic Configuration"
+
     AIM_HARDWARE_FAMILY:
       type: hardwareFamilyList
       default: ""
@@ -558,6 +564,30 @@ types:
         - "/mnt/disk1, /mnt/disk2"   # space after comma
         - "/mnt/disk1 /mnt/disk2"    # space separator
         - "mnt/disk1"        # missing leading slash
+
+  clusterforgeValues:
+    type: str
+    pattern: ^[a-z0-9]([a-z0-9_-]*[a-z0-9])?$|^$
+    desc: Name of a ClusterForge values file, without the values_ prefix and the .yaml suffix
+    errorMessage: Use lowercase letters, digits, hyphens and underscores (e.g., medium or medium_dex). The ClusterForge release must contain root/values_<name>.yaml.
+    examples:
+      valid:
+        - ""
+        - "small"
+        - "medium"
+        - "large"
+        - "medium_dex"
+        - "aiwb-only"
+        - "a"
+      invalid:
+        - "Medium"                     # uppercase
+        - "values_medium.yaml"         # file name, not the name
+        - "medium.yaml"                # suffix
+        - "../medium"                  # path
+        - "medium/dex"                 # slash
+        - "_medium"                    # starts with underscore
+        - "medium-"                    # ends with hyphen
+        - "medium dex"                 # space
 
   certFilePath:
     type: str
