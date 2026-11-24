@@ -8,6 +8,7 @@
   shell: grep VERSION_ID /etc/os-release | cut -d= -f2 | tr -d '"'
   register: ubuntu_version
   changed_when: false
+  check_mode: false
 
 - name: Check if Ubuntu version is supported
   assert:
